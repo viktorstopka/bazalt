@@ -6,9 +6,10 @@ WebView UI. Full design: `docs/ARCHITECTURE.md`. Milestone plan:
 before touching anything cross-cutting — this file is the condensed
 day-to-day ruleset, not a replacement for it.
 
-Currently on **M2** (graph runtime) per `docs/MILESTONES.md`; M0 (scaffolding)
-and M1 (engine core/DSP infra) are done and committed. Each milestone must
-build, pass its tests, and be committed before the next one starts.
+Currently on **M3** (I/O buses, patch format, macros) per `docs/MILESTONES.md`;
+M0 (scaffolding), M1 (engine core/DSP infra), and M2 (graph runtime) are done
+and committed. Each milestone must build, pass its tests, and be committed
+before the next one starts.
 
 ## The non-negotiable rules
 
@@ -107,3 +108,10 @@ pluginval --strictness-level 1 --validate ./build/plugin/BazaltPlugin_artefacts/
   real `ui/dist` embedding is tracked for M5.
 - `COMPANY_NAME`/`PRODUCT_NAME` in `plugin/CMakeLists.txt` are placeholders
   pending real publisher info.
+- M2's two proof graphs don't route Note/Event data through node ports yet —
+  the render-cli driver calls straight into the compiled `AdsrNode`/
+  `OscillatorNode`/`NoiseBurstNode` instances (`noteOn()`, `setParameter()`,
+  `trigger()`) via `ExecutionPlan::getNodeById()`. `SignalType::Note`/`Event`
+  exist in the enum but nothing constructs a real Note-typed port yet. Full
+  routing lands in M3 once real MIDI input needs it — don't add Note ports
+  speculatively before that.
