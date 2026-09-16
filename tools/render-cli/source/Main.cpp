@@ -2,80 +2,160 @@
 #include <juce_audio_basics/juce_audio_basics.h>
 #include <juce_audio_formats/juce_audio_formats.h>
 
-#include "bazalt/engine/PolyBlepOscillator.h"
-#include "bazalt/engine/SvfFilter.h"
+#include "bazalt/engine/graph/ProofGraphs.h"
+#include "bazalt/engine/graph/GraphCompiler.h"
+#include "bazalt/engine/nodes/AdsrNode.h"
+#include "bazalt/engine/nodes/NoiseBurstNode.h"
 
-// M1: renders a fixed tone (saw through the TPT SVF) to WAV, headlessly.
-// Proves the engine-only build path works end to end with no plugin/UI
-// dependency (docs/MILESTONES.md, M1 exit criteria). Real patch + MIDI
-// input replaces this fixed graph once NodeGraph/ExecutionPlan exist
-// (M2/M3) — at that point this becomes `render-cli <patch.json> <in.mid>
-// <out.wav>`.
+#include <algorithm>
+#include <functional>
+
+// M2: renders both hardcoded proof graphs (ARCHITECTURE.md §3.4) headlessly
+// via the real NodeGraph -> GraphCompiler -> ExecutionPlan path, proving the
+// engine-only build works end to end with no plugin/UI dependency
+// (docs/MILESTONES.md, M2 exit criteria). Notes are triggered by calling
+// straight into the compiled node instances (AdsrNode::noteOn/noteOff,
+// NoiseBurstNode::trigger) — full patch + MIDI file input replaces this once
+// the real note/voice data model is wired to MIDI input (M3).
+namespace
+{
+    bool writeWav (const juce::File& file, const juce::AudioBuffer<float>& buffer, double sampleRate)
+    {
+        file.deleteFile();
+        std::unique_ptr<juce::OutputStream> fileStream (file.createOutputStream());
+
+        if (fileStream == nullptr)
+        {
+            juce::Logger::writeToLog ("bazalt-render-cli: failed to open output file: " + file.getFullPathName());
+            return false;
+        }
+
+        juce::WavAudioFormat wavFormat;
+        const auto writerOptions = juce::AudioFormatWriterOptions {}
+                                        .withSampleRate (sampleRate)
+                                        .withNumChannels (buffer.getNumChannels())
+                                        .withBitsPerSample (24);
+
+        auto writer = wavFormat.createWriterFor (fileStream, writerOptions);
+
+        if (writer == nullptr)
+        {
+            juce::Logger::writeToLog ("bazalt-render-cli: failed to create WAV writer for " + file.getFullPathName());
+            return false;
+        }
+
+        if (! writer->writeFromAudioSampleBuffer (buffer, 0, buffer.getNumSamples()))
+        {
+            juce::Logger::writeToLog ("bazalt-render-cli: failed to write samples to " + file.getFullPathName());
+            return false;
+        }
+
+        juce::Logger::writeToLog ("bazalt-render-cli: wrote " + juce::String (buffer.getNumSamples())
+                                   + " samples to " + file.getFullPathName());
+        return true;
+    }
+
+    juce::AudioBuffer<float> renderPlan (bazalt::engine::ExecutionPlan& plan, int totalSamples, int blockSize,
+                                          const std::function<void (int)>& onBlockStart)
+    {
+        juce::AudioBuffer<float> output (1, totalSamples);
+        int rendered = 0;
+
+        while (rendered < totalSamples)
+        {
+            onBlockStart (rendered);
+
+            const auto thisBlock = std::min (blockSize, totalSamples - rendered);
+            plan.process (thisBlock);
+
+            const auto* src = plan.blockBuffers[(size_t) plan.finalOutputBufferIndex].getBlock().getChannelPointer (0);
+            output.copyFrom (0, rendered, src, thisBlock);
+
+            rendered += thisBlock;
+        }
+
+        return output;
+    }
+
+    bool renderVoiceGraph (const juce::File& outputFile, double sampleRate, int blockSize)
+    {
+        using namespace bazalt::engine;
+
+        auto graph = buildVoiceProofGraph();
+        auto factory = buildDefaultNodeFactory();
+        auto result = GraphCompiler::compile (graph, factory, { sampleRate, blockSize }, 1);
+
+        if (! result.success)
+        {
+            juce::Logger::writeToLog ("bazalt-render-cli: voice graph compile failed: " + result.errorMessage);
+            return false;
+        }
+
+        auto& plan = result.plan;
+        plan.getNodeById ("osc")->setParameter ("osc.basic.frequency", 220.0f);
+
+        auto* adsr = dynamic_cast<nodes::AdsrNode*> (plan.getNodeById ("env"));
+        jassert (adsr != nullptr);
+
+        const auto totalSamples = (int) (sampleRate * 1.6);
+        const auto noteOffSample = (int) (sampleRate * 1.0);
+        bool noteOffSent = false;
+
+        adsr->noteOn();
+
+        auto buffer = renderPlan (plan, totalSamples, blockSize, [&] (int sampleOffset)
+        {
+            if (! noteOffSent && sampleOffset >= noteOffSample)
+            {
+                adsr->noteOff();
+                noteOffSent = true;
+            }
+        });
+
+        return writeWav (outputFile, buffer, sampleRate);
+    }
+
+    bool renderKarplusStrongGraph (const juce::File& outputFile, double sampleRate, int blockSize)
+    {
+        using namespace bazalt::engine;
+
+        auto graph = buildKarplusStrongProofGraph();
+        auto factory = buildDefaultNodeFactory();
+        auto result = GraphCompiler::compile (graph, factory, { sampleRate, blockSize }, 1);
+
+        if (! result.success)
+        {
+            juce::Logger::writeToLog ("bazalt-render-cli: karplus-strong graph compile failed: " + result.errorMessage);
+            return false;
+        }
+
+        auto& plan = result.plan;
+
+        // ~220 Hz pluck: delay length in samples = sampleRate / frequency.
+        plan.getNodeById ("delay")->setParameter ("delay.basic.samples", (float) (sampleRate / 220.0));
+
+        auto* excite = dynamic_cast<nodes::NoiseBurstNode*> (plan.getNodeById ("excite"));
+        jassert (excite != nullptr);
+        excite->trigger ((int) (sampleRate * 0.005)); // 5ms pluck
+
+        const auto totalSamples = (int) (sampleRate * 2.0);
+        auto buffer = renderPlan (plan, totalSamples, blockSize, [] (int) {});
+
+        return writeWav (outputFile, buffer, sampleRate);
+    }
+}
+
 int main (int argc, char* argv[])
 {
-    using namespace bazalt::engine;
-
-    const juce::String outputPath = argc > 1 ? juce::String (argv[1])
-                                              : juce::String ("bazalt-render-cli-output.wav");
+    const juce::File outputDir = argc > 1 ? juce::File::getCurrentWorkingDirectory().getChildFile (argv[1])
+                                           : juce::File::getCurrentWorkingDirectory();
+    outputDir.createDirectory();
 
     constexpr double sampleRate = 44100.0;
-    constexpr double durationSeconds = 2.0;
-    constexpr float frequencyHz = 440.0f;
-    const int numSamples = (int) (sampleRate * durationSeconds);
+    constexpr int blockSize = 512;
 
-    PolyBlepOscillator oscillator;
-    oscillator.prepare (sampleRate);
-    oscillator.setWaveform (OscillatorWaveform::Saw);
-    oscillator.setFrequency (frequencyHz);
+    const auto voiceOk = renderVoiceGraph (outputDir.getChildFile ("voice.wav"), sampleRate, blockSize);
+    const auto karplusOk = renderKarplusStrongGraph (outputDir.getChildFile ("karplus-strong.wav"), sampleRate, blockSize);
 
-    SvfFilter filter;
-    filter.prepare (sampleRate, (uint32_t) numSamples, 1);
-    filter.setType (SvfFilterType::Lowpass);
-    filter.setCutoffFrequency (2000.0f);
-    filter.setResonance (0.7071f);
-
-    juce::AudioBuffer<float> buffer (1, numSamples);
-    auto* data = buffer.getWritePointer (0);
-
-    for (int i = 0; i < numSamples; ++i)
-    {
-        const auto raw = oscillator.renderNextSample();
-        data[i] = filter.processSample (0, raw) * 0.5f;
-    }
-
-    juce::File outputFile (outputPath);
-    outputFile.deleteFile();
-
-    std::unique_ptr<juce::OutputStream> fileStream (outputFile.createOutputStream());
-
-    if (fileStream == nullptr || ! static_cast<juce::FileOutputStream&> (*fileStream).openedOk())
-    {
-        juce::Logger::writeToLog ("bazalt-render-cli: failed to open output file: " + outputFile.getFullPathName());
-        return 1;
-    }
-
-    juce::WavAudioFormat wavFormat;
-    const auto writerOptions = juce::AudioFormatWriterOptions {}
-                                    .withSampleRate (sampleRate)
-                                    .withNumChannels (buffer.getNumChannels())
-                                    .withBitsPerSample (24);
-
-    auto writer = wavFormat.createWriterFor (fileStream, writerOptions);
-
-    if (writer == nullptr)
-    {
-        juce::Logger::writeToLog ("bazalt-render-cli: failed to create WAV writer");
-        return 1;
-    }
-
-    if (! writer->writeFromAudioSampleBuffer (buffer, 0, buffer.getNumSamples()))
-    {
-        juce::Logger::writeToLog ("bazalt-render-cli: failed to write samples");
-        return 1;
-    }
-
-    juce::Logger::writeToLog ("bazalt-render-cli: wrote " + juce::String (numSamples)
-                               + " samples to " + outputFile.getFullPathName());
-
-    return 0;
+    return (voiceOk && karplusOk) ? 0 : 1;
 }

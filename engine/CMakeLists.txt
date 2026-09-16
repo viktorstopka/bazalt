@@ -16,6 +16,8 @@ target_sources(engine
         src/NanGuard.cpp
         src/PolyBlepOscillator.cpp
         src/RtAllocationTrap.cpp
+        src/graph/ExecutionPlan.cpp
+        src/graph/GraphCompiler.cpp
     PUBLIC
         FILE_SET HEADERS
         BASE_DIRS include
@@ -28,6 +30,24 @@ target_sources(engine
             include/bazalt/engine/RtAllocationTrap.h
             include/bazalt/engine/SmoothedParameter.h
             include/bazalt/engine/SvfFilter.h
+            include/bazalt/engine/graph/SignalType.h
+            include/bazalt/engine/graph/PortDescriptor.h
+            include/bazalt/engine/graph/Node.h
+            include/bazalt/engine/graph/NodeGraph.h
+            include/bazalt/engine/graph/NodeFactory.h
+            include/bazalt/engine/graph/ExecutionPlan.h
+            include/bazalt/engine/graph/GraphCompiler.h
+            include/bazalt/engine/graph/PlanSwapper.h
+            include/bazalt/engine/graph/VoiceManager.h
+            include/bazalt/engine/graph/ProofGraphs.h
+            include/bazalt/engine/nodes/OscillatorNode.h
+            include/bazalt/engine/nodes/SvfFilterNode.h
+            include/bazalt/engine/nodes/AdsrNode.h
+            include/bazalt/engine/nodes/GainNode.h
+            include/bazalt/engine/nodes/NoiseBurstNode.h
+            include/bazalt/engine/nodes/MixNode.h
+            include/bazalt/engine/nodes/DelayNode.h
+            include/bazalt/engine/nodes/OnePoleFilterNode.h
 )
 
 target_compile_features(engine PUBLIC cxx_std_20)

@@ -6,13 +6,17 @@ add_executable(EngineTests
     AlignedBufferTests.cpp
     BlockSizeInvarianceTests.cpp
     EngineVersionTests.cpp
+    GraphCompilerTests.cpp
     NanGuardTests.cpp
     OversamplingStageTests.cpp
+    PlanSwapperTests.cpp
     PolyBlepOscillatorTests.cpp
+    ProofGraphRenderTests.cpp
     RtAllocationTrapTests.cpp
     SampleRateCoverageTests.cpp
     SmoothedParameterTests.cpp
     SvfFilterTests.cpp
+    VoiceManagerTests.cpp
 )
 
 target_link_libraries(EngineTests

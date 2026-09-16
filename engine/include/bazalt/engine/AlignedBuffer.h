@@ -16,6 +16,24 @@ namespace bazalt::engine
     public:
         AlignedBuffer() = default;
 
+        // Move-only: HeapBlock's move just transfers the pointer (the
+        // memory itself never relocates), so copying the AudioBlock view
+        // across and clearing the source's is safe. Needed so this can
+        // live in a std::vector (ExecutionPlan's per-port output buffers).
+        AlignedBuffer (AlignedBuffer&& other) noexcept
+            : storage (std::move (other.storage)), block (other.block)
+        {
+            other.block = juce::dsp::AudioBlock<float>();
+        }
+
+        AlignedBuffer& operator= (AlignedBuffer&& other) noexcept
+        {
+            storage = std::move (other.storage);
+            block = other.block;
+            other.block = juce::dsp::AudioBlock<float>();
+            return *this;
+        }
+
         void resize (size_t numChannels, size_t numSamples)
         {
             // The HeapBlock<char>, AudioBlock<float> constructor allocates
