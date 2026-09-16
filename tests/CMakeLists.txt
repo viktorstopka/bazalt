@@ -3,7 +3,16 @@
 # starting M1 (aliasing, SVF response, block-size invariance, etc).
 
 add_executable(EngineTests
+    AlignedBufferTests.cpp
+    BlockSizeInvarianceTests.cpp
     EngineVersionTests.cpp
+    NanGuardTests.cpp
+    OversamplingStageTests.cpp
+    PolyBlepOscillatorTests.cpp
+    RtAllocationTrapTests.cpp
+    SampleRateCoverageTests.cpp
+    SmoothedParameterTests.cpp
+    SvfFilterTests.cpp
 )
 
 target_link_libraries(EngineTests

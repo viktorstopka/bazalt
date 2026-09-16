@@ -43,6 +43,7 @@ endif()
 
 add_subdirectory(engine)
 add_subdirectory(plugin)
+add_subdirectory(tools/render-cli)
 
 if(BAZALT_BUILD_TESTS)
     enable_testing()

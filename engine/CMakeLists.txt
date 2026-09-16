@@ -13,11 +13,21 @@ add_library(bazalt::engine ALIAS engine)
 target_sources(engine
     PRIVATE
         src/EngineVersion.cpp
+        src/NanGuard.cpp
+        src/PolyBlepOscillator.cpp
+        src/RtAllocationTrap.cpp
     PUBLIC
         FILE_SET HEADERS
         BASE_DIRS include
         FILES
+            include/bazalt/engine/AlignedBuffer.h
             include/bazalt/engine/EngineVersion.h
+            include/bazalt/engine/NanGuard.h
+            include/bazalt/engine/OversamplingStage.h
+            include/bazalt/engine/PolyBlepOscillator.h
+            include/bazalt/engine/RtAllocationTrap.h
+            include/bazalt/engine/SmoothedParameter.h
+            include/bazalt/engine/SvfFilter.h
 )
 
 target_compile_features(engine PUBLIC cxx_std_20)
@@ -35,4 +45,11 @@ target_link_libraries(engine
 target_compile_definitions(engine
     PUBLIC
         JUCE_STRICT_REFCOUNTEDPOINTER=1
+        # Debug-build RT-allocation trap (ARCHITECTURE.md §5) — overrides
+        # global operator new/delete to throw if armed via
+        # ScopedAudioThreadAllocationTrap. See RtAllocationTrap.cpp for why
+        # this only activates in binaries that actually use it. PUBLIC so
+        # consumers (tests, in particular) can #if on it too, rather than
+        # duplicating the Debug-only condition themselves.
+        $<$<CONFIG:Debug>:BAZALT_ENABLE_RT_ALLOCATION_TRAP=1>
 )
