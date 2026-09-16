@@ -28,7 +28,8 @@ FetchContent_Declare(
 FetchContent_MakeAvailable(JUCE)
 
 # ---------------------------------------------------------------------------
-# Catch2 — engine test suite only, never linked into plugin/ or tools/
+# Catch2 — tests/ (engine-only, headless) and tests-plugin/ (links the
+# plugin's shared-code target directly). Never linked into tools/render-cli.
 # ---------------------------------------------------------------------------
 if(BAZALT_BUILD_TESTS)
     FetchContent_Declare(
@@ -48,4 +49,5 @@ add_subdirectory(tools/render-cli)
 if(BAZALT_BUILD_TESTS)
     enable_testing()
     add_subdirectory(tests)
+    add_subdirectory(tests-plugin)
 endif()

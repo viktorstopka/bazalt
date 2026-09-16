@@ -6,10 +6,10 @@ WebView UI. Full design: `docs/ARCHITECTURE.md`. Milestone plan:
 before touching anything cross-cutting — this file is the condensed
 day-to-day ruleset, not a replacement for it.
 
-Currently on **M3** (I/O buses, patch format, macros) per `docs/MILESTONES.md`;
-M0 (scaffolding), M1 (engine core/DSP infra), and M2 (graph runtime) are done
-and committed. Each milestone must build, pass its tests, and be committed
-before the next one starts.
+Currently on **M4** (telemetry pipeline) per `docs/MILESTONES.md`; M0
+(scaffolding), M1 (engine core/DSP infra), M2 (graph runtime), and M3 (I/O
+buses, patch format, macros) are done and committed. Each milestone must
+build, pass its tests, and be committed before the next one starts.
 
 ## The non-negotiable rules
 
@@ -43,7 +43,10 @@ before the next one starts.
    `juce_dsp`. This keeps `engine` headless and testable
    (`tools/render-cli` and the Catch2 suite in `tests/` link only `engine`).
    If a change makes `engine` need a plugin/UI dependency, that change is
-   wrong — redesign it, don't add the dependency.
+   wrong — redesign it, don't add the dependency. `tests-plugin/` is a
+   separate, plugin-level Catch2 suite (added M3) that deliberately breaks
+   this rule on purpose — it tests `PluginProcessor` directly — don't
+   confuse the two or move plugin-layer tests into `tests/`.
 
 5. **Graph edits take effect at the next block boundary, never inside one.**
    Don't add code paths that mutate a live `ExecutionPlan` mid-block. A
@@ -85,6 +88,10 @@ cd ui && npm run build
 
 # Validate the VST3 (pluginval must be installed separately)
 pluginval --strictness-level 1 --validate ./build/plugin/BazaltPlugin_artefacts/Debug/VST3/Bazalt.vst3
+
+# Plugin-level tests (PluginProcessor behavior: buses, MIDI-to-audio, patch
+# state, macro automation) — direct calls, no DAW needed
+ctest --test-dir build -C Debug -R PluginTests --output-on-failure
 ```
 
 ## Naming / structure conventions
@@ -108,10 +115,30 @@ pluginval --strictness-level 1 --validate ./build/plugin/BazaltPlugin_artefacts/
   real `ui/dist` embedding is tracked for M5.
 - `COMPANY_NAME`/`PRODUCT_NAME` in `plugin/CMakeLists.txt` are placeholders
   pending real publisher info.
-- M2's two proof graphs don't route Note/Event data through node ports yet —
-  the render-cli driver calls straight into the compiled `AdsrNode`/
-  `OscillatorNode`/`NoiseBurstNode` instances (`noteOn()`, `setParameter()`,
-  `trigger()`) via `ExecutionPlan::getNodeById()`. `SignalType::Note`/`Event`
-  exist in the enum but nothing constructs a real Note-typed port yet. Full
-  routing lands in M3 once real MIDI input needs it — don't add Note ports
-  speculatively before that.
+- Note/Event data still doesn't route through node ports, even now that real
+  MIDI input exists (M3). `PluginProcessor::handleMidiEvent` translates MIDI
+  straight into `noteOn()`/`setParameter()`/`dynamic_cast<AdsrNode*>` calls
+  on each voice's compiled node instances via `ExecutionPlan::getNodeById()`
+  — this was a deliberate scoping call (full Note-typed port signal routing
+  is a bigger change that only earns its cost once a live graph editor needs
+  it), not an oversight. `SignalType::Note`/`Event` still exist in the enum,
+  unused by any port.
+- Each voice gets its own fully independent `ExecutionPlan` (compiled
+  `numVoices` times from the same `NodeGraph` in `prepareToPlay`), not a
+  shared plan with per-voice state pooled separately as ARCHITECTURE.md §3.2
+  ultimately describes ("per-voice DSP state... lives in a separate pool
+  keyed by (voiceIndex, nodeID)"). That refactor is explicitly gated on live
+  graph editing existing (recompiling one shared topology while preserving
+  per-voice state) — there's no editor yet, so there's nothing to preserve
+  across. `PlanSwapper` is built and tested (M2) but not yet wired into
+  `PluginProcessor` for the same reason: nothing recompiles the live graph
+  yet, so there's nothing to swap.
+- The sidechain "passthrough" (`PluginProcessor::updateAuxLevelsAndPassthrough`)
+  mixes each active aux bus into the main output at a fixed -30dB and tracks
+  its peak level — a deliberately simple, measurable proof that audio
+  reaches the engine from all 4 aux buses (ARCHITECTURE.md §4.1), not real
+  sidechain-driven DSP. Ducking/modulation-style sidechain use needs
+  aux-typed node ports, which don't exist yet.
+- The patch format (`engine/patch/PatchDocument.h`) has no `ui` (view state)
+  section — there's no node-graph editor to have pan/zoom/layout state for
+  yet. Add that field in the same change as the editor, not before.

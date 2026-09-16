@@ -29,6 +29,7 @@ target_sources(BazaltPlugin
     PRIVATE
         source/PluginProcessor.cpp
         source/PluginEditor.cpp
+        source/MacroParameters.cpp
 )
 
 target_compile_definitions(BazaltPlugin

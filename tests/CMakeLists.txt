@@ -9,6 +9,7 @@ add_executable(EngineTests
     GraphCompilerTests.cpp
     NanGuardTests.cpp
     OversamplingStageTests.cpp
+    PatchSerializerTests.cpp
     PlanSwapperTests.cpp
     PolyBlepOscillatorTests.cpp
     ProofGraphRenderTests.cpp
