@@ -15,13 +15,17 @@ called out in §13 rather than silently decided.
 bazalt/
   engine/           pure C++ DSP + graph runtime library (no plugin/UI dependency)
   plugin/           JUCE AudioProcessor wrapper: buses, state, WebView bridge
-  ui/               TypeScript + Vite (+ React) frontend
+  ui/               TypeScript + Vite (+ React) frontend; ui/src/theme/tokens.ts is the
+                     design-token source of truth (§7, ADR-0012) — no separate top-level
+                     themes/ directory exists, that was this doc's pre-implementation guess
   tools/            offline render CLI, other headless utilities
   tests/            Catch2 test suites (engine-focused)
-  themes/           design-token theme files (JSON/CSS custom properties)
+  tests-plugin/     Catch2 suite that links PluginProcessor directly (added M3) — the one
+                     deliberate exception to "tests/ only links engine" (CLAUDE.md rule 4)
   docs/
     ARCHITECTURE.md
     MILESTONES.md
+    NODE_EDITOR.md  node editor phase (M7+) design, added after M4 (§10 lists new ADRs too)
     decisions/      one ADR per significant choice, numbered
   CLAUDE.md         project rules for future sessions (written in M0)
   CMakeLists.txt    top-level, ties engine/plugin/tools/tests together
@@ -283,15 +287,24 @@ consumer never reads a half-written frame — no mutex here either.
 
 ### 6.3 Transport to the WebView
 
-Binary, not JSON, per the brief. The UI's rAF loop issues a `fetch()` to a custom scheme handled by
-`WebBrowserComponent`'s resource provider (e.g. `bazalt-tap://scope/main`); the C++ handler returns
-the latest published frame for that tap as `application/octet-stream`, and JS reads it directly via
+Binary, not JSON, per the brief. **As built (M4, ADR-0005 — this section originally described
+`bazalt-tap://scope/main` as an illustrative custom scheme; that's not literally how JUCE's
+mechanism works, corrected here):** the UI's rAF loop issues a `fetch()` against
+`WebBrowserComponent::getResourceProviderRoot() + "tap/<name>/<scope|spectrum|meter>"` — on Windows
+that root is `https://juce.backend/`, so e.g. `https://juce.backend/tap/main/scope`.
+`WebBrowserComponent`'s resource provider is **one callback per component, differentiated by URL
+path within a single virtual origin**, not a registered custom URL scheme. In Debug,
+`Options::withResourceProvider` is given `allowedOriginIn` set to the Vite dev server's origin so
+the page — actually loaded from `localhost:5173` for hot reload — can still `fetch()` the resource
+provider's separate origin cross-origin. The C++ handler returns the latest published frame for
+that tap as `application/octet-stream`, and JS reads it directly via
 `ArrayBuffer`/`DataView`/`Float32Array` — no serialization step on either side. This is pull-based
 from the UI, which is what keeps the guarantee bidirectional: the engine never blocks on the UI
 (it just publishes into a ring and moves on), and the UI never blocks on the engine (a fetch always
 returns immediately with whatever is latest, at the cost of *bounded staleness* rather than
-sample-accurate sync — acceptable for visualization, and the actual latency/throughput numbers get
-measured and written up in an ADR during M4, not assumed).
+sample-accurate sync — acceptable for visualization). Measured latency/throughput: ~1ms median
+round-trip, ~2560 fetches/sec sustained across 15 simultaneous taps (ADR-0005) — comfortably covers
+a 60fps UI polling every tap every frame.
 
 ### 6.4 Rendering
 
@@ -311,14 +324,20 @@ reading from a plain (non-React-state) store that the telemetry and parameter-br
 into. This is the concrete mechanism behind "high-rate rendering must run outside the framework's
 render cycle" — React never re-renders because a telemetry frame arrived.
 
-**Theming**: design tokens (CSS custom properties) loaded from theme files; components and
-canvas/WebGL renderers both read the same token set (the canvas code reads computed-style values or
-a parallel JS token object generated from the same source file, TBD in M5) so there is exactly one
-place a theme is defined.
+**Theming**: design tokens (**as built, M5, ADR-0012** — resolves this section's original "TBD in
+M5"): one `const tokens` object in `ui/src/theme/tokens.ts` is the single source of truth.
+`applyTokensToCss()` mirrors it onto `:root` as CSS custom properties once at startup for DOM/CSS
+consumers; canvas/WebGL rendering code imports and reads `tokens` directly as plain JS values rather
+than parsing computed styles — one definition, two consumers, no per-frame DOM read-back.
 
 **Dev/release asset loading**: debug builds point `WebBrowserComponent` at the Vite dev server
-(hot reload); release builds embed the built `ui/dist` assets via JUCE's binary-resource/embedded
-provider. This switch is a build-type check, not a runtime flag.
+(hot reload); release builds are *designed* to embed the built `ui/dist` assets via JUCE's
+binary-resource/embedded provider, switched on a build-type check, not a runtime flag. **Not yet
+built as of M6**: the release-build resource provider still serves a hardcoded placeholder HTML
+string (`plugin/source/PluginEditor.cpp`), not real `ui/dist` content — no milestone through M6 has
+actually scoped wiring this up (an earlier `CLAUDE.md` note claiming it was "tracked for M5" was
+inaccurate; corrected during M6's docs-reconciliation pass). Needed before a Release build is usable
+for anything beyond `pluginval`/Debug-only development.
 
 ---
 
@@ -361,13 +380,24 @@ provider. This switch is a build-type check, not a runtime flag.
 ## 10. Architecture decision records
 
 Short ADRs live in `docs/decisions/`, one per significant choice, written as the choice is made
-rather than retrofitted. Seeded now, before any code:
+rather than retrofitted. Seeded before any code, all now built and Accepted:
 
 - `0001-juce-version-and-license.md`
 - `0002-engine-juce-module-boundary.md`
 - `0003-graph-execution-plan-swap.md`
 - `0004-macro-parameter-host-automation.md`
 - `0005-telemetry-webview-transport.md`
+
+Added during M6's "every significant choice has an ADR" pass, for decisions made without one at the
+time:
+
+- `0011-graph-compiler-cycle-detection.md`
+- `0012-design-token-architecture.md`
+- `0013-parameter-ui-binding-via-juce-web-relays.md`
+
+`0006`–`0010` are reserved, not yet written — `docs/NODE_EDITOR.md` §11 names what each will cover
+(command bridge transport, node descriptor schema, graph rendering split, dynamic telemetry
+subscription, wire-feedback colours) and which M7–M9 milestone writes it.
 
 ---
 
@@ -400,13 +430,20 @@ rather than retrofitted. Seeded now, before any code:
 2. ~~macOS hardware/CI access~~ — **deferred for the MVP**; Windows x64 only through M6, macOS
    build/CI added in a later milestone once access exists.
 
-**Still open — proceeding with the stated defaults unless told otherwise:**
+**Resolved by use (M0–M6, no objection raised across six milestones — treating as settled rather
+than still-open; revisit only if a concrete reason comes up):**
 
-3. RealtimeSanitizer isn't exercised at all for MVP CI now that macOS CI is deferred (§8); the
-   debug allocation trap is the only automated RT-safety net until macOS CI exists. Flagging in
-   case that gap matters sooner than M6.
-4. Macro parameter pool size (proceeding with default: 32).
-5. Exact JUCE version pin (proceeding with: 9.0.2, latest stable as of this writing).
+4. ~~Macro parameter pool size~~ — **32**, built and shipped since M3 (`MacroParameters::numMacros`).
+5. ~~Exact JUCE version pin~~ — **9.0.2**, built and shipped since M0 (ADR-0001), including the M5
+   vendored `@juce-framework/webview` package pinned to match.
+
+**Still genuinely open, tracked for the macOS follow-on milestone (§8, §13.2):**
+
+3. RealtimeSanitizer isn't exercised at all for CI — macOS CI still doesn't exist as of M6 (see
+   `.github/workflows/ci.yml`'s explicit "RTSan intentionally not run" step, added in M6 alongside
+   `pluginval`). The debug allocation trap is the only automated RT-safety net until macOS CI
+   exists. Not a regression — this was always deferred alongside macOS CI itself, not an
+   independent gap that slipped.
 
 ---
 
@@ -416,3 +453,9 @@ Per the brief: no node-graph editor UI, no node library beyond the hardcoded pro
 browser, no CLAP/AU wrappers, no unison, no true polyphonic MPE input mode (the data model supports
 it; the input adapter doesn't expose a toggle yet). All of these are explicitly designed for, not
 designed against.
+
+**Still true as of M6**, with one update: the node-graph editor's design is no longer undecided —
+`docs/NODE_EDITOR.md` (written after M4, approved before M5) grounds it in the actual codebase and
+schedules it as milestones M7–M13, starting once M6 (this milestone) is done. Nothing in
+`NODE_EDITOR.md` has been implemented yet; this remains an accurate list of what the MVP shipped
+through M6 without it.

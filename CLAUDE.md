@@ -3,18 +3,15 @@
 Node-based modular synth, VST3 (JUCE + C++20) with a TypeScript/Vite/React
 WebView UI. Full design: `docs/ARCHITECTURE.md`. Node editor design (M7+):
 `docs/NODE_EDITOR.md`. Milestone plan: `docs/MILESTONES.md`. Decisions:
-`docs/decisions/`. Read `ARCHITECTURE.md` (and `NODE_EDITOR.md` once M5/M6
-are done) before touching anything cross-cutting — this file is the
-condensed day-to-day ruleset, not a replacement for either.
+`docs/decisions/`. Read `ARCHITECTURE.md` (and `NODE_EDITOR.md` once M6 is
+done) before touching anything cross-cutting — this file is the condensed
+day-to-day ruleset, not a replacement for either.
 
-Currently on **M6** (testing/tooling hardening) per `docs/MILESTONES.md`; M0
-(scaffolding), M1 (engine core/DSP infra), M2 (graph runtime), M3 (I/O
-buses, patch format, macros), M4 (telemetry pipeline), and M5 (UI canvas &
-analysis panel) are done and committed. Node editor planning (M7+,
-`docs/NODE_EDITOR.md`) is also done and approved, but implementation
-doesn't start until M6 is done — build M6 informed by that plan, not
-implementing it yet. Each milestone must build, pass its tests, and be
-committed before the next one starts.
+**M0–M6 (the full MVP per `docs/MILESTONES.md`) are done and committed.**
+M7+ (the node editor phase, planned and approved in `docs/NODE_EDITOR.md`)
+is next, starting with M7 (domain-aware graph model + command bridge).
+Each milestone must build, pass its tests, and be committed before the
+next one starts.
 
 ## The non-negotiable rules
 
@@ -91,8 +88,9 @@ cd ui && npm run build
 # hardcoded tone once NodeGraph/ExecutionPlan exist (M2/M3).
 ./build/tools/render-cli/RenderCli_artefacts/Debug/RenderCli.exe out.wav
 
-# Validate the VST3 (pluginval must be installed separately)
-pluginval --strictness-level 1 --validate ./build/plugin/BazaltPlugin_artefacts/Debug/VST3/Bazalt.vst3
+# Validate the VST3 (pluginval must be installed separately; CI runs this at
+# strictness-level 10, the max — .github/workflows/ci.yml, wired in M6)
+pluginval --strictness-level 10 --validate ./build/plugin/BazaltPlugin_artefacts/Debug/VST3/Bazalt.vst3
 
 # Plugin-level tests (PluginProcessor behavior: buses, MIDI-to-audio, patch
 # state, macro automation) — direct calls, no DAW needed
@@ -116,8 +114,11 @@ ctest --test-dir build -C Debug -R PluginTests --output-on-failure
 
 - The M0 plugin editor's release-build WebView serves a hard-coded
   placeholder HTML string via a resource provider, not the embedded
-  `ui/dist` binary-resource pipeline described in ARCHITECTURE.md §7. Wiring
-  real `ui/dist` embedding is tracked for M5.
+  `ui/dist` binary-resource pipeline described in ARCHITECTURE.md §7. Still
+  true as of M6 — no milestone through M6 has actually scoped wiring this
+  up (a previous version of this note claimed "tracked for M5"; that never
+  happened and the claim was wrong, corrected during M6's docs pass). Needed
+  before a Release build is usable for anything beyond Debug-only dev.
 - `COMPANY_NAME`/`PRODUCT_NAME` in `plugin/CMakeLists.txt` are placeholders
   pending real publisher info.
 - Note/Event data still doesn't route through node ports, even now that real
@@ -147,12 +148,6 @@ ctest --test-dir build -C Debug -R PluginTests --output-on-failure
 - The patch format (`engine/patch/PatchDocument.h`) has no `ui` (view state)
   section — there's no node-graph editor to have pan/zoom/layout state for
   yet. Add that field in the same change as the editor, not before.
-- `ui/src/App.tsx` is still the M0 placeholder plus an M4 measurement spike
-  (the "Run WebView transport benchmark" button and its `fetch()` harness,
-  used to produce the numbers in `docs/decisions/0005-telemetry-webview-
-  transport.md`). M5 replaces this file's contents wholesale with the real
-  canvas/analysis-panel UI — delete the benchmark code as part of that, don't
-  try to preserve or build on it.
 - M5's analysis panel runs 15 independent `requestAnimationFrame` loops (one
   per oscilloscope/spectrum/meter canvas in `ui/src/analysis/TelemetryScope.tsx`),
   not one shared/coordinated loop. Fine at M5's fixed count; NODE_EDITOR.md §9
