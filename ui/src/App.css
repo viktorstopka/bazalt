@@ -1,0 +1,20 @@
+#placeholder {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100vh;
+  text-align: center;
+  gap: 0.5rem;
+}
+
+#placeholder h1 {
+  margin: 0;
+  font-size: 2rem;
+  font-weight: 600;
+}
+
+#placeholder p {
+  margin: 0;
+  opacity: 0.6;
+}

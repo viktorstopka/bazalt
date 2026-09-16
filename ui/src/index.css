@@ -1,0 +1,12 @@
+/* Placeholder styling only — real design-token theme files land in M5
+   (ARCHITECTURE.md §7). */
+:root {
+  color-scheme: dark;
+  font-family: system-ui, 'Segoe UI', Roboto, sans-serif;
+}
+
+body {
+  margin: 0;
+  background: #14161a;
+  color: #e8e8ea;
+}

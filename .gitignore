@@ -1,0 +1,39 @@
+# Build outputs
+/build/
+/build-*/
+out/
+bin/
+CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
+*.vcxproj*
+*.sln
+*.ilk
+*.pdb
+*.exp
+*.obj
+
+# FetchContent-fetched dependencies (JUCE, Catch2)
+/_deps/
+**/_deps/
+
+# JUCE-generated
+JuceLibraryCode/
+*.jucer.bak
+
+# Node / Vite
+ui/node_modules/
+ui/dist/
+ui/.vite/
+npm-debug.log*
+
+# Editor/OS cruft
+.vs/
+.vscode/
+*.user
+.DS_Store
+Thumbs.db
+
+# Misc
+*.log
+.claude/

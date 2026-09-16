@@ -1,0 +1,44 @@
+name: CI (Windows x64)
+
+# macOS is deferred for the MVP (docs/ARCHITECTURE.md §13) — Windows x64 only
+# through M6. pluginval at a strict level and RTSan (where supported) are
+# wired in during M6, per docs/MILESTONES.md.
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+
+jobs:
+  build-and-test:
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Cache CMake FetchContent deps (JUCE, Catch2)
+        uses: actions/cache@v4
+        with:
+          path: build/_deps
+          key: ${{ runner.os }}-fetchcontent-${{ hashFiles('CMakeLists.txt') }}
+
+      - name: Configure
+        run: cmake -S . -B build -G "Visual Studio 17 2022" -A x64
+
+      - name: Build (Debug)
+        run: cmake --build build --config Debug --parallel
+
+      - name: Run engine test suite
+        run: ctest --test-dir build -C Debug --output-on-failure
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: ui/package-lock.json
+
+      - name: UI install + build
+        working-directory: ui
+        run: |
+          npm ci
+          npm run build
