@@ -19,6 +19,7 @@ target_sources(engine
         src/graph/ExecutionPlan.cpp
         src/graph/GraphCompiler.cpp
         src/patch/PatchSerializer.cpp
+        src/telemetry/AnalysisThread.cpp
     PUBLIC
         FILE_SET HEADERS
         BASE_DIRS include
@@ -51,6 +52,12 @@ target_sources(engine
             include/bazalt/engine/nodes/OnePoleFilterNode.h
             include/bazalt/engine/patch/PatchDocument.h
             include/bazalt/engine/patch/PatchSerializer.h
+            include/bazalt/engine/telemetry/Tap.h
+            include/bazalt/engine/telemetry/TelemetryFrame.h
+            include/bazalt/engine/telemetry/TelemetryFrameBuffer.h
+            include/bazalt/engine/telemetry/TelemetryHub.h
+            include/bazalt/engine/telemetry/MeterBallistics.h
+            include/bazalt/engine/telemetry/AnalysisThread.h
 )
 
 target_compile_features(engine PUBLIC cxx_std_20)

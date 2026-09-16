@@ -1,4 +1,5 @@
 #include "PluginEditor.h"
+#include "bazalt/engine/telemetry/TelemetryFrame.h"
 #include <optional>
 
 namespace bazalt
@@ -26,8 +27,50 @@ namespace bazalt
 </html>
 )html";
 
-        std::optional<juce::WebBrowserComponent::Resource> servePlaceholderPage (const juce::String& url)
+        std::optional<bazalt::engine::TelemetryFrameType> frameTypeFromPathSegment (const juce::String& segment)
         {
+            if (segment == "scope")
+                return bazalt::engine::TelemetryFrameType::Oscilloscope;
+            if (segment == "spectrum")
+                return bazalt::engine::TelemetryFrameType::Spectrum;
+            if (segment == "meter")
+                return bazalt::engine::TelemetryFrameType::Meter;
+            return std::nullopt;
+        }
+
+        // ARCHITECTURE.md §6.3: "bazalt-tap://scope/main" is the
+        // conceptual shape; JUCE's resource provider is one callback per
+        // WebBrowserComponent differentiated by PATH within a single
+        // virtual origin, not a literal custom URL scheme — so taps are
+        // served at /tap/<name>/<scope|spectrum|meter> instead.
+        std::optional<juce::WebBrowserComponent::Resource> serveTap (BazaltAudioProcessor& processor, const juce::String& url)
+        {
+            const auto remainder = url.fromFirstOccurrenceOf ("/tap/", false, false);
+            const auto tapName = remainder.upToFirstOccurrenceOf ("/", false, false);
+            const auto frameTypeSegment = remainder.fromFirstOccurrenceOf ("/", false, false);
+
+            const auto frameType = frameTypeFromPathSegment (frameTypeSegment);
+            if (tapName.isEmpty() || ! frameType.has_value())
+                return std::nullopt;
+
+            auto* buffer = processor.getTelemetryHub().getFrameBuffer (tapName, *frameType);
+            if (buffer == nullptr)
+                return std::nullopt;
+
+            // Sized to comfortably exceed the largest frame AnalysisThread
+            // ever publishes (the 2048-point spectrum: 1024 floats + header).
+            std::vector<std::byte> data (16384);
+            const auto numBytes = buffer->readLatest (data.data(), data.size());
+            data.resize (numBytes);
+
+            return juce::WebBrowserComponent::Resource { std::move (data), juce::String ("application/octet-stream") };
+        }
+
+        std::optional<juce::WebBrowserComponent::Resource> serveResource (BazaltAudioProcessor& processor, const juce::String& url)
+        {
+            if (url.startsWith ("/tap/"))
+                return serveTap (processor, url);
+
             if (url == "/" || url == "/index.html")
             {
                 const auto* begin = reinterpret_cast<const std::byte*> (placeholderHtml);
@@ -41,7 +84,7 @@ namespace bazalt
         }
     }
 
-    juce::WebBrowserComponent::Options BazaltAudioProcessorEditor::makeWebViewOptions()
+    juce::WebBrowserComponent::Options BazaltAudioProcessorEditor::makeWebViewOptions (BazaltAudioProcessor& processor)
     {
         using Options = juce::WebBrowserComponent::Options;
 
@@ -54,8 +97,12 @@ namespace bazalt
                                         .getChildFile ("WebView2")))
                             .withNativeIntegrationEnabled();
 
-       #if ! JUCE_DEBUG
-        options = options.withResourceProvider (servePlaceholderPage);
+        auto provider = [&processor] (const juce::String& url) { return serveResource (processor, url); };
+
+       #if JUCE_DEBUG
+        options = options.withResourceProvider (provider, juce::URL (BAZALT_UI_DEV_SERVER_URL).getOrigin());
+       #else
+        options = options.withResourceProvider (provider);
        #endif
 
         return options;
@@ -64,7 +111,7 @@ namespace bazalt
     BazaltAudioProcessorEditor::BazaltAudioProcessorEditor (BazaltAudioProcessor& p)
         : juce::AudioProcessorEditor (&p),
           processorRef (p),
-          webView (makeWebViewOptions())
+          webView (makeWebViewOptions (p))
     {
         addAndMakeVisible (webView);
         setResizable (true, true);

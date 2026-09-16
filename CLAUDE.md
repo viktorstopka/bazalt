@@ -6,10 +6,11 @@ WebView UI. Full design: `docs/ARCHITECTURE.md`. Milestone plan:
 before touching anything cross-cutting — this file is the condensed
 day-to-day ruleset, not a replacement for it.
 
-Currently on **M4** (telemetry pipeline) per `docs/MILESTONES.md`; M0
-(scaffolding), M1 (engine core/DSP infra), M2 (graph runtime), and M3 (I/O
-buses, patch format, macros) are done and committed. Each milestone must
-build, pass its tests, and be committed before the next one starts.
+Currently on **M5** (UI canvas & analysis panel) per `docs/MILESTONES.md`; M0
+(scaffolding), M1 (engine core/DSP infra), M2 (graph runtime), M3 (I/O
+buses, patch format, macros), and M4 (telemetry pipeline) are done and
+committed. Each milestone must build, pass its tests, and be committed
+before the next one starts.
 
 ## The non-negotiable rules
 
@@ -142,3 +143,17 @@ ctest --test-dir build -C Debug -R PluginTests --output-on-failure
 - The patch format (`engine/patch/PatchDocument.h`) has no `ui` (view state)
   section — there's no node-graph editor to have pan/zoom/layout state for
   yet. Add that field in the same change as the editor, not before.
+- `ui/src/App.tsx` is still the M0 placeholder plus an M4 measurement spike
+  (the "Run WebView transport benchmark" button and its `fetch()` harness,
+  used to produce the numbers in `docs/decisions/0005-telemetry-webview-
+  transport.md`). M5 replaces this file's contents wholesale with the real
+  canvas/analysis-panel UI — delete the benchmark code as part of that, don't
+  try to preserve or build on it.
+- `BazaltAudioProcessor` has an explicit (non-defaulted) destructor that
+  calls `analysisThread.stopThread (2000)` unconditionally, in addition to
+  `releaseResources()` doing the same. This isn't redundant: hosts are
+  expected to call `releaseResources()` before destroying a processor, but
+  that isn't guaranteed (crashed hosts, test code), and `juce::Thread`'s own
+  destructor falls back to an indefinite `stopThread(-1)` if the thread is
+  still running — a real bug this session hit as a flaky `tests-plugin` test
+  failure. Keep both call sites if you touch this code.

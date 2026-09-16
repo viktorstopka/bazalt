@@ -6,6 +6,8 @@
 #include "bazalt/engine/graph/NodeFactory.h"
 #include "bazalt/engine/patch/PatchDocument.h"
 #include "bazalt/engine/NanGuard.h"
+#include "bazalt/engine/telemetry/TelemetryHub.h"
+#include "bazalt/engine/telemetry/AnalysisThread.h"
 #include "MacroParameters.h"
 #include <array>
 #include <atomic>
@@ -36,7 +38,7 @@ namespace bazalt
         static constexpr int numAuxBuses = 4;
 
         BazaltAudioProcessor();
-        ~BazaltAudioProcessor() override = default;
+        ~BazaltAudioProcessor() override;
 
         void prepareToPlay (double sampleRate, int samplesPerBlock) override;
         void releaseResources() override;
@@ -70,6 +72,11 @@ namespace bazalt
         bool loadStateFromJson (const juce::String& json);
         float getAuxPeakLevel (int auxIndex) const noexcept;
 
+        /** The editor's WebView resource provider reads published frames
+            through this — ARCHITECTURE.md §6.3's pull-based transport.
+        */
+        bazalt::engine::TelemetryHub& getTelemetryHub() noexcept { return telemetryHub; }
+
     private:
         static BusesProperties makeBusLayout();
 
@@ -86,6 +93,14 @@ namespace bazalt
         bazalt::engine::NanGuard outputGuard;
 
         std::array<std::atomic<float>, (size_t) numAuxBuses> auxPeakLevels {};
+
+        // ARCHITECTURE.md §6: taps wired to main output + the 4 sidechain
+        // inputs. telemetryHub must be declared before analysisThread —
+        // AnalysisThread's default member initializer binds a reference to
+        // it, and member initialization follows declaration order.
+        bazalt::engine::TelemetryHub telemetryHub;
+        bazalt::engine::AnalysisThread analysisThread { telemetryHub };
+        std::array<bazalt::engine::Tap*, (size_t) (1 + numAuxBuses)> tapPointers {}; // [0]=main, [1..4]=aux1..4 — cached once in prepareToPlay so processBlock never does a map lookup
 
         double currentSampleRate = 44100.0;
         int currentBlockSize = 512;

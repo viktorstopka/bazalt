@@ -1,0 +1,79 @@
+#pragma once
+
+#include <cstddef>
+#include <cstdint>
+#include <cstring>
+#include <vector>
+
+namespace bazalt::engine
+{
+    /** ARCHITECTURE.md §6.2: a small header plus a raw float32 payload,
+        binary (not JSON) end to end. Every field is fixed-size and
+        little-endian on every platform this project targets (x64), so the
+        header can be reinterpreted directly by JS via DataView without a
+        parsing step on either side.
+    */
+    enum class TelemetryFrameType : uint32_t
+    {
+        Oscilloscope = 0,
+        Spectrum = 1,
+        Meter = 2
+    };
+
+    struct TelemetryFrameHeader
+    {
+        uint32_t tapId = 0;
+        TelemetryFrameType frameType = TelemetryFrameType::Oscilloscope;
+        float sampleRate = 0.0f;
+        uint64_t sequenceNumber = 0;
+        uint32_t payloadNumFloats = 0;
+    };
+
+    /** Packs header + payload into a contiguous byte buffer (header first,
+        raw float32 payload immediately after, no padding). Writes into
+        `out`, which the caller owns and preallocates — this runs on the
+        analysis thread, not the audio thread, so allocating here is fine,
+        but callers on a hot path should still reuse `out` across calls
+        rather than constructing a fresh vector every time.
+    */
+    inline void serializeTelemetryFrame (const TelemetryFrameHeader& header,
+                                         const float* payload,
+                                         uint32_t payloadNumFloats,
+                                         std::vector<std::byte>& out)
+    {
+        TelemetryFrameHeader headerToWrite = header;
+        headerToWrite.payloadNumFloats = payloadNumFloats;
+
+        const auto totalBytes = sizeof (TelemetryFrameHeader) + (size_t) payloadNumFloats * sizeof (float);
+        out.resize (totalBytes);
+
+        std::memcpy (out.data(), &headerToWrite, sizeof (TelemetryFrameHeader));
+
+        if (payloadNumFloats > 0)
+            std::memcpy (out.data() + sizeof (TelemetryFrameHeader), payload, (size_t) payloadNumFloats * sizeof (float));
+    }
+
+    /** Returns false (and leaves headerOut/payloadOut untouched) if `data`
+        is too short to contain a valid header + declared payload — this is
+        the one thing that must be checked before reinterpreting, since
+        `data` may come from an untrusted or torn read.
+    */
+    inline bool parseTelemetryFrame (const std::byte* data, size_t dataSize,
+                                     TelemetryFrameHeader& headerOut,
+                                     const float*& payloadOut)
+    {
+        if (dataSize < sizeof (TelemetryFrameHeader))
+            return false;
+
+        TelemetryFrameHeader header;
+        std::memcpy (&header, data, sizeof (TelemetryFrameHeader));
+
+        const auto expectedSize = sizeof (TelemetryFrameHeader) + (size_t) header.payloadNumFloats * sizeof (float);
+        if (dataSize < expectedSize)
+            return false;
+
+        headerOut = header;
+        payloadOut = reinterpret_cast<const float*> (data + sizeof (TelemetryFrameHeader));
+        return true;
+    }
+}

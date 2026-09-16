@@ -40,6 +40,18 @@ namespace bazalt
         setDefaultMacroMappings();
     }
 
+    // Hosts are expected to call releaseResources() before destroying a
+    // processor, which already stops analysisThread with a bounded timeout.
+    // But that contract isn't guaranteed (crashed hosts, test harnesses that
+    // skip it), and juce::Thread::~Thread() falls back to an indefinite
+    // stopThread(-1) if the thread is still running at that point. Stopping
+    // it explicitly here — before telemetryHub starts tearing down — makes
+    // shutdown bounded and correct regardless of what the caller did.
+    BazaltAudioProcessor::~BazaltAudioProcessor()
+    {
+        analysisThread.stopThread (2000);
+    }
+
     void BazaltAudioProcessor::setDefaultMacroMappings()
     {
         // Macro 1 -> oscillator shape, 2 -> filter cutoff, 3 -> filter
@@ -80,10 +92,26 @@ namespace bazalt
 
         voiceManager.prepare (numVoices);
         macroParameters.prepare (sampleRate);
+
+        // Always stop before re-preparing: prepareToPlay can be called
+        // again (e.g. sample rate change) while the thread is running, and
+        // touching its scratch buffers/sampleRate from the message thread
+        // while it's mid-run() would be a data race.
+        analysisThread.stopThread (2000);
+
+        telemetryHub.prepare ({ "main", "aux1", "aux2", "aux3", "aux4" }, 8192, 16384);
+
+        tapPointers[0] = telemetryHub.getTap ("main");
+        for (int i = 0; i < numAuxBuses; ++i)
+            tapPointers[(size_t) (i + 1)] = telemetryHub.getTap ("aux" + juce::String (i + 1));
+
+        analysisThread.prepare (sampleRate);
+        analysisThread.startThread();
     }
 
     void BazaltAudioProcessor::releaseResources()
     {
+        analysisThread.stopThread (2000);
         voicePlans.clear();
     }
 
@@ -192,6 +220,9 @@ namespace bazalt
                     for (int i = 0; i < numSamples; ++i)
                         dst[i] += src[i] * sidechainPassthroughGain;
                 }
+
+                if (auto* tap = tapPointers[(size_t) (auxIndex + 1)])
+                    tap->push (auxBuffer.getReadPointer (0), numSamples);
             }
 
             auxPeakLevels[(size_t) auxIndex].store (peak, std::memory_order_relaxed);
@@ -228,6 +259,9 @@ namespace bazalt
             renderVoiceRange (buffer, previousSample, buffer.getNumSamples() - previousSample);
 
         updateAuxLevelsAndPassthrough (buffer, buffer.getNumSamples());
+
+        if (auto* mainTap = tapPointers[0])
+            mainTap->push (buffer.getReadPointer (0), buffer.getNumSamples());
 
         outputGuard.process (buffer);
     }
