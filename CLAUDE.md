@@ -6,9 +6,9 @@ WebView UI. Full design: `docs/ARCHITECTURE.md`. Milestone plan:
 before touching anything cross-cutting — this file is the condensed
 day-to-day ruleset, not a replacement for it.
 
-Currently on **M0** (repo scaffolding) per `docs/MILESTONES.md`. Each
-milestone must build, pass its tests, and be committed before the next one
-starts.
+Currently on **M2** (graph runtime) per `docs/MILESTONES.md`; M0 (scaffolding)
+and M1 (engine core/DSP infra) are done and committed. Each milestone must
+build, pass its tests, and be committed before the next one starts.
 
 ## The non-negotiable rules
 
@@ -21,9 +21,15 @@ starts.
 
 2. **The audio thread never allocates, locks, logs, throws, blocks, or
    deletes an `ExecutionPlan`.** Preallocate everything in `prepare()`. This
-   is enforced by a debug-build allocation trap (§5/§8 of ARCHITECTURE.md),
-   not just convention — if it fires, that's a real bug, not a false
-   positive to silence.
+   is enforced by a debug-build allocation trap
+   (`bazalt::engine::ScopedAudioThreadAllocationTrap`, see
+   `engine/include/bazalt/engine/RtAllocationTrap.h`), not just convention —
+   if it fires, that's a real bug, not a false positive to silence. Caveat:
+   if the offending allocation happens inside a `noexcept` function (e.g.
+   `std::vector<T>`'s default constructor under MSVC's debug STL, which
+   allocates a small iterator-debug proxy), the trap's exception can't
+   propagate and the process terminates instead of throwing catchably —
+   still a loud failure, just not one to build a try/catch test around.
 
 3. **Node type IDs, parameter IDs, and port IDs are hand-assigned strings**
    (e.g. `"osc.basic"`, `"filter.svf.cutoff"`), never array indices or enum
@@ -70,10 +76,15 @@ cd ui && npm run dev
 
 # UI production build (plugin release builds serve this — see plugin/CMakeLists.txt)
 cd ui && npm run build
-```
 
-`tools/render-cli` (patch + MIDI → WAV, headless) lands in M1 — it will be
-the primary way to *listen to* an engine change without opening a DAW.
+# Render a fixed tone to WAV, headless — the primary way to *listen to* an
+# engine change without opening a DAW. Real patch+MIDI input replaces the
+# hardcoded tone once NodeGraph/ExecutionPlan exist (M2/M3).
+./build/tools/render-cli/RenderCli_artefacts/Debug/RenderCli.exe out.wav
+
+# Validate the VST3 (pluginval must be installed separately)
+pluginval --strictness-level 1 --validate ./build/plugin/BazaltPlugin_artefacts/Debug/VST3/Bazalt.vst3
+```
 
 ## Naming / structure conventions
 
