@@ -37,6 +37,11 @@ namespace bazalt
         std::vector<float> getCurrentValues() const;
         void setValuesForLoadedPatch (const std::vector<float>& values);
 
+        /** For binding a macro to a UI control (M5: WebSliderRelay). Index
+            is 0-based (macro 1 is index 0), matching MacroMapping::macroIndex.
+        */
+        juce::AudioParameterFloat& getParameter (int index) const noexcept { return *parameters[(size_t) index]; }
+
         /** Advances each macro's smoother by numSamples and applies the
             result to every mapped target across every plan given. Call
             once per processBlock, before rendering any voice. Takes a raw

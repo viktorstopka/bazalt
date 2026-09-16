@@ -77,6 +77,12 @@ namespace bazalt
         */
         bazalt::engine::TelemetryHub& getTelemetryHub() noexcept { return telemetryHub; }
 
+        /** M5: lets the editor bind a macro to a WebSliderRelay without
+            reaching into MacroParameters' storage directly. Index is
+            0-based (macro 1 is index 0).
+        */
+        juce::AudioParameterFloat& getMacroParameter (int macroIndex) noexcept { return macroParameters.getParameter (macroIndex); }
+
     private:
         static BusesProperties makeBusLayout();
 

@@ -84,7 +84,11 @@ namespace bazalt
         }
     }
 
-    juce::WebBrowserComponent::Options BazaltAudioProcessorEditor::makeWebViewOptions (BazaltAudioProcessor& processor)
+    juce::WebBrowserComponent::Options BazaltAudioProcessorEditor::makeWebViewOptions (BazaltAudioProcessor& processor,
+                                                                                       juce::WebSliderRelay& oscShapeRelay,
+                                                                                       juce::WebSliderRelay& filterCutoffRelay,
+                                                                                       juce::WebSliderRelay& filterResonanceRelay,
+                                                                                       juce::WebSliderRelay& envReleaseRelay)
     {
         using Options = juce::WebBrowserComponent::Options;
 
@@ -95,7 +99,11 @@ namespace bazalt
                                     juce::File::getSpecialLocation (juce::File::tempDirectory)
                                         .getChildFile ("Bazalt")
                                         .getChildFile ("WebView2")))
-                            .withNativeIntegrationEnabled();
+                            .withNativeIntegrationEnabled()
+                            .withOptionsFrom (oscShapeRelay)
+                            .withOptionsFrom (filterCutoffRelay)
+                            .withOptionsFrom (filterResonanceRelay)
+                            .withOptionsFrom (envReleaseRelay);
 
         auto provider = [&processor] (const juce::String& url) { return serveResource (processor, url); };
 
@@ -111,7 +119,11 @@ namespace bazalt
     BazaltAudioProcessorEditor::BazaltAudioProcessorEditor (BazaltAudioProcessor& p)
         : juce::AudioProcessorEditor (&p),
           processorRef (p),
-          webView (makeWebViewOptions (p))
+          webView (makeWebViewOptions (p, oscShapeRelay, filterCutoffRelay, filterResonanceRelay, envReleaseRelay)),
+          oscShapeAttachment (p.getMacroParameter (0), oscShapeRelay),
+          filterCutoffAttachment (p.getMacroParameter (1), filterCutoffRelay),
+          filterResonanceAttachment (p.getMacroParameter (2), filterResonanceRelay),
+          envReleaseAttachment (p.getMacroParameter (3), envReleaseRelay)
     {
         addAndMakeVisible (webView);
         setResizable (true, true);

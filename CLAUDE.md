@@ -1,16 +1,20 @@
 # Bazalt — project rules
 
 Node-based modular synth, VST3 (JUCE + C++20) with a TypeScript/Vite/React
-WebView UI. Full design: `docs/ARCHITECTURE.md`. Milestone plan:
-`docs/MILESTONES.md`. Decisions: `docs/decisions/`. Read `ARCHITECTURE.md`
-before touching anything cross-cutting — this file is the condensed
-day-to-day ruleset, not a replacement for it.
+WebView UI. Full design: `docs/ARCHITECTURE.md`. Node editor design (M7+):
+`docs/NODE_EDITOR.md`. Milestone plan: `docs/MILESTONES.md`. Decisions:
+`docs/decisions/`. Read `ARCHITECTURE.md` (and `NODE_EDITOR.md` once M5/M6
+are done) before touching anything cross-cutting — this file is the
+condensed day-to-day ruleset, not a replacement for either.
 
-Currently on **M5** (UI canvas & analysis panel) per `docs/MILESTONES.md`; M0
+Currently on **M6** (testing/tooling hardening) per `docs/MILESTONES.md`; M0
 (scaffolding), M1 (engine core/DSP infra), M2 (graph runtime), M3 (I/O
-buses, patch format, macros), and M4 (telemetry pipeline) are done and
-committed. Each milestone must build, pass its tests, and be committed
-before the next one starts.
+buses, patch format, macros), M4 (telemetry pipeline), and M5 (UI canvas &
+analysis panel) are done and committed. Node editor planning (M7+,
+`docs/NODE_EDITOR.md`) is also done and approved, but implementation
+doesn't start until M6 is done — build M6 informed by that plan, not
+implementing it yet. Each milestone must build, pass its tests, and be
+committed before the next one starts.
 
 ## The non-negotiable rules
 
@@ -149,6 +153,36 @@ ctest --test-dir build -C Debug -R PluginTests --output-on-failure
   transport.md`). M5 replaces this file's contents wholesale with the real
   canvas/analysis-panel UI — delete the benchmark code as part of that, don't
   try to preserve or build on it.
+- M5's analysis panel runs 15 independent `requestAnimationFrame` loops (one
+  per oscilloscope/spectrum/meter canvas in `ui/src/analysis/TelemetryScope.tsx`),
+  not one shared/coordinated loop. Fine at M5's fixed count; NODE_EDITOR.md §9
+  and M11 already call out that the real node editor's many more dynamic
+  previews need a single shared loop instead — don't copy this pattern there.
+- The M5 canvas (`ui/src/canvas/InfiniteCanvas.tsx`) and analysis panel both
+  render via Canvas2D, not WebGL, deliberately — this is what
+  `bazalt_node_editor_prompt_v3.md` §3 means by "build on the M5 canvas
+  rather than replacing it unless the benchmark justifies it." The WebGL/DOM
+  split proposed in NODE_EDITOR.md §10 is unconfirmed until M8 actually
+  benchmarks it; don't assume WebGL is needed before that milestone does.
+- M5's `InfiniteCanvas` only implements pan/zoom/grid/a snap-settings toggle
+  — box-select and fit-view are real interactions but belong to the node
+  editor phase (blueprint §6.1, `docs/MILESTONES.md` M10), where there are
+  actually nodes to select/fit around. The snap-to-grid checkbox exists and
+  is wired to state, but nothing reads `sizeWorldUnits` yet for the same
+  reason.
+- `ui/src/theme/tokens.ts` is the single source of truth for every colour/
+  font/spacing/stroke value (resolves ARCHITECTURE.md §7's "TBD in M5" note
+  on how DOM and canvas share one theme definition): `applyTokensToCss()`
+  mirrors it onto `:root` as CSS custom properties once at startup
+  (`main.tsx`) for DOM/CSS consumers; canvas/WebGL code imports and reads
+  `tokens` directly rather than parsing computed CSS values. Add new tokens
+  here, not as hardcoded values in components or canvas draw code.
+- `ui/vendor/juce-webview/` is a vendored copy of `@juce-framework/webview`
+  (JUCE's own `WebSliderRelay`/`getSliderState` JS interop), copied from the
+  exact JUCE 9.0.2 source tree rather than installed from the public npm
+  registry, so the JS-side protocol can never drift from the pinned C++ side
+  — see `ui/vendor/juce-webview/README-BAZALT.md`. Re-sync it (don't
+  hand-edit `lib/`) only if the JUCE version pin in ADR-0001 ever changes.
 - `BazaltAudioProcessor` has an explicit (non-defaulted) destructor that
   calls `analysisThread.stopThread (2000)` unconditionally, in addition to
   `releaseResources()` doing the same. This isn't redundant: hosts are

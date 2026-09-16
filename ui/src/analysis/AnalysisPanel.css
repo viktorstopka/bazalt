@@ -1,0 +1,43 @@
+.analysis-panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+  padding: var(--space-sm);
+  background: var(--color-panel);
+  border-top: var(--stroke-thin) solid var(--color-panelBorder);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--color-textSecondary);
+}
+
+.analysis-panel-row {
+  display: grid;
+  grid-template-columns: 48px repeat(3, 1fr);
+  align-items: center;
+  gap: var(--space-xs);
+}
+
+.analysis-panel-row-label {
+  color: var(--color-textPrimary);
+}
+
+.telemetry-scope {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.telemetry-scope-label {
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  opacity: 0.6;
+}
+
+.telemetry-scope canvas {
+  width: 100%;
+  height: 48px;
+  border: var(--stroke-thin) solid var(--color-panelBorder);
+  border-radius: var(--radius-sm);
+  display: block;
+}

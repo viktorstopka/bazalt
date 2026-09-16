@@ -1,0 +1,15 @@
+{
+  "name": "@juce-framework/webview",
+  "version": "1.0.0",
+  "description": "TypeScript bindings for frontends running in JUCE's WebView component. Vendored from the exact JUCE 9.0.2 source tree Bazalt is pinned to (ADR-0001) so the JS-side interop protocol can never drift from the C++ side we actually link — see README-BAZALT.md.",
+  "license": "AGPL-3.0-only OR LicenseRef-JUCE",
+  "type": "module",
+  "main": "./lib/index.js",
+  "types": "./lib/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./lib/index.d.ts",
+      "import": "./lib/index.js"
+    }
+  }
+}

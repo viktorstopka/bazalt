@@ -1,20 +1,40 @@
-#placeholder {
+#app-root {
   display: flex;
   flex-direction: column;
-  align-items: center;
-  justify-content: center;
   height: 100vh;
-  text-align: center;
-  gap: 0.5rem;
 }
 
-#placeholder h1 {
-  margin: 0;
-  font-size: 2rem;
+#app-root > .infinite-canvas {
+  flex: 1;
+  min-height: 0;
+}
+
+.top-bar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-lg);
+  padding: var(--space-sm) var(--space-md);
+  background: var(--color-panel);
+  border-bottom: var(--stroke-thin) solid var(--color-panelBorder);
+  font-family: var(--font-mono);
+  color: var(--color-textPrimary);
+}
+
+.top-bar-title {
   font-weight: 600;
+  opacity: 0.8;
 }
 
-#placeholder p {
-  margin: 0;
-  opacity: 0.6;
+.top-bar-macros {
+  display: flex;
+  gap: var(--space-md);
+  flex: 1;
+}
+
+.top-bar-snap {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  color: var(--color-textSecondary);
 }

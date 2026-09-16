@@ -25,10 +25,36 @@ namespace bazalt
         void resized() override;
 
     private:
-        static juce::WebBrowserComponent::Options makeWebViewOptions (BazaltAudioProcessor& processor);
+        static juce::WebBrowserComponent::Options makeWebViewOptions (BazaltAudioProcessor& processor,
+                                                                       juce::WebSliderRelay& oscShapeRelay,
+                                                                       juce::WebSliderRelay& filterCutoffRelay,
+                                                                       juce::WebSliderRelay& filterResonanceRelay,
+                                                                       juce::WebSliderRelay& envReleaseRelay);
 
         BazaltAudioProcessor& processorRef;
+
+        // M5: the 4 macros ARCHITECTURE.md §4.3/M3 already maps to the
+        // hardcoded voice graph (osc shape, filter cutoff/resonance, env
+        // release) exposed as real host-automatable controls, via JUCE's
+        // built-in Web*Relay/Web*ParameterAttachment mechanism rather than
+        // the M7+ command bridge (NODE_EDITOR.md §6) — that bridge is for
+        // graph-editing commands; a plain parameter round-trip already has
+        // a first-party JUCE mechanism and doesn't need a custom one.
+        // Relays must outlive webView (constructed first, referenced by
+        // makeWebViewOptions' withOptionsFrom chain); attachments must be
+        // constructed after webView so their initial update has a live
+        // browser to reach — declaration order below is deliberate.
+        juce::WebSliderRelay oscShapeRelay { "oscShape" };
+        juce::WebSliderRelay filterCutoffRelay { "filterCutoff" };
+        juce::WebSliderRelay filterResonanceRelay { "filterResonance" };
+        juce::WebSliderRelay envReleaseRelay { "envRelease" };
+
         juce::WebBrowserComponent webView;
+
+        juce::WebSliderParameterAttachment oscShapeAttachment;
+        juce::WebSliderParameterAttachment filterCutoffAttachment;
+        juce::WebSliderParameterAttachment filterResonanceAttachment;
+        juce::WebSliderParameterAttachment envReleaseAttachment;
 
         JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (BazaltAudioProcessorEditor)
     };

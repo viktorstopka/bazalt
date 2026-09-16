@@ -1,12 +1,18 @@
-/* Placeholder styling only — real design-token theme files land in M5
-   (ARCHITECTURE.md §7). */
+/* Design tokens (ui/src/theme/tokens.ts) are injected onto :root as CSS
+   custom properties at startup (main.tsx) — components reference var(--...)
+   rather than hardcoding colours/fonts/spacing (CLAUDE.md naming rule). */
 :root {
   color-scheme: dark;
-  font-family: system-ui, 'Segoe UI', Roboto, sans-serif;
 }
 
 body {
   margin: 0;
-  background: #14161a;
-  color: #e8e8ea;
+  background: var(--color-background);
+  color: var(--color-textPrimary);
+  font-family: var(--font-mono);
+  overflow: hidden;
+}
+
+#root {
+  height: 100vh;
 }
