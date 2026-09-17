@@ -15,7 +15,7 @@
 // defined" for the node editor specifically.
 export const tokens = {
   color: {
-    background: '#0b0a09',
+    background: '#171414',
     panel: '#1b1e24',
     panelBorder: '#2c2f37',
     textPrimary: '#e8e8ea',
