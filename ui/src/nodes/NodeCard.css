@@ -1,28 +1,31 @@
 .node-card {
   display: inline-flex;
   flex-direction: column;
-  min-width: 168px;
+  min-width: 190px;
   background: var(--color-nodeFill);
   border: var(--stroke-thin) solid var(--color-nodeBorder);
-  border-radius: var(--radius-sm);
+  border-radius: 0;
   font-family: var(--font-mono);
-  font-size: 12px;
+  font-size: 13px;
   color: var(--color-textPrimary);
   user-select: none;
 }
 
+/* Border is solid opaque white by default (design reference,
+   docs/Slice 1 (1).png) — hover/selected/listening/error differentiate via
+   box-shadow/colour rather than opacity, since default is already fully
+   opaque. */
 .node-card-hovered {
-  border-color: var(--color-nodeBorderHover);
+  box-shadow: 0 0 0 1px var(--color-nodeBorderHover);
 }
 
 .node-card-selected {
-  border-color: var(--color-nodeBorderSelected);
-  box-shadow: 0 0 0 1px var(--color-nodeBorderSelected);
+  box-shadow: 0 0 0 2px var(--color-nodeBorderSelected);
 }
 
 .node-card-listening {
   border-color: var(--color-nodeListening);
-  box-shadow: 0 0 8px 0 var(--color-nodeListening);
+  box-shadow: 0 0 10px 0 var(--color-nodeListening);
 }
 
 .node-card-bypassed {
@@ -41,12 +44,12 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: var(--space-xs) var(--space-sm);
+  padding: var(--space-sm) var(--space-sm);
   gap: var(--space-xs);
 }
 
 .node-title {
-  font-weight: 600;
+  font-weight: 500;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -55,7 +58,7 @@
 .node-title-icons {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
   flex-shrink: 0;
 }
 
@@ -63,19 +66,19 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 14px;
-  height: 14px;
+  width: 20px;
+  height: 20px;
   border-radius: 50%;
   background: var(--color-error);
   color: var(--color-textPrimary);
-  font-size: 10px;
+  font-size: 13px;
   line-height: 1;
   cursor: default;
 }
 
 .node-bypass-icon {
-  width: 12px;
-  height: 12px;
+  width: 18px;
+  height: 18px;
   border-radius: 50%;
   border: 1px solid var(--color-textSecondary);
   position: relative;
@@ -88,7 +91,7 @@
   left: 50%;
   top: -1px;
   width: 1px;
-  height: 14px;
+  height: 20px;
   background: var(--color-textSecondary);
   transform: translateX(-50%) rotate(45deg);
 }
@@ -102,38 +105,29 @@
   background: var(--color-error);
 }
 
-.node-info-icon {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 14px;
-  height: 14px;
-  border-radius: 50%;
-  border: 1px solid var(--color-textSecondary);
-  color: var(--color-textSecondary);
-  font-size: 10px;
-  font-style: italic;
-  line-height: 1;
-}
-
+.node-info-icon,
 .node-assist-icon {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 14px;
-  height: 14px;
+  width: 18px;
+  height: 18px;
   border-radius: 50%;
   border: 1px solid var(--color-textSecondary);
   color: var(--color-textSecondary);
-  font-size: 10px;
+  font-size: 13px;
   line-height: 1;
+}
+
+.node-info-icon {
+  font-style: italic;
 }
 
 .node-row {
   display: flex;
   align-items: center;
-  padding: 3px var(--space-sm);
-  gap: 6px;
+  padding: 5px var(--space-md);
+  gap: 8px;
   white-space: nowrap;
 }
 
@@ -149,11 +143,38 @@
   justify-content: space-between;
 }
 
+/* Ports (and parameters, below) "pierce" the node's own border: the glyph
+   is absolutely positioned so its centre sits exactly on the 1px border
+   line, painted with the node's own fill colour behind it, so it reads as
+   a notch cut into the outline rather than an icon floating inside it
+   (docs/Slice 1 (1).png's "→ By" row). This only works because the row
+   itself has `position: relative` and zero border of its own — an
+   absolutely positioned child's `left/right: 0` lands on the row's padding
+   edge, which (since node-card has no padding) is exactly the card's inner
+   border edge. */
+.node-row-port,
+.node-row-parameter {
+  position: relative;
+}
+
 .node-port-glyph {
-  font-size: 12px;
+  position: absolute;
+  top: 50%;
+  font-size: 24px;
   line-height: 1;
-  width: 10px;
-  text-align: center;
+  background: var(--color-nodeFill);
+  padding: 0 4px;
+  z-index: 1;
+}
+
+.node-port-glyph-left {
+  left: 0;
+  transform: translate(-50%, -50%);
+}
+
+.node-port-glyph-right {
+  right: 0;
+  transform: translate(50%, -50%);
 }
 
 .node-port-label {
@@ -167,44 +188,63 @@
 
 .node-row-parameter {
   justify-content: space-between;
-  color: var(--color-textSecondary);
 }
 
 .node-parameter-label {
   color: var(--color-textSecondary);
 }
 
+/* Smaller than a full port glyph (parameters aren't cable-connectable
+   ports) but still notches the border, per the reference's "Treshold" row. */
+.node-parameter-tick {
+  position: absolute;
+  left: 0;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  width: 10px;
+  height: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1;
+}
+
+.node-parameter-tick > span {
+  width: 3px;
+  height: 10px;
+}
+
 .node-value-pill {
   background: var(--color-panel);
   border: var(--stroke-thin) solid var(--color-panelBorder);
-  border-radius: var(--radius-sm);
-  padding: 1px 8px;
+  border-radius: 999px;
+  padding: 2px 10px;
   color: var(--color-textPrimary);
 }
 
 .node-divider {
   height: var(--stroke-thin);
   background: var(--color-nodeDivider);
-  margin: 2px 0;
+  margin: 3px 0;
 }
 
 /* Horizontal layout variant (blueprint §4: "wide variant with inputs left,
    a large live preview centre, output value indicator next to the output") */
 .node-card-horizontal {
-  min-width: 260px;
+  min-width: 280px;
 }
 
 .node-horizontal-body {
   display: flex;
   align-items: center;
   gap: var(--space-sm);
-  padding: var(--space-xs) var(--space-sm) var(--space-sm);
+  padding: var(--space-xs) var(--space-md) var(--space-sm);
 }
 
 .node-horizontal-column {
   display: flex;
   flex-direction: column;
-  min-width: 70px;
+  min-width: 76px;
 }
 
 .node-horizontal-column-output {
@@ -216,20 +256,21 @@
   height: 32px;
   min-width: 70px;
   background: var(--color-panel);
-  border-radius: var(--radius-sm);
 }
 
-/* Singleton layout variant: title only, typed cable stub each side */
+/* Singleton layout variant: title only, typed cable stub each side,
+   piercing its own border the same way a standard node's port rows do. */
 .node-singleton-body {
+  position: relative;
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  padding: 6px 10px;
+  gap: 8px;
+  padding: 8px 20px;
   background: var(--color-nodeFill);
   border: var(--stroke-thin) solid var(--color-nodeBorder);
-  border-radius: var(--radius-sm);
+  border-radius: 0;
   font-family: var(--font-mono);
-  font-size: 12px;
+  font-size: 13px;
   color: var(--color-textPrimary);
   white-space: nowrap;
 }
@@ -248,22 +289,22 @@
   min-width: 220px;
   min-height: 160px;
   background: var(--color-frameFill);
-  border: var(--stroke-thin) solid var(--color-frameBorder);
-  border-radius: var(--radius-md);
+  border: none;
+  border-radius: 0;
 }
 
 .node-frame-label {
   position: absolute;
-  top: -20px;
+  top: -22px;
   left: 0;
   font-family: var(--font-mono);
-  font-size: 12px;
+  font-size: 13px;
   color: var(--color-textPrimary);
 }
 
 .node-header-label {
   font-family: var(--font-mono);
-  font-size: 15px;
+  font-size: 16px;
   color: var(--color-textPrimary);
 }
 
@@ -274,8 +315,7 @@
   width: 140px;
   height: 100px;
   border: 1px dashed var(--color-nodeBorder);
-  border-radius: var(--radius-sm);
   color: var(--color-textSecondary);
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: 12px;
 }

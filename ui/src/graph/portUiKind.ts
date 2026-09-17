@@ -49,3 +49,15 @@ export const PORT_UI_STYLE: Record<PortUiKind, PortUiStyle> = {
 export function portUiStyle(port: Pick<PortDescriptor, 'type' | 'unit' | 'minValue' | 'maxValue' | 'isInteger'>): PortUiStyle {
   return PORT_UI_STYLE[classifyPortUiKind(port)]
 }
+
+/** Parameters (ParameterDescriptor) aren't graph-connectable ports and
+    carry no SignalType (CLAUDE.md's interim-simplifications note), but the
+    design reference (docs/Slice 1 (1).png) still colours them by the same
+    Modulation/Value split §5 uses for ports: a ratio-like quantity (no
+    unit, or a "%" unit) renders Modulation-orange; a real-world unit (Hz,
+    ms, s, st, ...) renders Value-white. Best-effort — there's no min/max-
+    derived signal here the way there is for ports, just the unit string.
+*/
+export function parameterUiColor(unit: string): string {
+  return unit === '' || unit === '%' ? tokens.color.portModulation : tokens.color.portValue
+}

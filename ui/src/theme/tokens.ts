@@ -45,18 +45,23 @@ export const tokens = {
 
     // Node-body surface (M9 component gallery; NODE_EDITOR.md §10 — DOM
     // node bodies until the hybrid WebGL-background sync is proven in M10,
-    // see ADR-0008's amended consequences).
+    // see ADR-0008's amended consequences). Border is solid opaque white,
+    // sharp corners (no radius) — corrected from the initial M9 build
+    // after direct feedback against `docs/Slice 1 (1).png`, a closer crop
+    // of the design reference than `Frame 1 Bazalt.png` alone made clear.
     nodeFill: '#08090a',
-    nodeBorder: 'rgba(255, 255, 255, 0.18)',
-    nodeBorderSelected: '#e8e8ea',
-    nodeBorderHover: 'rgba(255, 255, 255, 0.4)',
-    nodeDivider: 'rgba(255, 255, 255, 0.12)',
+    nodeBorder: '#ffffff',
+    nodeBorderHover: '#ffffff',
+    nodeBorderSelected: '#ffffff',
+    nodeDivider: 'rgba(255, 255, 255, 0.4)',
     nodeListening: '#7fd9e0',
     frameFill: 'rgba(120, 45, 45, 0.22)',
-    frameBorder: 'rgba(255, 255, 255, 0.1)',
   },
   font: {
-    mono: "'JetBrains Mono', 'Cascadia Mono', Consolas, monospace",
+    // Design reference's specified face (loaded via Google Fonts in
+    // index.html); falls back to the M5 choice if the web font hasn't
+    // loaded yet or is unavailable.
+    mono: "'Iosevka Charon', 'JetBrains Mono', 'Cascadia Mono', Consolas, monospace",
   },
   space: {
     xs: '4px',

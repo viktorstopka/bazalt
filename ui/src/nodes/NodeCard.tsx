@@ -9,7 +9,7 @@
 // amendment).
 import { useMemo } from 'react'
 import type { NodeDescriptor, PortDescriptor } from '../graph/descriptorTypes'
-import { portUiStyle } from '../graph/portUiKind'
+import { portUiStyle, parameterUiColor } from '../graph/portUiKind'
 import { tokens } from '../theme/tokens'
 import './NodeCard.css'
 
@@ -126,13 +126,23 @@ function formatParameterValue(value: number): string {
     setParameterValue, not graph-connectable ports as of M9 — see
     CLAUDE.md's interim-simplifications note. They render as a plain inline
     value pill, never a type glyph, matching the reference's "By 34ms" /
-    "Rate 3.000 Hz" rows.
+    "Rate 3.000 Hz" rows. Still gets a small tick mark straddling the
+    node's left border (docs/Slice 1 (1).png's "Treshold" row) — smaller
+    and plainer than a full port glyph, since it isn't a cable-connectable
+    port, but the row is still part of the node's edge-notch visual
+    language.
 */
 function ParameterRow({ id, displayName, defaultValue, unit }: { id: string; displayName: string; defaultValue: number; unit: string }) {
+  const color = parameterUiColor(unit)
   return (
     <div className="node-row node-row-parameter" key={id}>
-      <span className="node-parameter-label">{displayName}</span>
-      <span className="node-value-pill">
+      <span className="node-parameter-tick" style={{ background: tokens.color.nodeFill }}>
+        <span style={{ background: color }} />
+      </span>
+      <span className="node-parameter-label" style={{ color }}>
+        {displayName}
+      </span>
+      <span className="node-value-pill" style={{ borderColor: color, color }}>
         {formatParameterValue(defaultValue)}
         {unit}
       </span>
@@ -239,6 +249,7 @@ function SingletonBody({ descriptor }: { descriptor: NodeDescriptor }) {
     </div>
   )
 }
+
 
 function DecorationBody({ descriptor }: { descriptor: NodeDescriptor }) {
   if (descriptor.typeId === 'util.reroute') return <div className="node-knob" title="Reroute" />
