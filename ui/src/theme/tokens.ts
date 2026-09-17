@@ -54,7 +54,7 @@ export const tokens = {
     // swaps (accent for selected, nodeListening for listening) or, for
     // hover, a header-only background tint using `accent`/white directly
     // rather than a dedicated token.
-    nodeFill: '#08090a',
+    nodeFill: '#171414',
     nodeBorder: '#ffffff',
     nodeDivider: 'rgba(255, 255, 255, 0.4)',
     nodeListening: '#7fd9e0',
