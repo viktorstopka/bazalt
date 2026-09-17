@@ -224,6 +224,35 @@ TEST_CASE ("Concurrent graph edits never produce a torn read within a single pro
     CHECK (blocksProcessed.load() > 0);
 }
 
+TEST_CASE ("applyBatch rolls back every mutation in the batch if the resulting graph doesn't compile",
+           "[plugin][GraphEditController][NODE_EDITOR]")
+{
+    BazaltAudioProcessor processor;
+    processor.prepareToPlay (44100.0, 512);
+
+    auto& controller = processor.getGraphEditController();
+    const auto nodesBefore = controller.getGraph().getNodes().size();
+    const auto connectionsBefore = controller.getGraph().getConnections().size();
+
+    const auto result = controller.applyBatch ([] (bazalt::engine::NodeGraph& graph)
+    {
+        graph.addNode ({ "extra1", "util.constant", {}, {}, {} });
+        graph.addNode ({ "extra2", "util.constant", {}, {}, {} });
+        // Bad connection — "no-such-port" doesn't exist on util.constant —
+        // makes the whole batch's recompile fail.
+        graph.addConnection ({ "extra1", "out", "extra2", "no-such-port" });
+    });
+
+    CHECK_FALSE (result.success);
+    CHECK (result.errorMessage.isNotEmpty());
+
+    // Neither extra1 nor extra2 should have survived the rollback.
+    CHECK (controller.getGraph().getNodes().size() == nodesBefore);
+    CHECK (controller.getGraph().getConnections().size() == connectionsBefore);
+    CHECK (controller.getGraph().findNode ("extra1") == nullptr);
+    CHECK (controller.getGraph().findNode ("extra2") == nullptr);
+}
+
 TEST_CASE ("A live-edited graph round-trips exactly through getStateAsJson/loadStateFromJson",
            "[plugin][GraphEditController][patch][NODE_EDITOR]")
 {

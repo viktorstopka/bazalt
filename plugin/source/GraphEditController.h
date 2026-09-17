@@ -1,6 +1,7 @@
 #pragma once
 
 #include "bazalt/engine/graph/NodeGraph.h"
+#include <functional>
 #include <juce_core/juce_core.h>
 
 namespace bazalt
@@ -51,11 +52,42 @@ namespace bazalt
                                    const juce::String& toNodeId, const juce::String& toPortId);
         CommandResult setParameterValue (const juce::String& nodeId, const juce::String& parameterId, float value);
 
+        /** Designates which node's output port is the graph's audible
+            output (NodeGraph::setOutput) — M8 addition: M7's own command
+            list (addNode/deleteNode/connect/disconnect/setParameterValue)
+            didn't include this, which is fine for editing *around* the
+            existing default graph's output but not for a command sequence
+            that needs to establish its own from scratch (M8's stress-test
+            generator is exactly that case). Same rollback-on-failure
+            contract as every other command.
+        */
+        CommandResult setOutput (const juce::String& nodeId, const juce::String& portId);
+
         /** Replaces the whole graph in one step (patch load) — rolled back
             to the previous graph, same as any other command, if the new
             one doesn't compile.
         */
         CommandResult setGraph (bazalt::engine::NodeGraph newGraph);
+
+        /** Applies several raw NodeGraph mutations (addNode/addConnection/
+            removeNode/removeConnection/setOutput, called directly on the
+            graph reference `mutate` receives) as ONE command: one
+            recompile+publish at the end, one rollback if it fails — not
+            8*N recompiles for N individual addNode/connect calls.
+
+            This is the "composite operations... are one undo step"
+            mechanism NODE_EDITOR.md §6 asks for (splice insert, Unwrap,
+            recipe insertion, Alt-drag Mix/Add/Multiply — none built yet,
+            but this is what they'll use) — added in M8 because the
+            stress-test generator needed it for real: building a 500-node
+            graph via 750 individual one-recompile-each commands measured
+            in the tens of seconds (8 voice recompiles x a graph that grows
+            across ~750 sequential calls informs why — see ADR-0009).
+            `mutate` does no validation of its own; a malformed result is
+            caught the same way any other command's bad edit is, at the
+            recompile, and rolled back in full.
+        */
+        CommandResult applyBatch (const std::function<void (bazalt::engine::NodeGraph&)>& mutate);
 
         const bazalt::engine::NodeGraph& getGraph() const noexcept { return graph; }
         bool getHasGlobalDomain() const noexcept { return hasGlobalDomain; }

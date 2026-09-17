@@ -29,6 +29,7 @@ target_sources(PluginTests
         BusLayoutTests.cpp
         GraphEditControllerTests.cpp
         PatchStateTests.cpp
+        StressGraphTests.cpp
         VoiceRenderTests.cpp
 )
 

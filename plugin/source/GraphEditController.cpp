@@ -125,10 +125,38 @@ namespace bazalt
         return result;
     }
 
+    GraphEditController::CommandResult GraphEditController::setOutput (const juce::String& nodeId, const juce::String& portId)
+    {
+        if (graph.findNode (nodeId) == nullptr)
+            return { false, "No such node: " + nodeId };
+
+        const auto previousGraph = graph;
+        graph.setOutput (nodeId, portId);
+
+        auto result = recompileAndPublish();
+        if (! result.success)
+            graph = previousGraph;
+
+        return result;
+    }
+
     GraphEditController::CommandResult GraphEditController::setGraph (bazalt::engine::NodeGraph newGraph)
     {
         const auto previousGraph = graph;
         graph = std::move (newGraph);
+
+        auto result = recompileAndPublish();
+        if (! result.success)
+            graph = previousGraph;
+
+        return result;
+    }
+
+    GraphEditController::CommandResult GraphEditController::applyBatch (
+        const std::function<void (bazalt::engine::NodeGraph&)>& mutate)
+    {
+        const auto previousGraph = graph;
+        mutate (graph);
 
         auto result = recompileAndPublish();
         if (! result.success)

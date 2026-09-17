@@ -105,11 +105,17 @@ namespace bazalt
         // while it's mid-run() would be a data race.
         analysisThread.stopThread (2000);
 
-        telemetryHub.prepare ({ "main", "aux1", "aux2", "aux3", "aux4" }, 8192, 16384);
+        telemetryHub.prepare (8192, 16384);
 
-        tapPointers[0] = telemetryHub.getTap ("main");
+        // The 5 baseline taps (main output + 4 sidechains) are permanently
+        // subscribed for the plugin's lifetime — never unsubscribed, so
+        // they can never lose their slot to LRU eviction as long as
+        // nothing else subscribes more than (maxTaps - 5) additional taps
+        // at once. M8's dynamic pool (TelemetryHub.h) is additive to this,
+        // not a replacement for it.
+        tapPointers[0] = telemetryHub.subscribeTap ("main");
         for (int i = 0; i < numAuxBuses; ++i)
-            tapPointers[(size_t) (i + 1)] = telemetryHub.getTap ("aux" + juce::String (i + 1));
+            tapPointers[(size_t) (i + 1)] = telemetryHub.subscribeTap ("aux" + juce::String (i + 1));
 
         analysisThread.prepare (sampleRate);
         analysisThread.startThread();

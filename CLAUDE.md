@@ -7,11 +7,12 @@ WebView UI. Full design: `docs/ARCHITECTURE.md`. Node editor design (M7+):
 touching anything cross-cutting — this file is the condensed day-to-day
 ruleset, not a replacement for either.
 
-**M0–M7 are done and committed** (M0–M6 = the MVP; M7 = domain-aware graph
-model + command bridge, the first node-editor-phase milestone from
-`docs/NODE_EDITOR.md`). M8 (dynamic telemetry + rendering-split benchmark)
-is next. Each milestone must build, pass its tests, and be committed
-before the next one starts.
+**M0–M8 are done and committed** (M0–M6 = the MVP; M7 = domain-aware graph
+model + command bridge; M8 = dynamic telemetry + rendering-split
+benchmark — both node-editor-phase milestones from `docs/NODE_EDITOR.md`).
+M9 (descriptor schema end-to-end + component gallery) is next. Each
+milestone must build, pass its tests, and be committed before the next
+one starts.
 
 ## The non-negotiable rules
 
@@ -208,6 +209,31 @@ ctest --test-dir build -C Debug -R PluginTests --output-on-failure
   edit rates; revisit if/when a composite command's 4 separate recompiles
   ever prove too slow or too visible as intermediate (invalid-looking)
   states.
+- `GraphEditController::applyBatch()` (M8) exists because the stress-test
+  generator needed it for real: building a 500-node graph via 750
+  individual one-recompile-each commands measured in the tens of seconds;
+  batched into one recompile, ~0.2s. Use it for any future bulk/procedural
+  graph construction, and remember it's also the mechanism composite UI
+  gestures (splice insert, Unwrap, Alt-drag Mix/Add/Multiply,
+  NODE_EDITOR.md §6) should use once they're built — don't reach for N
+  individual `addNode`/`connect` commands for something that's conceptually
+  one user gesture.
+- `TelemetryHub`'s tap pool is a **fixed 64 slots** (M8,
+  `TelemetryHub::maxTaps`), not a growing map — `subscribeTap`/
+  `unsubscribeTap` LRU-evict once full. Nothing generic pushes into a
+  dynamically-subscribed tap yet: only the 5 M4 baseline taps (audio
+  thread) and M8's synthetic `"demo."`-prefixed stress-test taps
+  (`AnalysisThread` generates their content itself, ADR-0009) have real
+  pushers. Wiring real per-node/per-connection signals is M11's job, not
+  done yet — don't assume subscribing a tap for an arbitrary graph node id
+  produces real data today.
+- `ui/src/canvas/StressTestCanvas.tsx`, `stressGraph.ts`, and
+  `ui/src/canvas/webgl/` are M8's rendering-split benchmark spike (ADR-0008)
+  — dev-only scaffolding reachable via App.tsx's "Run stress test (M8)"
+  button, drawing a synthetic (not real-engine) 500-node/1000-cable layout.
+  Same fate as the M4 `ui/src/App.tsx` benchmark spike: delete wholesale
+  once M9/M10's real node editor exists, don't try to preserve or build on
+  it.
 - `BazaltAudioProcessor` has an explicit (non-defaulted) destructor that
   calls `analysisThread.stopThread (2000)` unconditionally, in addition to
   `releaseResources()` doing the same. This isn't redundant: hosts are

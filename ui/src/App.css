@@ -1,12 +1,39 @@
 #app-root {
+  position: relative;
   display: flex;
   flex-direction: column;
   height: 100vh;
 }
 
-#app-root > .infinite-canvas {
+#app-root > .infinite-canvas,
+#app-root > .stress-test-canvas {
   flex: 1;
   min-height: 0;
+}
+
+.top-bar-stress-test {
+  background: var(--color-panel);
+  color: var(--color-textPrimary);
+  border: var(--stroke-thin) solid var(--color-panelBorder);
+  border-radius: var(--radius-sm);
+  padding: 6px 12px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.stress-test-stats {
+  position: absolute;
+  top: var(--space-sm);
+  left: var(--space-sm);
+  background: var(--color-panel);
+  color: var(--color-textPrimary);
+  border: var(--stroke-thin) solid var(--color-panelBorder);
+  border-radius: var(--radius-sm);
+  padding: 6px 12px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  z-index: 10;
 }
 
 .top-bar {

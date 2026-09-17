@@ -399,9 +399,11 @@ Node editor phase (`docs/NODE_EDITOR.md` §11), written as each milestone actual
 it documents:
 
 - `0006-command-bridge-transport.md` (M7)
+- `0008-graph-rendering-split.md` (M8)
+- `0009-dynamic-telemetry-subscription.md` (M8)
 
-`0007`–`0010` are still reserved, not yet written (node descriptor schema, graph rendering split,
-dynamic telemetry subscription, wire-feedback colours — M8–M9).
+`0007` and `0010` are still reserved, not yet written (node descriptor schema — M9; wire-feedback
+colours — M10).
 
 ---
 

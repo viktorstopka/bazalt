@@ -22,13 +22,13 @@ TEST_CASE ("AnalysisThread never forces a concurrently-running simulated audio t
     constexpr int blockSize = 512;
 
     TelemetryHub hub;
-    hub.prepare ({ "main" }, 8192, 16384);
+    hub.prepare (8192, 16384);
 
     AnalysisThread analysis (hub);
     analysis.prepare (sampleRate);
     analysis.startThread();
 
-    auto* tap = hub.getTap ("main");
+    auto* tap = hub.subscribeTap ("main");
     REQUIRE (tap != nullptr);
 
     std::atomic<bool> allocationTrapViolation { false };
@@ -63,17 +63,51 @@ TEST_CASE ("AnalysisThread never forces a concurrently-running simulated audio t
     CHECK (blocksProcessed > 0);
 }
 
-TEST_CASE ("AnalysisThread publishes all three frame types for every tap", "[engine][telemetry][AnalysisThread]")
+TEST_CASE ("A \"demo.\"-prefixed tap gets synthetic telemetry with no external pusher at all",
+           "[engine][telemetry][AnalysisThread][NODE_EDITOR]")
 {
+    // M8's UI-only rendering stress test subscribes many synthetic
+    // per-cable taps (StressTestCanvas.tsx) that have nothing on the
+    // audio-thread side pushing real data — TelemetryHub.h's subscribeTap()
+    // note. Proves AnalysisThread really does generate their content
+    // itself, end to end through the same publish path real taps use.
     TelemetryHub hub;
-    hub.prepare ({ "main", "aux1" }, 8192, 16384);
+    hub.prepare (2048, 4096);
+
+    hub.subscribeTap ("demo.cable42"); // never pushed to by anything else in this test
 
     AnalysisThread analysis (hub);
     analysis.prepare (44100.0);
     analysis.startThread();
 
-    auto* mainTap = hub.getTap ("main");
-    auto* auxTap = hub.getTap ("aux1");
+    juce::Thread::sleep (60);
+    analysis.stopThread (2000);
+
+    auto* buffer = hub.getFrameBuffer ("demo.cable42", TelemetryFrameType::Meter);
+    REQUIRE (buffer != nullptr);
+
+    std::vector<std::byte> dest (4096);
+    const auto numBytes = buffer->readLatest (dest.data(), dest.size());
+    REQUIRE (numBytes > 0);
+
+    TelemetryFrameHeader header;
+    const float* payload = nullptr;
+    REQUIRE (parseTelemetryFrame (dest.data(), numBytes, header, payload));
+    REQUIRE (header.payloadNumFloats >= 1);
+    CHECK (std::isfinite (payload[0]));
+}
+
+TEST_CASE ("AnalysisThread publishes all three frame types for every tap", "[engine][telemetry][AnalysisThread]")
+{
+    TelemetryHub hub;
+    hub.prepare (8192, 16384);
+
+    AnalysisThread analysis (hub);
+    analysis.prepare (44100.0);
+    analysis.startThread();
+
+    auto* mainTap = hub.subscribeTap ("main");
+    auto* auxTap = hub.subscribeTap ("aux1");
     REQUIRE (mainTap != nullptr);
     REQUIRE (auxTap != nullptr);
 

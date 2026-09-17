@@ -151,6 +151,30 @@ namespace bazalt
             completion (commandResultToVar (result));
         });
 
+        options = options.withNativeFunction ("graphSetOutput", [&processor] (Args args, Completion completion)
+        {
+            auto& controller = processor.getGraphEditController();
+            const auto result = controller.setOutput (argString (args, 0), argString (args, 1));
+            completion (commandResultToVar (result));
+        });
+
+        // M8 (NODE_EDITOR.md §9): dynamic, viewport-driven tap subscription
+        // — not a graph-editing command (no recompile involved), so these
+        // don't go through GraphEditController. Always "succeeds" from the
+        // caller's perspective (TelemetryHub::subscribeTap always returns a
+        // tap, LRU-evicting if the pool is full); there's nothing to reject.
+        options = options.withNativeFunction ("telemetrySubscribeTap", [&processor] (Args args, Completion completion)
+        {
+            processor.getTelemetryHub().subscribeTap (argString (args, 0));
+            completion (true);
+        });
+
+        options = options.withNativeFunction ("telemetryUnsubscribeTap", [&processor] (Args args, Completion completion)
+        {
+            processor.getTelemetryHub().unsubscribeTap (argString (args, 0));
+            completion (true);
+        });
+
         return options;
     }
 
