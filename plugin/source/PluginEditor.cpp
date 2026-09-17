@@ -82,6 +82,76 @@ namespace bazalt
 
             return std::nullopt;
         }
+
+        juce::var commandResultToVar (const GraphEditController::CommandResult& result)
+        {
+            auto* obj = new juce::DynamicObject();
+            obj->setProperty ("success", result.success);
+            obj->setProperty ("errorMessage", result.errorMessage);
+            return juce::var (obj);
+        }
+
+        // args[i].toString() covers every command parameter's JS type
+        // (string ids, and numbers — var::toString() formats a double
+        // without scientific notation for the ranges these commands use).
+        // Numeric args go through (float) var directly instead, since
+        // toString()+parse would lose no precision but reads oddly.
+        juce::String argString (const juce::Array<juce::var>& args, int index)
+        {
+            return index < args.size() ? args[index].toString() : juce::String();
+        }
+
+        float argFloat (const juce::Array<juce::var>& args, int index)
+        {
+            return index < args.size() ? (float) args[index] : 0.0f;
+        }
+    }
+
+    juce::WebBrowserComponent::Options BazaltAudioProcessorEditor::withGraphCommands (
+        juce::WebBrowserComponent::Options options, BazaltAudioProcessor& processor)
+    {
+        using Args = const juce::Array<juce::var>&;
+        using Completion = juce::WebBrowserComponent::NativeFunctionCompletion;
+
+        options = options.withNativeFunction ("graphAddNode", [&processor] (Args args, Completion completion)
+        {
+            auto& controller = processor.getGraphEditController();
+            const auto result = controller.addNode (argString (args, 0), argString (args, 1),
+                                                      argFloat (args, 2), argFloat (args, 3));
+            completion (commandResultToVar (result));
+        });
+
+        options = options.withNativeFunction ("graphDeleteNode", [&processor] (Args args, Completion completion)
+        {
+            auto& controller = processor.getGraphEditController();
+            const auto result = controller.deleteNode (argString (args, 0));
+            completion (commandResultToVar (result));
+        });
+
+        options = options.withNativeFunction ("graphConnect", [&processor] (Args args, Completion completion)
+        {
+            auto& controller = processor.getGraphEditController();
+            const auto result = controller.connect (argString (args, 0), argString (args, 1),
+                                                      argString (args, 2), argString (args, 3));
+            completion (commandResultToVar (result));
+        });
+
+        options = options.withNativeFunction ("graphDisconnect", [&processor] (Args args, Completion completion)
+        {
+            auto& controller = processor.getGraphEditController();
+            const auto result = controller.disconnect (argString (args, 0), argString (args, 1),
+                                                         argString (args, 2), argString (args, 3));
+            completion (commandResultToVar (result));
+        });
+
+        options = options.withNativeFunction ("graphSetParameterValue", [&processor] (Args args, Completion completion)
+        {
+            auto& controller = processor.getGraphEditController();
+            const auto result = controller.setParameterValue (argString (args, 0), argString (args, 1), argFloat (args, 2));
+            completion (commandResultToVar (result));
+        });
+
+        return options;
     }
 
     juce::WebBrowserComponent::Options BazaltAudioProcessorEditor::makeWebViewOptions (BazaltAudioProcessor& processor,
@@ -104,6 +174,8 @@ namespace bazalt
                             .withOptionsFrom (filterCutoffRelay)
                             .withOptionsFrom (filterResonanceRelay)
                             .withOptionsFrom (envReleaseRelay);
+
+        options = withGraphCommands (std::move (options), processor);
 
         auto provider = [&processor] (const juce::String& url) { return serveResource (processor, url); };
 

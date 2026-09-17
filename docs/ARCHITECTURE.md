@@ -395,9 +395,13 @@ time:
 - `0012-design-token-architecture.md`
 - `0013-parameter-ui-binding-via-juce-web-relays.md`
 
-`0006`–`0010` are reserved, not yet written — `docs/NODE_EDITOR.md` §11 names what each will cover
-(command bridge transport, node descriptor schema, graph rendering split, dynamic telemetry
-subscription, wire-feedback colours) and which M7–M9 milestone writes it.
+Node editor phase (`docs/NODE_EDITOR.md` §11), written as each milestone actually builds the thing
+it documents:
+
+- `0006-command-bridge-transport.md` (M7)
+
+`0007`–`0010` are still reserved, not yet written (node descriptor schema, graph rendering split,
+dynamic telemetry subscription, wire-feedback colours — M8–M9).
 
 ---
 

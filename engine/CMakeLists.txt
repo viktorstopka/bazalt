@@ -16,6 +16,7 @@ target_sources(engine
         src/NanGuard.cpp
         src/PolyBlepOscillator.cpp
         src/RtAllocationTrap.cpp
+        src/graph/DomainSplitter.cpp
         src/graph/ExecutionPlan.cpp
         src/graph/GraphCompiler.cpp
         src/patch/PatchSerializer.cpp
@@ -37,6 +38,8 @@ target_sources(engine
             include/bazalt/engine/graph/Node.h
             include/bazalt/engine/graph/NodeGraph.h
             include/bazalt/engine/graph/NodeFactory.h
+            include/bazalt/engine/graph/NodeDescriptor.h
+            include/bazalt/engine/graph/DomainSplitter.h
             include/bazalt/engine/graph/ExecutionPlan.h
             include/bazalt/engine/graph/GraphCompiler.h
             include/bazalt/engine/graph/PlanSwapper.h
@@ -50,6 +53,14 @@ target_sources(engine
             include/bazalt/engine/nodes/MixNode.h
             include/bazalt/engine/nodes/DelayNode.h
             include/bazalt/engine/nodes/OnePoleFilterNode.h
+            include/bazalt/engine/nodes/ConstantNode.h
+            include/bazalt/engine/nodes/RerouteNode.h
+            include/bazalt/engine/nodes/MapNode.h
+            include/bazalt/engine/nodes/AddNode.h
+            include/bazalt/engine/nodes/MultiplyNode.h
+            include/bazalt/engine/nodes/ListenNode.h
+            include/bazalt/engine/nodes/OutputNode.h
+            include/bazalt/engine/nodes/VoiceSumNode.h
             include/bazalt/engine/patch/PatchDocument.h
             include/bazalt/engine/patch/PatchSerializer.h
             include/bazalt/engine/telemetry/Tap.h

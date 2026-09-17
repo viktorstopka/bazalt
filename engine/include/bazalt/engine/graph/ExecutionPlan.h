@@ -78,6 +78,18 @@ namespace bazalt::engine
 
         std::vector<std::unique_ptr<Node>> nodes;   // owns node instances, indexed by slot
         std::unordered_map<juce::String, int> nodeIdToSlot; // stable NodeGraph id -> slot, for driver lookups (noteOn/setFrequency/etc — never used on the audio thread)
+
+        // Empty for an ordinary plan. Set once, by whoever compiles this
+        // plan, before it's ever published (PlanSwapper) — never mutated
+        // after, so reading it from the audio thread via a published
+        // pointer is exactly as safe as reading anything else on this
+        // otherwise-immutable object. Generic on purpose (not
+        // "voiceSumNodeId"): any future node type that needs a per-block
+        // value supplied from outside its own graph (VoiceSumNode.h is the
+        // first; NODE_EDITOR.md doesn't rule out others) can reuse this
+        // same field rather than each inventing its own thread-safe
+        // driver-to-audio-thread handoff.
+        juce::String externalInputNodeId;
         std::vector<AlignedBuffer> blockBuffers;    // one per block-rate node-output port
         std::vector<float> regionScalars;           // one per per-sample-region-internal node-output port
         std::vector<Step> steps;                    // schedule, in execution order

@@ -31,6 +31,16 @@ namespace bazalt
                                                                        juce::WebSliderRelay& filterResonanceRelay,
                                                                        juce::WebSliderRelay& envReleaseRelay);
 
+        // M7 command bridge (NODE_EDITOR.md §6): registers addNode/
+        // deleteNode/connect/disconnect/setParameterValue as native
+        // functions the WebView can call via getNativeFunction(name) —
+        // see GraphEditController for what each one actually does. No UI
+        // calls these yet (M7's own scope: driven by a test harness, not
+        // real UI); this just completes the transport so M10's real UI has
+        // something to call into.
+        static juce::WebBrowserComponent::Options withGraphCommands (juce::WebBrowserComponent::Options options,
+                                                                      BazaltAudioProcessor& processor);
+
         BazaltAudioProcessor& processorRef;
 
         // M5: the 4 macros ARCHITECTURE.md §4.3/M3 already maps to the

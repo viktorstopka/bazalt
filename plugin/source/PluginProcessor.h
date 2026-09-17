@@ -1,7 +1,9 @@
 #pragma once
 
 #include <juce_audio_processors/juce_audio_processors.h>
+#include <juce_events/juce_events.h>
 #include "bazalt/engine/graph/ExecutionPlan.h"
+#include "bazalt/engine/graph/PlanSwapper.h"
 #include "bazalt/engine/graph/VoiceManager.h"
 #include "bazalt/engine/graph/NodeFactory.h"
 #include "bazalt/engine/patch/PatchDocument.h"
@@ -9,6 +11,7 @@
 #include "bazalt/engine/telemetry/TelemetryHub.h"
 #include "bazalt/engine/telemetry/AnalysisThread.h"
 #include "MacroParameters.h"
+#include "GraphEditController.h"
 #include <array>
 #include <atomic>
 #include <memory>
@@ -31,7 +34,8 @@ namespace bazalt
         oversight — full Note-port signal routing is a bigger change that
         only earns its cost once a live graph editor needs it.
     */
-    class BazaltAudioProcessor final : public juce::AudioProcessor
+    class BazaltAudioProcessor final : public juce::AudioProcessor,
+                                        private juce::Timer
     {
     public:
         static constexpr int numVoices = 8;
@@ -83,20 +87,71 @@ namespace bazalt
         */
         juce::AudioParameterFloat& getMacroParameter (int macroIndex) noexcept { return macroParameters.getParameter (macroIndex); }
 
+        /** M7: the command bridge (GraphEditController, PluginEditor's
+            withNativeFunction wiring) mutates the live graph through this.
+            Message-thread only.
+        */
+        GraphEditController& getGraphEditController() noexcept { return graphEditController; }
+
+        // The handful of accessors GraphEditController needs to compile
+        // and publish plans without reaching into private members
+        // directly — message-thread only, same as everything else on this
+        // interface (GraphCompiler::compile allocates; never audio-thread).
+        bazalt::engine::NodeFactory& getNodeFactory() noexcept { return nodeFactory; }
+        bazalt::engine::PlanSwapper& getVoicePlanSwapper (int voiceIndex) noexcept { return voicePlanSwappers[(size_t) voiceIndex]; }
+        bazalt::engine::PlanSwapper& getGlobalPlanSwapper() noexcept { return globalPlanSwapper; }
+        void setHasGlobalDomain (bool hasIt) noexcept { hasGlobalDomain.store (hasIt, std::memory_order_release); }
+
     private:
         static BusesProperties makeBusLayout();
 
-        void handleMidiEvent (const juce::MidiMessage& message);
-        void renderVoiceRange (juce::AudioBuffer<float>& output, int startSample, int numSamples) noexcept;
+        using VoicePlanPtrs = std::array<bazalt::engine::ExecutionPlan*, numVoices>;
+
+        void handleMidiEvent (const juce::MidiMessage& message, const VoicePlanPtrs& voicePlans);
+        void renderVoiceRange (int startSample, int numSamples, const VoicePlanPtrs& voicePlans) noexcept;
+        void finalizeVoiceSumIntoOutput (juce::AudioBuffer<float>& output, int numSamples) noexcept;
         void updateAuxLevelsAndPassthrough (juce::AudioBuffer<float>& mainOutput, int numSamples);
         void setDefaultMacroMappings();
 
+        // juce::Timer — periodic (~50ms, ARCHITECTURE.md §3.2) reclaim() on
+        // every PlanSwapper below, message-thread only. engine/ has no
+        // Timer (headless by design, CLAUDE.md rule 4); the plugin layer
+        // owns scheduling it, exactly as PlanSwapper.h's own header comment
+        // says it must.
+        void timerCallback() override;
+
         bazalt::engine::NodeFactory nodeFactory;
-        std::vector<std::unique_ptr<bazalt::engine::ExecutionPlan>> voicePlans;
+
+        // One independently-swappable plan per voice (fresh DSP state each
+        // recompile — voice-state continuity across edits, ARCHITECTURE.md
+        // §3.2's separate per-(voiceIndex,nodeID) pool, is still deferred;
+        // an edit mid-note resets that voice's filter/envelope memory, a
+        // known and accepted M7 limitation, not silently broken).  Plus one
+        // for the global domain, used only once a graph actually contains
+        // a util.voiceSum node (NODE_EDITOR.md §7); hasGlobalDomain is
+        // read on the audio thread, so it's atomic despite being set only
+        // from the message thread.
+        std::array<bazalt::engine::PlanSwapper, numVoices> voicePlanSwappers;
+        bazalt::engine::PlanSwapper globalPlanSwapper;
+        std::atomic<bool> hasGlobalDomain { false };
+
         bazalt::engine::VoiceManager voiceManager;
         MacroParameters macroParameters;
         std::vector<bazalt::engine::MacroMapping> macroMappings;
         bazalt::engine::NanGuard outputGuard;
+
+        // Mono sum of every active voice's output for the current block,
+        // sized once in prepareToPlay (no audio-thread allocation). When
+        // there's no global domain this feeds the main output directly,
+        // matching pre-M7 behaviour exactly; when a util.voiceSum node
+        // exists, this is what gets handed to it via setExternalBlock()
+        // before the global plan runs (NODE_EDITOR.md §7).
+        juce::AudioBuffer<float> voiceSumScratchBuffer;
+
+        // Declared after everything it depends on (nodeFactory, the
+        // swappers) so its constructor — which only stores a reference —
+        // never sees them in a not-yet-constructed state.
+        GraphEditController graphEditController { *this };
 
         std::array<std::atomic<float>, (size_t) numAuxBuses> auxPeakLevels {};
 

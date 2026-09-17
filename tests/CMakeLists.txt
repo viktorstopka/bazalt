@@ -6,9 +6,11 @@ add_executable(EngineTests
     AlignedBufferTests.cpp
     AnalysisThreadTests.cpp
     BlockSizeInvarianceTests.cpp
+    DomainSplitterTests.cpp
     EngineVersionTests.cpp
     GraphCompilerTests.cpp
     NanGuardTests.cpp
+    NodeDescriptorTests.cpp
     OversamplingStageTests.cpp
     PatchSerializerTests.cpp
     PlanSwapperTests.cpp
@@ -21,6 +23,7 @@ add_executable(EngineTests
     TapTests.cpp
     TelemetryFrameBufferTests.cpp
     TelemetryFrameTests.cpp
+    UtilityNodeTests.cpp
     VoiceManagerTests.cpp
 )
 

@@ -10,6 +10,13 @@ namespace bazalt::engine
         poking node parameters); the tags exist now so the M3 MIDI/note
         data model doesn't require a port-type migration. Spectral is
         reserved, unimplemented.
+
+        Boolean (NODE_EDITOR.md §5, added M7): a genuinely different buffer-
+        level contract from Control — no smoothing, no skew, one bit of
+        state — not just a UI-side colour distinction. The UI's Modulation/
+        Value/Integer palette entries are presentation classifications
+        layered on top of Control + PortDescriptor's numeric metadata
+        (NODE_EDITOR.md §5), not separate SignalType values.
     */
     enum class SignalType
     {
@@ -17,6 +24,7 @@ namespace bazalt::engine
         Control,
         Event,
         Note,
-        Spectral
+        Spectral,
+        Boolean
     };
 }

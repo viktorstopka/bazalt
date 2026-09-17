@@ -25,7 +25,9 @@ target_sources(PluginTests
         ${CMAKE_SOURCE_DIR}/plugin/source/PluginProcessor.cpp
         ${CMAKE_SOURCE_DIR}/plugin/source/PluginEditor.cpp
         ${CMAKE_SOURCE_DIR}/plugin/source/MacroParameters.cpp
+        ${CMAKE_SOURCE_DIR}/plugin/source/GraphEditController.cpp
         BusLayoutTests.cpp
+        GraphEditControllerTests.cpp
         PatchStateTests.cpp
         VoiceRenderTests.cpp
 )

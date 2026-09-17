@@ -4,12 +4,14 @@
 
 namespace bazalt::engine::nodes
 {
-    /** Stable type id: "mix.add2". Two Audio inputs, one Audio output =
-        a + b. Generic primitive used by the Karplus-Strong proof graph to
-        sum the excitation with the feedback loop's return path
-        (ARCHITECTURE.md §3.4).
+    /** Stable type id: "util.add". Two numeric (Control) inputs, one
+        output = a + b — spawned by Alt-dragging between two nodes whose
+        primary outputs are both numbers (NODE_EDITOR.md §7's Alt-drag
+        Mix/Add/Multiply; Mix itself reuses "mix.add2" for the audio case).
+        Growable-port behaviour (NODE_EDITOR.md §6.5) is a UI-side concern
+        for later — this fixed 2-input version is what M7 needs.
     */
-    class MixNode : public Node
+    class AddNode : public Node
     {
     public:
         static constexpr int numInputs = 2;
@@ -18,17 +20,17 @@ namespace bazalt::engine::nodes
         int getNumInputPorts() const noexcept override { return numInputs; }
         int getNumOutputPorts() const noexcept override { return numOutputs; }
 
-        juce::String getTitle() const override { return "Mix"; }
+        juce::String getTitle() const override { return "Add"; }
         juce::String getCategory() const override { return "Utility"; }
 
         std::vector<PortDescriptor> getInputPorts() const override
         {
-            return { { "a", SignalType::Audio }, { "b", SignalType::Audio } };
+            return { { "a", SignalType::Control }, { "b", SignalType::Control } };
         }
 
         std::vector<PortDescriptor> getOutputPorts() const override
         {
-            return { { "out", SignalType::Audio } };
+            return { PortDescriptor { .id = "out", .type = SignalType::Control, .isPrimaryOutput = true } };
         }
 
         void processSample (const float* inputs, float* outputs) noexcept override

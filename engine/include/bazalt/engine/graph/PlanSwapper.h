@@ -9,25 +9,38 @@ namespace bazalt::engine
 {
     /** Lock-free single-writer (compiler thread) / single-reader (audio
         thread) publish + epoch-based reclamation for ExecutionPlan swaps
-        (ARCHITECTURE.md §3.2). A fixed pool of plan slots (4 for MVP) —
-        the compiler thread builds a new plan, then publishes it via one
-        atomic store; the audio thread loads the plan pointer ONCE per
-        process() call — never mid-block — runs the whole block against
-        it, then records its own epoch. Because the pointer load happens
-        exactly once per call, a mid-stream publish from another thread can
-        never be observed partway through a block: the invariant that
-        matters ("no discontinuity within a single process() call") holds
-        by construction, not by care.
+        (ARCHITECTURE.md §3.2). A fixed pool of plan slots — the compiler
+        thread builds a new plan, then publishes it via one atomic store;
+        the audio thread loads the plan pointer ONCE per process() call —
+        never mid-block — runs the whole block against it, then records
+        its own epoch. Because the pointer load happens exactly once per
+        call, a mid-stream publish from another thread can never be
+        observed partway through a block: the invariant that matters ("no
+        discontinuity within a single process() call") holds by
+        construction, not by care.
 
         engine has no Timer (it's headless — see engine/CMakeLists.txt's
         dependency rule) so reclaim() isn't scheduled by this class; the
         plugin layer's message-thread timer (~50ms per ARCHITECTURE.md
         §3.2) calls it periodically.
+
+        Sized 16, not the MVP's original 4 (M7, NODE_EDITOR.md §6/§7):
+        reclaim() can only free a slot once the audio thread's epoch has
+        advanced past it, which requires an actual process() call to have
+        happened — but the message thread can now publish several times in
+        a row with *no* intervening process() call at all (several
+        GraphEditController commands issued back to back while a host's
+        transport is stopped, or a future composite command like splice
+        insert that isn't yet a single atomic graph mutation). 4 slots
+        proved too easy to exhaust in exactly that scenario, silently
+        dropping a publish. 16 is still a small, fixed pool (ADR-0003's
+        "not a source of unbounded growth" still holds) — it doesn't fix
+        an unbounded burst, it comfortably absorbs a realistic one.
     */
     class PlanSwapper
     {
     public:
-        static constexpr int numSlots = 4;
+        static constexpr int numSlots = 16;
 
         /** Compiler-thread side. Returns false if every slot is still
             occupied (reclaim() hasn't freed one yet) — the caller keeps

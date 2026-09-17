@@ -97,6 +97,31 @@ TEST_CASE ("PlanSwapper::publish fails once every slot is occupied and unreclaim
     CHECK_FALSE (swapper.publish (makeDcPlan (99, 64))); // no free slot, reclaim() never ran
 }
 
+TEST_CASE ("reclaim() immediately before publish absorbs a burst of edits with zero process() calls between them",
+           "[engine][PlanSwapper][NODE_EDITOR]")
+{
+    // The scenario ADR-0003's M7 revision documents: GraphEditController
+    // publishes on every command, and a host with a stopped transport may
+    // never call process() between them, so reclaim() (which can only free
+    // a slot once the audio thread's epoch has moved past it) has nothing
+    // to work with — publish() would need to succeed on pool size alone.
+    // This proves numSlots is generous enough for a realistic edit burst
+    // (more edits than the pre-M7 4-slot pool could have absorbed) with no
+    // process() calls at all, calling reclaim() before each publish the
+    // same way GraphEditController::recompileAndPublish() does.
+    PlanSwapper swapper;
+
+    for (int i = 1; i <= PlanSwapper::numSlots; ++i)
+    {
+        swapper.reclaim();
+        REQUIRE (swapper.publish (makeDcPlan ((uint64_t) i, 64)));
+    }
+
+    auto* plan = swapper.getCurrentPlanForAudioThread();
+    REQUIRE (plan != nullptr);
+    CHECK (plan->generation == (uint64_t) PlanSwapper::numSlots);
+}
+
 TEST_CASE ("Swap-under-load: a plan swap never produces a torn read within a single process() call",
            "[engine][PlanSwapper][swap-under-load]")
 {

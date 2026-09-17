@@ -3,15 +3,15 @@
 Node-based modular synth, VST3 (JUCE + C++20) with a TypeScript/Vite/React
 WebView UI. Full design: `docs/ARCHITECTURE.md`. Node editor design (M7+):
 `docs/NODE_EDITOR.md`. Milestone plan: `docs/MILESTONES.md`. Decisions:
-`docs/decisions/`. Read `ARCHITECTURE.md` (and `NODE_EDITOR.md` once M6 is
-done) before touching anything cross-cutting — this file is the condensed
-day-to-day ruleset, not a replacement for either.
+`docs/decisions/`. Read `ARCHITECTURE.md` and `NODE_EDITOR.md` before
+touching anything cross-cutting — this file is the condensed day-to-day
+ruleset, not a replacement for either.
 
-**M0–M6 (the full MVP per `docs/MILESTONES.md`) are done and committed.**
-M7+ (the node editor phase, planned and approved in `docs/NODE_EDITOR.md`)
-is next, starting with M7 (domain-aware graph model + command bridge).
-Each milestone must build, pass its tests, and be committed before the
-next one starts.
+**M0–M7 are done and committed** (M0–M6 = the MVP; M7 = domain-aware graph
+model + command bridge, the first node-editor-phase milestone from
+`docs/NODE_EDITOR.md`). M8 (dynamic telemetry + rendering-split benchmark)
+is next. Each milestone must build, pass its tests, and be committed
+before the next one starts.
 
 ## The non-negotiable rules
 
@@ -130,15 +130,21 @@ ctest --test-dir build -C Debug -R PluginTests --output-on-failure
   it), not an oversight. `SignalType::Note`/`Event` still exist in the enum,
   unused by any port.
 - Each voice gets its own fully independent `ExecutionPlan` (compiled
-  `numVoices` times from the same `NodeGraph` in `prepareToPlay`), not a
-  shared plan with per-voice state pooled separately as ARCHITECTURE.md §3.2
-  ultimately describes ("per-voice DSP state... lives in a separate pool
-  keyed by (voiceIndex, nodeID)"). That refactor is explicitly gated on live
-  graph editing existing (recompiling one shared topology while preserving
-  per-voice state) — there's no editor yet, so there's nothing to preserve
-  across. `PlanSwapper` is built and tested (M2) but not yet wired into
-  `PluginProcessor` for the same reason: nothing recompiles the live graph
-  yet, so there's nothing to swap.
+  `numVoices` times from the same `NodeGraph`), not a shared plan with
+  per-voice state pooled separately as ARCHITECTURE.md §3.2 ultimately
+  describes ("per-voice DSP state... lives in a separate pool keyed by
+  (voiceIndex, nodeID)"). `PlanSwapper` **is** wired into `PluginProcessor`
+  as of M7 (one per voice + one for the global domain,
+  `GraphEditController::recompileAndPublish()`) — live edits really do
+  recompile and swap now. What's still deferred is state *continuity*
+  across a recompile: every recompile builds brand-new `Node` instances
+  with fresh DSP state, so editing the graph while a voice is mid-note
+  resets that voice's filter/envelope/phase memory. Accepted for M7 (its
+  own swap-under-load test only proves no discontinuity *within* one
+  `process()` call, same guarantee M2's original test proved — not
+  musical-content continuity across edits); the per-(voiceIndex,nodeID)
+  state pool ARCHITECTURE.md §3.2 describes is the eventual fix, still not
+  built.
 - The sidechain "passthrough" (`PluginProcessor::updateAuxLevelsAndPassthrough`)
   mixes each active aux bus into the main output at a fixed -30dB and tracks
   its peak level — a deliberately simple, measurable proof that audio
@@ -178,6 +184,30 @@ ctest --test-dir build -C Debug -R PluginTests --output-on-failure
   registry, so the JS-side protocol can never drift from the pinned C++ side
   — see `ui/vendor/juce-webview/README-BAZALT.md`. Re-sync it (don't
   hand-edit `lib/`) only if the JUCE version pin in ADR-0001 ever changes.
+- The M7 command bridge (`GraphEditController`, `PluginEditor::
+  withGraphCommands()`'s `graphAddNode`/`graphDeleteNode`/`graphConnect`/
+  `graphDisconnect`/`graphSetParameterValue` native functions) is real and
+  tested (`tests-plugin/GraphEditControllerTests.cpp` drives
+  `GraphEditController` directly), but **no UI calls it yet** — nothing in
+  `ui/` imports `getNativeFunction` for these. Don't assume a JS-side
+  caller exists; that's M10+.
+- `util.voiceSum`/`DomainSplitter` (NODE_EDITOR.md §7, ADR pending for the
+  domain-partitioning design) are real and tested at the engine level
+  (`tests/DomainSplitterTests.cpp`), but `PluginProcessor`'s starting graph
+  (`buildVoiceProofGraph()`) has no `util.voiceSum` node — the global-domain
+  code path (`BazaltAudioProcessor::finalizeVoiceSumIntoOutput`,
+  `hasGlobalDomain`) is real but dormant until a graph actually adds one via
+  a command.
+- `GraphEditController::recompileAndPublish()` does a full recompile (8
+  voice plans + up to 1 global plan) on **every single command**, even ones
+  that are conceptually one user gesture made of several calls (e.g. a
+  future splice-insert: disconnect + addNode + 2×connect). NODE_EDITOR.md
+  §6 already flags composite operations as "one undo step" for the UI layer
+  — this is the matching engine-layer gap: there's no way yet to batch
+  several graph mutations into a single recompile+publish. Fine at M7's
+  edit rates; revisit if/when a composite command's 4 separate recompiles
+  ever prove too slow or too visible as intermediate (invalid-looking)
+  states.
 - `BazaltAudioProcessor` has an explicit (non-defaulted) destructor that
   calls `analysisThread.stopThread (2000)` unconditionally, in addition to
   `releaseResources()` doing the same. This isn't redundant: hosts are

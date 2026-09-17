@@ -28,29 +28,46 @@ namespace bazalt::engine
         juce::int64 modifiedAtMs = 0;
     };
 
-    /** Versioned document (ARCHITECTURE.md §4.4): graph (nodes/connections,
-        stable ids), macro mapping table + current values, meta. Plugin
-        state IS this document — getStateInformation/setStateInformation
-        serialize/deserialize it directly, no separate format. See
-        PatchSerializer.h for JSON (de)serialization and the migration
-        dispatcher.
+    /** View state (M7, NODE_EDITOR.md §8): pan/zoom, the part of
+        ARCHITECTURE.md §4.4's originally-planned `ui` section that isn't
+        just a NodeInstance itself. Frames/headers/images are NodeInstances
+        with a Decoration layout variant (NODE_EDITOR.md §4) and already
+        round-trip through `nodes` — they don't need a field here.
+    */
+    struct PatchViewState
+    {
+        float panX = 0.0f;
+        float panY = 0.0f;
+        float zoom = 1.0f;
+    };
 
-        No `ui` (view state) section yet — there's no node-graph editor to
-        have view state (pan/zoom/layout) for until one exists; adding the
-        field now would just be dead schema. Add it in the same commit as
-        the editor, not speculatively.
+    /** Versioned document (ARCHITECTURE.md §4.4): graph (nodes/connections,
+        stable ids), macro mapping table + current values, view state, meta.
+        Plugin state IS this document — getStateInformation/
+        setStateInformation serialize/deserialize it directly, no separate
+        format. See PatchSerializer.h for JSON (de)serialization and the
+        migration dispatcher.
+
+        Schema v2 (M7): `outputPortIndex` (int) became `outputPortId`
+        (string, matching Connection's port-ID addressing, NodeGraph.h) and
+        `view` was added. `PatchSerializer`'s v1→v2 migration resolves old
+        index-based connections/output ports to IDs using each node type's
+        *current* registered port order — the only source of truth
+        available for old data; a patch saved before a node's ports were
+        reordered is a real (accepted) migration risk, not silently solved.
     */
     struct PatchDocument
     {
-        static constexpr int currentSchemaVersion = 1;
+        static constexpr int currentSchemaVersion = 2;
 
         int schemaVersion = currentSchemaVersion;
         std::vector<NodeInstance> nodes;
         std::vector<Connection> connections;
         juce::String outputNodeId;
-        int outputPortIndex = 0;
+        juce::String outputPortId;
         std::vector<MacroMapping> macroMappings;
         std::vector<float> macroValues; // index-aligned with the macro pool
+        PatchViewState view;
         PatchMeta meta;
 
         NodeGraph toNodeGraph() const
@@ -60,7 +77,7 @@ namespace bazalt::engine
                 graph.addNode (node);
             for (const auto& connection : connections)
                 graph.addConnection (connection);
-            graph.setOutput (outputNodeId, outputPortIndex);
+            graph.setOutput (outputNodeId, outputPortId);
             return graph;
         }
 
@@ -70,7 +87,7 @@ namespace bazalt::engine
             doc.nodes = graph.getNodes();
             doc.connections = graph.getConnections();
             doc.outputNodeId = graph.getOutputNodeId();
-            doc.outputPortIndex = graph.getOutputPortIndex();
+            doc.outputPortId = graph.getOutputPortId();
             return doc;
         }
     };

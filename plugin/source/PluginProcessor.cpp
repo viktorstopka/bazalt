@@ -4,6 +4,7 @@
 #include "bazalt/engine/graph/GraphCompiler.h"
 #include "bazalt/engine/patch/PatchSerializer.h"
 #include "bazalt/engine/nodes/AdsrNode.h"
+#include "bazalt/engine/nodes/VoiceSumNode.h"
 #include <array>
 #include <cstring>
 
@@ -38,6 +39,11 @@ namespace bazalt
         nodeFactory = bazalt::engine::buildDefaultNodeFactory();
         macroParameters.addParametersTo (*this);
         setDefaultMacroMappings();
+
+        // ~50ms period per ARCHITECTURE.md §3.2 / PlanSwapper.h — engine/
+        // has no Timer (headless by design), so the plugin layer is
+        // responsible for scheduling every PlanSwapper's reclaim().
+        startTimer (50);
     }
 
     // Hosts are expected to call releaseResources() before destroying a
@@ -49,7 +55,16 @@ namespace bazalt
     // shutdown bounded and correct regardless of what the caller did.
     BazaltAudioProcessor::~BazaltAudioProcessor()
     {
+        stopTimer();
         analysisThread.stopThread (2000);
+    }
+
+    void BazaltAudioProcessor::timerCallback()
+    {
+        for (auto& swapper : voicePlanSwappers)
+            swapper.reclaim();
+
+        globalPlanSwapper.reclaim();
     }
 
     void BazaltAudioProcessor::setDefaultMacroMappings()
@@ -72,23 +87,14 @@ namespace bazalt
         currentSampleRate = sampleRate;
         currentBlockSize = samplesPerBlock;
 
-        voicePlans.clear();
-        voicePlans.reserve ((size_t) numVoices);
+        voiceSumScratchBuffer.setSize (1, samplesPerBlock);
 
-        auto graph = bazalt::engine::buildVoiceProofGraph();
-
-        for (int i = 0; i < numVoices; ++i)
-        {
-            auto result = bazalt::engine::GraphCompiler::compile (
-                graph, nodeFactory, { sampleRate, samplesPerBlock }, (uint64_t) (i + 1));
-
-            // The hardcoded voice graph always compiles — a failure here
-            // is a real engine bug, not a runtime condition to recover
-            // from gracefully.
-            jassert (result.success);
-
-            voicePlans.push_back (std::make_unique<bazalt::engine::ExecutionPlan> (std::move (result.plan)));
-        }
+        // Compiles and publishes the current graph (the default proof
+        // graph, or whatever a patch load already installed) — M7
+        // replaces the old one-shot "compile once here" with a real
+        // recompile path GraphEditController can call again any time a
+        // command edits the graph (NODE_EDITOR.md §6/§7).
+        graphEditController.prepare (sampleRate, samplesPerBlock);
 
         voiceManager.prepare (numVoices);
         macroParameters.prepare (sampleRate);
@@ -112,7 +118,6 @@ namespace bazalt
     void BazaltAudioProcessor::releaseResources()
     {
         analysisThread.stopThread (2000);
-        voicePlans.clear();
     }
 
     bool BazaltAudioProcessor::isBusesLayoutSupported (const BusesLayout& layouts) const
@@ -134,22 +139,25 @@ namespace bazalt
         return true;
     }
 
-    void BazaltAudioProcessor::handleMidiEvent (const juce::MidiMessage& message)
+    void BazaltAudioProcessor::handleMidiEvent (const juce::MidiMessage& message, const VoicePlanPtrs& voicePlans)
     {
         if (message.isNoteOn())
         {
             const auto noteId = (bazalt::engine::VoiceManager::NoteId) ((message.getChannel() << 8) | message.getNoteNumber());
             const auto voiceIndex = voiceManager.noteOn (noteId);
 
-            auto& plan = *voicePlans[(size_t) voiceIndex];
-            plan.reset(); // fresh phase/envelope/filter state for the (possibly stolen) voice
+            auto* plan = voicePlans[(size_t) voiceIndex];
+            if (plan == nullptr)
+                return;
+
+            plan->reset(); // fresh phase/envelope/filter state for the (possibly stolen) voice
 
             const auto frequency = (float) juce::MidiMessage::getMidiNoteInHertz (message.getNoteNumber());
 
-            if (auto* osc = plan.getNodeById ("osc"))
+            if (auto* osc = plan->getNodeById ("osc"))
                 osc->setParameter ("osc.basic.frequency", frequency);
 
-            if (auto* adsr = dynamic_cast<bazalt::engine::nodes::AdsrNode*> (plan.getNodeById ("env")))
+            if (auto* adsr = dynamic_cast<bazalt::engine::nodes::AdsrNode*> (plan->getNodeById ("env")))
                 adsr->noteOn();
         }
         else if (message.isNoteOff())
@@ -157,42 +165,82 @@ namespace bazalt
             const auto noteId = (bazalt::engine::VoiceManager::NoteId) ((message.getChannel() << 8) | message.getNoteNumber());
             const auto voiceIndex = voiceManager.noteOff (noteId);
 
-            if (voiceIndex >= 0)
+            if (voiceIndex >= 0 && voicePlans[(size_t) voiceIndex] != nullptr)
                 if (auto* adsr = dynamic_cast<bazalt::engine::nodes::AdsrNode*> (voicePlans[(size_t) voiceIndex]->getNodeById ("env")))
                     adsr->noteOff();
         }
     }
 
-    void BazaltAudioProcessor::renderVoiceRange (juce::AudioBuffer<float>& output, int startSample, int numSamples) noexcept
+    void BazaltAudioProcessor::renderVoiceRange (int startSample, int numSamples, const VoicePlanPtrs& voicePlans) noexcept
     {
         if (numSamples <= 0)
             return;
 
-        auto* left = output.getWritePointer (0) + startSample;
-        auto* right = (output.getNumChannels() > 1 ? output.getWritePointer (1) : output.getWritePointer (0)) + startSample;
+        auto* sum = voiceSumScratchBuffer.getWritePointer (0) + startSample;
 
         for (int voiceIndex = 0; voiceIndex < numVoices; ++voiceIndex)
         {
             if (voiceManager.getStage (voiceIndex) == bazalt::engine::VoiceStage::Idle)
                 continue;
 
-            auto& plan = *voicePlans[(size_t) voiceIndex];
-            plan.process (numSamples);
+            auto* plan = voicePlans[(size_t) voiceIndex];
+            if (plan == nullptr)
+                continue;
 
-            const auto* voiceOut = plan.blockBuffers[(size_t) plan.finalOutputBufferIndex].getBlock().getChannelPointer (0);
+            plan->process (numSamples);
+
+            const auto* voiceOut = plan->blockBuffers[(size_t) plan->finalOutputBufferIndex].getBlock().getChannelPointer (0);
 
             for (int i = 0; i < numSamples; ++i)
-            {
-                left[i] += voiceOut[i];
-                right[i] += voiceOut[i];
-            }
+                sum[i] += voiceOut[i];
 
             if (voiceManager.getStage (voiceIndex) == bazalt::engine::VoiceStage::Releasing)
             {
-                auto* adsr = dynamic_cast<bazalt::engine::nodes::AdsrNode*> (plan.getNodeById ("env"));
+                auto* adsr = dynamic_cast<bazalt::engine::nodes::AdsrNode*> (plan->getNodeById ("env"));
                 if (adsr != nullptr && ! adsr->isActive())
                     voiceManager.voiceFinished (voiceIndex);
             }
+        }
+    }
+
+    // ARCHITECTURE.md/NODE_EDITOR.md §7: with no util.voiceSum node in the
+    // graph (every M2-M6 patch, and the common case even after M7), the
+    // voice sum IS the final output — copied straight to both channels,
+    // identical to pre-M7 behaviour. When a util.voiceSum node exists, the
+    // sum is instead handed to it (setExternalBlock) and the GLOBAL plan's
+    // own output — not the raw voice sum — reaches the speakers.
+    void BazaltAudioProcessor::finalizeVoiceSumIntoOutput (juce::AudioBuffer<float>& output, int numSamples) noexcept
+    {
+        const float* finalMono = voiceSumScratchBuffer.getReadPointer (0);
+
+        if (hasGlobalDomain.load (std::memory_order_acquire))
+        {
+            if (auto* globalPlan = globalPlanSwapper.getCurrentPlanForAudioThread())
+            {
+                if (globalPlan->externalInputNodeId.isNotEmpty())
+                {
+                    auto* voiceSumNode = dynamic_cast<bazalt::engine::nodes::VoiceSumNode*> (
+                        globalPlan->getNodeById (globalPlan->externalInputNodeId));
+
+                    if (voiceSumNode != nullptr)
+                    {
+                        voiceSumNode->setExternalBlock (finalMono, numSamples);
+                        globalPlan->process (numSamples);
+                        finalMono = globalPlan->blockBuffers[(size_t) globalPlan->finalOutputBufferIndex]
+                                        .getBlock()
+                                        .getChannelPointer (0);
+                    }
+                }
+            }
+        }
+
+        auto* left = output.getWritePointer (0);
+        auto* right = output.getNumChannels() > 1 ? output.getWritePointer (1) : left;
+
+        for (int i = 0; i < numSamples; ++i)
+        {
+            left[i] += finalMono[i];
+            right[i] += finalMono[i];
         }
     }
 
@@ -233,14 +281,22 @@ namespace bazalt
     {
         juce::ScopedNoDenormals noDenormals;
 
+        const auto numSamples = buffer.getNumSamples();
+
         for (int ch = 0; ch < buffer.getNumChannels(); ++ch)
-            buffer.clear (ch, 0, buffer.getNumSamples());
+            buffer.clear (ch, 0, numSamples);
 
-        std::array<bazalt::engine::ExecutionPlan*, numVoices> planPtrs {};
+        voiceSumScratchBuffer.clear (0, numSamples);
+
+        // Fetched exactly once per process() call, per PlanSwapper's own
+        // contract (PlanSwapper.h) — handleMidiEvent/renderVoiceRange below
+        // both read from this same cached array rather than re-querying
+        // the swappers mid-block.
+        VoicePlanPtrs voicePlanPtrs {};
         for (int i = 0; i < numVoices; ++i)
-            planPtrs[(size_t) i] = voicePlans[(size_t) i].get();
+            voicePlanPtrs[(size_t) i] = voicePlanSwappers[(size_t) i].getCurrentPlanForAudioThread();
 
-        macroParameters.applyToPlans (planPtrs.data(), numVoices, buffer.getNumSamples());
+        macroParameters.applyToPlans (voicePlanPtrs.data(), numVoices, numSamples);
 
         int previousSample = 0;
 
@@ -249,16 +305,18 @@ namespace bazalt
             const auto eventSample = metadata.samplePosition;
 
             if (eventSample > previousSample)
-                renderVoiceRange (buffer, previousSample, eventSample - previousSample);
+                renderVoiceRange (previousSample, eventSample - previousSample, voicePlanPtrs);
 
-            handleMidiEvent (metadata.getMessage());
+            handleMidiEvent (metadata.getMessage(), voicePlanPtrs);
             previousSample = eventSample;
         }
 
-        if (previousSample < buffer.getNumSamples())
-            renderVoiceRange (buffer, previousSample, buffer.getNumSamples() - previousSample);
+        if (previousSample < numSamples)
+            renderVoiceRange (previousSample, numSamples - previousSample, voicePlanPtrs);
 
-        updateAuxLevelsAndPassthrough (buffer, buffer.getNumSamples());
+        finalizeVoiceSumIntoOutput (buffer, numSamples);
+
+        updateAuxLevelsAndPassthrough (buffer, numSamples);
 
         if (auto* mainTap = tapPointers[0])
             mainTap->push (buffer.getReadPointer (0), buffer.getNumSamples());
@@ -278,7 +336,7 @@ namespace bazalt
 
     bazalt::engine::PatchDocument BazaltAudioProcessor::getCurrentPatchDocument() const
     {
-        auto doc = bazalt::engine::PatchDocument::fromNodeGraph (bazalt::engine::buildVoiceProofGraph());
+        auto doc = bazalt::engine::PatchDocument::fromNodeGraph (graphEditController.getGraph());
 
         doc.macroMappings = macroMappings;
         doc.macroValues = macroParameters.getCurrentValues();
@@ -297,6 +355,15 @@ namespace bazalt
     {
         auto result = bazalt::engine::parsePatchFromJson (json);
         if (! result.success)
+            return false;
+
+        // Graph first: if the loaded patch's graph doesn't compile, bail
+        // out before touching macros too — never leave the graph and
+        // macro state representing two different patches (CLAUDE.md rule
+        // 5's "never let a bad edit reach the audio thread" applies to a
+        // whole-state load exactly as it does to a single command).
+        const auto graphResult = graphEditController.setGraph (result.document.toNodeGraph());
+        if (! graphResult.success)
             return false;
 
         macroMappings = result.document.macroMappings;

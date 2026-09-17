@@ -58,6 +58,8 @@ namespace
     public:
         int getNumInputPorts() const noexcept override { return 1; }
         int getNumOutputPorts() const noexcept override { return 1; }
+        std::vector<PortDescriptor> getInputPorts() const override { return { { "in", SignalType::Audio } }; }
+        std::vector<PortDescriptor> getOutputPorts() const override { return { { "out", SignalType::Audio } }; }
         bool supportsPerSample() const noexcept override { return false; }
 
         void processBlock (const float* const* inputs, float* const* outputs, int numSamples) noexcept override
@@ -81,12 +83,12 @@ TEST_CASE ("GraphCompiler schedules an acyclic chain in dependency order and com
            "[engine][GraphCompiler]")
 {
     NodeGraph graph;
-    graph.addNode ({ "src", "test.constant", { { "value", 2.0f } } });
-    graph.addNode ({ "a", "test.scale", { { "gain", 3.0f } } });
-    graph.addNode ({ "b", "test.scale", { { "gain", 5.0f } } });
-    graph.addConnection ({ "src", 0, "a", 0 });
-    graph.addConnection ({ "a", 0, "b", 0 });
-    graph.setOutput ("b", 0);
+    graph.addNode ({ "src", "test.constant", {}, { { "value", 2.0f } }, {} });
+    graph.addNode ({ "a", "test.scale", {}, { { "gain", 3.0f } }, {} });
+    graph.addNode ({ "b", "test.scale", {}, { { "gain", 5.0f } }, {} });
+    graph.addConnection ({ "src", "out", "a", "in" });
+    graph.addConnection ({ "a", "out", "b", "in" });
+    graph.setOutput ("b", "out");
 
     auto factory = buildTestFactory();
     auto result = GraphCompiler::compile (graph, factory, { 44100.0, 64 }, 1);
@@ -148,11 +150,11 @@ TEST_CASE ("GraphCompiler routes a feedback cycle into a per-sample region", "[e
 TEST_CASE ("GraphCompiler rejects a cycle containing a node that can't run per-sample", "[engine][GraphCompiler]")
 {
     NodeGraph graph;
-    graph.addNode ({ "a", "test.blockonly", {} });
-    graph.addNode ({ "b", "test.scale", { { "gain", 1.0f } } });
-    graph.addConnection ({ "a", 0, "b", 0 });
-    graph.addConnection ({ "b", 0, "a", 0 }); // closes the cycle
-    graph.setOutput ("b", 0);
+    graph.addNode ({ "a", "test.blockonly", {}, {}, {} });
+    graph.addNode ({ "b", "test.scale", {}, { { "gain", 1.0f } }, {} });
+    graph.addConnection ({ "a", "out", "b", "in" });
+    graph.addConnection ({ "b", "out", "a", "in" }); // closes the cycle
+    graph.setOutput ("b", "out");
 
     auto factory = buildTestFactory();
     auto result = GraphCompiler::compile (graph, factory, { 44100.0, 64 }, 1);
@@ -165,8 +167,8 @@ TEST_CASE ("An invalid recompile never reaches the audio thread - the previous p
            "[engine][GraphCompiler][PlanSwapper]")
 {
     NodeGraph validGraph;
-    validGraph.addNode ({ "src", "test.constant", { { "value", 7.0f } } });
-    validGraph.setOutput ("src", 0);
+    validGraph.addNode ({ "src", "test.constant", {}, { { "value", 7.0f } }, {} });
+    validGraph.setOutput ("src", "out");
 
     auto factory = buildTestFactory();
     auto validResult = GraphCompiler::compile (validGraph, factory, { 44100.0, 64 }, 1);
@@ -176,11 +178,11 @@ TEST_CASE ("An invalid recompile never reaches the audio thread - the previous p
     REQUIRE (swapper.publish (std::make_unique<ExecutionPlan> (std::move (validResult.plan))));
 
     NodeGraph invalidGraph;
-    invalidGraph.addNode ({ "a", "test.blockonly", {} });
-    invalidGraph.addNode ({ "b", "test.scale", { { "gain", 1.0f } } });
-    invalidGraph.addConnection ({ "a", 0, "b", 0 });
-    invalidGraph.addConnection ({ "b", 0, "a", 0 });
-    invalidGraph.setOutput ("b", 0);
+    invalidGraph.addNode ({ "a", "test.blockonly", {}, {}, {} });
+    invalidGraph.addNode ({ "b", "test.scale", {}, { { "gain", 1.0f } }, {} });
+    invalidGraph.addConnection ({ "a", "out", "b", "in" });
+    invalidGraph.addConnection ({ "b", "out", "a", "in" });
+    invalidGraph.setOutput ("b", "out");
 
     auto invalidResult = GraphCompiler::compile (invalidGraph, factory, { 44100.0, 64 }, 2);
     REQUIRE_FALSE (invalidResult.success);

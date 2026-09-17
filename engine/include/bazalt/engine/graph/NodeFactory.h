@@ -1,9 +1,11 @@
 #pragma once
 
 #include "bazalt/engine/graph/Node.h"
+#include "bazalt/engine/graph/NodeDescriptor.h"
 #include <functional>
 #include <memory>
 #include <unordered_map>
+#include <vector>
 
 namespace bazalt::engine
 {
@@ -30,6 +32,22 @@ namespace bazalt::engine
         bool isRegistered (const juce::String& typeId) const
         {
             return creators.find (typeId) != creators.end();
+        }
+
+        /** Every registered type's descriptor (NODE_EDITOR.md §3), for the
+            UI's Add menu — message-thread only, constructs one throwaway
+            instance per type purely to read its metadata, never touched by
+            the audio thread. Order matches registration order.
+        */
+        std::vector<NodeDescriptor> describeAll() const
+        {
+            std::vector<NodeDescriptor> descriptors;
+            descriptors.reserve (creators.size());
+
+            for (const auto& [typeId, createFn] : creators)
+                descriptors.push_back (describeNode (typeId, *createFn()));
+
+            return descriptors;
         }
 
     private:

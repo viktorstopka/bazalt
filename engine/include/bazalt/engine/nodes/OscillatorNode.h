@@ -24,6 +24,9 @@ namespace bazalt::engine::nodes
         int getNumInputPorts() const noexcept override { return numInputs; }
         int getNumOutputPorts() const noexcept override { return numOutputs; }
 
+        juce::String getTitle() const override { return "Oscillator"; }
+        juce::String getCategory() const override { return "Generators"; }
+
         std::vector<PortDescriptor> getInputPorts() const override { return {}; }
         std::vector<PortDescriptor> getOutputPorts() const override
         {

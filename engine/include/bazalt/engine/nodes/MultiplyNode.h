@@ -4,11 +4,11 @@
 
 namespace bazalt::engine::nodes
 {
-    /** Stable type id: "amp.vca". Two inputs (Audio, Control), one Audio
-        output = audio * control. The "ADSR-gated amp" in the M2 voice
-        proof graph (ARCHITECTURE.md §3.4's example path).
+    /** Stable type id: "util.multiply". Two numeric (Control) inputs, one
+        output = a * b — the other half of Alt-drag's number+number case
+        (NODE_EDITOR.md §7), alongside AddNode.
     */
-    class GainNode : public Node
+    class MultiplyNode : public Node
     {
     public:
         static constexpr int numInputs = 2;
@@ -17,17 +17,17 @@ namespace bazalt::engine::nodes
         int getNumInputPorts() const noexcept override { return numInputs; }
         int getNumOutputPorts() const noexcept override { return numOutputs; }
 
-        juce::String getTitle() const override { return "VCA"; }
+        juce::String getTitle() const override { return "Multiply"; }
         juce::String getCategory() const override { return "Utility"; }
 
         std::vector<PortDescriptor> getInputPorts() const override
         {
-            return { { "audio", SignalType::Audio }, { "gain", SignalType::Control } };
+            return { { "a", SignalType::Control }, { "b", SignalType::Control } };
         }
 
         std::vector<PortDescriptor> getOutputPorts() const override
         {
-            return { { "out", SignalType::Audio } };
+            return { PortDescriptor { .id = "out", .type = SignalType::Control, .isPrimaryOutput = true } };
         }
 
         void processSample (const float* inputs, float* outputs) noexcept override

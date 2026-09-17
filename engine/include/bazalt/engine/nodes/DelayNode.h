@@ -39,6 +39,9 @@ namespace bazalt::engine::nodes
         int getNumInputPorts() const noexcept override { return numInputs; }
         int getNumOutputPorts() const noexcept override { return numOutputs; }
 
+        juce::String getTitle() const override { return "Delay"; }
+        juce::String getCategory() const override { return "Effects"; }
+
         std::vector<PortDescriptor> getInputPorts() const override
         {
             return { { "in", SignalType::Audio } };

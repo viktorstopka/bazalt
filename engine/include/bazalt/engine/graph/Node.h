@@ -12,6 +12,18 @@ namespace bazalt::engine
         int maxBlockSize = 512;
     };
 
+    /** NODE_EDITOR.md §3 — how a node's ports/controls are arranged.
+        Decoration nodes (Frame/Header/Image, the Reroute utility) carry no
+        signal through the ordinary schedule; GraphCompiler skips them.
+    */
+    enum class NodeLayoutVariant
+    {
+        Standard,
+        Horizontal,
+        Singleton,
+        Decoration
+    };
+
     /** Base class every DSP node implements (ARCHITECTURE.md §3.6):
         declared ports/parameters (metadata only — the UI can describe a
         node generically from this alone, never touching DSP code),
@@ -46,6 +58,16 @@ namespace bazalt::engine
         virtual std::vector<PortDescriptor> getInputPorts() const { return {}; }
         virtual std::vector<PortDescriptor> getOutputPorts() const { return {}; }
         virtual std::vector<ParameterDescriptor> getParameters() const { return {}; }
+
+        // Node-level UI metadata (M7, NODE_EDITOR.md §3) — defaulted so
+        // every pre-M7 node keeps compiling unchanged; retrofitting real
+        // values is cheap and expected wherever a node's identity actually
+        // matters to the Add menu (NodeFactory::describeAll() is what
+        // reads these, never the audio thread).
+        virtual juce::String getTitle() const { return {}; }       // falls back to the type id in the UI if empty
+        virtual juce::String getCategory() const { return "Uncategorized"; }
+        virtual NodeLayoutVariant getLayoutVariant() const { return NodeLayoutVariant::Standard; }
+        virtual juce::String getIcon() const { return {}; }
 
         virtual int getNumInputPorts() const noexcept { return 0; }
         virtual int getNumOutputPorts() const noexcept { return 0; }

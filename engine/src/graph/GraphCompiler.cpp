@@ -137,6 +137,33 @@ namespace bazalt::engine
         }
     }
 
+    namespace
+    {
+        // Port-id -> index lookup for one node's inputs or outputs, built
+        // once per slot at compile time from its descriptors — never
+        // touched by the audio thread, same cost class as everything else
+        // this function does before publishing a plan.
+        struct PortIdIndex
+        {
+            std::unordered_map<juce::String, int> inputIndexById;
+            std::unordered_map<juce::String, int> outputIndexById;
+        };
+
+        PortIdIndex buildPortIdIndex (const Node& node)
+        {
+            PortIdIndex index;
+            const auto inputs = node.getInputPorts();
+            const auto outputs = node.getOutputPorts();
+
+            for (int i = 0; i < (int) inputs.size(); ++i)
+                index.inputIndexById[inputs[(size_t) i].id] = i;
+            for (int i = 0; i < (int) outputs.size(); ++i)
+                index.outputIndexById[outputs[(size_t) i].id] = i;
+
+            return index;
+        }
+    }
+
     CompileResult GraphCompiler::compile (const NodeGraph& graph,
                                            const NodeFactory& factory,
                                            const NodePrepareInfo& prepareInfo,
@@ -150,6 +177,7 @@ namespace bazalt::engine
 
         // ---- Instantiate nodes, assign slots -----------------------------
         plan.nodes.reserve ((size_t) numNodes);
+        std::vector<PortIdIndex> portIdIndexBySlot ((size_t) numNodes);
 
         for (int slot = 0; slot < numNodes; ++slot)
         {
@@ -173,6 +201,7 @@ namespace bazalt::engine
             for (const auto& [paramId, value] : instance.parameters)
                 node->setParameter (paramId, value);
 
+            portIdIndexBySlot[(size_t) slot] = buildPortIdIndex (*node);
             plan.nodeIdToSlot[instance.id] = slot;
             plan.nodes.push_back (std::move (node));
         }
@@ -199,16 +228,33 @@ namespace bazalt::engine
                 return result;
             }
 
-            const PortKey toKey { toIt->second, connection.toPortIndex };
+            const auto& fromPorts = portIdIndexBySlot[(size_t) fromIt->second].outputIndexById;
+            const auto& toPorts = portIdIndexBySlot[(size_t) toIt->second].inputIndexById;
+
+            const auto fromPortIt = fromPorts.find (connection.fromPortId);
+            if (fromPortIt == fromPorts.end())
+            {
+                result.errorMessage = "Node '" + connection.fromNodeId + "' has no output port '" + connection.fromPortId + "'";
+                return result;
+            }
+
+            const auto toPortIt = toPorts.find (connection.toPortId);
+            if (toPortIt == toPorts.end())
+            {
+                result.errorMessage = "Node '" + connection.toNodeId + "' has no input port '" + connection.toPortId + "'";
+                return result;
+            }
+
+            const PortKey toKey { toIt->second, toPortIt->second };
 
             if (incomingSource.find (toKey) != incomingSource.end())
             {
                 result.errorMessage = "Input port already connected: " + connection.toNodeId
-                                       + " port " + juce::String (connection.toPortIndex);
+                                       + " port " + connection.toPortId;
                 return result;
             }
 
-            incomingSource[toKey] = { fromIt->second, connection.fromPortIndex };
+            incomingSource[toKey] = { fromIt->second, fromPortIt->second };
 
             if (successorSet[(size_t) fromIt->second].insert (toIt->second).second)
                 successors[(size_t) fromIt->second].push_back (toIt->second);
@@ -342,8 +388,13 @@ namespace bazalt::engine
                 const auto outSlotIt = plan.nodeIdToSlot.find (graph.getOutputNodeId());
                 if (outSlotIt != plan.nodeIdToSlot.end() && inRegion.count (outSlotIt->second) > 0)
                 {
-                    externalProducerSlot = outSlotIt->second;
-                    externalProducerPort = graph.getOutputPortIndex();
+                    const auto& outPortsById = portIdIndexBySlot[(size_t) outSlotIt->second].outputIndexById;
+                    const auto outPortIt = outPortsById.find (graph.getOutputPortId());
+                    if (outPortIt != outPortsById.end())
+                    {
+                        externalProducerSlot = outSlotIt->second;
+                        externalProducerPort = outPortIt->second;
+                    }
                 }
             }
 
@@ -380,7 +431,16 @@ namespace bazalt::engine
             return result;
         }
 
-        const auto outLocIt = outputLocation.find ({ outSlotIt->second, graph.getOutputPortIndex() });
+        const auto& outputPortsById = portIdIndexBySlot[(size_t) outSlotIt->second].outputIndexById;
+        const auto outPortIt = outputPortsById.find (graph.getOutputPortId());
+        if (outPortIt == outputPortsById.end())
+        {
+            result.errorMessage = "Graph output node '" + graph.getOutputNodeId() + "' has no output port '"
+                                   + graph.getOutputPortId() + "'";
+            return result;
+        }
+
+        const auto outLocIt = outputLocation.find ({ outSlotIt->second, outPortIt->second });
         if (outLocIt == outputLocation.end() || outLocIt->second.kind != ExecutionPlan::InputRef::Kind::BlockBuffer)
         {
             result.errorMessage = "Graph output port has no resolvable buffer";
