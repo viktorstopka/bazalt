@@ -7,8 +7,25 @@ namespace bazalt
 {
     namespace
     {
-        constexpr int defaultWidth = 900;
-        constexpr int defaultHeight = 600;
+        // Floor for the computed default below, and the fallback if no
+        // display info is available at all.
+        constexpr int minWidth = 900;
+        constexpr int minHeight = 600;
+
+        // Opens at ~80% of the primary display's usable area rather than a
+        // fixed pixel size, so the window is immediately usable without a
+        // resize drag — a real accessibility need (a pointing-device bug
+        // that can't reliably grab the window edge), not just a cosmetic
+        // default. setResizable() below still lets a working pointer
+        // resize it further.
+        juce::Rectangle<int> defaultEditorSize()
+        {
+            const auto* display = juce::Desktop::getInstance().getDisplays().getPrimaryDisplay();
+            const auto userArea = display != nullptr ? display->userBounds.toNearestInt() : juce::Rectangle<int> (0, 0, minWidth, minHeight);
+            constexpr float screenFraction = 0.8f;
+            return { juce::jmax (minWidth, (int) (userArea.getWidth() * screenFraction)),
+                     juce::jmax (minHeight, (int) (userArea.getHeight() * screenFraction)) };
+        }
 
         constexpr char placeholderHtml[] = R"html(<!doctype html>
 <html>
@@ -234,7 +251,8 @@ namespace bazalt
     {
         addAndMakeVisible (webView);
         setResizable (true, true);
-        setSize (defaultWidth, defaultHeight);
+        const auto size = defaultEditorSize();
+        setSize (size.getWidth(), size.getHeight());
 
        #if JUCE_DEBUG
         webView.goToURL (BAZALT_UI_DEV_SERVER_URL);
