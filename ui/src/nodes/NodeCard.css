@@ -13,15 +13,9 @@
 
 /* Border is solid opaque white by default (design reference,
    docs/Slice 1 (1).png) — no glow/box-shadow anywhere in this file on
-   purpose (reads as an AI-generated-UI cliché, per direct feedback).
-   Hover only tints the header background, never the whole node (a
-   whole-node background would fight the port glyphs' own background-patch
-   notches); selected/listening switch the border to a flat colour, same
-   1px weight as the resting state. */
-.node-card-hovered .node-title-bar {
-  background: rgba(255, 255, 255, 0.07);
-}
-
+   purpose (reads as an AI-generated-UI cliché, per direct feedback). No
+   hover state at all, per direct feedback — selected/listening switch the
+   border to a flat colour, same 1px weight as the resting state. */
 .node-card-selected {
   border-color: var(--color-accent);
 }

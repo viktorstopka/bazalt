@@ -9,8 +9,8 @@ import { useEffect, useState } from 'react'
 import { NodeCard } from '../nodes/NodeCard'
 import { fetchNodeDescriptors } from '../graph/fetchNodeDescriptors'
 import { MOCK_DESCRIPTORS } from '../graph/mockDescriptors'
-import { PORT_UI_STYLE, type PortUiKind } from '../graph/portUiKind'
-import type { NodeDescriptor } from '../graph/descriptorTypes'
+import { PORT_UI_STYLE, portUiStyle, type PortUiKind } from '../graph/portUiKind'
+import type { NodeDescriptor, PortDescriptor } from '../graph/descriptorTypes'
 import { tokens } from '../theme/tokens'
 import './ComponentGallery.css'
 
@@ -34,6 +34,48 @@ function LegendSwatch({ kind }: { kind: PortUiKind }) {
       </span>
       <span className="gallery-legend-label">{kind}</span>
       <span className="gallery-legend-color">{style.color}</span>
+    </div>
+  )
+}
+
+function ChainGlyph({ port }: { port: PortDescriptor }) {
+  const style = portUiStyle(port)
+  const color = port.isPolyPlaceholder ? tokens.color.portPoly : style.color
+  return (
+    <span className="chain-glyph" style={{ color }}>
+      {style.glyph}
+    </span>
+  )
+}
+
+/** The "adjacent singletons auto-merge into a chain" demo (blueprint §4:
+    "frames touch, arrows join") — deliberately NOT built out of ordinary
+    standalone SingletonBody instances (each of which correctly draws its
+    OWN input/output arrow — see the "Master Out" catalog entry, one arrow,
+    since it has no output port). Placed edge to edge, that would draw TWO
+    arrows at every junction (box A's own output arrow, then box B's own
+    input arrow) where the reference shows exactly one flowing through the
+    seam. So this renders one arrow per junction instead, sourced from
+    whichever side of that junction actually has a port (a sink like
+    Master Out contributes none, so the neighbour's port colours it), plus
+    a single stub arrow at each true end of the chain. The real "auto-merge"
+    interaction (snap/pull-out/insert-between) is still M12's job — this is
+    only the resting visual.
+*/
+function SingletonChainDemo({ nodes }: { nodes: NodeDescriptor[] }) {
+  return (
+    <div className="gallery-singleton-chain">
+      {nodes.map((node, i) => {
+        const leadingPort = i === 0 ? node.inputs[0] : undefined
+        const trailingPort = i === nodes.length - 1 ? node.outputs[0] : (node.outputs[0] ?? nodes[i + 1]?.inputs[0])
+        return (
+          <div key={node.typeId} className="chain-segment">
+            {leadingPort && <ChainGlyph port={leadingPort} />}
+            <span className="chain-node">{node.title}</span>
+            {trailingPort && <ChainGlyph port={trailingPort} />}
+          </div>
+        )
+      })}
     </div>
   )
 }
@@ -108,11 +150,7 @@ export function ComponentGallery({ onClose }: ComponentGalleryProps) {
               <span className="gallery-variant-label">horizontal</span>
             </div>
             <div className="gallery-variant-cell">
-              <div className="gallery-singleton-chain">
-                {singletonChain.map((d) => (
-                  <NodeCard key={d.typeId} descriptor={d} />
-                ))}
-              </div>
+              <SingletonChainDemo nodes={singletonChain} />
               <span className="gallery-variant-label">singleton (auto-merge chain, M12)</span>
             </div>
             <div className="gallery-variant-cell">
@@ -141,15 +179,11 @@ export function ComponentGallery({ onClose }: ComponentGalleryProps) {
           </div>
         </Section>
 
-        <Section title="Node states (blueprint §8: default/hover/selected/connected/bypassed/listening/error)">
+        <Section title="Node states (blueprint §8: default/selected/connected/bypassed/listening/error — no hover, per feedback)">
           <div className="gallery-row">
             <div className="gallery-variant-cell">
               <NodeCard descriptor={standardExample} />
               <span className="gallery-variant-label">default</span>
-            </div>
-            <div className="gallery-variant-cell">
-              <NodeCard descriptor={standardExample} state={{ hovered: true }} />
-              <span className="gallery-variant-label">hover</span>
             </div>
             <div className="gallery-variant-cell">
               <NodeCard descriptor={standardExample} state={{ selected: true }} />

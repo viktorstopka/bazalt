@@ -15,7 +15,6 @@ import './NodeCard.css'
 
 export interface NodeCardState {
   selected?: boolean
-  hovered?: boolean
   bypassed?: boolean
   listening?: boolean
   /** Error message; presence alone drives the red-circle-"!" badge next to
@@ -338,7 +337,6 @@ export function NodeCard({ descriptor, state = {} }: NodeCardProps) {
     'node-card',
     descriptor.layoutVariant === 'horizontal' ? 'node-card-horizontal' : 'node-card-standard',
     state.selected && 'node-card-selected',
-    state.hovered && 'node-card-hovered',
     state.bypassed && 'node-card-bypassed',
     state.listening && 'node-card-listening',
     state.error && 'node-card-error',

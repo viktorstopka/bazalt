@@ -79,7 +79,30 @@
 .gallery-singleton-chain {
   display: flex;
   align-items: center;
-  gap: 2px;
+}
+
+.chain-segment {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.chain-node {
+  display: inline-flex;
+  align-items: center;
+  padding: 8px 14px;
+  background: var(--color-nodeFill);
+  border: var(--stroke-thin) solid var(--color-nodeBorder);
+  font-family: var(--font-mono);
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--color-textPrimary);
+  white-space: nowrap;
+}
+
+.chain-glyph {
+  font-size: 20px;
+  line-height: 1;
 }
 
 .gallery-legend {
