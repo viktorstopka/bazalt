@@ -56,7 +56,6 @@ export const tokens = {
     // rather than a dedicated token.
     nodeFill: '#171414',
     nodeBorder: '#ffffff',
-    nodeDivider: 'rgba(255, 255, 255, 0.4)',
     nodeListening: '#7fd9e0',
     frameFill: 'rgba(120, 45, 45, 0.22)',
   },

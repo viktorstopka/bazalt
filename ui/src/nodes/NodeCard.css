@@ -143,7 +143,7 @@
 }
 
 .node-row-merged {
-  justify-content: space-between;
+  justify-content: center;
 }
 
 /* Ports (and parameters, below) "pierce" the node's own border: the glyph
@@ -180,9 +180,20 @@
   transform: translate(50%, -50%);
 }
 
+/* Merged pass-through row (primary input === primary output, "the same
+   property, just changed" — see isSameProperty() in NodeCard.tsx): a
+   visibly bigger/longer arrow than an ordinary single-direction port row. */
+.node-port-glyph-long {
+  font-size: 26px;
+}
+
 .node-port-label {
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.node-port-label-merged {
+  padding: 0 10px;
 }
 
 .node-port-live-value {
@@ -223,12 +234,6 @@
   border-radius: 999px;
   padding: 2px 10px;
   color: var(--color-textPrimary);
-}
-
-.node-divider {
-  height: var(--stroke-thin);
-  background: var(--color-nodeDivider);
-  margin: 3px 0;
 }
 
 /* Horizontal layout variant (blueprint §4: "wide variant with inputs left,

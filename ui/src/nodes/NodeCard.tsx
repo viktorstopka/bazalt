@@ -51,32 +51,56 @@ interface PortRowData {
   port: PortDescriptor
 }
 
-function splitPorts(descriptor: NodeDescriptor): { merged: MergedRow[]; inputs: PortRowData[]; outputs: PortRowData[] } {
-  const merged: MergedRow[] = []
-  const usedInputIds = new Set<string>()
-  const usedOutputIds = new Set<string>()
+/** Heuristic for "the primary input and primary output are the same
+    property, just changed" (design-reference feedback: Predelay's single
+    "Audio" row vs. Add's separate "a"/"b"/"out" rows). There's no explicit
+    engine-side flag for this (PortDescriptor has isPrimaryOutput but no
+    isPrimaryInput/samePropertyAs) — best-effort from naming until one
+    exists: identical display name on both sides (Predelay's "Audio"/
+    "Audio"), or the generic "in"/"out" pass-through naming every real
+    single-audio-in/out M1/M2 node (delay.basic, filter.svf,
+    filter.onepole, util.voiceSum) happens to already use. Deliberately
+    NOT keyed on SignalType matching — the reference says two different
+    types are fine here, only the coloured glyphs differ per side.
+*/
+function isSameProperty(input: PortDescriptor, output: PortDescriptor): boolean {
+  const inName = (input.label || input.id).toLowerCase()
+  const outName = (output.label || output.id).toLowerCase()
+  return inName === outName || (inName === 'in' && outName === 'out')
+}
 
-  for (const input of descriptor.inputs) {
-    const match = descriptor.outputs.find((o) => o.id === input.id && o.type === input.type)
-    if (match) {
-      merged.push({ kind: 'merged', id: input.id, input, output: match })
-      usedInputIds.add(input.id)
-      usedOutputIds.add(match.id)
-    }
-  }
+/** The "primary input" is the first-declared input (no explicit flag
+    exists for this, unlike isPrimaryOutput — "first" matches how the
+    feedback describes it: "in Add it is just the first number"). The
+    primary output is the isPrimaryOutput-flagged one, falling back to the
+    first. Only these two ever merge, and only when isSameProperty() holds
+    — a node with more than one input (Add, Mix, VCA's gain) keeps every
+    port on its own row unless its specific primary pair qualifies.
+*/
+function splitPorts(descriptor: NodeDescriptor): { merged: MergedRow | null; inputs: PortRowData[]; outputs: PortRowData[] } {
+  const primaryInput = descriptor.inputs[0] as PortDescriptor | undefined
+  const primaryOutput = (descriptor.outputs.find((o) => o.isPrimaryOutput) ?? descriptor.outputs[0]) as PortDescriptor | undefined
+
+  const merged = primaryInput && primaryOutput && isSameProperty(primaryInput, primaryOutput)
+    ? { kind: 'merged' as const, id: primaryInput.id, input: primaryInput, output: primaryOutput }
+    : null
 
   return {
     merged,
-    inputs: descriptor.inputs.filter((p) => !usedInputIds.has(p.id)).map((port) => ({ kind: 'port', direction: 'input', port })),
-    outputs: descriptor.outputs.filter((p) => !usedOutputIds.has(p.id)).map((port) => ({ kind: 'port', direction: 'output', port })),
+    inputs: descriptor.inputs.filter((p) => p !== merged?.input).map((port) => ({ kind: 'port', direction: 'input', port })),
+    outputs: descriptor.outputs.filter((p) => p !== merged?.output).map((port) => ({ kind: 'port', direction: 'output', port })),
   }
 }
 
-function PortGlyph({ port, side }: { port: PortDescriptor; side: 'left' | 'right' }) {
+function PortGlyph({ port, side, long }: { port: PortDescriptor; side: 'left' | 'right'; long?: boolean }) {
   const style = portUiStyle(port)
   const color = port.isPolyPlaceholder ? tokens.color.portPoly : style.color
+  // "long" (the merged pass-through row): a visibly bigger/longer arrow
+  // than an ordinary port row's, per the design reference — the row
+  // stands for two ports at once, so its glyphs read as more significant.
+  const className = `node-port-glyph node-port-glyph-${side}${long ? ' node-port-glyph-long' : ''}`
   return (
-    <span className={`node-port-glyph node-port-glyph-${side}`} style={{ color }}>
+    <span className={className} style={{ color }}>
       {style.glyph}
     </span>
   )
@@ -108,11 +132,16 @@ function PortRow({ direction, port, connected, demoValue }: { direction: 'input'
 }
 
 function MergedRowView({ row }: { row: MergedRow }) {
+  // One shared label for the row (blueprint: "the property label appears
+  // in the centre") — the output's own label/id is normally the more
+  // meaningful name (Predelay's "Audio"); fall back to the input's if the
+  // output never got one.
+  const label = row.output.label || row.input.label || row.output.id
   return (
     <div className="node-row node-row-port node-row-merged">
-      <PortGlyph port={row.input} side="left" />
-      <PortLabel port={row.output} connected={false} />
-      <PortGlyph port={row.output} side="right" />
+      <PortGlyph port={row.input} side="left" long />
+      <span className="node-port-label node-port-label-merged">{label}</span>
+      <PortGlyph port={row.output} side="right" long />
     </div>
   )
 }
@@ -188,17 +217,13 @@ function StandardBody({ descriptor, state }: { descriptor: NodeDescriptor; state
 
   return (
     <>
-      {merged.map((row) => (
-        <MergedRowView key={row.id} row={row} />
-      ))}
-      {merged.length > 0 && descriptor.parameters.length > 0 && <div className="node-divider" />}
+      {merged && <MergedRowView row={merged} />}
       {inputs.map((row) => (
         <PortRow key={row.port.id} direction="input" port={row.port} connected={connected.has(row.port.id)} demoValue={state.demoConnectedValue} />
       ))}
       {descriptor.parameters.map((p) => (
         <ParameterRow key={p.id} id={p.id} displayName={p.displayName || p.id} defaultValue={p.defaultValue} unit={p.unit} />
       ))}
-      {(merged.length > 0 || inputs.length > 0 || descriptor.parameters.length > 0) && outputs.length > 0 && <div className="node-divider" />}
       {outputs.map((row) => (
         <PortRow key={row.port.id} direction="output" port={row.port} connected={connected.has(row.port.id)} demoValue={state.demoConnectedValue} />
       ))}
