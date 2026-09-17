@@ -46,3 +46,12 @@ instruction). M9+ builds the real node editor on this foundation.
 - `StressTestCanvas.tsx`/`stressGraph.ts` are dev-only scaffolding, matching `ui/src/App.tsx`'s M4
   benchmark spike's fate (CLAUDE.md) — delete them once the real node editor renders enough to
   stress-test itself directly, don't try to preserve or build on them.
+
+**Amendment (M9):** the line above turned out to overstate what the component gallery needs. The
+gallery (`ui/src/nodes/NodeCard.tsx`, ADR-0007) renders node bodies as plain DOM/CSS, not the
+WebGL-background/DOM-overlay hybrid — a gallery has no pan/zoom camera transform to keep the two
+layers synchronized against, and no node count (a few dozen, not 500) that a WebGL background would
+win anything from. The hybrid approach's real justification is amortizing draw calls across many
+panning/zooming nodes, which only exists once M10 puts nodes on the live, transformable canvas —
+that's where hybrid-sync verification actually belongs, and where it's now deferred to. `NodeCard`
+itself is reused as-is by M10 either way; only the layer it's mounted in changes.

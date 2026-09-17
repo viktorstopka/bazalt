@@ -31,6 +31,7 @@ target_sources(BazaltPlugin
         source/PluginEditor.cpp
         source/MacroParameters.cpp
         source/GraphEditController.cpp
+        source/NodeDescriptorJson.cpp
 )
 
 target_compile_definitions(BazaltPlugin

@@ -1,4 +1,5 @@
 #include "PluginEditor.h"
+#include "NodeDescriptorJson.h"
 #include "bazalt/engine/telemetry/TelemetryFrame.h"
 #include <optional>
 
@@ -156,6 +157,16 @@ namespace bazalt
             auto& controller = processor.getGraphEditController();
             const auto result = controller.setOutput (argString (args, 0), argString (args, 1));
             completion (commandResultToVar (result));
+        });
+
+        // M9 (NODE_EDITOR.md §3): every registered node type's descriptor,
+        // fetched once at editor load — not a graph-editing command (no
+        // NodeGraph mutation, no recompile), but still goes over this
+        // native-function transport rather than the telemetry fetch()
+        // path, matching ADR-0006's RPC-shaped-vs-pull-based distinction.
+        options = options.withNativeFunction ("getNodeDescriptors", [&processor] (Args, Completion completion)
+        {
+            completion (nodeDescriptorsToVar (processor.getNodeFactory().describeAll()));
         });
 
         // M8 (NODE_EDITOR.md §9): dynamic, viewport-driven tap subscription

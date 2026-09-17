@@ -7,12 +7,12 @@ WebView UI. Full design: `docs/ARCHITECTURE.md`. Node editor design (M7+):
 touching anything cross-cutting — this file is the condensed day-to-day
 ruleset, not a replacement for either.
 
-**M0–M8 are done and committed** (M0–M6 = the MVP; M7 = domain-aware graph
+**M0–M9 are done and committed** (M0–M6 = the MVP; M7 = domain-aware graph
 model + command bridge; M8 = dynamic telemetry + rendering-split
-benchmark — both node-editor-phase milestones from `docs/NODE_EDITOR.md`).
-M9 (descriptor schema end-to-end + component gallery) is next. Each
-milestone must build, pass its tests, and be committed before the next
-one starts.
+benchmark; M9 = descriptor schema end-to-end + component gallery — all
+node-editor-phase milestones from `docs/NODE_EDITOR.md`). M10 (canvas
+navigation, placement, wiring) is next. Each milestone must build, pass
+its tests, and be committed before the next one starts.
 
 ## The non-negotiable rules
 
@@ -161,11 +161,12 @@ ctest --test-dir build -C Debug -R PluginTests --output-on-failure
   and M11 already call out that the real node editor's many more dynamic
   previews need a single shared loop instead — don't copy this pattern there.
 - The M5 canvas (`ui/src/canvas/InfiniteCanvas.tsx`) and analysis panel both
-  render via Canvas2D, not WebGL, deliberately — this is what
+  still render via Canvas2D, not WebGL — this is what
   `bazalt_node_editor_prompt_v3.md` §3 means by "build on the M5 canvas
-  rather than replacing it unless the benchmark justifies it." The WebGL/DOM
-  split proposed in NODE_EDITOR.md §10 is unconfirmed until M8 actually
-  benchmarks it; don't assume WebGL is needed before that milestone does.
+  rather than replacing it unless the benchmark justifies it." M8's
+  benchmark (ADR-0008) since confirmed WebGL2 for the grid/cables/node-body
+  backgrounds of the real node editor; M10 is what actually migrates
+  `InfiniteCanvas` off Canvas2D onto that WebGL foundation, not done yet.
 - M5's `InfiniteCanvas` only implements pan/zoom/grid/a snap-settings toggle
   — box-select and fit-view are real interactions but belong to the node
   editor phase (blueprint §6.1, `docs/MILESTONES.md` M10), where there are
@@ -189,9 +190,11 @@ ctest --test-dir build -C Debug -R PluginTests --output-on-failure
   withGraphCommands()`'s `graphAddNode`/`graphDeleteNode`/`graphConnect`/
   `graphDisconnect`/`graphSetParameterValue` native functions) is real and
   tested (`tests-plugin/GraphEditControllerTests.cpp` drives
-  `GraphEditController` directly), but **no UI calls it yet** — nothing in
-  `ui/` imports `getNativeFunction` for these. Don't assume a JS-side
-  caller exists; that's M10+.
+  `GraphEditController` directly). **Still no UI caller for these
+  graph-editing commands** — don't assume one exists; that's M10's job.
+  `getNodeDescriptors` (M9, ADR-0007) is the first native function the UI
+  actually calls — it's read-only (no graph mutation, no recompile, no
+  undo step), fetched once by the component gallery at load.
 - `util.voiceSum`/`DomainSplitter` (NODE_EDITOR.md §7, ADR pending for the
   domain-partitioning design) are real and tested at the engine level
   (`tests/DomainSplitterTests.cpp`), but `PluginProcessor`'s starting graph
@@ -232,8 +235,29 @@ ctest --test-dir build -C Debug -R PluginTests --output-on-failure
   — dev-only scaffolding reachable via App.tsx's "Run stress test (M8)"
   button, drawing a synthetic (not real-engine) 500-node/1000-cable layout.
   Same fate as the M4 `ui/src/App.tsx` benchmark spike: delete wholesale
-  once M9/M10's real node editor exists, don't try to preserve or build on
-  it.
+  once M10's real node editor exists, don't try to preserve or build on it.
+- `ui/src/nodes/NodeCard.tsx` (M9, ADR-0007) renders any `NodeDescriptor`
+  (real or mock) as plain DOM/CSS, not the hybrid WebGL-background/DOM-
+  overlay approach ADR-0008 originally flagged as M9's job to verify —
+  amended there: a static gallery has no pan/zoom transform to keep synced
+  and no node count that would benefit from batched WebGL draws. `NodeCard`
+  itself is what M10 mounts on the live canvas; the hybrid-sync question is
+  M10's to answer, not M9's.
+- `ui/src/graph/mockDescriptors.ts` (M9) provides `NodeDescriptor`s for
+  everything the blueprint's design reference shows that isn't a real
+  engine node yet: MIDI Note/CC, Audio In, Trigger by Threshold, Random,
+  Macro, Predelay, four Singleton-chain examples (`mock.*`), plus
+  Frame/Header/Image (`deco.*` — real type IDs NODE_EDITOR.md §4 names,
+  whose actual engine implementation MILESTONES.md defers to M12). Every
+  entry is `isMock: true`; nothing on the C++ side ever produces or reads
+  that field. Extend this table, don't invent a second one, when a future
+  milestone needs another demonstration-only node.
+- The M9 component gallery's dev-only "Component gallery (M9)" button
+  (`App.tsx`, next to M8's stress-test button) fetches real descriptors via
+  the new `getNodeDescriptors` native function and merges them with
+  `mockDescriptors.ts` — see ADR-0007 for the full JSON schema (including
+  why `optional<float>` bounds serialize to `null`, never `0`) and the
+  gallery's row-ordering rules for standard-layout nodes.
 - `BazaltAudioProcessor` has an explicit (non-defaulted) destructor that
   calls `analysisThread.stopThread (2000)` unconditionally, in addition to
   `releaseResources()` doing the same. This isn't redundant: hosts are

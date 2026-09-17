@@ -1,0 +1,281 @@
+.node-card {
+  display: inline-flex;
+  flex-direction: column;
+  min-width: 168px;
+  background: var(--color-nodeFill);
+  border: var(--stroke-thin) solid var(--color-nodeBorder);
+  border-radius: var(--radius-sm);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--color-textPrimary);
+  user-select: none;
+}
+
+.node-card-hovered {
+  border-color: var(--color-nodeBorderHover);
+}
+
+.node-card-selected {
+  border-color: var(--color-nodeBorderSelected);
+  box-shadow: 0 0 0 1px var(--color-nodeBorderSelected);
+}
+
+.node-card-listening {
+  border-color: var(--color-nodeListening);
+  box-shadow: 0 0 8px 0 var(--color-nodeListening);
+}
+
+.node-card-bypassed {
+  opacity: 0.45;
+}
+
+.node-card-error {
+  border-color: var(--color-error);
+}
+
+.node-card-macro {
+  border-style: dotted;
+}
+
+.node-title-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--space-xs) var(--space-sm);
+  gap: var(--space-xs);
+}
+
+.node-title {
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.node-title-icons {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.node-error-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--color-error);
+  color: var(--color-textPrimary);
+  font-size: 10px;
+  line-height: 1;
+  cursor: default;
+}
+
+.node-bypass-icon {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  border: 1px solid var(--color-textSecondary);
+  position: relative;
+  opacity: 0.6;
+}
+
+.node-bypass-icon::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: -1px;
+  width: 1px;
+  height: 14px;
+  background: var(--color-textSecondary);
+  transform: translateX(-50%) rotate(45deg);
+}
+
+.node-bypass-icon-active {
+  opacity: 1;
+  border-color: var(--color-error);
+}
+
+.node-bypass-icon-active::after {
+  background: var(--color-error);
+}
+
+.node-info-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  border: 1px solid var(--color-textSecondary);
+  color: var(--color-textSecondary);
+  font-size: 10px;
+  font-style: italic;
+  line-height: 1;
+}
+
+.node-assist-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  border: 1px solid var(--color-textSecondary);
+  color: var(--color-textSecondary);
+  font-size: 10px;
+  line-height: 1;
+}
+
+.node-row {
+  display: flex;
+  align-items: center;
+  padding: 3px var(--space-sm);
+  gap: 6px;
+  white-space: nowrap;
+}
+
+.node-row-input {
+  justify-content: flex-start;
+}
+
+.node-row-output {
+  justify-content: flex-end;
+}
+
+.node-row-merged {
+  justify-content: space-between;
+}
+
+.node-port-glyph {
+  font-size: 12px;
+  line-height: 1;
+  width: 10px;
+  text-align: center;
+}
+
+.node-port-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.node-port-live-value {
+  color: var(--color-textSecondary);
+}
+
+.node-row-parameter {
+  justify-content: space-between;
+  color: var(--color-textSecondary);
+}
+
+.node-parameter-label {
+  color: var(--color-textSecondary);
+}
+
+.node-value-pill {
+  background: var(--color-panel);
+  border: var(--stroke-thin) solid var(--color-panelBorder);
+  border-radius: var(--radius-sm);
+  padding: 1px 8px;
+  color: var(--color-textPrimary);
+}
+
+.node-divider {
+  height: var(--stroke-thin);
+  background: var(--color-nodeDivider);
+  margin: 2px 0;
+}
+
+/* Horizontal layout variant (blueprint §4: "wide variant with inputs left,
+   a large live preview centre, output value indicator next to the output") */
+.node-card-horizontal {
+  min-width: 260px;
+}
+
+.node-horizontal-body {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  padding: var(--space-xs) var(--space-sm) var(--space-sm);
+}
+
+.node-horizontal-column {
+  display: flex;
+  flex-direction: column;
+  min-width: 70px;
+}
+
+.node-horizontal-column-output {
+  align-items: flex-end;
+}
+
+.node-preview-placeholder {
+  flex: 1;
+  height: 32px;
+  min-width: 70px;
+  background: var(--color-panel);
+  border-radius: var(--radius-sm);
+}
+
+/* Singleton layout variant: title only, typed cable stub each side */
+.node-singleton-body {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  background: var(--color-nodeFill);
+  border: var(--stroke-thin) solid var(--color-nodeBorder);
+  border-radius: var(--radius-sm);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--color-textPrimary);
+  white-space: nowrap;
+}
+
+/* Decoration layout variant: Knob/Reroute, Frame, Header, Image */
+.node-knob {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  border: var(--stroke-thin) solid var(--color-textSecondary);
+  background: var(--color-nodeFill);
+}
+
+.node-frame {
+  position: relative;
+  min-width: 220px;
+  min-height: 160px;
+  background: var(--color-frameFill);
+  border: var(--stroke-thin) solid var(--color-frameBorder);
+  border-radius: var(--radius-md);
+}
+
+.node-frame-label {
+  position: absolute;
+  top: -20px;
+  left: 0;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--color-textPrimary);
+}
+
+.node-header-label {
+  font-family: var(--font-mono);
+  font-size: 15px;
+  color: var(--color-textPrimary);
+}
+
+.node-image-placeholder {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 140px;
+  height: 100px;
+  border: 1px dashed var(--color-nodeBorder);
+  border-radius: var(--radius-sm);
+  color: var(--color-textSecondary);
+  font-family: var(--font-mono);
+  font-size: 11px;
+}

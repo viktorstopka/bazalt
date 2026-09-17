@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { InfiniteCanvas, type SnapSettings } from './canvas/InfiniteCanvas'
 import { StressTestCanvas } from './canvas/StressTestCanvas'
+import { ComponentGallery } from './gallery/ComponentGallery'
 import { AnalysisPanel } from './analysis/AnalysisPanel'
 import { MacroSlider } from './controls/MacroSlider'
 import './App.css'
@@ -21,7 +22,10 @@ const MACROS = [
 function App() {
   const [snapSettings, setSnapSettings] = useState<SnapSettings>({ enabled: true, sizeWorldUnits: 24 })
   const [stressTestActive, setStressTestActive] = useState(false)
+  const [galleryActive, setGalleryActive] = useState(false)
   const [stressStats, setStressStats] = useState({ fps: 0, subscribedTaps: 0 })
+
+  if (galleryActive) return <ComponentGallery onClose={() => setGalleryActive(false)} />
 
   return (
     <div id="app-root">
@@ -44,6 +48,9 @@ function App() {
               />
               Snap to grid
             </label>
+            <button className="top-bar-stress-test" onClick={() => setGalleryActive(true)}>
+              Component gallery (M9)
+            </button>
             <button className="top-bar-stress-test" onClick={() => setStressTestActive(true)}>
               Run stress test (M8)
             </button>

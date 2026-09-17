@@ -6,13 +6,16 @@
 // resolving ARCHITECTURE.md §7's "TBD in M5" note on how that's done.
 //
 // Values match `docs/Frame 1 Bazalt.png` where M5 already touches them
-// (background, monospace type, thin strokes). The full port-type palette
-// (NODE_EDITOR.md §5/§10) is deliberately not defined yet — out of scope
-// until M9 — extend this object additively when it lands, don't restructure
-// it.
+// (background, monospace type, thin strokes). `port`/`node` below are the
+// M9 addition: NODE_EDITOR.md §5's 6-colour port-type palette (glyphs live
+// in ui/src/graph/portUiKind.ts, not here — a glyph is a character/shape
+// choice, not a design-token value) plus the node-body surface tokens the
+// component gallery (M9) and the WebGL renderer (M10+) both read from this
+// one object, resolving ARCHITECTURE.md §7's "one place a theme is
+// defined" for the node editor specifically.
 export const tokens = {
   color: {
-    background: '#14161a',
+    background: '#0b0a09',
     panel: '#1b1e24',
     panelBorder: '#2c2f37',
     textPrimary: '#e8e8ea',
@@ -26,6 +29,31 @@ export const tokens = {
     meterRms: '#5b8def',
     sliderFill: '#5b8def',
     error: '#e0454f',
+
+    // Port-type palette (NODE_EDITOR.md §5, blueprint §4's table). `poly`
+    // is the explicit placeholder the blueprint calls out ("green marks
+    // polyphonic audio flowing into Sum Voices... poly/mono encoding will
+    // be redesigned later") — kept isolated behind its own token so nothing
+    // else ever reaches for "green" directly.
+    portAudio: '#e0339e',
+    portModulation: '#e0924b',
+    portValue: '#e8e8ea',
+    portInteger: '#e6c85b',
+    portTrigger: '#8c7fff',
+    portBoolean: '#5b8fff',
+    portPoly: '#4ade80',
+
+    // Node-body surface (M9 component gallery; NODE_EDITOR.md §10 — DOM
+    // node bodies until the hybrid WebGL-background sync is proven in M10,
+    // see ADR-0008's amended consequences).
+    nodeFill: '#08090a',
+    nodeBorder: 'rgba(255, 255, 255, 0.18)',
+    nodeBorderSelected: '#e8e8ea',
+    nodeBorderHover: 'rgba(255, 255, 255, 0.4)',
+    nodeDivider: 'rgba(255, 255, 255, 0.12)',
+    nodeListening: '#7fd9e0',
+    frameFill: 'rgba(120, 45, 45, 0.22)',
+    frameBorder: 'rgba(255, 255, 255, 0.1)',
   },
   font: {
     mono: "'JetBrains Mono', 'Cascadia Mono', Consolas, monospace",

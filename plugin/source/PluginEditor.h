@@ -34,10 +34,10 @@ namespace bazalt
         // M7 command bridge (NODE_EDITOR.md §6): registers addNode/
         // deleteNode/connect/disconnect/setParameterValue as native
         // functions the WebView can call via getNativeFunction(name) —
-        // see GraphEditController for what each one actually does. No UI
-        // calls these yet (M7's own scope: driven by a test harness, not
-        // real UI); this just completes the transport so M10's real UI has
-        // something to call into.
+        // see GraphEditController for what each one actually does. Still no
+        // UI caller for the graph-editing commands themselves (that's
+        // M10's job); getNodeDescriptors (M9) is the first of these the UI
+        // actually calls, fetched once by the component gallery at load.
         static juce::WebBrowserComponent::Options withGraphCommands (juce::WebBrowserComponent::Options options,
                                                                       BazaltAudioProcessor& processor);
 
