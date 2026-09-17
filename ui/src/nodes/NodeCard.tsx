@@ -85,9 +85,13 @@ function PortGlyph({ port, side }: { port: PortDescriptor; side: 'left' | 'right
 function PortLabel({ port, connected, demoValue }: { port: PortDescriptor; connected: boolean; demoValue?: string }) {
   const style = portUiStyle(port)
   const color = port.isPolyPlaceholder ? tokens.color.portPoly : style.color
+  // PortDescriptor.h's own contract: "falls back to id in the UI if empty"
+  // — several real M1/M2/M7 nodes (osc.basic's "out", util.add's "a"/"b",
+  // ...) never got a display label filled in, so this is a real, expected
+  // case, not a malformed descriptor.
   return (
     <span className="node-port-label" style={{ color }}>
-      {port.label}
+      {port.label || port.id}
       {connected && <span className="node-port-live-value"> {demoValue ?? port.defaultValue}</span>}
     </span>
   )
@@ -238,18 +242,50 @@ function HorizontalBody({ descriptor, state }: { descriptor: NodeDescriptor; sta
   )
 }
 
+function SingletonGlyph({ port }: { port: PortDescriptor }) {
+  const style = portUiStyle(port)
+  const color = port.isPolyPlaceholder ? tokens.color.portPoly : style.color
+  // Deliberately NOT the border-piercing PortGlyph used elsewhere: adjacent
+  // singletons are meant to visually chain (blueprint §4: "frames touch,
+  // arrows join") — a singleton's own opaque background-patch notch would
+  // paint over the neighbouring box's arrow tip where they meet, breaking
+  // exactly the join effect this layout variant exists for.
+  return (
+    <span className="node-singleton-glyph" style={{ color }}>
+      {style.glyph}
+    </span>
+  )
+}
+
 function SingletonBody({ descriptor }: { descriptor: NodeDescriptor }) {
   const input = descriptor.inputs[0]
   const output = descriptor.outputs[0]
   return (
     <div className="node-singleton-body">
-      {input && <PortGlyph port={input} side="left" />}
+      {input && <SingletonGlyph port={input} />}
       <span className="node-singleton-title">{descriptor.title}</span>
-      {output && <PortGlyph port={output} side="right" />}
+      {output && <SingletonGlyph port={output} />}
     </div>
   )
 }
 
+
+/** A minimal ear glyph, no box/border/title — blueprint §4/`Frame 1
+    Bazalt.png`'s "Fun Ear Preview Node. Called 'Listen'": util.listen
+    doesn't look like an ordinary node at all, just an icon a cable can
+    terminate at. Driven by `icon === 'ear'` (ListenNode::getIcon(),
+    NODE_EDITOR.md §3) rather than a hardcoded type-id check, so any future
+    node marking itself this way gets the same treatment for free.
+*/
+function EarIcon({ title }: { title: string }) {
+  return (
+    <svg className="node-ear-icon" width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6">
+      <title>{title}</title>
+      <path d="M8 14.5c-1.6-1.6-2.5-3.5-2.5-5.5a6.5 6.5 0 1 1 11 4.7c-1 1-1.5 2-1.5 3.3v.5a2.5 2.5 0 0 1-5 0" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M9 9a2 2 0 0 1 4 0c0 1-.6 1.4-1.2 1.9-.5.4-.8.7-.8 1.4" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  )
+}
 
 function DecorationBody({ descriptor }: { descriptor: NodeDescriptor }) {
   if (descriptor.typeId === 'util.reroute') return <div className="node-knob" title="Reroute" />
@@ -269,6 +305,7 @@ function DecorationBody({ descriptor }: { descriptor: NodeDescriptor }) {
 }
 
 export function NodeCard({ descriptor, state = {} }: NodeCardProps) {
+  if (descriptor.icon === 'ear') return <EarIcon title={descriptor.title} />
   if (descriptor.layoutVariant === 'decoration') return <DecorationBody descriptor={descriptor} />
   if (descriptor.layoutVariant === 'singleton') return <SingletonBody descriptor={descriptor} />
 

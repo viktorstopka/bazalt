@@ -49,10 +49,13 @@ export const tokens = {
     // sharp corners (no radius) — corrected from the initial M9 build
     // after direct feedback against `docs/Slice 1 (1).png`, a closer crop
     // of the design reference than `Frame 1 Bazalt.png` alone made clear.
+    // No glow/box-shadow token on purpose (second round of feedback: reads
+    // as an AI-generated-UI cliché) — state changes are flat border-colour
+    // swaps (accent for selected, nodeListening for listening) or, for
+    // hover, a header-only background tint using `accent`/white directly
+    // rather than a dedicated token.
     nodeFill: '#08090a',
     nodeBorder: '#ffffff',
-    nodeBorderHover: '#ffffff',
-    nodeBorderSelected: '#ffffff',
     nodeDivider: 'rgba(255, 255, 255, 0.4)',
     nodeListening: '#7fd9e0',
     frameFill: 'rgba(120, 45, 45, 0.22)',

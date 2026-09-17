@@ -12,20 +12,22 @@
 }
 
 /* Border is solid opaque white by default (design reference,
-   docs/Slice 1 (1).png) — hover/selected/listening/error differentiate via
-   box-shadow/colour rather than opacity, since default is already fully
-   opaque. */
-.node-card-hovered {
-  box-shadow: 0 0 0 1px var(--color-nodeBorderHover);
+   docs/Slice 1 (1).png) — no glow/box-shadow anywhere in this file on
+   purpose (reads as an AI-generated-UI cliché, per direct feedback).
+   Hover only tints the header background, never the whole node (a
+   whole-node background would fight the port glyphs' own background-patch
+   notches); selected/listening switch the border to a flat colour, same
+   1px weight as the resting state. */
+.node-card-hovered .node-title-bar {
+  background: rgba(255, 255, 255, 0.07);
 }
 
 .node-card-selected {
-  box-shadow: 0 0 0 2px var(--color-nodeBorderSelected);
+  border-color: var(--color-accent);
 }
 
 .node-card-listening {
   border-color: var(--color-nodeListening);
-  box-shadow: 0 0 10px 0 var(--color-nodeListening);
 }
 
 .node-card-bypassed {
@@ -66,12 +68,12 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 20px;
-  height: 20px;
+  width: 15px;
+  height: 15px;
   border-radius: 50%;
   background: var(--color-error);
   color: var(--color-textPrimary);
-  font-size: 13px;
+  font-size: 10px;
   line-height: 1;
   cursor: default;
 }
@@ -126,6 +128,7 @@
 .node-row {
   display: flex;
   align-items: center;
+  min-height: 20px;
   padding: 5px var(--space-md);
   gap: 8px;
   white-space: nowrap;
@@ -160,7 +163,7 @@
 .node-port-glyph {
   position: absolute;
   top: 50%;
-  font-size: 24px;
+  font-size: 20px;
   line-height: 1;
   background: var(--color-nodeFill);
   padding: 0 4px;
@@ -261,11 +264,10 @@
 /* Singleton layout variant: title only, typed cable stub each side,
    piercing its own border the same way a standard node's port rows do. */
 .node-singleton-body {
-  position: relative;
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  padding: 8px 20px;
+  padding: 8px 14px;
   background: var(--color-nodeFill);
   border: var(--stroke-thin) solid var(--color-nodeBorder);
   border-radius: 0;
@@ -273,6 +275,18 @@
   font-size: 13px;
   color: var(--color-textPrimary);
   white-space: nowrap;
+}
+
+/* Plain (non-notching) glyph — see SingletonGlyph's comment in
+   NodeCard.tsx for why this can't reuse .node-port-glyph. */
+.node-singleton-glyph {
+  font-size: 20px;
+  line-height: 1;
+}
+
+.node-ear-icon {
+  color: var(--color-textPrimary);
+  overflow: visible;
 }
 
 /* Decoration layout variant: Knob/Reroute, Frame, Header, Image */
