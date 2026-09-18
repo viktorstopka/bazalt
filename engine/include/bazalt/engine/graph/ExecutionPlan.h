@@ -76,17 +76,59 @@ namespace bazalt::engine
             PerSampleRegionStep region;
         };
 
-        std::vector<std::unique_ptr<Node>> nodes;   // owns node instances, indexed by slot
+        // M17: shared, not unique, ownership — GraphCompiler reuses the
+        // same Node object across a recompile when a node's (id, type) is
+        // unchanged from the previous plan (the "(instanceIndex, nodeID)
+        // state pool" ARCHITECTURE.md §3.2 originally specified — see
+        // GraphCompiler::compile()'s `previousPlan` parameter), so DSP
+        // state (filter memory, envelope stage, delay-line contents)
+        // survives an edit that doesn't touch that specific node. This is
+        // safe without any new synchronization: only two things ever touch
+        // this vector or its shared_ptrs — the compiler thread (building a
+        // new plan, copying shared_ptrs out of the previous one) and
+        // PlanSwapper::reclaim() (destroying a superseded plan, dropping
+        // its shared_ptrs) — both message-thread-only. The audio thread
+        // only ever dereferences via a raw pointer obtained from whichever
+        // plan PlanSwapper handed it; it never copies or destroys a
+        // shared_ptr itself, so it can never be the thread that drops a
+        // node's last reference (the exact hazard a shared_ptr would
+        // otherwise risk on the audio thread — see Data.h's own comment on
+        // why DataPublisher deliberately does NOT use shared_ptr for a
+        // case where the audio thread genuinely could be that thread).
+        std::vector<std::shared_ptr<Node>> nodes;   // owns (or shares) node instances, indexed by slot
         std::unordered_map<juce::String, int> nodeIdToSlot; // stable NodeGraph id -> slot, for driver lookups (noteOn/setFrequency/etc — never used on the audio thread)
+        // M17: parallel to nodeIdToSlot — lets a future compile ask "does
+        // my previous plan's node at this id have the same type as what
+        // I'm about to create", without needing the original NodeGraph
+        // (GraphCompiler.cpp's state-pool reuse check).
+        std::unordered_map<juce::String, juce::String> nodeIdToType;
+
+        // M17: the exact parameters applied to each node at compile time —
+        // NOT just for bookkeeping. A reused node (same id, same type as
+        // the previous plan) is only actually shared — and left
+        // completely untouched — when its parameters are also byte-
+        // identical to what's recorded here; otherwise a fresh node is
+        // built instead. This is a real safety requirement, not an
+        // optimization: the previous plan may still be live for the audio
+        // thread to read (only PlanSwapper's epoch-gated reclaim() knows
+        // for sure it's safe to free), so a reused node's shared_ptr must
+        // never be mutated by the compiler thread after publish — calling
+        // setParameter() on it would race the audio thread's own
+        // processSample() calls on the SAME object. An earlier version of
+        // this mechanism re-applied setParameter() to every reused node
+        // unconditionally and was caught immediately by
+        // GraphEditControllerTests.cpp's own swap-under-load test turning
+        // up a real within-block discontinuity — this field is the fix.
+        std::unordered_map<juce::String, std::unordered_map<juce::String, float>> nodeIdToAppliedParameters;
 
         // Empty for an ordinary plan. Set once, by whoever compiles this
         // plan, before it's ever published (PlanSwapper) — never mutated
         // after, so reading it from the audio thread via a published
         // pointer is exactly as safe as reading anything else on this
         // otherwise-immutable object. Generic on purpose (not
-        // "voiceSumNodeId"): any future node type that needs a per-block
-        // value supplied from outside its own graph (VoiceSumNode.h is the
-        // first; NODE_EDITOR.md doesn't rule out others) can reuse this
+        // "instanceMixNodeId"): any future node type that needs a per-block
+        // value supplied from outside its own graph (InstanceMixNode.h is
+        // the first, superseding the original VoiceSumNode.h — M17) can reuse this
         // same field rather than each inventing its own thread-safe
         // driver-to-audio-thread handoff.
         juce::String externalInputNodeId;

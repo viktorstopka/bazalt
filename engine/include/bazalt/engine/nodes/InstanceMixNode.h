@@ -1,0 +1,139 @@
+#pragma once
+
+#include "bazalt/engine/graph/Node.h"
+#include <cstring>
+
+namespace bazalt::engine::nodes
+{
+    /** Stable type id: "instance.mix" (M17). `DOMAINS.md` §2's Voice Mix —
+        supersedes the downstream half of "util.voiceSum"
+        (`RECONCILIATION.md` 3.1/3.5). Mechanically identical to
+        `VoiceSumNode`'s `setExternalBlock()` hand-off (same reasoning:
+        the real per-instance sum is computed outside the compiled graph,
+        by whoever drives every instance's own plan and this one global
+        plan — `PluginProcessor` — and handed in immediately before this
+        plan's own `process()` call, same thread, no synchronization
+        needed) — the real addition is the `mode` parameter, which tells
+        the *driver* whether to sum or average the per-instance
+        contributions before handing them in (this node doesn't average
+        anything itself; by the time a block reaches it, combining has
+        already happened, exactly like `VoiceSumNode`).
+
+        M17 scope limit, documented rather than silently assumed: exactly
+        one `instance.mix` node per graph is supported, same ceiling
+        `util.voiceSum` already had — `DOMAINS.md`'s "placed anywhere,
+        multiple allowed" needs `ExecutionPlan`/`GraphCompiler` to support
+        more than one named/tagged output per compiled plan, which doesn't
+        exist yet (`ADR-0020`'s own note). Silence detection (measuring
+        the signal reaching this node and freeing an instance once it's
+        been quiet long enough) is implemented generically in
+        `VoiceManager`/`PluginProcessor` against whatever a voice's own
+        designated output is — it does not require reading this node at
+        all, so it works whether or not a real graph even has an
+        `instance.mix` node in it (this node's own
+        threshold/hold-time parameters are for UI/schema completeness and
+        future per-graph configurability; the M17 detector uses its own
+        sensible constants — see `VoiceManager.h`).
+    */
+    class InstanceMixNode : public Node
+    {
+    public:
+        static constexpr int numInputs = 1;
+        static constexpr int numOutputs = 1;
+
+        int getNumInputPorts() const noexcept override { return numInputs; }
+        int getNumOutputPorts() const noexcept override { return numOutputs; }
+
+        juce::String getTitle() const override { return "Voice Mix"; }
+        juce::String getCategory() const override { return "Domain"; }
+
+        std::vector<PortDescriptor> getInputPorts() const override
+        {
+            PortDescriptor port { "in", SignalType::Audio };
+            port.channels = Channels::Inherited;
+            return { port };
+        }
+
+        std::vector<PortDescriptor> getOutputPorts() const override
+        {
+            return { { "out", SignalType::Audio } };
+        }
+
+        bool supportsPerSample() const noexcept override { return false; } // domain seam, same as VoiceSumNode
+
+        std::vector<ParameterDescriptor> getParameters() const override
+        {
+            return { ParameterDescriptor { .id = "instance.mix.mode",
+                                            .minValue = 0.0f,
+                                            .maxValue = 1.0f,
+                                            .defaultValue = 0.0f,
+                                            .displayName = "Mode",
+                                            .isInteger = true,
+                                            .kind = ValueKind::Enum,
+                                            .enumOptions = { { "sum", "Sum" }, { "average", "Average" } },
+                                            .isStructural = true },
+                     ParameterDescriptor { .id = "instance.mix.silenceThresholdDb",
+                                            .minValue = -120.0f,
+                                            .maxValue = -20.0f,
+                                            .defaultValue = -80.0f,
+                                            .unit = "dB",
+                                            .displayName = "Silence Threshold" },
+                     ParameterDescriptor { .id = "instance.mix.silenceHoldTimeMs",
+                                            .minValue = 0.0f,
+                                            .maxValue = 5000.0f,
+                                            .defaultValue = 200.0f,
+                                            .unit = "ms",
+                                            .displayName = "Silence Hold Time" } };
+        }
+
+        void setParameter (const juce::String& parameterId, float value) override
+        {
+            if (parameterId == "instance.mix.mode")
+                mode = value < 0.5f ? Mode::Sum : Mode::Average;
+            else if (parameterId == "instance.mix.silenceThresholdDb")
+                silenceThresholdDb = value;
+            else if (parameterId == "instance.mix.silenceHoldTimeMs")
+                silenceHoldTimeMs = value;
+        }
+
+        enum class Mode
+        {
+            Sum,
+            Average
+        };
+
+        Mode getMode() const noexcept { return mode; }
+        float getSilenceThresholdDb() const noexcept { return silenceThresholdDb; }
+        float getSilenceHoldTimeMs() const noexcept { return silenceHoldTimeMs; }
+
+        /** Same contract as `VoiceSumNode::setExternalBlock()` — see class
+            comment. `samples` must remain valid only for the duration of
+            the immediately-following `processBlock()` call.
+        */
+        void setExternalBlock (const float* samples, int numSamples) noexcept
+        {
+            externalSamples = samples;
+            externalNumSamples = numSamples;
+        }
+
+        void processBlock (const float* const*, float* const* outputs, int numSamples) noexcept override
+        {
+            if (externalSamples != nullptr && numSamples == externalNumSamples)
+                std::memcpy (outputs[0], externalSamples, (size_t) numSamples * sizeof (float));
+            else
+                std::memset (outputs[0], 0, (size_t) numSamples * sizeof (float));
+        }
+
+        void processSample (const float*, float* outputs) noexcept override
+        {
+            outputs[0] = 0.0f; // never legally reached — supportsPerSample() is false
+        }
+
+    private:
+        Mode mode = Mode::Sum;
+        float silenceThresholdDb = -80.0f;
+        float silenceHoldTimeMs = 200.0f;
+        const float* externalSamples = nullptr;
+        int externalNumSamples = 0;
+    };
+}

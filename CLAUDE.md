@@ -36,7 +36,7 @@ its tests, and be committed before the next one starts.
    still a loud failure, just not one to build a try/catch test around.
 
 3. **Node type IDs, parameter IDs, and port IDs are hand-assigned strings**
-   (e.g. `"osc.basic"`, `"filter.svf.cutoff"`), never array indices or enum
+   (e.g. `"osc.analog"`, `"filter.svf.cutoff"`), never array indices or enum
    values, and **never renamed once shipped**. This is what lets old patches
    survive refactors. Silently violating it is the single most expensive
    mistake to make early.
@@ -130,22 +130,26 @@ ctest --test-dir build -C Debug -R PluginTests --output-on-failure
   is a bigger change that only earns its cost once a live graph editor needs
   it), not an oversight. `SignalType::Note`/`Event` still exist in the enum,
   unused by any port.
-- Each voice gets its own fully independent `ExecutionPlan` (compiled
-  `numVoices` times from the same `NodeGraph`), not a shared plan with
-  per-voice state pooled separately as ARCHITECTURE.md §3.2 ultimately
-  describes ("per-voice DSP state... lives in a separate pool keyed by
-  (voiceIndex, nodeID)"). `PlanSwapper` **is** wired into `PluginProcessor`
-  as of M7 (one per voice + one for the global domain,
-  `GraphEditController::recompileAndPublish()`) — live edits really do
-  recompile and swap now. What's still deferred is state *continuity*
-  across a recompile: every recompile builds brand-new `Node` instances
-  with fresh DSP state, so editing the graph while a voice is mid-note
-  resets that voice's filter/envelope/phase memory. Accepted for M7 (its
-  own swap-under-load test only proves no discontinuity *within* one
-  `process()` call, same guarantee M2's original test proved — not
-  musical-content continuity across edits); the per-(voiceIndex,nodeID)
-  state pool ARCHITECTURE.md §3.2 describes is the eventual fix, still not
-  built.
+- Each voice still gets its own fully independent `ExecutionPlan` (compiled
+  `numVoices` times from the same `NodeGraph`) — `ExecutionPlan::nodes` is
+  not one shared plan with a separate per-voice state pool keyed by
+  `(voiceIndex, nodeID)` the way an earlier reading of ARCHITECTURE.md §3.2
+  suggested. `PlanSwapper` is wired into `PluginProcessor` (one per voice +
+  one for the global domain, `GraphEditController::recompileAndPublish()`)
+  — live edits recompile and swap. State *continuity* across a recompile,
+  the part that used to be "still deferred" here, is real as of M17:
+  `GraphCompiler::compile()`'s `previousPlan` parameter (see its own doc
+  comment in `GraphCompiler.h`) reuses a node's exact `shared_ptr<Node>`
+  object — carrying forward filter memory, envelope stage, delay-line
+  contents — whenever that node's `(id, type, parameters)` are all
+  unchanged from the previous plan (`ExecutionPlan::nodeIdToAppliedParameters`).
+  Editing a node's own parameters still always takes effect immediately via
+  a fresh node (exactly like pre-M17 behaviour); it just doesn't also get
+  the state-preservation bonus on that same edit. This is a real
+  `(nodeID)`-keyed reuse mechanism, not literally the separate pool
+  ARCHITECTURE.md §3.2 originally sketched — close enough in effect that
+  the doc's own gap is considered closed, but don't assume the exact data
+  structure it described exists.
 - The sidechain "passthrough" (`PluginProcessor::updateAuxLevelsAndPassthrough`)
   mixes each active aux bus into the main output at a fixed -30dB and tracks
   its peak level — a deliberately simple, measurable proof that audio
@@ -160,19 +164,41 @@ ctest --test-dir build -C Debug -R PluginTests --output-on-failure
   not one shared/coordinated loop. Fine at M5's fixed count; NODE_EDITOR.md §9
   and M11 already call out that the real node editor's many more dynamic
   previews need a single shared loop instead — don't copy this pattern there.
-- The M5 canvas (`ui/src/canvas/InfiniteCanvas.tsx`) and analysis panel both
-  still render via Canvas2D, not WebGL — this is what
-  `bazalt_node_editor_prompt_v3.md` §3 means by "build on the M5 canvas
-  rather than replacing it unless the benchmark justifies it." M8's
-  benchmark (ADR-0008) since confirmed WebGL2 for the grid/cables/node-body
-  backgrounds of the real node editor; M10 is what actually migrates
-  `InfiniteCanvas` off Canvas2D onto that WebGL foundation, not done yet.
-- M5's `InfiniteCanvas` only implements pan/zoom/grid/a snap-settings toggle
-  — box-select and fit-view are real interactions but belong to the node
-  editor phase (blueprint §6.1, `docs/MILESTONES.md` M10), where there are
-  actually nodes to select/fit around. The snap-to-grid checkbox exists and
-  is wired to state, but nothing reads `sizeWorldUnits` yet for the same
-  reason.
+- The M5 analysis panel (`ui/src/analysis/TelemetryScope.tsx`) still renders
+  via Canvas2D, not WebGL — unchanged since M5, still
+  `bazalt_node_editor_prompt_v3.md` §3's "build on the M5 canvas rather than
+  replacing it unless the benchmark justifies it" territory for that
+  specific surface. `ui/src/canvas/InfiniteCanvas.tsx` itself migrated off
+  Canvas2D onto WebGL2 in M10 (`ui/src/canvas/webgl/nodeEditorRenderer.ts`),
+  per ADR-0008's M8 benchmark and its own stated M10 commitment — the grid
+  dots and cables render there now; node bodies stay DOM (`NodeCard`,
+  effectively unchanged — see the ADR-0008 Amendment (M10) note below).
+- M10 filled in the pan/zoom/grid canvas M5 left empty: box-select
+  (partial-touch), fit-view (auto-once when the graph first has nodes, plus
+  a toolbar button), node placement/move/select/delete/rename/bypass, a
+  right-click node context menu, and drag-to-wire with valid/rejected/hover
+  feedback (`docs/decisions/0010-wire-feedback-colours.md`) are all real now
+  (`ui/src/canvas/InfiniteCanvas.tsx`, `ui/src/graph/GraphSurface.tsx`). The
+  Shift+A/right-click Add menu (`ui/src/graph/AddMenu.tsx`) searches and
+  groups the same merged real+mock descriptor catalog the M9 gallery uses.
+  Snap-to-grid (`SnapSettings.sizeWorldUnits`) is now read by node drag and
+  ghost placement, closing the gap M5's own note used to flag here.
+- **M10's node editor canvas is deliberately not wired to the real engine.**
+  `ui/src/graph/graphStore.ts` is a local, client-side graph model (nodes,
+  wires, selection, undo/redo) — placing, wiring, moving, deleting,
+  renaming, and bypassing nodes on the M10 canvas never calls
+  `graphAddNode`/`graphConnect`/etc. (the M7 command bridge, ADR-0006), and
+  nothing persists across a reload (`PatchDocument` is untouched). This was
+  a deliberate scope call for M10, not an oversight: the real node
+  architecture (which engine node types exist, their final port/param
+  shapes) isn't settled yet, so wiring the interface to the real command
+  bridge now would likely need redoing once it is. The Add menu's catalog
+  still merges real descriptors (`fetchNodeDescriptors`, read-only) with
+  `mockDescriptors.ts` — only the placed *instances* and their wiring are
+  local. Whenever the engine side is ready, keep `InfiniteCanvas.tsx`'s/
+  `GraphSurface.tsx`'s interaction logic and swap `graphStore.ts`'s local
+  mutations for real command-bridge calls underneath the same UI, rather
+  than rebuilding the interactions themselves.
 - `ui/src/theme/tokens.ts` is the single source of truth for every colour/
   font/spacing/stroke value (resolves ARCHITECTURE.md §7's "TBD in M5" note
   on how DOM and canvas share one theme definition): `applyTokensToCss()`
@@ -195,13 +221,20 @@ ctest --test-dir build -C Debug -R PluginTests --output-on-failure
   `getNodeDescriptors` (M9, ADR-0007) is the first native function the UI
   actually calls — it's read-only (no graph mutation, no recompile, no
   undo step), fetched once by the component gallery at load.
-- `util.voiceSum`/`DomainSplitter` (NODE_EDITOR.md §7, ADR pending for the
-  domain-partitioning design) are real and tested at the engine level
-  (`tests/DomainSplitterTests.cpp`), but `PluginProcessor`'s starting graph
-  (`buildVoiceProofGraph()`) has no `util.voiceSum` node — the global-domain
-  code path (`BazaltAudioProcessor::finalizeVoiceSumIntoOutput`,
-  `hasGlobalDomain`) is real but dormant until a graph actually adds one via
-  a command.
+- `instance.mix`/`instance.allocator`/`DomainSplitter` (NODE_EDITOR.md §7,
+  ADR pending for the domain-partitioning design) are real and tested at
+  the engine level (`tests/DomainSplitterTests.cpp`), but `PluginProcessor`'s
+  starting graph (`buildVoiceProofGraph()`) has neither node — the
+  global-domain code path (`BazaltAudioProcessor::finalizeInstanceMixIntoOutput`,
+  `hasGlobalDomain`) is real but dormant until a graph actually adds an
+  `instance.mix` node via a command. M17 renamed the original
+  `util.voiceSum` (deleted `VoiceSumNode.h`) to `instance.mix`
+  (`InstanceMixNode.h`) and added `instance.allocator`
+  (`InstanceAllocatorNode.h`, voice-config ports only for M17 — its `spawn`
+  Note input is inert until M18 wires Note-typed ports through). Still only
+  a single allocator/single mix per graph is supported — `DomainSplitter`
+  rejects a second one of either, documented in its own header rather than
+  silently assumed.
 - `GraphEditController::recompileAndPublish()` does a full recompile (8
   voice plans + up to 1 global plan) on **every single command**, even ones
   that are conceptually one user gesture made of several calls (e.g. a
@@ -230,19 +263,31 @@ ctest --test-dir build -C Debug -R PluginTests --output-on-failure
   pushers. Wiring real per-node/per-connection signals is M11's job, not
   done yet — don't assume subscribing a tap for an arbitrary graph node id
   produces real data today.
-- `ui/src/canvas/StressTestCanvas.tsx`, `stressGraph.ts`, and
-  `ui/src/canvas/webgl/` are M8's rendering-split benchmark spike (ADR-0008)
-  — dev-only scaffolding reachable via App.tsx's "Run stress test (M8)"
-  button, drawing a synthetic (not real-engine) 500-node/1000-cable layout.
-  Same fate as the M4 `ui/src/App.tsx` benchmark spike: delete wholesale
-  once M10's real node editor exists, don't try to preserve or build on it.
+- `ui/src/canvas/StressTestCanvas.tsx`/`StressTestCanvas.css`/`stressGraph.ts`
+  (M8's rendering-split benchmark spike, ADR-0008 — dev-only scaffolding
+  behind App.tsx's "Run stress test (M8)" button, drawing a synthetic
+  500-node/1000-cable layout) were deleted wholesale in M10 polish, exactly
+  as this note used to say they eventually would be — the spike's own
+  measurements are preserved in ADR-0008 itself, the scaffolding isn't
+  needed once real node-count/perf questions can be asked against the real
+  editor instead. `ui/src/canvas/webgl/` **stays** — `nodeEditorRenderer.ts`
+  is the real M10 cable renderer, not spike code, and `shaders.ts`/
+  `webglUtils.ts` are its (still real, still used) shader/GL helpers; only
+  the spike-only shader exports (`dotVertexShader`, `lineVertexShader`,
+  `solidFragmentShader`, `varyingColorFragmentShader`) went with it.
 - `ui/src/nodes/NodeCard.tsx` (M9, ADR-0007) renders any `NodeDescriptor`
   (real or mock) as plain DOM/CSS, not the hybrid WebGL-background/DOM-
   overlay approach ADR-0008 originally flagged as M9's job to verify —
   amended there: a static gallery has no pan/zoom transform to keep synced
-  and no node count that would benefit from batched WebGL draws. `NodeCard`
-  itself is what M10 mounts on the live canvas; the hybrid-sync question is
-  M10's to answer, not M9's.
+  and no node count that would benefit from batched WebGL draws. M10 mounts
+  `NodeCard` on the live canvas essentially unchanged (just an additive
+  `instanceId` prop, which emits `data-node-id`/`data-port-id`/
+  `data-direction`/`data-port-anchor` on its port glyphs when present) — see
+  ADR-0008's Amendment (M10) for how the hybrid-sync question actually got
+  resolved: the WebGL cable/grid layer reads each port's live screen
+  position via `getBoundingClientRect()` once per animation frame rather
+  than maintaining a second, independently-computed transform, so DOM stays
+  the single source of truth for node layout.
 - `ui/src/graph/mockDescriptors.ts` (M9) provides `NodeDescriptor`s for
   everything the blueprint's design reference shows that isn't a real
   engine node yet: MIDI Note/CC, Audio In, Trigger by Threshold, Random,

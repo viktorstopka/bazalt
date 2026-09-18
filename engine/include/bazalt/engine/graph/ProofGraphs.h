@@ -17,34 +17,43 @@
 #include "bazalt/engine/nodes/MultiplyNode.h"
 #include "bazalt/engine/nodes/ListenNode.h"
 #include "bazalt/engine/nodes/OutputNode.h"
-#include "bazalt/engine/nodes/VoiceSumNode.h"
+#include "bazalt/engine/nodes/NormaliseNode.h"
+#include "bazalt/engine/nodes/ThresholdNode.h"
+#include "bazalt/engine/nodes/DownmixNode.h"
+#include "bazalt/engine/nodes/InstanceAllocatorNode.h"
+#include "bazalt/engine/nodes/InstanceMixNode.h"
 
 namespace bazalt::engine
 {
-    /** Registers every M1/M2 DSP node type plus the M7 utility node types
-        (NODE_EDITOR.md §2) under their stable type ids. Shared by
-        render-cli and the Catch2 suite so the two hardcoded proof graphs
-        below only need to be built once.
+    /** Registers every M1/M2 DSP node type, the M7 utility node types
+        (NODE_EDITOR.md §2), M16's adapter nodes, and M17's
+        instance.allocator/instance.mix (superseding util.voiceSum) under
+        their stable type ids. Shared by render-cli and the Catch2 suite
+        so the two hardcoded proof graphs below only need to be built once.
     */
     inline NodeFactory buildDefaultNodeFactory()
     {
         NodeFactory factory;
-        factory.registerType ("osc.basic", [] { return std::make_unique<nodes::OscillatorNode>(); });
+        factory.registerType ("osc.analog", [] { return std::make_unique<nodes::OscillatorNode>(); });
         factory.registerType ("filter.svf", [] { return std::make_unique<nodes::SvfFilterNode>(); });
         factory.registerType ("env.adsr", [] { return std::make_unique<nodes::AdsrNode>(); });
-        factory.registerType ("amp.vca", [] { return std::make_unique<nodes::GainNode>(); });
-        factory.registerType ("noise.burst", [] { return std::make_unique<nodes::NoiseBurstNode>(); });
-        factory.registerType ("mix.add2", [] { return std::make_unique<nodes::MixNode>(); });
-        factory.registerType ("delay.basic", [] { return std::make_unique<nodes::DelayNode>(); });
+        factory.registerType ("mix.gain", [] { return std::make_unique<nodes::GainNode>(); });
+        factory.registerType ("excite.burst", [] { return std::make_unique<nodes::NoiseBurstNode>(); });
+        factory.registerType ("mix.sum", [] { return std::make_unique<nodes::MixNode>(); });
+        factory.registerType ("delay.line", [] { return std::make_unique<nodes::DelayNode>(); });
         factory.registerType ("filter.onepole", [] { return std::make_unique<nodes::OnePoleFilterNode>(); });
         factory.registerType ("util.constant", [] { return std::make_unique<nodes::ConstantNode>(); });
         factory.registerType ("util.reroute", [] { return std::make_unique<nodes::RerouteNode>(); });
-        factory.registerType ("util.map", [] { return std::make_unique<nodes::MapNode>(); });
-        factory.registerType ("util.add", [] { return std::make_unique<nodes::AddNode>(); });
-        factory.registerType ("util.multiply", [] { return std::make_unique<nodes::MultiplyNode>(); });
-        factory.registerType ("util.listen", [] { return std::make_unique<nodes::ListenNode>(); });
-        factory.registerType ("util.output", [] { return std::make_unique<nodes::OutputNode>(); });
-        factory.registerType ("util.voiceSum", [] { return std::make_unique<nodes::VoiceSumNode>(); });
+        factory.registerType ("adapt.map", [] { return std::make_unique<nodes::MapNode>(); });
+        factory.registerType ("math.add", [] { return std::make_unique<nodes::AddNode>(); });
+        factory.registerType ("math.multiply", [] { return std::make_unique<nodes::MultiplyNode>(); });
+        factory.registerType ("view.listen", [] { return std::make_unique<nodes::ListenNode>(); });
+        factory.registerType ("io.output", [] { return std::make_unique<nodes::OutputNode>(); });
+        factory.registerType ("adapt.normalise", [] { return std::make_unique<nodes::NormaliseNode>(); });
+        factory.registerType ("adapt.threshold", [] { return std::make_unique<nodes::ThresholdNode>(); });
+        factory.registerType ("mix.downmix", [] { return std::make_unique<nodes::DownmixNode>(); });
+        factory.registerType ("instance.allocator", [] { return std::make_unique<nodes::InstanceAllocatorNode>(); });
+        factory.registerType ("instance.mix", [] { return std::make_unique<nodes::InstanceMixNode>(); });
         return factory;
     }
 
@@ -56,10 +65,10 @@ namespace bazalt::engine
     {
         NodeGraph graph;
 
-        graph.addNode ({ "osc", "osc.basic", {}, {}, {} });
+        graph.addNode ({ "osc", "osc.analog", {}, {}, {} });
         graph.addNode ({ "svf", "filter.svf", {}, { { "filter.svf.cutoff", 3000.0f }, { "filter.svf.resonance", 0.9f } }, {} });
         graph.addNode ({ "env", "env.adsr", {}, {}, {} });
-        graph.addNode ({ "amp", "amp.vca", {}, {}, {} });
+        graph.addNode ({ "amp", "mix.gain", {}, {}, {} });
 
         graph.addConnection ({ "osc", "out", "svf", "in" });
         graph.addConnection ({ "svf", "out", "amp", "audio" });
@@ -83,9 +92,9 @@ namespace bazalt::engine
     {
         NodeGraph graph;
 
-        graph.addNode ({ "excite", "noise.burst", {}, {}, {} });
-        graph.addNode ({ "mix", "mix.add2", {}, {}, {} });
-        graph.addNode ({ "delay", "delay.basic", {}, { { "delay.basic.samples", 200.0f } }, {} });
+        graph.addNode ({ "excite", "excite.burst", {}, {}, {} });
+        graph.addNode ({ "mix", "mix.sum", {}, {}, {} });
+        graph.addNode ({ "delay", "delay.line", {}, { { "delay.line.samples", 200.0f } }, {} });
         graph.addNode ({ "damp", "filter.onepole", {}, { { "filter.onepole.coefficient", 0.5f } }, {} });
 
         graph.addConnection ({ "excite", "out", "mix", "a" });

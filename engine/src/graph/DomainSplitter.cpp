@@ -7,8 +7,9 @@ namespace bazalt::engine
 {
     namespace
     {
-        constexpr const char* voiceSumTypeId = "util.voiceSum";
-        constexpr const char* voiceSumInputPortId = "in";
+        constexpr const char* instanceMixTypeId = "instance.mix";
+        constexpr const char* instanceMixInputPortId = "in";
+        constexpr const char* instanceAllocatorTypeId = "instance.allocator";
 
         std::unordered_set<juce::String> reachableFollowing (const juce::String& start,
                                                                const std::unordered_map<juce::String, std::vector<juce::String>>& edges,
@@ -44,18 +45,23 @@ namespace bazalt::engine
         const auto& nodes = graph.getNodes();
         const auto& connections = graph.getConnections();
 
-        juce::String voiceSumId;
-        int voiceSumCount = 0;
+        juce::String instanceMixId;
+        int instanceMixCount = 0;
+        int instanceAllocatorCount = 0;
         for (const auto& node : nodes)
         {
-            if (node.type == voiceSumTypeId)
+            if (node.type == instanceMixTypeId)
             {
-                voiceSumId = node.id;
-                ++voiceSumCount;
+                instanceMixId = node.id;
+                ++instanceMixCount;
+            }
+            else if (node.type == instanceAllocatorTypeId)
+            {
+                ++instanceAllocatorCount;
             }
         }
 
-        if (voiceSumCount == 0)
+        if (instanceMixCount == 0)
         {
             result.success = true;
             result.hasGlobalDomain = false;
@@ -63,10 +69,20 @@ namespace bazalt::engine
             return result;
         }
 
-        if (voiceSumCount > 1)
+        if (instanceMixCount > 1)
         {
-            result.errorMessage = "Only one util.voiceSum node is supported per graph (found "
-                                   + juce::String (voiceSumCount) + ")";
+            result.errorMessage = "Only one instance.mix node is supported per graph (found "
+                                   + juce::String (instanceMixCount)
+                                   + ") — placing several is a future capability, "
+                                   + "not yet built (ExecutionPlan needs multi-output support first)";
+            return result;
+        }
+
+        if (instanceAllocatorCount > 1)
+        {
+            result.errorMessage = "Only one instance.allocator node is supported per graph (found "
+                                   + juce::String (instanceAllocatorCount)
+                                   + ") — multiple simultaneous instanced regions are M28 (Swarm) territory, not built yet";
             return result;
         }
 
@@ -74,7 +90,7 @@ namespace bazalt::engine
         int incomingCount = 0;
         for (const auto& connection : connections)
         {
-            if (connection.toNodeId == voiceSumId && connection.toPortId == voiceSumInputPortId)
+            if (connection.toNodeId == instanceMixId && connection.toPortId == instanceMixInputPortId)
             {
                 incoming = &connection;
                 ++incomingCount;
@@ -83,7 +99,7 @@ namespace bazalt::engine
 
         if (incomingCount != 1)
         {
-            result.errorMessage = "util.voiceSum must have exactly one connection into its 'in' port (found "
+            result.errorMessage = "instance.mix must have exactly one connection into its 'in' port (found "
                                    + juce::String (incomingCount) + ")";
             return result;
         }
@@ -95,10 +111,10 @@ namespace bazalt::engine
             predecessorsOf[connection.toNodeId].push_back (connection.fromNodeId);
         }
 
-        // Backward from voiceSum (excluding itself) = voice domain.
-        const auto voiceDomain = reachableFollowing (voiceSumId, predecessorsOf, false);
-        // Forward from voiceSum (including itself) = global domain.
-        const auto globalDomain = reachableFollowing (voiceSumId, successorsOf, true);
+        // Backward from instance.mix (excluding itself) = voice domain.
+        const auto voiceDomain = reachableFollowing (instanceMixId, predecessorsOf, false);
+        // Forward from instance.mix (including itself) = global domain.
+        const auto globalDomain = reachableFollowing (instanceMixId, successorsOf, true);
 
         for (const auto& node : nodes)
         {
@@ -114,7 +130,14 @@ namespace bazalt::engine
             if (inVoice && inGlobal)
             {
                 result.errorMessage = "Node '" + node.id
-                                       + "' is reachable from both domains (a cycle through util.voiceSum?)";
+                                       + "' is reachable from both domains (a cycle through instance.mix?)";
+                return result;
+            }
+
+            if (node.type == instanceAllocatorTypeId && ! inVoice)
+            {
+                result.errorMessage = "instance.allocator node '" + node.id
+                                       + "' must be in the voice domain (upstream of instance.mix)";
                 return result;
             }
         }
@@ -122,7 +145,7 @@ namespace bazalt::engine
         if (globalDomain.count (graph.getOutputNodeId()) == 0)
         {
             result.errorMessage = "Graph output node '" + graph.getOutputNodeId()
-                                   + "' must be in the global domain when a util.voiceSum node is present";
+                                   + "' must be in the global domain when an instance.mix node is present";
             return result;
         }
 
@@ -145,16 +168,16 @@ namespace bazalt::engine
         for (const auto& connection : connections)
             if (globalDomain.count (connection.fromNodeId) > 0 && globalDomain.count (connection.toNodeId) > 0)
                 globalGraph.addConnection (connection);
-        // The edge into voiceSum's "in" port is naturally excluded above —
-        // its source lives in voiceDomain, not globalDomain — no explicit
-        // filtering needed; VoiceSumNode reads Silence there and gets its
-        // real input via setExternalBlock() instead (VoiceSumNode.h).
+        // The edge into instance.mix's "in" port is naturally excluded
+        // above — its source lives in voiceDomain, not globalDomain — no
+        // explicit filtering needed; InstanceMixNode reads Silence there
+        // and gets its real input via setExternalBlock() instead.
 
         globalGraph.setOutput (graph.getOutputNodeId(), graph.getOutputPortId());
 
         result.success = true;
         result.hasGlobalDomain = true;
-        result.voiceSumNodeId = voiceSumId;
+        result.instanceMixNodeId = instanceMixId;
         result.voiceGraph = std::move (voiceGraph);
         result.globalGraph = std::move (globalGraph);
         return result;

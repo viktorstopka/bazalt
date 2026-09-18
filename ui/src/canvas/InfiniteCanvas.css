@@ -1,8 +1,21 @@
+/* WebView2 hygiene (direct feedback: "everything is selectable, scrolling
+   behaviour is glitchy... demand it not be so glitchy and web-like"):
+   user-select:none stops text (labels, titles) from becoming a native text
+   selection on drag; touch-action/overscroll-behavior:none stop the
+   browser's own rubber-band/gesture scrolling from fighting the custom
+   pan/zoom. This narrows, but can't fully eliminate, "WebView-ness" —
+   WebView2's own native pinch-zoom/edge-swipe handling isn't reachable
+   from CSS/JS at all; that would need a JUCE-side WebBrowserComponent
+   option. The rename `<input>` (GraphSurface.tsx) opts back into text
+   selection via its own element. */
 .infinite-canvas {
   position: relative;
   width: 100%;
   height: 100%;
   overflow: hidden;
+  user-select: none;
+  touch-action: none;
+  overscroll-behavior: none;
 }
 
 .infinite-canvas canvas {
@@ -12,12 +25,53 @@
   cursor: default;
 }
 
+/* World layer: sits above the WebGL grid/cable canvas, below the
+   screen-space overlay. InfiniteCanvas.tsx sets this element's `transform`
+   imperatively every animation frame — never anything else in CSS here.
+   Deliberately no `will-change: transform` (removed — direct feedback:
+   with it, the layer stayed permanently GPU-layer-promoted and pixelated,
+   since nothing was left clearing it once the JS-side toggle that used to
+   override this rule was removed; before that, it caused a different bug,
+   staying blurry for a while after every pan/zoom before re-sharpening).
+   Un-promoted, Chromium repaints this layer's DOM content fresh every
+   time, so it's simply never blurry — see InfiniteCanvas.tsx's frame()
+   for the fuller reasoning. */
+.infinite-canvas-world {
+  position: absolute;
+  left: 0;
+  top: 0;
+  transform-origin: 0 0;
+}
+
 .infinite-canvas-overlay {
   position: absolute;
   inset: 0;
   pointer-events: none;
+  z-index: 2;
 }
 
 .infinite-canvas-overlay > * {
   pointer-events: auto;
+}
+
+.infinite-canvas-selection-box {
+  display: none;
+  position: fixed;
+  border: 1px solid var(--color-accent);
+  background: rgba(91, 141, 239, 0.12);
+  pointer-events: none;
+}
+
+.infinite-canvas-hint-label {
+  display: none;
+  position: fixed;
+  background: var(--color-panel);
+  border: var(--stroke-thin) solid var(--color-panelBorder);
+  border-radius: var(--radius-sm);
+  padding: 3px 8px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--color-textSecondary);
+  pointer-events: none;
+  z-index: 50;
 }

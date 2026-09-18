@@ -31,7 +31,7 @@ TEST_CASE ("Voice proof graph is silent before noteOn, sounds during sustain, de
     REQUIRE (result.success);
 
     auto& plan = result.plan;
-    plan.getNodeById ("osc")->setParameter ("osc.basic.frequency", 220.0f);
+    plan.getNodeById ("osc")->setParameter ("osc.analog.frequency", 220.0f);
 
     auto* adsr = dynamic_cast<nodes::AdsrNode*> (plan.getNodeById ("env"));
     REQUIRE (adsr != nullptr);
@@ -75,7 +75,7 @@ TEST_CASE ("Karplus-Strong proof graph produces a decaying plucked-string tone",
     REQUIRE (result.success);
 
     auto& plan = result.plan;
-    plan.getNodeById ("delay")->setParameter ("delay.basic.samples", (float) (sampleRate / 220.0));
+    plan.getNodeById ("delay")->setParameter ("delay.line.samples", (float) (sampleRate / 220.0));
 
     auto* excite = dynamic_cast<nodes::NoiseBurstNode*> (plan.getNodeById ("excite"));
     REQUIRE (excite != nullptr);

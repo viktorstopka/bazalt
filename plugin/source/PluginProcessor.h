@@ -109,7 +109,8 @@ namespace bazalt
 
         void handleMidiEvent (const juce::MidiMessage& message, const VoicePlanPtrs& voicePlans);
         void renderVoiceRange (int startSample, int numSamples, const VoicePlanPtrs& voicePlans) noexcept;
-        void finalizeVoiceSumIntoOutput (juce::AudioBuffer<float>& output, int numSamples) noexcept;
+        void triggerVoiceNote (bazalt::engine::ExecutionPlan* plan, float frequency, float velocity) noexcept;
+        void finalizeInstanceMixIntoOutput (juce::AudioBuffer<float>& output, int numSamples) noexcept;
         void updateAuxLevelsAndPassthrough (juce::AudioBuffer<float>& mainOutput, int numSamples);
         void setDefaultMacroMappings();
 
@@ -122,15 +123,16 @@ namespace bazalt
 
         bazalt::engine::NodeFactory nodeFactory;
 
-        // One independently-swappable plan per voice (fresh DSP state each
-        // recompile — voice-state continuity across edits, ARCHITECTURE.md
-        // §3.2's separate per-(voiceIndex,nodeID) pool, is still deferred;
-        // an edit mid-note resets that voice's filter/envelope memory, a
-        // known and accepted M7 limitation, not silently broken).  Plus one
-        // for the global domain, used only once a graph actually contains
-        // a util.voiceSum node (NODE_EDITOR.md §7); hasGlobalDomain is
-        // read on the audio thread, so it's atomic despite being set only
-        // from the message thread.
+        // One independently-swappable plan per voice — M17: DSP state now
+        // survives a recompile that doesn't touch a given node's (id,
+        // type), via GraphCompiler's previousPlan-aware reuse
+        // (ARCHITECTURE.md §3.2's per-(voiceIndex,nodeID) pool, finally
+        // built — RECONCILIATION.md 3.2/ADR-0020). Plus one for the
+        // global domain, used only once a graph actually contains an
+        // instance.mix node (DOMAINS.md §2, supersedes the original
+        // util.voiceSum boundary); hasGlobalDomain is read on the audio
+        // thread, so it's atomic despite being set only from the message
+        // thread.
         std::array<bazalt::engine::PlanSwapper, numVoices> voicePlanSwappers;
         bazalt::engine::PlanSwapper globalPlanSwapper;
         std::atomic<bool> hasGlobalDomain { false };
@@ -140,13 +142,25 @@ namespace bazalt
         std::vector<bazalt::engine::MacroMapping> macroMappings;
         bazalt::engine::NanGuard outputGuard;
 
-        // Mono sum of every active voice's output for the current block,
+        // M17: fixed, sensible defaults for the generic per-voice silence
+        // detector (VoiceManager::updateSilenceAndCheckFinished) — reading
+        // a real instance.mix node's own threshold/hold-time parameters
+        // per graph is a later integration (InstanceMixNode.h's own
+        // comment), not required for the mechanism itself to be correct
+        // and generic. -80dB is a linear ~0.0001; 200ms matches
+        // InstanceMixNode's own parameter default.
+        static constexpr float silenceThresholdLinear = 0.0001f;
+        int silenceHoldTimeSamples = 0; // computed from sample rate in prepareToPlay
+
+        // Mono sum (or average, per an instance.mix node's own mode
+        // parameter) of every active voice's output for the current block,
         // sized once in prepareToPlay (no audio-thread allocation). When
         // there's no global domain this feeds the main output directly,
-        // matching pre-M7 behaviour exactly; when a util.voiceSum node
+        // matching pre-M7 behaviour exactly; when an instance.mix node
         // exists, this is what gets handed to it via setExternalBlock()
-        // before the global plan runs (NODE_EDITOR.md §7).
-        juce::AudioBuffer<float> voiceSumScratchBuffer;
+        // before the global plan runs (DOMAINS.md §2).
+        juce::AudioBuffer<float> instanceMixScratchBuffer;
+        int activeVoiceCountThisBlock = 0; // for instance.mix's "average" mode
 
         // Declared after everything it depends on (nodeFactory, the
         // swappers) so its constructor — which only stores a reference —

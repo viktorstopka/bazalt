@@ -92,7 +92,7 @@ namespace
         }
 
         auto& plan = result.plan;
-        plan.getNodeById ("osc")->setParameter ("osc.basic.frequency", 220.0f);
+        plan.getNodeById ("osc")->setParameter ("osc.analog.frequency", 220.0f);
 
         auto* adsr = dynamic_cast<nodes::AdsrNode*> (plan.getNodeById ("env"));
         jassert (adsr != nullptr);
@@ -132,7 +132,7 @@ namespace
         auto& plan = result.plan;
 
         // ~220 Hz pluck: delay length in samples = sampleRate / frequency.
-        plan.getNodeById ("delay")->setParameter ("delay.basic.samples", (float) (sampleRate / 220.0));
+        plan.getNodeById ("delay")->setParameter ("delay.line.samples", (float) (sampleRate / 220.0));
 
         auto* excite = dynamic_cast<nodes::NoiseBurstNode*> (plan.getNodeById ("excite"));
         jassert (excite != nullptr);

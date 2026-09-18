@@ -55,3 +55,24 @@ win anything from. The hybrid approach's real justification is amortizing draw c
 panning/zooming nodes, which only exists once M10 puts nodes on the live, transformable canvas —
 that's where hybrid-sync verification actually belongs, and where it's now deferred to. `NodeCard`
 itself is reused as-is by M10 either way; only the layer it's mounted in changes.
+
+**Amendment (M10):** the hybrid-sync question above is answered, and the answer is narrower than a
+literal "WebGL-background + DOM-overlay per node" — node *bodies* stay plain DOM (`NodeCard`,
+unchanged rendering contract), not a WebGL-drawn background at all; M10's node count (a hand-built
+demo graph, not the M8 stress patch) never demonstrated a need for that specific optimization. What
+did migrate to WebGL2, per this ADR's original decision, is the grid (ported directly from M5's
+Canvas2D `drawDotGrid`) and — new in M10 — the cables (`ui/src/canvas/webgl/nodeEditorRenderer.ts`),
+tessellated bezier curves with a dash-capable line shader for the rejected/hover wire-feedback states
+(`docs/decisions/0010-wire-feedback-colours.md`). The actual sync mechanism, resolving M9's deferred
+question directly: **there is no second transform to keep in sync at all.** `InfiniteCanvas.tsx`
+applies the camera's pan/zoom as a single CSS `transform` on one DOM "world" container (holding every
+`NodeCard`), updated imperatively once per `requestAnimationFrame` tick — never through React state,
+per ARCHITECTURE.md §7. The same per-frame tick then reads each port glyph's already-transformed
+on-screen position straight back out via `getBoundingClientRect()` (`ui/src/graph/portAnchors.ts`)
+and feeds those screen-space coordinates directly to the WebGL cable/grid draw calls. DOM is the one
+and only source of truth for where a node/port currently sits; WebGL just paints on top of whatever
+that measurement says, every frame. This sidesteps an entire class of transform-drift bugs a second,
+independently-computed WebGL-side transform could otherwise introduce, at the cost of one
+`querySelectorAll`/`getBoundingClientRect` pass per frame — measured as negligible at M10's node
+counts (dozens, not hundreds); worth re-profiling only if a future milestone's node count grows enough
+to make that pass itself the bottleneck, which M10 did not observe.

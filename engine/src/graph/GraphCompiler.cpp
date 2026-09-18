@@ -1,6 +1,8 @@
 #include "bazalt/engine/graph/GraphCompiler.h"
+#include "bazalt/engine/graph/CanConnect.h"
 #include <algorithm>
 #include <functional>
+#include <limits>
 #include <unordered_map>
 #include <unordered_set>
 
@@ -167,7 +169,8 @@ namespace bazalt::engine
     CompileResult GraphCompiler::compile (const NodeGraph& graph,
                                            const NodeFactory& factory,
                                            const NodePrepareInfo& prepareInfo,
-                                           uint64_t generation)
+                                           uint64_t generation,
+                                           const ExecutionPlan* previousPlan)
     {
         CompileResult result;
         auto& plan = result.plan;
@@ -178,6 +181,15 @@ namespace bazalt::engine
         // ---- Instantiate nodes, assign slots -----------------------------
         plan.nodes.reserve ((size_t) numNodes);
         std::vector<PortIdIndex> portIdIndexBySlot ((size_t) numNodes);
+        // Captured alongside portIdIndexBySlot, before each node is moved
+        // into plan.nodes — resolveInput() (below) reads each unconnected
+        // input's own PortDescriptor to decide Silence vs. its
+        // hasFallbackWhenUnconnected NaN-sentinel behaviour.
+        std::vector<std::vector<PortDescriptor>> inputPortsBySlot ((size_t) numNodes);
+        // Captured alongside inputPortsBySlot, for the same reason:
+        // canConnect() (below) needs each connection's actual FROM port
+        // descriptor, not just its resolved index.
+        std::vector<std::vector<PortDescriptor>> outputPortsBySlot ((size_t) numNodes);
 
         for (int slot = 0; slot < numNodes; ++slot)
         {
@@ -189,20 +201,63 @@ namespace bazalt::engine
                 return result;
             }
 
-            auto node = factory.create (instance.type);
-            if (node == nullptr)
+            // M17 state pool (ARCHITECTURE.md §3.2, GraphCompiler.h's own
+            // doc comment on `previousPlan`): reuse the exact same Node
+            // object — carrying its DSP state forward — ONLY when this
+            // instance's id, type, AND current parameters are all
+            // identical to the previous plan's. That last condition is
+            // load-bearing, not an optimization: a reused node's shared_ptr
+            // may still be reachable from the audio thread (the previous
+            // plan isn't provably dead until PlanSwapper's epoch-gated
+            // reclaim() says so), so the compiler thread must never mutate
+            // it after publish — calling setParameter() on a reused node
+            // would race the audio thread's own processSample() calls on
+            // that SAME object (ExecutionPlan.h's own comment has the full
+            // story, including the real bug this fixes). Any parameter
+            // difference at all means a fresh node instead: safe, and
+            // exactly today's pre-M17 behaviour for that node.
+            std::shared_ptr<Node> node;
+            bool reused = false;
+
+            if (previousPlan != nullptr)
             {
-                result.errorMessage = "Unknown node type '" + instance.type + "' for node '" + instance.id + "'";
-                return result;
+                const auto typeIt = previousPlan->nodeIdToType.find (instance.id);
+                const auto paramsIt = previousPlan->nodeIdToAppliedParameters.find (instance.id);
+
+                if (typeIt != previousPlan->nodeIdToType.end() && typeIt->second == instance.type
+                    && paramsIt != previousPlan->nodeIdToAppliedParameters.end()
+                    && paramsIt->second == instance.parameters)
+                {
+                    const auto slotIt = previousPlan->nodeIdToSlot.find (instance.id);
+                    if (slotIt != previousPlan->nodeIdToSlot.end())
+                    {
+                        node = previousPlan->nodes[(size_t) slotIt->second];
+                        reused = (node != nullptr);
+                    }
+                }
             }
 
-            node->prepare (prepareInfo);
+            if (! reused)
+            {
+                node = factory.create (instance.type);
+                if (node == nullptr)
+                {
+                    result.errorMessage = "Unknown node type '" + instance.type + "' for node '" + instance.id + "'";
+                    return result;
+                }
 
-            for (const auto& [paramId, value] : instance.parameters)
-                node->setParameter (paramId, value);
+                node->prepare (prepareInfo);
+
+                for (const auto& [paramId, value] : instance.parameters)
+                    node->setParameter (paramId, value);
+            }
 
             portIdIndexBySlot[(size_t) slot] = buildPortIdIndex (*node);
+            inputPortsBySlot[(size_t) slot] = node->getInputPorts();
+            outputPortsBySlot[(size_t) slot] = node->getOutputPorts();
             plan.nodeIdToSlot[instance.id] = slot;
+            plan.nodeIdToType[instance.id] = instance.type;
+            plan.nodeIdToAppliedParameters[instance.id] = instance.parameters;
             plan.nodes.push_back (std::move (node));
         }
 
@@ -245,6 +300,25 @@ namespace bazalt::engine
                 return result;
             }
 
+            // M16: canConnect (CanConnect.h) is the engine's sole authority
+            // on connection validity (SIGNAL_TYPES.md §4). A `NeedsAdapters`
+            // result is rejected here exactly like a flat `Reject` — by the
+            // time a connection reaches the compiler it must already be
+            // directly compatible; auto-inserting the adapter chain is a
+            // higher-level concern (GraphEditController::connectWithAutoAdapt),
+            // not something the compiler does silently mid-compile.
+            const auto& fromPort = outputPortsBySlot[(size_t) fromIt->second][(size_t) fromPortIt->second];
+            const auto& toPort = inputPortsBySlot[(size_t) toIt->second][(size_t) toPortIt->second];
+            const auto connectivity = canConnect (fromPort, toPort);
+
+            if (connectivity.outcome != ConnectionOutcome::Ok)
+            {
+                result.errorMessage = "Cannot connect " + connection.fromNodeId + "." + connection.fromPortId
+                                       + " to " + connection.toNodeId + "." + connection.toPortId + ": "
+                                       + connectivity.reason;
+                return result;
+            }
+
             const PortKey toKey { toIt->second, toPortIt->second };
 
             if (incomingSource.find (toKey) != incomingSource.end())
@@ -271,7 +345,29 @@ namespace bazalt::engine
         {
             const auto it = incomingSource.find ({ toSlot, toPort });
             if (it == incomingSource.end())
+            {
+                // hasFallbackWhenUnconnected ports (PortDescriptor.h) read a
+                // NaN sentinel instead of plain silence when nothing's
+                // wired to them — deliberately NOT the port's own
+                // `defaultValue`: baking that in here would freeze it at
+                // whatever it was when this plan was compiled, silently
+                // breaking any node (DelayNode.h's "delay.line.samples" is
+                // the first example) whose value is still meant to be
+                // adjustable via setParameter() after compilation. The node
+                // itself resolves NaN -> "use my own current value" every
+                // sample instead, which stays live no matter when
+                // setParameter() was last called.
+                const auto& inputPorts = inputPortsBySlot[(size_t) toSlot];
+                if (toPort < (int) inputPorts.size() && inputPorts[(size_t) toPort].hasFallbackWhenUnconnected)
+                {
+                    AlignedBuffer buffer;
+                    buffer.resize (1, (size_t) prepareInfo.maxBlockSize);
+                    buffer.getBlock().fill (std::numeric_limits<float>::quiet_NaN());
+                    plan.blockBuffers.push_back (std::move (buffer));
+                    return { ExecutionPlan::InputRef::Kind::BlockBuffer, (int) plan.blockBuffers.size() - 1 };
+                }
                 return { ExecutionPlan::InputRef::Kind::Silence, -1 };
+            }
 
             const auto locIt = outputLocation.find (it->second);
             jassert (locIt != outputLocation.end()); // guaranteed by SCC topological scheduling order

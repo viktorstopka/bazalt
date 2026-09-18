@@ -1,0 +1,44 @@
+/* World-space content layer — positioned by InfiniteCanvas's own transform
+   on this element's parent, never by anything in here. */
+.graph-surface {
+  position: absolute;
+  left: 0;
+  top: 0;
+}
+
+.graph-node-wrapper {
+  position: absolute;
+  cursor: grab;
+}
+
+.graph-node-wrapper:active {
+  cursor: grabbing;
+}
+
+.graph-node-ghost {
+  position: absolute;
+  left: 0;
+  top: 0;
+  opacity: 0.55;
+  pointer-events: none;
+}
+
+/* left/top/width/height are set inline, per instance, from the actual
+   rendered `.node-title` element's own geometry (NodeWrapper's
+   positionRenameInput callback ref in GraphSurface.tsx) — every layout
+   variant's title sits somewhere different, so nothing here hardcodes a
+   position/size (M10_REVIEW.md §12). */
+.graph-node-rename-input {
+  position: absolute;
+  box-sizing: border-box;
+  margin: 0;
+  user-select: text;
+  padding: 0 var(--space-sm);
+  background: var(--color-panel);
+  color: var(--color-textPrimary);
+  border: var(--stroke-thin) solid var(--color-accent);
+  font-family: var(--font-mono);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: text;
+}

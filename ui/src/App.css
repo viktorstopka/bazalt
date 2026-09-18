@@ -5,44 +5,21 @@
   height: 100vh;
 }
 
-#app-root > .infinite-canvas,
-#app-root > .stress-test-canvas {
+#app-root > .infinite-canvas {
   flex: 1;
   min-height: 0;
 }
 
-.top-bar-stress-test {
-  background: var(--color-panel);
-  color: var(--color-textPrimary);
-  border: var(--stroke-thin) solid var(--color-panelBorder);
-  border-radius: var(--radius-sm);
-  padding: 6px 12px;
-  font-family: var(--font-mono);
-  font-size: 11px;
-  cursor: pointer;
-}
-
-.stress-test-stats {
-  position: absolute;
-  top: var(--space-sm);
-  left: var(--space-sm);
-  background: var(--color-panel);
-  color: var(--color-textPrimary);
-  border: var(--stroke-thin) solid var(--color-panelBorder);
-  border-radius: var(--radius-sm);
-  padding: 6px 12px;
-  font-family: var(--font-mono);
-  font-size: 11px;
-  z-index: 10;
-}
-
+/* Same background as the canvas itself (not transparent) — direct
+   feedback: blend with the main view, but a fully transparent bar would
+   let panned-under nodes/cables bleed through the title/icons whenever
+   they scroll underneath it. No border (removed). */
 .top-bar {
   display: flex;
   align-items: center;
-  gap: var(--space-lg);
+  gap: var(--space-sm);
   padding: var(--space-sm) var(--space-md);
-  background: var(--color-panel);
-  border-bottom: var(--stroke-thin) solid var(--color-panelBorder);
+  background: var(--color-background);
   font-family: var(--font-mono);
   color: var(--color-textPrimary);
 }
@@ -52,16 +29,28 @@
   opacity: 0.8;
 }
 
-.top-bar-macros {
-  display: flex;
-  gap: var(--space-md);
+.top-bar-spacer {
   flex: 1;
 }
 
-.top-bar-snap {
-  display: flex;
+.top-bar-icon-button {
+  display: inline-flex;
   align-items: center;
-  gap: 4px;
-  font-size: 11px;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  background: transparent;
   color: var(--color-textSecondary);
+  border: none;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+
+.top-bar-icon-button:hover:not(:disabled) {
+  color: var(--color-textPrimary);
+}
+
+.top-bar-icon-button:disabled {
+  opacity: 0.35;
+  cursor: default;
 }

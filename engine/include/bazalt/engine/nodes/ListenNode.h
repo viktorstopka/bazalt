@@ -4,7 +4,7 @@
 
 namespace bazalt::engine::nodes
 {
-    /** Stable type id: "util.listen". One Audio input, no outputs — a
+    /** Stable type id: "view.listen". One Audio input, no outputs — a
         legitimate dead-end the compiler schedules and runs like any other
         node (GraphCompiler doesn't prune unreachable-from-output nodes, so
         no special compiler support is needed for a sink). NODE_EDITOR.md

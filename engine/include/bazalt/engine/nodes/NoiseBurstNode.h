@@ -4,7 +4,7 @@
 
 namespace bazalt::engine::nodes
 {
-    /** Stable type id: "noise.burst". No inputs, one Audio output: a
+    /** Stable type id: "excite.burst". No inputs, one Audio output: a
         decaying burst of white noise on trigger(), silence otherwise. The
         Karplus-Strong proof graph's "pluck" excitation (ARCHITECTURE.md
         §3.4) — fed into the feedback loop's Mix node from outside the

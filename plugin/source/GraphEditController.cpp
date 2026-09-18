@@ -1,11 +1,62 @@
 #include "GraphEditController.h"
 #include "PluginProcessor.h"
+#include "bazalt/engine/graph/CanConnect.h"
 #include "bazalt/engine/graph/DomainSplitter.h"
 #include "bazalt/engine/graph/GraphCompiler.h"
 #include "bazalt/engine/graph/ProofGraphs.h"
 
 namespace bazalt
 {
+    namespace
+    {
+        // Message-thread-only, metadata-only lookup (mirrors
+        // NodeFactory::describeAll()'s own "construct one throwaway
+        // instance purely to read its metadata" pattern) — never touched
+        // by the audio thread.
+        const bazalt::engine::PortDescriptor* findOutputPort (const bazalt::engine::NodeFactory& factory,
+                                                                const juce::String& typeId, const juce::String& portId,
+                                                                std::vector<bazalt::engine::PortDescriptor>& storage)
+        {
+            auto node = factory.create (typeId);
+            if (node == nullptr)
+                return nullptr;
+
+            storage = node->getOutputPorts();
+            for (const auto& port : storage)
+                if (port.id == portId)
+                    return &port;
+            return nullptr;
+        }
+
+        const bazalt::engine::PortDescriptor* findInputPort (const bazalt::engine::NodeFactory& factory,
+                                                               const juce::String& typeId, const juce::String& portId,
+                                                               std::vector<bazalt::engine::PortDescriptor>& storage)
+        {
+            auto node = factory.create (typeId);
+            if (node == nullptr)
+                return nullptr;
+
+            storage = node->getInputPorts();
+            for (const auto& port : storage)
+                if (port.id == portId)
+                    return &port;
+            return nullptr;
+        }
+
+        juce::String uniqueAdapterNodeId (const bazalt::engine::NodeGraph& graph, const juce::String& base)
+        {
+            if (graph.findNode (base) == nullptr)
+                return base;
+
+            for (int i = 2;; ++i)
+            {
+                const auto candidate = base + juce::String (i);
+                if (graph.findNode (candidate) == nullptr)
+                    return candidate;
+            }
+        }
+    }
+
     GraphEditController::GraphEditController (BazaltAudioProcessor& processorToUse)
         : processor (processorToUse),
           graph (bazalt::engine::buildVoiceProofGraph())
@@ -90,6 +141,81 @@ namespace bazalt
             graph = previousGraph;
 
         return result;
+    }
+
+    GraphEditController::CommandResult GraphEditController::connectWithAutoAdapt (
+        const juce::String& fromNodeId, const juce::String& fromPortId,
+        const juce::String& toNodeId, const juce::String& toPortId)
+    {
+        const auto* fromNode = graph.findNode (fromNodeId);
+        if (fromNode == nullptr)
+            return { false, "No such node: " + fromNodeId };
+
+        const auto* toNode = graph.findNode (toNodeId);
+        if (toNode == nullptr)
+            return { false, "No such node: " + toNodeId };
+
+        auto& factory = processor.getNodeFactory();
+        std::vector<bazalt::engine::PortDescriptor> fromStorage, toStorage;
+        const auto* fromPort = findOutputPort (factory, fromNode->type, fromPortId, fromStorage);
+        if (fromPort == nullptr)
+            return { false, "Node '" + fromNodeId + "' has no output port '" + fromPortId + "'" };
+
+        const auto* toPort = findInputPort (factory, toNode->type, toPortId, toStorage);
+        if (toPort == nullptr)
+            return { false, "Node '" + toNodeId + "' has no input port '" + toPortId + "'" };
+
+        const auto connectivity = bazalt::engine::canConnect (*fromPort, *toPort);
+
+        if (connectivity.outcome == bazalt::engine::ConnectionOutcome::Reject)
+            return { false, connectivity.reason };
+
+        if (connectivity.outcome == bazalt::engine::ConnectionOutcome::Ok)
+            return connect (fromNodeId, fromPortId, toNodeId, toPortId);
+
+        // NeedsAdapters. Only a single-step, single-input chain can be
+        // spliced in generically (adapt.map/adapt.normalise/adapt.threshold);
+        // mix.downmix's 2-in-1-out channels case is flagged but not
+        // auto-inserted (CanConnect.cpp's own comment explains why).
+        if (connectivity.adapterChain.size() != 1)
+            return { false, "No auto-insertable adapter for this connection: " + connectivity.reason };
+
+        const auto& step = connectivity.adapterChain.front();
+        if (step.typeId == "mix.downmix")
+            return { false, connectivity.reason };
+
+        const auto adapterId = uniqueAdapterNodeId (graph, fromNodeId + "_" + toNodeId + "_adapter");
+        const auto midX = (fromNode->position.x + toNode->position.x) * 0.5f;
+        const auto midY = (fromNode->position.y + toNode->position.y) * 0.5f;
+
+        return applyBatch ([&] (bazalt::engine::NodeGraph& g)
+        {
+            bazalt::engine::NodeInstance instance;
+            instance.id = adapterId;
+            instance.type = step.typeId;
+            instance.position = { midX, midY };
+
+            // Seeding (SIGNAL_TYPES.md §5's "Seeding" column) — by
+            // convention every min/max-seeded adapter this milestone ships
+            // names its parameters "<typeId>.min"/"<typeId>.max"
+            // (adapt.map, adapt.normalise both do); a future adapter that
+            // doesn't follow this convention needs its own branch here,
+            // not a silent wrong guess.
+            if (step.seedFromDestinationRange && toPort->minValue.has_value() && toPort->maxValue.has_value())
+            {
+                instance.parameters[step.typeId + ".min"] = *toPort->minValue;
+                instance.parameters[step.typeId + ".max"] = *toPort->maxValue;
+            }
+            else if (step.seedFromSourceRange && fromPort->minValue.has_value() && fromPort->maxValue.has_value())
+            {
+                instance.parameters[step.typeId + ".min"] = *fromPort->minValue;
+                instance.parameters[step.typeId + ".max"] = *fromPort->maxValue;
+            }
+
+            g.addNode (std::move (instance));
+            g.addConnection ({ fromNodeId, fromPortId, adapterId, step.inputPortId });
+            g.addConnection ({ adapterId, step.outputPortId, toNodeId, toPortId });
+        });
     }
 
     GraphEditController::CommandResult GraphEditController::disconnect (const juce::String& fromNodeId,
@@ -182,8 +308,15 @@ namespace bazalt
 
         for (int i = 0; i < BazaltAudioProcessor::numVoices; ++i)
         {
+            // M17 state pool: this voice's currently-published plan (if
+            // any) is passed as `previousPlan` so GraphCompiler can reuse
+            // unchanged nodes' DSP state — peekCurrentPlan(), not
+            // getCurrentPlanForAudioThread() (see PlanSwapper.h's own
+            // comment on why that distinction matters here).
+            const auto* previousPlan = processor.getVoicePlanSwapper (i).peekCurrentPlan();
+
             auto compileResult = bazalt::engine::GraphCompiler::compile (
-                split.voiceGraph, factory, prepareInfo, nextGeneration());
+                split.voiceGraph, factory, prepareInfo, nextGeneration(), previousPlan);
 
             if (! compileResult.success)
                 return { false, compileResult.errorMessage };
@@ -202,7 +335,7 @@ namespace bazalt
                 return { false, globalCompileResult.errorMessage };
 
             newGlobalPlan = std::make_unique<bazalt::engine::ExecutionPlan> (std::move (globalCompileResult.plan));
-            newGlobalPlan->externalInputNodeId = split.voiceSumNodeId;
+            newGlobalPlan->externalInputNodeId = split.instanceMixNodeId;
         }
 
         // Every compile succeeded — publish. Never partially publish on a

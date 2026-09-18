@@ -196,13 +196,13 @@ namespace bazalt::engine
         const std::unordered_map<juce::String, std::vector<juce::String>>& v1InputPortOrderByType()
         {
             static const std::unordered_map<juce::String, std::vector<juce::String>> table {
-                { "osc.basic", {} },
+                { "osc.analog", {} },
                 { "filter.svf", { "in" } },
                 { "env.adsr", {} },
-                { "amp.vca", { "audio", "gain" } },
-                { "noise.burst", {} },
-                { "mix.add2", { "a", "b" } },
-                { "delay.basic", { "in" } },
+                { "mix.gain", { "audio", "gain" } },
+                { "excite.burst", {} },
+                { "mix.sum", { "a", "b" } },
+                { "delay.line", { "in" } },
                 { "filter.onepole", { "in" } },
             };
             return table;
@@ -211,13 +211,13 @@ namespace bazalt::engine
         const std::unordered_map<juce::String, std::vector<juce::String>>& v1OutputPortOrderByType()
         {
             static const std::unordered_map<juce::String, std::vector<juce::String>> table {
-                { "osc.basic", { "out" } },
+                { "osc.analog", { "out" } },
                 { "filter.svf", { "out" } },
                 { "env.adsr", { "out" } },
-                { "amp.vca", { "out" } },
-                { "noise.burst", { "out" } },
-                { "mix.add2", { "out" } },
-                { "delay.basic", { "out" } },
+                { "mix.gain", { "out" } },
+                { "excite.burst", { "out" } },
+                { "mix.sum", { "out" } },
+                { "delay.line", { "out" } },
                 { "filter.onepole", { "out" } },
             };
             return table;

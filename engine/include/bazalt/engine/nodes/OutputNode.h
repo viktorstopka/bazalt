@@ -4,7 +4,7 @@
 
 namespace bazalt::engine::nodes
 {
-    /** Stable type id: "util.output". One Audio input, one Audio output,
+    /** Stable type id: "io.output". One Audio input, one Audio output,
         unity pass-through — the "Master Out" node in the design reference.
         Deliberately just a conventional, visually-meaningful anchor point
         in the graph, not a compiler special case: `NodeGraph::setOutput()`

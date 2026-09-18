@@ -174,7 +174,7 @@ generically from its metadata alone, which is what makes third-party/user node p
 later without a UI rewrite.
 
 **Stable identifiers.** Node type IDs, parameter IDs, and port IDs are hand-assigned strings
-(`"osc.basic"`, `"filter.svf.cutoff"`), never array indices or enum values, and never renamed once
+(`"osc.analog"`, `"filter.svf.cutoff"`), never array indices or enum values, and never renamed once
 shipped. This is the one rule that makes old patches survive refactors; violating it silently is
 the single most expensive mistake to make early, so it's called out here rather than assumed.
 

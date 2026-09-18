@@ -155,10 +155,10 @@ TEST_CASE ("A hand-written schema v1 patch migrates to v2 with resolved port ids
     const juce::String v1Json = R"json({
         "schemaVersion": 1,
         "nodes": [
-            { "id": "osc", "type": "osc.basic", "parameters": {} },
+            { "id": "osc", "type": "osc.analog", "parameters": {} },
             { "id": "svf", "type": "filter.svf", "parameters": { "filter.svf.cutoff": 3000.0 } },
             { "id": "env", "type": "env.adsr", "parameters": {} },
-            { "id": "amp", "type": "amp.vca", "parameters": {} }
+            { "id": "amp", "type": "mix.gain", "parameters": {} }
         ],
         "connections": [
             { "fromNodeId": "osc", "fromPortIndex": 0, "toNodeId": "svf", "toPortIndex": 0 },
@@ -183,12 +183,12 @@ TEST_CASE ("A hand-written schema v1 patch migrates to v2 with resolved port ids
     CHECK (doc.view.zoom == 1.0f); // v1 had no view state — migration fills a sane default
 
     REQUIRE (doc.connections.size() == 3);
-    CHECK (doc.connections[0].fromPortId == "out"); // osc.basic's only output
+    CHECK (doc.connections[0].fromPortId == "out"); // osc.analog's only output
     CHECK (doc.connections[0].toPortId == "in");    // filter.svf's only input
     CHECK (doc.connections[1].fromPortId == "out"); // filter.svf's only output
-    CHECK (doc.connections[1].toPortId == "audio"); // amp.vca input 0
+    CHECK (doc.connections[1].toPortId == "audio"); // mix.gain input 0
     CHECK (doc.connections[2].fromPortId == "out"); // env.adsr's only output
-    CHECK (doc.connections[2].toPortId == "gain");  // amp.vca input 1
+    CHECK (doc.connections[2].toPortId == "gain");  // mix.gain input 1
 
     // The migrated graph must still actually compile — not just parse.
     auto graph = doc.toNodeGraph();

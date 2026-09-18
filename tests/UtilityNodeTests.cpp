@@ -6,7 +6,7 @@
 #include "bazalt/engine/nodes/MultiplyNode.h"
 #include "bazalt/engine/nodes/ListenNode.h"
 #include "bazalt/engine/nodes/OutputNode.h"
-#include "bazalt/engine/nodes/VoiceSumNode.h"
+#include "bazalt/engine/nodes/InstanceMixNode.h"
 #include <algorithm>
 
 using namespace bazalt::engine;
@@ -34,8 +34,8 @@ TEST_CASE ("RerouteNode passes its input straight through", "[engine][nodes][uti
 TEST_CASE ("MapNode remaps a 0..1 input onto its min/max range, clamped", "[engine][nodes][util]")
 {
     MapNode node;
-    node.setParameter ("util.map.min", 200.0f);
-    node.setParameter ("util.map.max", 8000.0f);
+    node.setParameter ("adapt.map.min", 200.0f);
+    node.setParameter ("adapt.map.max", 8000.0f);
 
     auto mapOf = [&] (float normalized)
     {
@@ -84,10 +84,10 @@ TEST_CASE ("OutputNode is a unity pass-through", "[engine][nodes][util]")
     CHECK (out == in);
 }
 
-TEST_CASE ("VoiceSumNode outputs its externally-supplied block, ignoring its (Silence) graph input",
-           "[engine][nodes][util][NODE_EDITOR]")
+TEST_CASE ("InstanceMixNode outputs its externally-supplied block, ignoring its (Silence) graph input",
+           "[engine][nodes][util][M17]")
 {
-    VoiceSumNode node;
+    InstanceMixNode node;
     CHECK_FALSE (node.supportsPerSample()); // a domain seam, never legally inside a feedback cycle
 
     constexpr int numSamples = 4;
@@ -105,10 +105,10 @@ TEST_CASE ("VoiceSumNode outputs its externally-supplied block, ignoring its (Si
         CHECK (output[i] == externalBlock[i]);
 }
 
-TEST_CASE ("VoiceSumNode outputs silence if asked to process a block size that doesn't match what was set",
-           "[engine][nodes][util][NODE_EDITOR]")
+TEST_CASE ("InstanceMixNode outputs silence if asked to process a block size that doesn't match what was set",
+           "[engine][nodes][util][M17]")
 {
-    VoiceSumNode node;
+    InstanceMixNode node;
     constexpr int setNumSamples = 4;
     const float externalBlock[setNumSamples] = { 1.0f, 1.0f, 1.0f, 1.0f };
     node.setExternalBlock (externalBlock, setNumSamples);

@@ -4,7 +4,7 @@
 
 namespace bazalt::engine::nodes
 {
-    /** Stable type id: "amp.vca". Two inputs (Audio, Control), one Audio
+    /** Stable type id: "mix.gain". Two inputs (Audio, Control), one Audio
         output = audio * control. The "ADSR-gated amp" in the M2 voice
         proof graph (ARCHITECTURE.md §3.4's example path).
     */

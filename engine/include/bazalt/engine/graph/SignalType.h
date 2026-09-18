@@ -17,6 +17,17 @@ namespace bazalt::engine
         Value/Integer palette entries are presentation classifications
         layered on top of Control + PortDescriptor's numeric metadata
         (NODE_EDITOR.md §5), not separate SignalType values.
+
+        Data (SIGNAL_TYPES.md §2, added M15, see Data.h): an immutable,
+        reference-counted buffer — tables, modal sets, scales, wavetables,
+        curves, impulse responses. Not a buffer-shape tag like every other
+        member here (GraphCompiler doesn't allocate a `blockBuffers`/
+        `regionScalars` slot for it the way it does for Audio/Control) —
+        a Data-typed port instead holds a `const DataBuffer*` published by
+        `DataPublisher` (Data.h), swapped, never copied per sample. ADR-0016
+        already flags that `SignalType` mixes two concerns (compiler
+        buffer-shape vs. UI/connection semantics); Data is unambiguously
+        real regardless of how that's eventually resolved.
     */
     enum class SignalType
     {
@@ -25,6 +36,7 @@ namespace bazalt::engine
         Event,
         Note,
         Spectral,
-        Boolean
+        Boolean,
+        Data
     };
 }

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "bazalt/engine/graph/Node.h"
+#include "bazalt/engine/graph/ValueTypes.h"
 #include <juce_audio_basics/juce_audio_basics.h>
 
 namespace bazalt::engine::nodes
@@ -40,10 +41,10 @@ namespace bazalt::engine::nodes
 
         std::vector<ParameterDescriptor> getParameters() const override
         {
-            return { { "env.adsr.attack", 0.0f, 10.0f, 0.01f, 0.5f, "s", "Attack" },
-                     { "env.adsr.decay", 0.0f, 10.0f, 0.1f, 0.5f, "s", "Decay" },
+            return { ValueTypes::timeSecondsParameter ("env.adsr.attack", "Attack", 0.01f),
+                     ValueTypes::timeSecondsParameter ("env.adsr.decay", "Decay", 0.1f),
                      { "env.adsr.sustain", 0.0f, 1.0f, 0.7f, 1.0f, "", "Sustain" },
-                     { "env.adsr.release", 0.0f, 10.0f, 0.2f, 0.5f, "s", "Release" } };
+                     ValueTypes::timeSecondsParameter ("env.adsr.release", "Release", 0.2f) };
         }
 
         void setParameter (const juce::String& parameterId, float value) override

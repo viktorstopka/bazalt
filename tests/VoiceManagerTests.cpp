@@ -39,6 +39,14 @@ TEST_CASE ("VoiceManager steals the oldest RELEASING voice before touching any a
     CHECK (stolen == v0); // the releasing voice, not the active v1
     CHECK (voices.getStage (v1) == VoiceStage::Active);
     CHECK (voices.getNoteId (v1) == 2u);
+
+    // M17: a steal doesn't become Active immediately — it enters Stealing
+    // and fades its old content first (DOMAINS.md §5); the caller finishes
+    // it via completeSteal() once the fade runs out (PluginProcessor does
+    // this in renderVoiceRange, not here).
+    CHECK (voices.getStage (stolen) == VoiceStage::Stealing);
+    voices.setPendingNoteOn (stolen, { 3u, 440.0f, 1.0f });
+    voices.completeSteal (stolen);
     CHECK (voices.getStage (stolen) == VoiceStage::Active);
     CHECK (voices.getNoteId (stolen) == 3u);
 }
@@ -54,7 +62,30 @@ TEST_CASE ("VoiceManager falls back to the oldest voice overall when none are re
     const int stolen = voices.noteOn (3); // both active -> steal the oldest
 
     CHECK (stolen == v0);
+    CHECK (voices.getStage (stolen) == VoiceStage::Stealing);
+    voices.setPendingNoteOn (stolen, { 3u, 440.0f, 1.0f });
+    voices.completeSteal (stolen);
     CHECK (voices.getNoteId (stolen) == 3u);
+}
+
+TEST_CASE ("VoiceManager fades a stolen voice's gain to zero over stealFadeSamples, never a sudden cut",
+           "[engine][VoiceManager][M17]")
+{
+    VoiceManager voices;
+    voices.prepare (1);
+
+    voices.noteOn (1);
+    const int stolen = voices.noteOn (2); // only voice -> steal itself
+    REQUIRE (voices.getStage (stolen) == VoiceStage::Stealing);
+    CHECK (voices.getStealFadeGain (stolen) == 1.0f);
+
+    const auto half = VoiceManager::stealFadeSamples / 2;
+    CHECK_FALSE (voices.advanceStealFade (stolen, half));
+    CHECK (voices.getStealFadeGain (stolen) > 0.49f);
+    CHECK (voices.getStealFadeGain (stolen) < 0.51f);
+
+    CHECK (voices.advanceStealFade (stolen, VoiceManager::stealFadeSamples - half)); // completes
+    CHECK (voices.getStealFadeGain (stolen) == 0.0f);
 }
 
 TEST_CASE ("VoiceManager::noteOff finds the voice by NoteId, not by index", "[engine][VoiceManager]")

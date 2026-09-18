@@ -1,6 +1,7 @@
 #pragma once
 
 #include "bazalt/engine/graph/Node.h"
+#include "bazalt/engine/graph/ValueTypes.h"
 #include "bazalt/engine/SvfFilter.h"
 
 namespace bazalt::engine::nodes
@@ -41,7 +42,7 @@ namespace bazalt::engine::nodes
 
         std::vector<ParameterDescriptor> getParameters() const override
         {
-            return { { "filter.svf.cutoff", 20.0f, 20000.0f, 1000.0f, 0.3f, "Hz", "Cutoff" },
+            return { ValueTypes::frequencyParameter ("filter.svf.cutoff", "Cutoff", 1000.0f),
                      { "filter.svf.resonance", 0.01f, 10.0f, 0.70710678f, 0.5f, "", "Resonance" } };
         }
 

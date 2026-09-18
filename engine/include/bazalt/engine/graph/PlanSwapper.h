@@ -82,6 +82,24 @@ namespace bazalt::engine
             return plan;
         }
 
+        /** Non-audio-thread side (M17) — the compiler thread's way to see
+            "what's currently published" when it wants to reuse state from
+            it (GraphCompiler.h's `previousPlan` parameter). Deliberately
+            NOT `getCurrentPlanForAudioThread()`: that call has a
+            documented "audio-thread side, exactly once per process()
+            call" contract and updates `audioThreadEpoch` as a side effect
+            — calling it from the compiler thread would corrupt that
+            tracking (falsely advancing the epoch reclaim() uses to decide
+            what the real audio thread can no longer be reading), risking
+            freeing a slot the audio thread is still using. This accessor
+            only reads `currentSlot`, nothing else.
+        */
+        ExecutionPlan* peekCurrentPlan() const noexcept
+        {
+            const auto slot = currentSlot.load (std::memory_order_acquire);
+            return slot >= 0 ? slots[(size_t) slot].get() : nullptr;
+        }
+
         /** Message-thread side, called periodically. Frees any slot that's
             neither the current plan nor still possibly in use by the audio
             thread (tracked via the last epoch it recorded).

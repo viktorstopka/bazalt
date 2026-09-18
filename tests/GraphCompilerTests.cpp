@@ -69,12 +69,30 @@ namespace
         }
     };
 
+    // M17: internal state (a plain counter, standing in for an
+    // oscillator's phase, an envelope's stage, a delay line's contents —
+    // anything a real node keeps between samples) that only ever grows,
+    // never reset by anything the graph does — makes "did this exact
+    // object keep running, or did I get a fresh one" trivially observable
+    // by reading the counter's value across two separate compiles.
+    class CounterNode : public Node
+    {
+    public:
+        int getNumInputPorts() const noexcept override { return 0; }
+        int getNumOutputPorts() const noexcept override { return 1; }
+        std::vector<PortDescriptor> getOutputPorts() const override { return { { "out", SignalType::Audio } }; }
+        void processSample (const float*, float* outputs) noexcept override { outputs[0] = (float) count++; }
+
+        int count = 0;
+    };
+
     NodeFactory buildTestFactory()
     {
         NodeFactory factory;
         factory.registerType ("test.scale", [] { return std::make_unique<ScaleNode>(); });
         factory.registerType ("test.constant", [] { return std::make_unique<ConstantNode>(); });
         factory.registerType ("test.blockonly", [] { return std::make_unique<BlockOnlyNode>(); });
+        factory.registerType ("test.counter", [] { return std::make_unique<CounterNode>(); });
         return factory;
     }
 }
@@ -197,4 +215,64 @@ TEST_CASE ("An invalid recompile never reaches the audio thread - the previous p
     const auto* output = live->blockBuffers[(size_t) live->finalOutputBufferIndex].getBlock().getChannelPointer (0);
     for (int i = 0; i < 4; ++i)
         CHECK (output[i] == 7.0f);
+}
+
+TEST_CASE ("GraphCompiler reuses an unchanged node's exact object across a recompile (M17 state pool)",
+           "[engine][GraphCompiler][M17]")
+{
+    NodeGraph graph;
+    graph.addNode ({ "counter", "test.counter", {}, {}, {} });
+    graph.setOutput ("counter", "out");
+
+    auto factory = buildTestFactory();
+
+    auto first = GraphCompiler::compile (graph, factory, { 44100.0, 64 }, 1);
+    REQUIRE (first.success);
+    first.plan.process (10); // counter's internal state advances to 10
+
+    // Recompile the SAME graph (counter's id/type/parameters all unchanged)
+    // — passing the first plan as previousPlan should reuse counter's
+    // exact object, carrying its state forward instead of restarting at 0.
+    auto second = GraphCompiler::compile (graph, factory, { 44100.0, 64 }, 2, &first.plan);
+    REQUIRE (second.success);
+
+    CHECK (second.plan.nodes[(size_t) second.plan.nodeIdToSlot.at ("counter")]
+           == first.plan.nodes[(size_t) first.plan.nodeIdToSlot.at ("counter")]); // literally the same shared_ptr
+
+    second.plan.process (1);
+    const auto* output = second.plan.blockBuffers[(size_t) second.plan.finalOutputBufferIndex].getBlock().getChannelPointer (0);
+    CHECK (output[0] == 10.0f); // continues from where it left off, not reset to 0
+}
+
+TEST_CASE ("GraphCompiler builds a fresh node instead of reusing when that node's own parameters changed",
+           "[engine][GraphCompiler][M17]")
+{
+    NodeGraph graph;
+    graph.addNode ({ "counter", "test.counter", {}, {}, {} });
+    graph.setOutput ("counter", "out");
+
+    auto factory = buildTestFactory();
+    auto first = GraphCompiler::compile (graph, factory, { 44100.0, 64 }, 1);
+    REQUIRE (first.success);
+    first.plan.process (10);
+
+    // Same id and type, but CounterNode takes no parameters that could
+    // differ — simulate "this node's own edit" the way a real stateful
+    // node with a real parameter would: add a harmless parameter value
+    // that GraphCompiler still sees as a genuine parameter-map difference,
+    // proving the safety check is about parameter-map equality, not about
+    // whether the node happens to read that particular key.
+    NodeGraph edited;
+    edited.addNode ({ "counter", "test.counter", {}, { { "unused", 42.0f } }, {} });
+    edited.setOutput ("counter", "out");
+
+    auto second = GraphCompiler::compile (edited, factory, { 44100.0, 64 }, 2, &first.plan);
+    REQUIRE (second.success);
+
+    CHECK (second.plan.nodes[(size_t) second.plan.nodeIdToSlot.at ("counter")]
+           != first.plan.nodes[(size_t) first.plan.nodeIdToSlot.at ("counter")]); // NOT reused — different object
+
+    second.plan.process (1);
+    const auto* output = second.plan.blockBuffers[(size_t) second.plan.finalOutputBufferIndex].getBlock().getChannelPointer (0);
+    CHECK (output[0] == 0.0f); // fresh object, starts from 0 again — safe, not a state race
 }

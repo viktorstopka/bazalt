@@ -216,3 +216,244 @@ match what was actually built, mirroring M6's "docs match reality" pass.
 
 **Exit criteria**: every item in blueprint §8's deliverables list is checked off; `pluginval` strict
 level still passes with the node editor active; CI green.
+
+---
+
+# Sound design system phase (M14+) — revision 2
+
+Rewritten against the expanded `docs/NODE_CATALOG.md` (rewritten 2026-09-18, 107 nodes across 25
+families — the original draft catalog this milestone sequence was first written against had 46).
+Replaces this document's original M14–M22 draft entirely: that draft's three broad "waves"
+don't fit a catalog more than double the size, and it didn't account for two things settled since:
+the editor UI needs to actually be wired to the engine before node batches start (otherwise
+"testing a batch" means staring at `render-cli` WAV output, not playing with it), and node previews
+need a standardized, descriptor-driven system before any node ships one, per your own instruction
+not to hand-code visualization per node.
+
+**Process change from the original draft, explicit because it changes what "exit criteria" means
+from M21 onward**: M14–M20 are one-time foundational work with real automated exit criteria, same as
+every earlier milestone in this document. **From M21 on, the real gate is you playing with the batch
+in the Standalone app and signing off** — automated tests are a floor (nothing ships broken), not the
+finish line. Batch contents past the next one or two are expected to shift based on what you find;
+treat the M21–M28 breakdown below as a dependency-ordered plan, not a fixed contract.
+
+**Relationship to the already-existing M11–M13**: M11 (live visualization) is fully superseded by
+M20 below — its scope (waveform/stepped-value/envelope/LFO-phase previews) is a strict subset of
+M20's generalized system; don't build M11 as originally scoped. M12's Macro node and growable ports
+are superseded by M14/M16 below, built for real at the schema level instead of UI-only. M13 (assist
+menu, shell polish, full test pass) is **not** superseded, just deferred — a recipe menu and a full
+test pass are worth more against a real catalogue than an empty one; revisit it once M21–M28 are
+substantially through.
+
+Sequencing: foundation (M14–M18, per `RECONCILIATION.md` §4's riskiest-first ordering, unchanged in
+substance from the original draft) → make the editor actually usable (M19) → make previews generic
+(M20) → node batches, most-dependency-free-first (M21–M28) → groups, last, once the primitives they
+compose from exist and have been played with (M29).
+
+## M14 — Value contract & port/parameter unification
+
+Extend `engine/`: unify `PortDescriptor`/`ParameterDescriptor` around a shared value-contract
+payload (`kind`, `quantity`, `curve`, `polarity`, `enumOptions`, `step`, `softMin`/`softMax`,
+`isStructural`) per `RECONCILIATION.md` 1.1/1.3/1.5/1.7 — additive fields, defaulted so every
+existing aggregate-init keeps compiling, same pattern as `hasFallbackWhenUnconnected`. Migrate
+`osc.basic.shape` from a bare float to a real `kind=enum` value (the first end-to-end test of the
+new contract). Keep the `hasFallbackWhenUnconnected` NaN-sentinel mechanism as-is (`RECONCILIATION.md`
+1.4 — the design doc's "compiler bakes a constant" alternative is explicitly rejected). Resolve
+`RECONCILIATION.md` 1.2 (Macro binding direction, ADR-0015) as its own decision point before writing
+`util.macro`. **Also do the real-code ID renames now, in this milestone, while the blast radius is
+smallest**: `util.add`→`math.add`, `util.multiply`→`math.multiply`, `util.map`→`adapt.map`,
+`util.output`→`io.output`, `osc.basic`→`osc.analog`, `delay.basic`→`delay.line`,
+`amp.vca`→`mix.gain`, `mix.add2`→`mix.sum`, `util.listen`→`view.listen`, `noise.burst`→`excite.burst`
+(`NODE_CATALOG (1).md`'s full rename list — mechanical, touches `ProofGraphs.h`,
+`PluginProcessor.cpp`'s default macro mappings, and the handful of tests referencing these literals;
+a grep-based CI check confirming no old string survives is part of this milestone's exit criteria,
+not a later one). Update `NodeDescriptorJson.cpp` and regenerate the TypeScript mirror via the
+ADR-0007 codegen path, not by hand. **Also add the `PortGroup` schema concept now** (`SIGNAL_TYPES.md` §6:
+`{idPrefix, min, max, growPolicy}`, stable `prefix.N` IDs, holes preserved on removal) — missed in
+the first pass of this milestone's scope, caught before any code was written around the gap. Schema
+only: `math.add`/`math.multiply`/`mix.sum` (renamed this milestone from `util.add`/`util.multiply`/
+`mix.add2`) stay fixed-2-input for now, same runtime behaviour as before the rename — actually wiring
+`PortGroup` into a real variable-arity node (`Node`'s `numInputs` becoming instance-level instead of
+a compile-time constant, `GraphCompiler`'s slot allocation handling a variable count,
+`processSample` summing however many are wired) is real, separate work that belongs in M21 (Batch A)
+when these nodes are built for real per `NODE_CATALOG.md`, not retrofitted here as an afterthought.
+
+**Exit criteria**: all 16 existing node headers compile against the extended structs and renamed
+IDs; `osc.basic.shape`/now `osc.analog.shape` round-trips as a real enum through JSON → TS with no UI
+code change needed beyond reading the new field; a Catch2 test asserts every existing
+`ParameterDescriptor`/`PortDescriptor` literal still produces the same effective value contract it
+did before; `render-cli` output for the existing proof graphs is bit-identical before/after; a grep
+over `engine/`/`plugin/`/`tests/`/`tests-plugin/` finds zero occurrences of any pre-rename typeId
+string.
+
+## M15 — `Data` type, and how it lives in a patch
+
+New `engine::Data` — immutable, reference-counted buffer with a small header (element type, length,
+semantic tag), built off the audio thread, audio-thread side only ever swaps a pointer. Add `Data` to
+`SignalType`, `NodeDescriptorJson.cpp`, the TS mirror. **Settle the patch-serialization question
+ADR-0017 explicitly punted on, since the new catalog leans on it immediately**: a `Data` value in a
+patch is either (a) a reference to another node's output (`data.table`/`data.scale`/`data.material`
+feeding a consumer — no new serialization concept, it's just a connection), or (b) content a node
+*owns and edits itself* (`adapt.remap`'s drawn curve, `seq.steps`'s own step data) — decide now
+whether (b) is stored as the owning node's own parameter-adjacent state (serialized inline in that
+node's patch entry) or is secretly always a hidden, auto-created `data.table` instance wired in
+behind the scenes (keeping exactly one mechanism, at the cost of every such node compiling an extra
+hidden node). Recommend the latter — one mechanism, no second serialization path — but this is a real
+design call, flag it back before committing. Wire "consumer declares accepted tags, mismatched tag
+rejected" into a standalone Catch2 test directly against the `Data` type (M16 gives it real
+`canConnect` teeth).
+
+**Exit criteria**: a Catch2 test builds a `Data(modal-set)` buffer on a worker thread, publishes it,
+confirms the audio thread's read is allocation-free and torn-free under concurrent republish; a
+second test confirms tag mismatch is rejected; the owned-vs-referenced serialization decision is
+written up (a short ADR-0022, or folded into ADR-0017 as an amendment) before any M21+ batch that
+needs it (`adapt.remap`, `seq.steps` — both Batch D, M24) starts.
+
+## M16 — `canConnect`, adapters, and channels — done
+
+New pure `canConnect(from, to) -> Ok | NeedsAdapters(chain) | Reject` (`engine/include/bazalt/engine/graph/CanConnect.h`/`.cpp`),
+called from `GraphCompiler::compile()` (rejects `NeedsAdapters` exactly like `Reject` — a connection
+reaching the compiler must already be directly compatible) and from a new
+`GraphEditController::connectWithAutoAdapt()` (resolves real port descriptors via `NodeFactory`,
+calls `canConnect`, and for a single-step 1-in-1-out chain builds + wires the adapter node via
+`applyBatch` — one recompile, one undo step). Shipped three adapters, not four: `adapt.map` (already
+existed, renamed M14), `adapt.normalise` (new), `adapt.threshold` (new, promotes
+`mock.triggerByThreshold`) — Sample & Hold stays deferred to M20 alongside Envelope Follower per
+ADR-0019's own incremental plan; the original draft of this milestone's text listed it here by
+mistake. Added `channels: Mono | Stereo | Inherited` on Audio ports (ADR-0023) and built
+`mix.downmix` for real (`left`/`right` → `out`).
+
+**Real scope correction found while implementing, not before**: `wireRules.ts` is **not** regenerated
+this milestone — ADR-0007's codegen path reflects *data* (a `NodeDescriptor`), and `canConnect` is
+*logic*; turning it into a callable UI-facing thing (whether that's a generated TS mirror or a native-
+function query) is naturally M19's job ("wire the editor to the real engine"), not M16's. `canConnect`
+is real, tested, and enforced engine-side; the UI still predicts via its own `wireRules.ts` guess
+until M19. Also found and fixed: `mix.downmix`'s real shape (2-in-1-out) doesn't fit
+`connectWithAutoAdapt`'s single-splice model the way `adapt.map`/`adapt.normalise`/`adapt.threshold`
+(all 1-in-1-out) do — it's flagged by `canConnect` but not auto-inserted; rejected with a message
+pointing at manual insertion instead of silently guessing at a shape that doesn't fit (ADR-0023 has
+the full reasoning, including a real, previously-unnoticed ambiguity in `NODE_CATALOG (1).md` itself
+about whether "stereo" means one multi-channel port or two separate mono ports).
+
+**A real bug caught by this milestone's own tests, worth remembering**: the first implementation of
+`ok()` returned a default-constructed `CanConnectResult`, whose in-class default is `Reject` (the
+safe default for anyone who forgets to set it) — so `ok()` silently returned `Reject` for every
+legitimate connection, `prepare()` failed silently (`jassert` with no debugger attached), and every
+downstream `processBlock()` call dereferenced a never-published plan. Caught immediately by the full
+suite going from 111 green to 21 failing/crashing; fixed by constructing the result explicitly rather
+than relying on `{}`.
+
+**Exit criteria**: a Catch2 suite (`CanConnectTests.cpp`) exercises every `Ok`/`NeedsAdapters`/`Reject`
+branch pairwise across `SignalType`s and across the three `channels` values — done. `connectWithAutoAdapt`
+rejects an incompatible pair with a descriptive error and leaves the prior plan live, connects directly
+when already `Ok`, and inserts+seeds a real `adapt.map` node end to end for a synthetic
+Unipolar→`Time` connection (`ConnectWithAutoAdaptTests.cpp`) — done. The stereo→mono/`mix.downmix`
+case is proven only against a synthetic test-only stereo node (no real one exists yet, ADR-0023) and
+confirmed to reject-with-reason rather than falsely auto-insert — done, but honestly scoped short of
+"auto-inserts," matching the correction above. All 131 engine+plugin tests green; UI `tsc`/`vite build`/
+`oxlint` clean.
+
+## M17 — Domain generalization: Instance Allocator, Voice Mix (Voice configuration only) — done
+
+Replaced `util.voiceSum` with `instance.allocator`/`instance.mix` (`RECONCILIATION.md` 3.1–3.4,
+`InstanceAllocatorNode.h`/`InstanceMixNode.h`, `VoiceSumNode.h` deleted). Generalized `VoiceManager`
+into the allocator's **Voice** configuration specifically — Swarm/Trigger configurations are still
+Batch H (M28), not touched here. Built the node-reuse mechanism `ARCHITECTURE.md` §3.2 specified and
+never shipped: `GraphCompiler::compile()`'s `previousPlan` parameter reuses a node's exact
+`shared_ptr<Node>` object (state and all) across a recompile when its `(id, type, parameters)` are
+unchanged. Replaced the hardcoded `"env"`-node silence check with a generic peak-level silence
+detector (`VoiceManager::updateSilenceAndCheckFinished()`); replaced immediate-cut stealing with a
+256-sample fade ramp (`VoiceStage::Stealing`).
+
+**Delivered vs. originally planned exit criteria**: three of the four shipped as stated — a per-voice
+delay tail audibly outlasts its envelope's own release (`tests-plugin/VoiceRenderTests.cpp`), a
+stolen ringing instance fades rather than clicks (`tests/VoiceManagerTests.cpp`), and voice state
+survives a live recompile that doesn't touch the sounding voice's nodes
+(`tests/GraphCompilerTests.cpp`'s two M17 state-pool cases). **"N-allocator-region coverage" did
+not ship as originally worded** — `DomainSplitter` still supports exactly one `instance.allocator`
+and one `instance.mix` per graph and rejects a second of either
+(`tests/DomainSplitterTests.cpp`'s multi-allocator-rejection case), the same single-boundary
+limitation `util.voiceSum` already had. True multi-region support needs `ExecutionPlan` to carry more
+than one designated output, which doesn't exist yet; deferred rather than silently assumed done. Also
+found and fixed along the way: a real cross-thread mutation race in the first state-pool draft
+(reusing a node's object while still calling `setParameter()` on it), caught by the existing
+concurrent-edit test before it shipped.
+
+## M18 — `Note` as a real port type, MIDI rewired
+
+`io.noteIn` translates MIDI into real `Note` events; `PluginProcessor::handleMidiEvent`'s direct
+`dynamic_cast`/`getNodeById()` path is rewired onto `Note`-port delivery into `instance.allocator`.
+
+**Exit criteria**: the existing MIDI-driven proof graph, rebuilt using `io.noteIn` →
+`instance.allocator` → the rest, produces audio indistinguishable from today's hardwired path for
+the same MIDI file; a pitch-bend render confirms continuous `Pitch` needs no special-cased path.
+
+## M19 — Wire the editor to the real engine
+
+The actual prerequisite for "test each batch in the app," not previously scoped anywhere. Replace
+`ui/src/graph/graphStore.ts`'s local-only mutations with real calls through the M7 command bridge
+(`graphAddNode`/`graphDeleteNode`/`graphConnect`/`graphDisconnect`/`graphSetParameterValue`, plus
+M8's `graphSetOutput`/`applyBatch`) for every interaction M10 already built — place, wire, move,
+delete, rename, bypass. Keep M10's interaction logic (`InfiniteCanvas.tsx`, `GraphSurface.tsx`)
+exactly as-is, per CLAUDE.md's own already-stated plan: swap the local mutations underneath the same
+UI, don't rebuild the interactions. Wire the UI's live wire-drag feedback to the real, generated
+`canConnect` (M16) instead of `wireRules.ts`'s guess. Verify patch save/load round-trips through the
+now-real graph and node set.
+
+**Exit criteria**: you place a node from the Add menu, wire it to another real node, and hear the
+result change live in the Standalone app, with zero code changes in between — that's the actual
+gate. Undo/redo works against the real graph, not a local snapshot. A rejected connection shows the
+real rejection reason in the error banner.
+
+## M20 — Standardized visualization system
+
+A small, closed taxonomy of preview kinds — start with what M21/M22 need (Scope, Spectrum, Meter,
+EnvelopeWithPlayhead, PhaseMarker), extend the taxonomy later rather than front-loading all of it.
+Extend `NodeDescriptor` (JSON + TS mirror) with a `previews[]` field: each entry names a kind and
+which tap id(s) feed it, declared in the node's own C++ header alongside its ports/parameters —
+**nothing about a specific node's preview is hardcoded in `NodeCard.tsx`**, per your instruction.
+Build one shared per-frame update loop replacing M5's 15 independent `requestAnimationFrame` loops
+(closing the gap CLAUDE.md/NODE_EDITOR.md §9 already flag), draining every visible node's subscribed
+taps and feeding whichever generic component is mounted for its declared kind. Port M5's existing
+oscilloscope/spectrum/meter canvases into this system as the first three kinds (refactor, not new
+DSP-adjacent work); build EnvelopeWithPlayhead and PhaseMarker new, since Batch B needs them
+immediately. `view.scope`/`view.spectrum`/`view.meter`/`view.listen` (Batch A, M21) are the explicit
+placeable nodes that reuse these same generic components to preview an arbitrary point in the graph.
+
+**Exit criteria**: adding a preview declaration to a node's C++ header (e.g.
+`{PreviewKind::EnvelopeWithPlayhead, "out"}` on `env.adsr`) is sufficient on its own to make that
+preview render correctly — no `NodeCard.tsx` edit for that specific node. The M8 stress-test's
+60fps-at-500-nodes number is re-measured with the shared loop active and doesn't regress.
+
+---
+
+## Node batches (M21–M28)
+
+Dependency-ordered so each batch only needs infrastructure and nodes that already exist. Every
+batch's real exit gate is you testing it live in the Standalone app; the "testable target" column is
+what you'd actually patch to try it, usually a `REFERENCE_PATCHES.md`/`NODE_CATALOG.md` Part B entry.
+
+| # | Batch | Nodes (107 total, none dropped) | Testable target |
+|---|---|---|---|
+| M21 | Core plumbing, math, logic, adapters | `math.*` (11), `logic.*` (5), `adapt.map/normalise/threshold/sampleHold` (4), `util.*` (3), `mix.gain/sum/crossfade/downmix` (4), `io.*` (5, `io.audioIn` built with its full N-channel port-group behavior from the start, not deferred), `view.*` (4) — 36 nodes, zero DSP risk | Validates the whole pipeline (schema, `canConnect`, command bridge, generic previews) end to end on trivial nodes before anything harder depends on it working. Build a scope+meter+gain-staging test patch by hand in the app. |
+| M22 | Basic synthesis | `osc.analog/sine` (2), `filter.svf/onepole/ladder/allpass/shelf/peak/dcBlock` (7), `env.adsr/follower` (2), `random.stepped/drift` (2), `space.pan/width` (2), `delay.line` (1), `instance.allocator` (Voice, wired for real) + `instance.mix` (2) — 18 nodes | The full **Init Patch** factory group — an ordinary subtractive synth, playable via keyboard in the Standalone app. First milestone that's genuinely "does this feel good to play," not just "does it compile." |
+| M23 | Shaping + non-cyclic physical modeling | `shape.*` (5), `noise.colored/dust` (2), `excite.impulse/burst/pluck/contact` (4, the four *without* a `feedback` port), `resonator.modal/comb` (2), `data.material/analyseModes` (2) — 15 nodes | **Struck Body** and **Crackle**/**Scrape** factory groups — proves `Data(modal-set)` end to end without yet touching cyclic feedback. |
+| M24 | Data authoring & shared curves | `data.table/scale/lookup`, `adapt.remap` (4), `note.quantize` (1), `lfo.shape` (1, full shape/morph), `env.curve` (1), `seq.steps/euclid` (2), `clock.*` (3) — 12 nodes | **Scale Quantize** group + a hand-drawn LFO/envelope shape audibly working — proves the "curves are shared data" idea for real, not just on paper. |
+| M25 | Note-stream family + analysis | `note.gate/value/transpose/chord/hold/select/humanize/filter/assemble` (9), `analysis.*` (4) — 13 nodes | **Arpeggiator**, **Chord** groups, and a single-channel audio-to-note test (`analysis.onset`+`pitch`→`note.assemble`) — the hexaphonic-guitar reference patch's hard part, one string at a time before all six. |
+| M26 | Coupled physical modeling + benchmark | `excite.mallet/stickSlip/breath` (3, `feedback` ports wired for real this time), `resonator.string/tube/plate` (3), `filter.formant` (1) — 7 nodes, plus a dedicated per-sample-region CPU benchmark at real voice counts (concern flagged separately — most physical-modeling patches become cyclic once `feedback` is real, unlike everything before this batch) | **Bowed String**, **Breath/Wind**, full **Struck Body**. Exit criteria includes measured CPU numbers at 8+ voices, not just "it compiles" — same bar M8 set for the rendering split. |
+| M27 | Samplers, wavetable, file loading | `osc.wavetable` (1), `sampler.player/granular` (2), `data.load` (1) — 4 nodes | Load a real sample, play it pitched and granulated. |
+| M28 | Space effects + swarm/trigger configs | `space.reverb/diffuser` (2), `instance.allocator`'s Swarm-population/Swarm-transient/Trigger configurations (same typeId, new behavior, generalizing M17's Voice-only scope) | **Water**, **Crackle** (as a real swarm, not the single-instance stand-in from M23), **Cicada**, **Cicada Field** groups — the transient/persistent swarm reference patch, for real. |
+
+## M29 — Groups
+
+`DOMAINS.md` §8: Group Input/Output nodes, inline-and-flatten compiler pass before domain inference,
+domain-signature computation, `factory.*`/`user.*`/`lab.*` namespaces (native nodes keep their
+existing flat prefixes, per `NODE_CATALOG.md`'s namespace note). Build all fifteen
+`NODE_CATALOG.md` Part B groups for real: Karplus-Strong, Scale Quantize, Arpeggiator, Chord, Bubble,
+Water, Crackle, Scrape, Cicada, Cicada Field, Breath/Wind, Bowed String, Struck Body, Hex Guitar
+Front End, Init Patch.
+
+**Exit criteria**: all fifteen groups compile, inline correctly (compiled plan matches the equivalent
+hand-built graph modulo naming), and are indistinguishable by ear from their native-graph
+equivalents; a group placed in an incompatible domain context is rejected before the user hears
+anything wrong; "make unique" detaches a library-referenced instance cleanly.

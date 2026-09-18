@@ -1,9 +1,11 @@
 #include <catch2/catch_test_macros.hpp>
+#include <algorithm>
 #include "NodeDescriptorJson.h"
 #include "bazalt/engine/graph/ProofGraphs.h"
 #include "bazalt/engine/nodes/ConstantNode.h"
+#include "bazalt/engine/nodes/OscillatorNode.h"
 #include "bazalt/engine/nodes/RerouteNode.h"
-#include "bazalt/engine/nodes/VoiceSumNode.h"
+#include "bazalt/engine/nodes/InstanceMixNode.h"
 
 using namespace bazalt;
 using namespace bazalt::engine;
@@ -52,16 +54,38 @@ TEST_CASE ("nodeDescriptorToVar reports the Decoration layout variant",
     CHECK (var["layoutVariant"].toString() == "decoration");
 }
 
-TEST_CASE ("nodeDescriptorToVar serializes VoiceSumNode's port with its bounded numeric metadata intact",
-           "[plugin][NodeDescriptorJson][NODE_EDITOR]")
+TEST_CASE ("nodeDescriptorToVar serializes InstanceMixNode's port metadata intact",
+           "[plugin][NodeDescriptorJson][M17]")
 {
-    const auto descriptor = describeNode ("util.voiceSum", nodes::VoiceSumNode {});
+    const auto descriptor = describeNode ("instance.mix", nodes::InstanceMixNode {});
     const auto var = nodeDescriptorToVar (descriptor);
-    CHECK (var["typeId"].toString() == "util.voiceSum");
+    CHECK (var["typeId"].toString() == "instance.mix");
 
     const auto* inputs = var["inputs"].getArray();
     REQUIRE (inputs != nullptr);
     REQUIRE (! inputs->isEmpty());
+}
+
+TEST_CASE ("nodeDescriptorToVar serializes osc.analog.shape's M14 enum metadata end to end",
+           "[plugin][NodeDescriptorJson][M14]")
+{
+    const auto descriptor = describeNode ("osc.analog", nodes::OscillatorNode {});
+    const auto var = nodeDescriptorToVar (descriptor);
+
+    const auto* parameters = var["parameters"].getArray();
+    REQUIRE (parameters != nullptr);
+    const auto it = std::find_if (parameters->begin(), parameters->end(), [] (const juce::var& p)
+                                   { return p["id"].toString() == "osc.analog.shape"; });
+    REQUIRE (it != parameters->end());
+
+    CHECK ((*it)["kind"].toString() == "enum");
+    CHECK ((bool) (*it)["isStructural"]);
+    const auto* options = (*it)["enumOptions"].getArray();
+    REQUIRE (options != nullptr);
+    REQUIRE (options->size() == 4);
+    CHECK ((*options)[0]["id"].toString() == "sine");
+    CHECK ((*options)[0]["label"].toString() == "Sine");
+    CHECK ((*options)[3]["id"].toString() == "triangle");
 }
 
 TEST_CASE ("nodeDescriptorsToVar serializes every registered type exactly once",

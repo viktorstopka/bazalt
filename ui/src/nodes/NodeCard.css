@@ -32,8 +32,15 @@
   border-color: var(--color-error);
 }
 
+/* `dotted` (the previous value) renders small circles, not a dashed line —
+   that's the literal cause of "looks like a bunch of dots" (direct
+   feedback). `dashed` renders actual rectangular segments; bumping the
+   border width makes each segment (and the gap between them) longer too —
+   Chromium scales dash length roughly with border-width, there's no
+   separate CSS property for it directly. */
 .node-card-macro {
-  border-style: dotted;
+  border-style: dashed;
+  border-width: 2px;
 }
 
 .node-title-bar {
@@ -140,17 +147,16 @@
   justify-content: center;
 }
 
-/* Ports (and parameters, below) "pierce" the node's own border: the glyph
-   is absolutely positioned so its centre sits exactly on the 1px border
-   line, painted with the node's own fill colour behind it, so it reads as
-   a notch cut into the outline rather than an icon floating inside it
-   (docs/Slice 1 (1).png's "→ By" row). This only works because the row
-   itself has `position: relative` and zero border of its own — an
-   absolutely positioned child's `left/right: 0` lands on the row's padding
-   edge, which (since node-card has no padding) is exactly the card's inner
+/* Ports "pierce" the node's own border: the glyph is absolutely positioned
+   so its centre sits exactly on the 1px border line, painted with the
+   node's own fill colour behind it, so it reads as a notch cut into the
+   outline rather than an icon floating inside it (docs/Slice 1 (1).png's
+   "→ By" row). This only works because the row itself has
+   `position: relative` and zero border of its own — an absolutely
+   positioned child's `left/right: 0` lands on the row's padding edge,
+   which (since node-card has no padding) is exactly the card's inner
    border edge. */
-.node-row-port,
-.node-row-parameter {
+.node-row-port {
   position: relative;
 }
 
@@ -167,6 +173,12 @@
 .node-port-glyph-left {
   left: 0;
   transform: translate(-50%, -50%);
+  /* Zero padding on the cable-facing side only (keep the label-facing side
+     from the base rule) — the glyph's opaque background occludes anything
+     a cable draws past its own edge (portAnchors.ts anchors there), so any
+     padding here is dead space between the visible cable and the glyph's
+     own ink, read as "there's a gap" (direct feedback). */
+  padding-left: 0;
 }
 
 .node-port-glyph-right {
@@ -175,63 +187,75 @@
 }
 
 /* Merged pass-through row (primary input === primary output, "the same
-   property, just changed" — see isSameProperty() in NodeCard.tsx): a
-   visibly bigger/longer arrow than an ordinary single-direction port row. */
-.node-port-glyph-long {
-  font-size: 26px;
+   property, just changed" — see isSameProperty() in NodeCard.tsx): the
+   glyph itself is the SAME size as everywhere else (direct feedback: "the
+   arrows vary in size... this needs to be rehauled and done in a
+   completely modular way" — no per-row glyph-size variant exists anymore).
+   What reads as "this property passes straight through" instead is a line
+   spanning the row's true edge-to-edge width — same `left: 0`/`right: 0`
+   span as PortGlyph's own border-piercing positioning immediately above,
+   so it touches both glyphs with no gap — with the centred label painted
+   on top of it (`.node-port-label-merged` below), matching the design
+   reference (Frame 1 Bazalt.png's Predelay row). z-index 0, one below the
+   glyphs/label (both z-index 1), so it passes visually behind both. */
+.node-merged-line {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 50%;
+  height: 2px;
+  transform: translateY(-50%);
+  opacity: 0.8;
+  z-index: 0;
 }
+
+.node-port-label-merged {
+  position: relative;
+  z-index: 1;
+  background: var(--color-nodeFill);
+  padding: 0 8px;
+}
+
+/* Unconnected input: a plain filled dot, not a type glyph — "supposed to
+   be a dot, more so than a capsule shape" (direct feedback). Overrides the
+   base glyph's opaque padded pill in favour of a small circle in the
+   port's own colour, still centred exactly on the border. Connecting swaps
+   this back to the normal glyph (see PortGlyph's `connected` prop). */
+.node-port-glyph-dot {
+  width: 8px;
+  height: 8px;
+  padding: 0;
+  border-radius: 50%;
+  background: currentColor;
+}
+
 
 .node-port-label {
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
-.node-port-label-merged {
-  padding: 0 10px;
-}
-
 .node-port-live-value {
   color: var(--color-textSecondary);
 }
 
-.node-row-parameter {
-  justify-content: space-between;
-}
-
-.node-parameter-label {
-  color: var(--color-textSecondary);
-}
-
-/* Smaller than a full port glyph (parameters aren't cable-connectable
-   ports) but still notches the border, per the reference's "Treshold" row. */
-.node-parameter-tick {
-  position: absolute;
-  left: 0;
-  top: 50%;
-  transform: translate(-50%, -50%);
-  width: 10px;
-  height: 14px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 1;
-}
-
-.node-parameter-tick > span {
-  width: 3px;
-  height: 10px;
-}
-
-.node-value-pill {
-  background: var(--color-panel);
-  border: var(--stroke-thin) solid var(--color-panelBorder);
-  border-radius: 999px;
-  padding: 2px 10px;
-  color: var(--color-textPrimary);
-}
-
 /* Horizontal layout variant (blueprint §4: "wide variant with inputs left,
-   a large live preview centre, output value indicator next to the output") */
+   a large live preview centre, output value indicator next to the output").
+
+   CONTRACT for every layout variant that arranges port rows in a distinct
+   horizontal region next to non-port content (this one; any future custom
+   body — oscillators, generators, granulators — that wants the same
+   shape): the port-row-bearing element and everything between it and
+   `.node-card`'s own border must carry ZERO horizontal padding/margin. The
+   border-piercing trick (.node-port-glyph's `left:0`/`right:0`, see above)
+   only lands on the card's *true* edge when nothing between the row and
+   that edge pushes it inward — that's what StandardBody gets for free (its
+   rows are direct, unpadded children of `.node-card`), and what this
+   layout got WRONG originally (`.node-horizontal-body` itself carried
+   horizontal padding, which is why Random's input arrow rendered floating
+   inside the node instead of on its border — M10_REVIEW.md feedback). Any
+   breathing room a variant wants belongs on non-port content only — here,
+   `.node-horizontal-preview` — never on the row's own ancestor chain. */
 .node-card-horizontal {
   min-width: 280px;
 }
@@ -239,8 +263,7 @@
 .node-horizontal-body {
   display: flex;
   align-items: center;
-  gap: var(--space-sm);
-  padding: var(--space-xs) var(--space-md) var(--space-sm);
+  padding: var(--space-xs) 0 var(--space-sm) 0;
 }
 
 .node-horizontal-column {
@@ -253,11 +276,18 @@
   align-items: flex-end;
 }
 
-.node-preview-placeholder {
+.node-horizontal-preview {
   flex: 1;
+  padding: 0 var(--space-sm);
+}
+
+.node-preview-placeholder {
+  display: block;
+  width: 100%;
   height: 32px;
   min-width: 70px;
   background: var(--color-panel);
+  -webkit-user-drag: none;
 }
 
 /* Singleton layout variant: title only, typed cable stub each side,
@@ -283,9 +313,18 @@
   line-height: 1;
 }
 
+.node-singleton-glyph-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
 .node-ear-icon {
   color: var(--color-textPrimary);
   overflow: visible;
+  -webkit-user-drag: none;
 }
 
 /* Decoration layout variant: Knob/Reroute, Frame, Header, Image */

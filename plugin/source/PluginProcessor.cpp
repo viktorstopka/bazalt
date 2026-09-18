@@ -4,7 +4,7 @@
 #include "bazalt/engine/graph/GraphCompiler.h"
 #include "bazalt/engine/patch/PatchSerializer.h"
 #include "bazalt/engine/nodes/AdsrNode.h"
-#include "bazalt/engine/nodes/VoiceSumNode.h"
+#include "bazalt/engine/nodes/InstanceMixNode.h"
 #include <array>
 #include <cstring>
 
@@ -74,7 +74,7 @@ namespace bazalt
         // "oscillator shape, filter cutoff/resonance, and envelope").
         // Macros 5-32 are left unmapped — inert automatable floats until
         // something needs them, per "arbitrary, cheap to change" sizing.
-        macroMappings = { { 0, "osc", "osc.basic.shape", 0.0f, 3.0f },
+        macroMappings = { { 0, "osc", "osc.analog.shape", 0.0f, 3.0f },
                           { 1, "svf", "filter.svf.cutoff", 200.0f, 12000.0f },
                           { 2, "svf", "filter.svf.resonance", 0.3f, 4.0f },
                           { 3, "env", "env.adsr.release", 0.02f, 3.0f } };
@@ -87,7 +87,13 @@ namespace bazalt
         currentSampleRate = sampleRate;
         currentBlockSize = samplesPerBlock;
 
-        voiceSumScratchBuffer.setSize (1, samplesPerBlock);
+        instanceMixScratchBuffer.setSize (1, samplesPerBlock);
+
+        // M17: 200ms hold time, converted from samples-worth-of-silence at
+        // this sample rate — matches InstanceMixNode's own parameter
+        // default (see PluginProcessor.h's comment on why this is a fixed
+        // default rather than read from a real node for now).
+        silenceHoldTimeSamples = (int) (0.2 * sampleRate);
 
         // Compiles and publishes the current graph (the default proof
         // graph, or whatever a patch load already installed) — M7
@@ -145,26 +151,45 @@ namespace bazalt
         return true;
     }
 
+    void BazaltAudioProcessor::triggerVoiceNote (bazalt::engine::ExecutionPlan* plan, float frequency, float velocity) noexcept
+    {
+        if (plan == nullptr)
+            return;
+
+        plan->reset(); // fresh phase/envelope/filter state for the (possibly stolen) voice
+
+        if (auto* osc = plan->getNodeById ("osc"))
+            osc->setParameter ("osc.analog.frequency", frequency);
+
+        if (auto* adsr = dynamic_cast<bazalt::engine::nodes::AdsrNode*> (plan->getNodeById ("env")))
+            adsr->noteOn();
+
+        // Not yet consumed by the default graph's nodes (env.adsr has no
+        // velocity-sensitivity today) — captured for API completeness;
+        // instance.allocator's own noteOn() (M17) does accept it already.
+        juce::ignoreUnused (velocity);
+    }
+
     void BazaltAudioProcessor::handleMidiEvent (const juce::MidiMessage& message, const VoicePlanPtrs& voicePlans)
     {
         if (message.isNoteOn())
         {
             const auto noteId = (bazalt::engine::VoiceManager::NoteId) ((message.getChannel() << 8) | message.getNoteNumber());
             const auto voiceIndex = voiceManager.noteOn (noteId);
-
-            auto* plan = voicePlans[(size_t) voiceIndex];
-            if (plan == nullptr)
-                return;
-
-            plan->reset(); // fresh phase/envelope/filter state for the (possibly stolen) voice
-
             const auto frequency = (float) juce::MidiMessage::getMidiNoteInHertz (message.getNoteNumber());
+            const auto velocity = message.getFloatVelocity();
 
-            if (auto* osc = plan->getNodeById ("osc"))
-                osc->setParameter ("osc.basic.frequency", frequency);
+            // M17: a stolen voice defers its actual retrigger until its
+            // fade-out completes (renderVoiceRange) — DOMAINS.md §5's
+            // "faded out over a ramp rather than cut". An idle-voice
+            // allocation retriggers immediately, exactly as before.
+            if (voiceManager.getStage (voiceIndex) == bazalt::engine::VoiceStage::Stealing)
+            {
+                voiceManager.setPendingNoteOn (voiceIndex, { noteId, frequency, velocity });
+                return;
+            }
 
-            if (auto* adsr = dynamic_cast<bazalt::engine::nodes::AdsrNode*> (plan->getNodeById ("env")))
-                adsr->noteOn();
+            triggerVoiceNote (voicePlans[(size_t) voiceIndex], frequency, velocity);
         }
         else if (message.isNoteOff())
         {
@@ -182,42 +207,109 @@ namespace bazalt
         if (numSamples <= 0)
             return;
 
-        auto* sum = voiceSumScratchBuffer.getWritePointer (0) + startSample;
+        auto* sum = instanceMixScratchBuffer.getWritePointer (0) + startSample;
+        int activeCount = 0;
 
         for (int voiceIndex = 0; voiceIndex < numVoices; ++voiceIndex)
         {
-            if (voiceManager.getStage (voiceIndex) == bazalt::engine::VoiceStage::Idle)
+            const auto stage = voiceManager.getStage (voiceIndex);
+            if (stage == bazalt::engine::VoiceStage::Idle)
                 continue;
 
             auto* plan = voicePlans[(size_t) voiceIndex];
             if (plan == nullptr)
                 continue;
 
-            plan->process (numSamples);
+            if (stage == bazalt::engine::VoiceStage::Stealing)
+            {
+                // Render the OLD (pre-steal) content for the whole range,
+                // ramping it linearly to silence over however many of
+                // these samples are still within the fade window
+                // (DOMAINS.md §5) — any samples past that are already
+                // fully faded (gain 0), not rendered content leaking
+                // through.
+                const auto fadeSamplesRemainingBefore = voiceManager.getStealFadeSamplesRemaining (voiceIndex);
+                const auto fadingSamples = juce::jmin (numSamples, fadeSamplesRemainingBefore);
 
+                plan->process (numSamples);
+                const auto* voiceOut = plan->blockBuffers[(size_t) plan->finalOutputBufferIndex].getBlock().getChannelPointer (0);
+
+                const auto startGain = voiceManager.getStealFadeGain (voiceIndex);
+                const auto completed = voiceManager.advanceStealFade (voiceIndex, numSamples);
+                const auto endGain = voiceManager.getStealFadeGain (voiceIndex);
+
+                for (int i = 0; i < fadingSamples; ++i)
+                {
+                    const auto t = fadingSamples > 1 ? (float) i / (float) (fadingSamples - 1) : 1.0f;
+                    const auto gain = startGain + (endGain - startGain) * t;
+                    sum[i] += voiceOut[i] * gain;
+                }
+                // Samples at/after fadingSamples: gain is 0 — nothing to add.
+
+                ++activeCount;
+
+                if (completed)
+                {
+                    const auto pending = voiceManager.getPendingNoteOn (voiceIndex);
+                    triggerVoiceNote (plan, pending.frequency, pending.velocity);
+                    voiceManager.completeSteal (voiceIndex);
+
+                    // The new note starts right where the fade left off,
+                    // within this SAME render call — sample-accurate to
+                    // within one MIDI-event-boundary sub-range, not
+                    // delayed to the next processBlock().
+                    const auto remainingSamples = numSamples - fadingSamples;
+                    if (remainingSamples > 0)
+                    {
+                        plan->process (remainingSamples);
+                        const auto* newVoiceOut = plan->blockBuffers[(size_t) plan->finalOutputBufferIndex].getBlock().getChannelPointer (0);
+                        for (int i = 0; i < remainingSamples; ++i)
+                            sum[fadingSamples + i] += newVoiceOut[i];
+                    }
+                }
+
+                continue;
+            }
+
+            // Active or Releasing.
+            plan->process (numSamples);
             const auto* voiceOut = plan->blockBuffers[(size_t) plan->finalOutputBufferIndex].getBlock().getChannelPointer (0);
 
             for (int i = 0; i < numSamples; ++i)
                 sum[i] += voiceOut[i];
 
-            if (voiceManager.getStage (voiceIndex) == bazalt::engine::VoiceStage::Releasing)
+            ++activeCount;
+
+            if (stage == bazalt::engine::VoiceStage::Releasing)
             {
-                auto* adsr = dynamic_cast<bazalt::engine::nodes::AdsrNode*> (plan->getNodeById ("env"));
-                if (adsr != nullptr && ! adsr->isActive())
+                // M17: generic, signal-level silence detection
+                // (VoiceManager.h's own comment) — replaces a hardcoded
+                // dynamic_cast<AdsrNode*>("env")->isActive() check, so a
+                // per-voice delay/reverb tail correctly keeps the instance
+                // alive past its envelope's own release.
+                float peak = 0.0f;
+                for (int i = 0; i < numSamples; ++i)
+                    peak = juce::jmax (peak, std::abs (voiceOut[i]));
+
+                if (voiceManager.updateSilenceAndCheckFinished (voiceIndex, peak, numSamples,
+                                                                 silenceThresholdLinear, silenceHoldTimeSamples))
                     voiceManager.voiceFinished (voiceIndex);
             }
         }
+
+        activeVoiceCountThisBlock = activeCount;
     }
 
-    // ARCHITECTURE.md/NODE_EDITOR.md §7: with no util.voiceSum node in the
+    // ARCHITECTURE.md/DOMAINS.md §2: with no instance.mix node in the
     // graph (every M2-M6 patch, and the common case even after M7), the
     // voice sum IS the final output — copied straight to both channels,
-    // identical to pre-M7 behaviour. When a util.voiceSum node exists, the
-    // sum is instead handed to it (setExternalBlock) and the GLOBAL plan's
-    // own output — not the raw voice sum — reaches the speakers.
-    void BazaltAudioProcessor::finalizeVoiceSumIntoOutput (juce::AudioBuffer<float>& output, int numSamples) noexcept
+    // identical to pre-M7 behaviour. When an instance.mix node exists, the
+    // sum (or average, per its mode parameter) is instead handed to it
+    // (setExternalBlock) and the GLOBAL plan's own output — not the raw
+    // voice sum — reaches the speakers.
+    void BazaltAudioProcessor::finalizeInstanceMixIntoOutput (juce::AudioBuffer<float>& output, int numSamples) noexcept
     {
-        const float* finalMono = voiceSumScratchBuffer.getReadPointer (0);
+        const float* finalMono = instanceMixScratchBuffer.getReadPointer (0);
 
         if (hasGlobalDomain.load (std::memory_order_acquire))
         {
@@ -225,12 +317,21 @@ namespace bazalt
             {
                 if (globalPlan->externalInputNodeId.isNotEmpty())
                 {
-                    auto* voiceSumNode = dynamic_cast<bazalt::engine::nodes::VoiceSumNode*> (
+                    auto* instanceMixNode = dynamic_cast<bazalt::engine::nodes::InstanceMixNode*> (
                         globalPlan->getNodeById (globalPlan->externalInputNodeId));
 
-                    if (voiceSumNode != nullptr)
+                    if (instanceMixNode != nullptr)
                     {
-                        voiceSumNode->setExternalBlock (finalMono, numSamples);
+                        if (instanceMixNode->getMode() == bazalt::engine::nodes::InstanceMixNode::Mode::Average
+                            && activeVoiceCountThisBlock > 1)
+                        {
+                            auto* writableMono = instanceMixScratchBuffer.getWritePointer (0);
+                            const auto scale = 1.0f / (float) activeVoiceCountThisBlock;
+                            for (int i = 0; i < numSamples; ++i)
+                                writableMono[i] *= scale;
+                        }
+
+                        instanceMixNode->setExternalBlock (finalMono, numSamples);
                         globalPlan->process (numSamples);
                         finalMono = globalPlan->blockBuffers[(size_t) globalPlan->finalOutputBufferIndex]
                                         .getBlock()
@@ -292,7 +393,7 @@ namespace bazalt
         for (int ch = 0; ch < buffer.getNumChannels(); ++ch)
             buffer.clear (ch, 0, numSamples);
 
-        voiceSumScratchBuffer.clear (0, numSamples);
+        instanceMixScratchBuffer.clear (0, numSamples);
 
         // Fetched exactly once per process() call, per PlanSwapper's own
         // contract (PlanSwapper.h) — handleMidiEvent/renderVoiceRange below
@@ -320,7 +421,7 @@ namespace bazalt
         if (previousSample < numSamples)
             renderVoiceRange (previousSample, numSamples - previousSample, voicePlanPtrs);
 
-        finalizeVoiceSumIntoOutput (buffer, numSamples);
+        finalizeInstanceMixIntoOutput (buffer, numSamples);
 
         updateAuxLevelsAndPassthrough (buffer, numSamples);
 

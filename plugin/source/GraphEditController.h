@@ -11,8 +11,9 @@ namespace bazalt
     /** Owns the live, editable NodeGraph and applies commands to it
         (NODE_EDITOR.md §6) — message-thread only. Every graph-shaped
         command recompiles and republishes fresh plans (voice ×numVoices,
-        plus one global plan if a util.voiceSum node is present,
-        NODE_EDITOR.md §7); a command that would produce a graph that
+        plus one global plan if an instance.mix node is present,
+        DOMAINS.md §2, M17 — supersedes the original util.voiceSum
+        boundary, RECONCILIATION.md 3.1); a command that would produce a graph that
         doesn't compile is rejected and the live graph/plans are rolled
         back to exactly what they were before the attempt (CLAUDE.md rule
         5 — a bad edit never reaches the audio thread).
@@ -48,6 +49,28 @@ namespace bazalt
         CommandResult deleteNode (const juce::String& nodeId);
         CommandResult connect (const juce::String& fromNodeId, const juce::String& fromPortId,
                                 const juce::String& toNodeId, const juce::String& toPortId);
+
+        /** M16 — resolves the two ports' real descriptors and calls
+            `canConnect` (`CanConnect.h`) itself, rather than relying on
+            `connect()`'s own rejection inside `recompileAndPublish()` ->
+            `GraphCompiler::compile()`: that path only ever sees a flat
+            reject once compilation has already been attempted, with no
+            chance to insert an adapter chain first. `connectWithAutoAdapt`
+            gives every one of `canConnect`'s three outcomes real behavior:
+            `Ok` connects directly (identical to `connect()`); `Reject`
+            fails with `canConnect`'s own reason, no mutation attempted at
+            all; `NeedsAdapters` builds the chain (1-2 adapter nodes,
+            wired source -> adapter(s) -> destination) via `applyBatch` —
+            one recompile, one undo step, per SIGNAL_TYPES.md §5. A chain
+            this milestone can't actually realize as a single-input splice
+            (currently only `mix.downmix`'s 2-in-1-out channels case,
+            `CanConnect.cpp`'s own comment has the full reasoning) is
+            rejected with a message pointing at manual insertion, not
+            silently attempted wrong.
+        */
+        CommandResult connectWithAutoAdapt (const juce::String& fromNodeId, const juce::String& fromPortId,
+                                             const juce::String& toNodeId, const juce::String& toPortId);
+
         CommandResult disconnect (const juce::String& fromNodeId, const juce::String& fromPortId,
                                    const juce::String& toNodeId, const juce::String& toPortId);
         CommandResult setParameterValue (const juce::String& nodeId, const juce::String& parameterId, float value);
@@ -92,12 +115,12 @@ namespace bazalt
         const bazalt::engine::NodeGraph& getGraph() const noexcept { return graph; }
         bool getHasGlobalDomain() const noexcept { return hasGlobalDomain; }
 
-        /** The util.voiceSum node's id in the current graph — valid only
+        /** The instance.mix node's id in the current graph — valid only
             when getHasGlobalDomain() is true. This is what the audio
             thread looks up via the global ExecutionPlan's getNodeById() to
-            call setExternalBlock() each block (VoiceSumNode.h).
+            call setExternalBlock() each block (InstanceMixNode.h).
         */
-        const juce::String& getVoiceSumNodeId() const noexcept { return voiceSumNodeId; }
+        const juce::String& getInstanceMixNodeId() const noexcept { return instanceMixNodeId; }
 
     private:
         CommandResult recompileAndPublish();
@@ -110,7 +133,7 @@ namespace bazalt
         double sampleRate = 44100.0;
         int blockSize = 512;
         bool hasGlobalDomain = false;
-        juce::String voiceSumNodeId;
+        juce::String instanceMixNodeId;
         uint64_t generationCounter = 1;
     };
 }

@@ -1,0 +1,72 @@
+/* Same shell as .value-slider (ValueSlider.css) — one pill visual language
+   for every in-node fallback control, numeric or discrete. */
+.trigger-select {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  height: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  padding: 0 8px;
+  border: var(--stroke-thin) solid;
+  border-radius: var(--radius-sm);
+  background: var(--color-panel);
+  overflow: hidden;
+  cursor: pointer;
+  user-select: none;
+}
+
+.trigger-select-label,
+.trigger-select-value {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.trigger-select-label {
+  min-width: 0;
+}
+
+.trigger-select-value {
+  flex-shrink: 0;
+}
+
+/* Popover list of presets — absolutely positioned off the pill itself, not
+   the node card, so it works the same way regardless of which layout
+   variant/row it's rendered inside. */
+.trigger-select-menu {
+  position: absolute;
+  top: calc(100% + 2px);
+  left: 0;
+  right: 0;
+  z-index: 50;
+  display: flex;
+  flex-direction: column;
+  max-height: 160px;
+  overflow-y: auto;
+  background: var(--color-nodeFill);
+  border: var(--stroke-thin) solid var(--color-nodeBorder);
+  border-radius: var(--radius-sm);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--color-textPrimary);
+  cursor: default;
+}
+
+.trigger-select-option {
+  padding: 5px 8px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: pointer;
+}
+
+.trigger-select-option:hover {
+  background: var(--color-panel);
+}
+
+.trigger-select-option-active {
+  color: var(--color-accent);
+}

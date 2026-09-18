@@ -28,12 +28,12 @@ TEST_CASE ("A 250-source (500-node) stress graph compiles and runs entirely thro
 
     auto& controller = processor.getGraphEditController();
 
-    constexpr int numSources = 250; // -> 500 nodes, 499 connections (StressGraphGenerator.h)
+    constexpr int numSources = 250; // -> 499 nodes, 498 connections (StressGraphGenerator.h)
     const auto stats = buildStressReductionGraph (controller, numSources);
     deleteDefaultGraphNodes (controller);
 
-    CHECK (stats.numNodes == 500);
-    CHECK (stats.numConnections == 499);
+    CHECK (stats.numNodes == 499);
+    CHECK (stats.numConnections == 498);
     CHECK (controller.getGraph().getNodes().size() == (size_t) stats.numNodes);
     CHECK (controller.getGraph().getConnections().size() == (size_t) stats.numConnections);
 
@@ -74,9 +74,9 @@ TEST_CASE ("Building the 500-node stress graph via applyBatch completes in a fra
            "[plugin][GraphEditController][stress][NODE_EDITOR]")
 {
     // Not a hard perf gate (CI hardware varies) — a sanity ceiling proving
-    // one applyBatch call building ~750 graph-model mutations (250
-    // constants + 249 reduction adds + 1 output node, 499 + 1 connections)
-    // and compiling once stays fast. Worth remembering why this is a
+    // one applyBatch call building ~1000 graph-model mutations (250
+    // constants + 249 reduction adds, 498 connections) and compiling once
+    // stays fast. Worth remembering why this is a
     // batch and not individual addNode/connect commands: the first version
     // of this test issued ~750 *individual* commands (each its own full
     // 8-voice recompile+publish) and measured in the tens of seconds —

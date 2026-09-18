@@ -4,9 +4,11 @@
 
 namespace bazalt::engine::nodes
 {
-    /** Stable type id: "util.multiply". Two numeric (Control) inputs, one
-        output = a * b — the other half of Alt-drag's number+number case
-        (NODE_EDITOR.md §7), alongside AddNode.
+    /** Stable type id: "math.multiply" (renamed M14, was "util.multiply").
+        Two numeric (Control) inputs, one output = a * b — the other half
+        of Alt-drag's number+number case (NODE_EDITOR.md §7), alongside
+        AddNode. Same deferred-growable-ports note as AddNode.h applies
+        here — fixed 2-input until M21 (Batch A).
     */
     class MultiplyNode : public Node
     {

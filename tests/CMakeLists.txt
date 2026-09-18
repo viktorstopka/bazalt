@@ -3,10 +3,13 @@
 # starting M1 (aliasing, SVF response, block-size invariance, etc).
 
 add_executable(EngineTests
+    AdapterNodeTests.cpp
     AlignedBufferTests.cpp
     AnalysisThreadBudgetTests.cpp
     AnalysisThreadTests.cpp
     BlockSizeInvarianceTests.cpp
+    CanConnectTests.cpp
+    DataTests.cpp
     DomainSplitterTests.cpp
     EngineVersionTests.cpp
     GraphCompilerTests.cpp
@@ -26,6 +29,7 @@ add_executable(EngineTests
     TelemetryFrameTests.cpp
     TelemetryHubTests.cpp
     UtilityNodeTests.cpp
+    ValueContractTests.cpp
     VoiceManagerTests.cpp
 )
 

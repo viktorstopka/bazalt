@@ -1,0 +1,73 @@
+/* Direct feedback: less rounded than the old .node-value-pill's fully
+   pill-shaped 999px radius — var(--radius-sm) matches the design system's
+   own small-radius token instead of inventing a new value. */
+.value-slider {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  height: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  padding: 0 8px;
+  border: var(--stroke-thin) solid;
+  border-radius: var(--radius-sm);
+  background: var(--color-panel);
+  overflow: hidden;
+  /* Drag adjusts on both axes (horizontal AND vertical, direct feedback) —
+     a plain "grab" hand reads as draggable without implying only one
+     direction, unlike a directional resize cursor. */
+  cursor: grab;
+  user-select: none;
+}
+
+.value-slider:active {
+  cursor: grabbing;
+}
+
+/* Value-position fill — behind the text (z-index below), a translucent
+   wash in the port/parameter's own colour rather than a full block, so the
+   label/value stay legible at any fill level. */
+.value-slider-fill {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  opacity: 0.28;
+  pointer-events: none;
+}
+
+.value-slider-label,
+.value-slider-value {
+  position: relative;
+  z-index: 1;
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+.value-slider-label {
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+
+.value-slider-value {
+  flex-shrink: 0;
+}
+
+.value-slider-input {
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  background: transparent;
+  border: none;
+  outline: none;
+  color: inherit;
+  font-family: var(--font-mono);
+  font-size: inherit;
+  text-align: right;
+  cursor: text;
+}

@@ -5,7 +5,7 @@
 
 namespace bazalt::engine::nodes
 {
-    /** Stable type id: "util.map". Remaps a normalised 0..1 Modulation
+    /** Stable type id: "adapt.map". Remaps a normalised 0..1 Modulation
         input onto a real-unit Value output — what connecting Modulation to
         Value auto-inserts (NODE_EDITOR.md §5), seeded from the target
         port's own min/max metadata at insertion time (a UI-side concern;
@@ -35,15 +35,15 @@ namespace bazalt::engine::nodes
 
         std::vector<ParameterDescriptor> getParameters() const override
         {
-            return { { "util.map.min", -100000.0f, 100000.0f, 0.0f, 1.0f, "", "Min" },
-                     { "util.map.max", -100000.0f, 100000.0f, 1.0f, 1.0f, "", "Max" } };
+            return { { "adapt.map.min", -100000.0f, 100000.0f, 0.0f, 1.0f, "", "Min" },
+                     { "adapt.map.max", -100000.0f, 100000.0f, 1.0f, 1.0f, "", "Max" } };
         }
 
         void setParameter (const juce::String& parameterId, float value) override
         {
-            if (parameterId == "util.map.min")
+            if (parameterId == "adapt.map.min")
                 minValue = value;
-            else if (parameterId == "util.map.max")
+            else if (parameterId == "adapt.map.max")
                 maxValue = value;
         }
 
