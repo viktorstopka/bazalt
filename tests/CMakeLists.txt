@@ -12,6 +12,7 @@ add_executable(EngineTests
     DataTests.cpp
     DomainSplitterTests.cpp
     EngineVersionTests.cpp
+    ExecutionPlanTapTests.cpp
     GraphCompilerTests.cpp
     ModulatablePortsTests.cpp
     NanGuardTests.cpp

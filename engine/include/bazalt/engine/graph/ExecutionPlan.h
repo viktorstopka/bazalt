@@ -3,8 +3,10 @@
 #include "bazalt/engine/graph/Node.h"
 #include "bazalt/engine/graph/NoteEvent.h"
 #include "bazalt/engine/AlignedBuffer.h"
+#include "bazalt/engine/telemetry/Tap.h"
 #include <juce_core/juce_core.h>
 #include <algorithm>
+#include <atomic>
 #include <memory>
 #include <unordered_map>
 #include <vector>
@@ -145,6 +147,40 @@ namespace bazalt::engine
         juce::String externalInputNodeId;
         std::vector<AlignedBuffer> blockBuffers;    // one per block-rate node-output port
         std::vector<float> regionScalars;           // one per per-sample-region-internal node-output port
+
+        // M20: (nodeId, portId) -> blockBuffers index, for every OUTPUT port
+        // GraphCompiler resolved to a real block buffer (a per-sample-
+        // region-internal output that never escapes its region as an
+        // external copy has no entry here — nothing to tap yet for those,
+        // a known MVP limitation, not an oversight). Built once at compile
+        // time from the exact same resolution GraphCompiler already does
+        // for wiring connections. Message-thread lookup only
+        // (GraphEditController, resolving a tap-subscribe request) — never
+        // read on the audio thread.
+        std::unordered_map<juce::String, std::unordered_map<juce::String, int>> outputBufferIndexByNodeAndPort;
+
+        // M20: one slot per blockBuffers entry (same size, same index),
+        // holding the Tap* currently subscribed to that output — or
+        // nullptr. A unique_ptr<atomic<Tap*>[]> rather than
+        // vector<atomic<Tap*>> specifically so ExecutionPlan stays movable
+        // (CompileResult returns a plan by value; std::atomic is neither
+        // copyable nor movable, but the pointer to this array is) — only
+        // the array's OWN elements need to be individually atomic, not the
+        // plan's ownership of the array itself. Allocated once at compile
+        // time (GraphCompiler::compile(), message thread — same cost class
+        // as allocating blockBuffers itself), every element value-
+        // initialized to nullptr. setTapForBufferIndex() is the only way
+        // to mutate an element afterward: a single atomic pointer store,
+        // lock-free, safe to call from the message thread while the audio
+        // thread concurrently calls process() on this same plan — no
+        // recompile needed to add or remove a tap.
+        std::unique_ptr<std::atomic<Tap*>[]> tapForBufferIndex;
+
+        void setTapForBufferIndex (int bufferIndex, Tap* tap) noexcept
+        {
+            if (tapForBufferIndex && bufferIndex >= 0 && bufferIndex < (int) blockBuffers.size())
+                tapForBufferIndex[(size_t) bufferIndex].store (tap, std::memory_order_release);
+        }
 
         // M18 (ADR-0024): one entry per connected Note-typed output port,
         // each `maxBlockSize` long — BlockStep's noteInputBufferIndex/

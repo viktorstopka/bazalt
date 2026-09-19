@@ -80,6 +80,23 @@ namespace bazalt::engine
                 }
             }
         }
+
+        // M20: push this block's final output values into whichever taps
+        // are currently subscribed. Runs after every step above, so every
+        // buffer already holds its complete, final value for this block —
+        // no ordering dependency on which step happens to write which
+        // buffer. Lock-free, no allocation: Tap::push() is itself RT-safe
+        // (SPSC ring buffer, overwrite-oldest), and tapForBufferIndex's
+        // element loads are plain atomic reads.
+        if (tapForBufferIndex)
+        {
+            const auto numBuffers = (int) blockBuffers.size();
+            for (int i = 0; i < numBuffers; ++i)
+            {
+                if (auto* tap = tapForBufferIndex[(size_t) i].load (std::memory_order_acquire))
+                    tap->push (blockBuffers[(size_t) i].getBlock().getChannelPointer (0), numSamples);
+            }
+        }
     }
 
     float ExecutionPlan::readInput (const InputRef& ref, int sampleIndexForBlockBuffer) const noexcept

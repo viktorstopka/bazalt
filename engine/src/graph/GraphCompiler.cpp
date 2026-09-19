@@ -645,6 +645,24 @@ namespace bazalt::engine
 
         plan.silenceBuffer.assign ((size_t) prepareInfo.maxBlockSize, 0.0f);
 
+        // M20: (nodeId, portId) -> blockBuffers index for every output that
+        // resolved to a real block buffer — see ExecutionPlan.h's own
+        // comment on why region-scalar-only outputs (never published
+        // externally) have no entry. outputLocation already holds the
+        // fully-resolved final state for every key at this point (nothing
+        // schedules after this).
+        for (const auto& [key, location] : outputLocation)
+        {
+            if (location.kind != ExecutionPlan::InputRef::Kind::BlockBuffer)
+                continue;
+
+            const auto& nodeId = graphNodes[(size_t) key.slot].id;
+            const auto& portId = outputPortsBySlot[(size_t) key.slot][(size_t) key.port].id;
+            plan.outputBufferIndexByNodeAndPort[nodeId][portId] = location.index;
+        }
+
+        plan.tapForBufferIndex = std::make_unique<std::atomic<Tap*>[]> (plan.blockBuffers.size());
+
         result.success = true;
         return result;
     }
