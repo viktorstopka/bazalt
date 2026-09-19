@@ -18,21 +18,24 @@ function tapNameFor(nodeId: string, portId: string): string {
   return `node:${nodeId}:${portId}` // NODE_EDITOR.md §9's own naming scheme
 }
 
-/** Mirrors PluginProcessor.cpp's own frameTypesNeededFor() exactly — each
-    built preview kind reads exactly one frame type today. Kinds with no
-    real producer yet (PreviewDescriptor.h's "documented for later" list)
-    fall back to Oscilloscope, matching the engine's own all-true default
-    for an unrecognized kind — harmless since nothing subscribes with one
-    of those kinds yet.
+/** Mirrors PluginProcessor.cpp's frameTypesNeededFor() exactly, including
+    its `default: return {}` branch — a kind with no real producer yet
+    (PreviewDescriptor.h's "documented for later" list) needs no frame type
+    at all, engine-side, so this returns undefined for those rather than
+    guessing one: polling a frame type the engine will never publish for
+    that tap would be pure waste, exactly what B4's per-tap frame-type
+    selection exists to avoid.
 */
-function frameTypeFor(kind: PreviewKind): TelemetryFrameType {
+export function frameTypeForPreviewKind(kind: PreviewKind): TelemetryFrameType | undefined {
   switch (kind) {
+    case 'waveform':
+      return TelemetryFrameType.Oscilloscope
     case 'spectrum':
       return TelemetryFrameType.Spectrum
     case 'meter':
       return TelemetryFrameType.Meter
     default:
-      return TelemetryFrameType.Oscilloscope
+      return undefined
   }
 }
 
@@ -40,15 +43,18 @@ function frameTypeFor(kind: PreviewKind): TelemetryFrameType {
     engine-side tap (resolving which domain the node lives in, pointing it
     at the right plan; see PluginProcessor::subscribeVisualizationTap) and,
     only once that succeeds, starts client-side polling for it. Returns
-    false if the engine couldn't resolve (nodeId, portId) to a real output
-    buffer (outside the real WebView, or the node/port doesn't exist) —
-    caller should not expect any data to ever arrive in that case.
+    false without calling the engine at all for a kind with no real
+    producer yet (frameTypeForPreviewKind returns undefined), and false if
+    the engine couldn't resolve (nodeId, portId) to a real output buffer
+    (outside the real WebView, or the node/port doesn't exist).
 */
 export async function subscribeNodePreview(nodeId: string, portId: string, kind: PreviewKind): Promise<boolean> {
+  const frameType = frameTypeForPreviewKind(kind)
+  if (frameType === undefined) return false
   if (typeof window.__JUCE__ === 'undefined') return false
 
   const ok = (await getNativeFunction('subscribeNodePreviewTap')(nodeId, portId, kind)) as boolean
-  if (ok) pollTap(tapNameFor(nodeId, portId), frameTypeFor(kind))
+  if (ok) pollTap(tapNameFor(nodeId, portId), frameType)
   return ok
 }
 
@@ -58,7 +64,8 @@ export async function subscribeNodePreview(nodeId: string, portId: string, kind:
     engine-side tap. Safe to call even if never successfully subscribed.
 */
 export function unsubscribeNodePreview(nodeId: string, portId: string, kind: PreviewKind): void {
-  stopPollingTap(tapNameFor(nodeId, portId), frameTypeFor(kind))
+  const frameType = frameTypeForPreviewKind(kind)
+  if (frameType !== undefined) stopPollingTap(tapNameFor(nodeId, portId), frameType)
   if (typeof window.__JUCE__ === 'undefined') return
   void getNativeFunction('unsubscribeNodePreviewTap')(nodeId, portId)
 }

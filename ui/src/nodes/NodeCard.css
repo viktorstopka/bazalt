@@ -290,6 +290,18 @@
   -webkit-user-drag: none;
 }
 
+/* M20 (C5): a real telemetry-driven preview (NodePreview.tsx) sized the
+   same as the placeholder it replaces so a node's layout doesn't shift
+   when its preview kind gains a real producer. Also used standalone
+   (StandardBody's own previews[] rows), where it gets full card width
+   instead of the horizontal variant's centre column. */
+.node-preview-canvas {
+  display: block;
+  width: 100%;
+  height: 32px;
+  min-width: 70px;
+}
+
 /* Singleton layout variant: title only, typed cable stub each side,
    piercing its own border the same way a standard node's port rows do. */
 .node-singleton-body {

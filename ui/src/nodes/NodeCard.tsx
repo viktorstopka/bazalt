@@ -11,6 +11,8 @@ import { classifyPortUiKind, portUiStyle, parameterUiColor } from '../graph/port
 import { tokens } from '../theme/tokens'
 import { ValueSlider } from './ValueSlider'
 import { TriggerSelect } from './TriggerSelect'
+import { NodePreview } from './NodePreview'
+import { frameTypeForPreviewKind } from '../graph/previewSubscriptions'
 import './NodeCard.css'
 
 /** PortDescriptor.h's own contract: "falls back to id in the UI if empty" —
@@ -471,14 +473,18 @@ function StandardBody({ descriptor, state, instanceId }: { descriptor: NodeDescr
       {outputs.map((row) => (
         <PortRow key={row.port.id} direction="output" port={row.port} connected={connected.has(row.port.id)} demoValue={state.demoConnectedValue} instanceId={instanceId} />
       ))}
+      {instanceId && descriptor.previews?.map((preview) => (
+        <NodePreview key={preview.portId} nodeId={instanceId} preview={preview} />
+      ))}
     </>
   )
 }
 
-/** Static placeholder preview graphic — real per-node previews (waveform,
-    stepped values, envelope+playhead, LFO phase, driven by live telemetry)
-    are M11's job (NODE_EDITOR.md §9/§11). This exists only so the
-    Horizontal layout variant has something to show in its centre region.
+/** Static placeholder preview graphic — the fallback for a Horizontal-
+    layout node with no previews[] entry, or one whose declared kind has no
+    real telemetry producer yet (RollingHistory/ShapeWithPlayhead/etc., see
+    NodePreview.tsx). A node with a real Waveform/Spectrum/Meter preview
+    (M20 C5) renders NodePreview here instead.
 */
 function PlaceholderPreview() {
   const bars = [0.3, 0.55, 0.4, 0.8, 0.6, 0.35, 0.5]
@@ -543,7 +549,11 @@ function HorizontalBody({ descriptor, state, instanceId }: { descriptor: NodeDes
         ))}
       </div>
       <div className="node-horizontal-preview">
-        <PlaceholderPreview />
+        {instanceId && descriptor.previews?.[0] && frameTypeForPreviewKind(descriptor.previews[0].kind) ? (
+          <NodePreview nodeId={instanceId} preview={descriptor.previews[0]} />
+        ) : (
+          <PlaceholderPreview />
+        )}
       </div>
       <div className="node-horizontal-column node-horizontal-column-output">
         {primaryOutput && (
