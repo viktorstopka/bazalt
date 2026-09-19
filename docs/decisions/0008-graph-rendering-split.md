@@ -76,3 +76,32 @@ independently-computed WebGL-side transform could otherwise introduce, at the co
 `querySelectorAll`/`getBoundingClientRect` pass per frame — measured as negligible at M10's node
 counts (dozens, not hundreds); worth re-profiling only if a future milestone's node count grows enough
 to make that pass itself the bottleneck, which M10 did not observe.
+
+**Amendment (M20):** the inline node-preview rendering surface question (M20 plan's Part C4) is
+settled the same direction as node bodies: Canvas2D per node, not WebGL. `NodePreview.tsx` mounts one
+small `<canvas>` per declared preview inside the node's own (still plain-DOM) `NodeCard`, drawn by the
+one shared render loop (`previewRenderLoop.ts`, C3) using M5's own `drawScope`/`drawSpectrum`/
+`drawMeter` verbatim (`telemetryDraw.ts`) — no new rendering technology, matching the plan's own
+"refactor, not new DSP-adjacent work" framing. This is a direct extension of NodeCard staying DOM
+(this ADR's M9/M10 amendments), not a fresh decision: a preview canvas is just another element inside
+a DOM node body, with no camera transform of its own to keep in sync — the same reasoning that kept
+`NodeCard` off WebGL in the first place applies unchanged.
+
+**What this amendment does NOT confirm:** the plan's own exit criterion for C4 ("re-run the M8 stress
+patch — 500 nodes — with every visible node's preview active, confirm the 60fps floor holds") could
+not be run as written. `StressTestCanvas.tsx`/`stressGraph.ts`, the UI-triggerable spike this ADR's
+own "what was built and measured" section describes, was deleted in M10 polish exactly as this ADR's
+Consequences section said it eventually would be — there is no live UI harness left to reproduce a
+500-node *rendered* patch against. Separately, M20 step 8 deliberately gave real `previews[]`
+declarations to only two node types (`osc.analog`, `mix.gain` — "a small number... to prove the
+end-to-end path, not a catalog-wide sweep"), so even the real 500-node graphs the engine side *can*
+build in a fraction of a second (`GraphEditController::applyBatch`, `tests-plugin/
+StressGraphGenerator.h`, exercised by `tests-plugin/GraphEditControllerTests.cpp`'s stress-graph
+tests) wouldn't currently produce "every visible node has a live preview" once loaded into the live
+canvas — most nodes in that generated graph have no preview declared at all yet. Correctness was
+verified directly instead (previews render correctly at multiple zoom levels, across multiple live
+instances, with no dropped frames observed by eye) rather than a formal frame-time measurement. A real
+FPS re-verification needs both pieces rebuilt together — a UI-reachable way to load a large real graph
+(`StressGraphGenerator.h`'s shape, or `graphRestoreSnapshot` with a generated large patch) and a
+broader `previews[]` rollout across the node catalog — and should happen once that broader rollout is
+itself in scope, not be fabricated now against a harness and a preview catalog that don't exist yet.
