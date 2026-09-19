@@ -46,13 +46,17 @@ into a filter's Frequency-quantity Cutoff, pitch-tracking, a standard synthesis 
 hard `Reject` from M16 through M20, flagged in `CanConnect.cpp`'s own comment as "a real, open gap,"
 not a deliberate final answer. Direct feedback after M20 made real-quantity ports common enough to
 actually hit this pair: rejecting it contradicted this ADR's own premise (real quantities are numeric
-ranges; two adapters that already handle a real↔Unipolar boundary individually compose into a real↔
-real one) and the "at most two adapters" ceiling this ADR already set. `connectControl()` now returns
-a 2-step chain for this case — `adapt.normalise` (seeded from the source's own range) into `adapt.map`
-(seeded from the destination's own range) — using the exact same two adapter nodes and seeding
-mechanism the first wave shipped, not a new node. This is not one of the original ten named pairs;
-it's a new pair this ADR's own chain-length ceiling already accommodated. `GraphEditController::
-connectWithAutoAdapt` inserts both as real, visible, independently editable nodes, spaced along the
-source→destination line, exactly like a single-step insertion — never a hidden/implicit conversion.
-`Dimensionless` stays an unconditional free pass (no adapter, no rescaling) — whether *that* should
-also start requiring a remap when ranges differ is a separate, larger question, not decided here.
+ranges that can be rescaled) and the "at most two adapters" ceiling this ADR already set — though the
+fix landed as one node, not two. `connectControl()` now inserts `adapt.remap` (NODE_CATALOG.md's own
+node — this is its MVP linear form: `in`/`inMin`/`inMax`/`outMin`/`outMax` → `out`; curve-based
+morphing between two drawn shapes is that same node's eventual, larger form, not a separate one — see
+NODE_CATALOG.md's own `adapt.remap` entry for what it grows into once `data.table`/`Data(curve)`
+exist), seeded from both ends at once: `inMin`/`inMax` from the source's own range, `outMin`/`outMax`
+from the destination's. `GraphEditController::connectWithAutoAdapt` inserts it as a real, visible,
+editable node, exactly like every other adapter — never a hidden/implicit conversion. The 2-step
+chain path this ADR's "at most two adapters" ceiling describes stays real and available in
+`connectWithAutoAdapt` for whichever future pair actually needs two separate nodes (Envelope
+Follower, Sample & Hold, Note gate/value — the later waves above); this particular pair just didn't
+turn out to need it. `Dimensionless` stays an unconditional free pass (no adapter, no rescaling) —
+whether *that* should also start requiring a remap when ranges differ is a separate, larger question,
+not decided here.

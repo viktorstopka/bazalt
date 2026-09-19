@@ -1,4 +1,5 @@
 #include <catch2/catch_test_macros.hpp>
+#include <catch2/catch_approx.hpp>
 #include "bazalt/engine/nodes/ConstantNode.h"
 #include "bazalt/engine/nodes/RerouteNode.h"
 #include "bazalt/engine/nodes/MapNode.h"
@@ -6,6 +7,7 @@
 #include "bazalt/engine/nodes/MultiplyNode.h"
 #include "bazalt/engine/nodes/RoundNode.h"
 #include "bazalt/engine/nodes/ClampNode.h"
+#include "bazalt/engine/nodes/RemapNode.h"
 #include "bazalt/engine/nodes/ListenNode.h"
 #include "bazalt/engine/nodes/OutputNode.h"
 #include "bazalt/engine/nodes/InstanceMixNode.h"
@@ -201,4 +203,45 @@ TEST_CASE ("ClampNode's low/high ports fall back to setParameter's static value 
     float inputs[3] = { 5.0f, kNaN, kNaN };
     node.processSample (inputs, &out);
     CHECK (out == 10.0f);
+}
+
+TEST_CASE ("RemapNode rescales in..inMin/inMax onto outMin/outMax, clamped, matching Normalise+Map chained",
+           "[engine][nodes][util][M20]")
+{
+    RemapNode node;
+    node.setParameter ("adapt.remap.inMin", 0.0f);
+    node.setParameter ("adapt.remap.inMax", 127.0f);
+    node.setParameter ("adapt.remap.outMin", 20.0f);
+    node.setParameter ("adapt.remap.outMax", 20000.0f);
+
+    const auto kNaN = std::numeric_limits<float>::quiet_NaN();
+    auto remapOf = [&] (float in)
+    {
+        float out = 0.0f;
+        float inputs[5] = { in, kNaN, kNaN, kNaN, kNaN }; // range ports unconnected -> use setParameter's values
+        node.processSample (inputs, &out);
+        return out;
+    };
+
+    CHECK (remapOf (0.0f) == 20.0f);
+    CHECK (remapOf (127.0f) == 20000.0f);
+    CHECK (remapOf (63.5f) == Catch::Approx (10010.0f));
+    CHECK (remapOf (-10.0f) == 20.0f);   // clamped below inMin
+    CHECK (remapOf (200.0f) == 20000.0f); // clamped above inMax
+}
+
+TEST_CASE ("RemapNode's range ports live-modulate independently of setParameter's static values",
+           "[engine][nodes][util][M20]")
+{
+    RemapNode node;
+    node.setParameter ("adapt.remap.inMin", 0.0f);
+    node.setParameter ("adapt.remap.inMax", 1.0f);
+    node.setParameter ("adapt.remap.outMin", 0.0f);
+    node.setParameter ("adapt.remap.outMax", 1.0f);
+
+    float out = 0.0f;
+    // Live-wired to a completely different range than the static config.
+    float inputs[5] = { 5.0f, 0.0f, 10.0f, 100.0f, 200.0f };
+    node.processSample (inputs, &out);
+    CHECK (out == 150.0f);
 }

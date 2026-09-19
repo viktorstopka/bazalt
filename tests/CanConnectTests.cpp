@@ -84,7 +84,7 @@ TEST_CASE ("canConnect: a real quantity into Unipolar/Bipolar needs Normalise, s
     CHECK_FALSE (result.adapterChain[0].seedFromDestinationRange);
 }
 
-TEST_CASE ("canConnect: two different real quantities compose Normalise then Map, seeded from each side's own range",
+TEST_CASE ("canConnect: two different real quantities insert adapt.remap, seeded from both sides at once",
            "[engine][CanConnect][M20]")
 {
     const auto from = controlPort (Quantity::Pitch, 0.0f, 127.0f);
@@ -92,16 +92,11 @@ TEST_CASE ("canConnect: two different real quantities compose Normalise then Map
     const auto result = canConnect (from, to);
 
     REQUIRE (result.outcome == ConnectionOutcome::NeedsAdapters);
-    REQUIRE (result.adapterChain.size() == 2);
+    REQUIRE (result.adapterChain.size() == 1);
 
-    CHECK (result.adapterChain[0].typeId == "adapt.normalise");
+    CHECK (result.adapterChain[0].typeId == "adapt.remap");
     CHECK (result.adapterChain[0].seedFromSourceRange);
-    CHECK_FALSE (result.adapterChain[0].seedFromDestinationRange);
-
-    CHECK (result.adapterChain[1].typeId == "adapt.map");
-    CHECK (result.adapterChain[1].seedFromDestinationRange);
-    CHECK_FALSE (result.adapterChain[1].seedFromSourceRange);
-
+    CHECK (result.adapterChain[0].seedFromDestinationRange);
     CHECK (result.reason.isNotEmpty());
 }
 

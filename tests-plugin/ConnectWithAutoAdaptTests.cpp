@@ -107,14 +107,14 @@ TEST_CASE ("connectWithAutoAdapt rejects a connection to an unknown port with no
     CHECK (controller.getGraph().getConnections().size() == connectionsBefore);
 }
 
-TEST_CASE ("connectWithAutoAdapt composes Normalise+Map for two different real quantities (M20: Pitch into a filter's Cutoff)",
+TEST_CASE ("connectWithAutoAdapt inserts adapt.remap for two different real quantities (M20: Pitch into a filter's Cutoff)",
            "[plugin][GraphEditController][CanConnect][M20]")
 {
     // Instance Allocator's "pitch" output (Quantity::Pitch, 0-127) into SVF
     // Filter's "cutoff" input (Quantity::Frequency, 20-20000) — pitch-
     // tracking a filter cutoff, a standard synthesis technique, and exactly
-    // the pair that used to be a bare Reject before M20 composed the two
-    // already-existing adapters into a chain instead.
+    // the pair that used to be a bare Reject before M20 (adapt.remap, the
+    // MVP of NODE_CATALOG.md's own remap node) fixed it.
     BazaltAudioProcessor processor;
     processor.prepareToPlay (44100.0, 512);
     auto& controller = processor.getGraphEditController();
@@ -125,45 +125,34 @@ TEST_CASE ("connectWithAutoAdapt composes Normalise+Map for two different real q
     REQUIRE (result.success);
 
     const auto& graph = controller.getGraph();
-    const bazalt::engine::NodeInstance* normaliseNode = nullptr;
-    const bazalt::engine::NodeInstance* mapNode = nullptr;
+    const bazalt::engine::NodeInstance* remapNode = nullptr;
     for (const auto& n : graph.getNodes())
-    {
-        if (n.type == "adapt.normalise")
-            normaliseNode = &n;
-        else if (n.type == "adapt.map")
-            mapNode = &n;
-    }
-    REQUIRE (normaliseNode != nullptr);
-    REQUIRE (mapNode != nullptr);
+        if (n.type == "adapt.remap")
+            remapNode = &n;
+    REQUIRE (remapNode != nullptr);
 
-    // Normalise seeded from the SOURCE's range (pitch: 0-127).
-    REQUIRE (normaliseNode->parameters.count ("adapt.normalise.min") == 1);
-    CHECK (normaliseNode->parameters.at ("adapt.normalise.min") == 0.0f);
-    REQUIRE (normaliseNode->parameters.count ("adapt.normalise.max") == 1);
-    CHECK (normaliseNode->parameters.at ("adapt.normalise.max") == 127.0f);
+    // Seeded from BOTH ends at once: inMin/inMax from the source's range
+    // (pitch: 0-127), outMin/outMax from the destination's (cutoff: 20-20000).
+    REQUIRE (remapNode->parameters.count ("adapt.remap.inMin") == 1);
+    CHECK (remapNode->parameters.at ("adapt.remap.inMin") == 0.0f);
+    REQUIRE (remapNode->parameters.count ("adapt.remap.inMax") == 1);
+    CHECK (remapNode->parameters.at ("adapt.remap.inMax") == 127.0f);
+    REQUIRE (remapNode->parameters.count ("adapt.remap.outMin") == 1);
+    CHECK (remapNode->parameters.at ("adapt.remap.outMin") == 20.0f);
+    REQUIRE (remapNode->parameters.count ("adapt.remap.outMax") == 1);
+    CHECK (remapNode->parameters.at ("adapt.remap.outMax") == 20000.0f);
 
-    // Map seeded from the DESTINATION's range (cutoff: 20-20000).
-    REQUIRE (mapNode->parameters.count ("adapt.map.min") == 1);
-    CHECK (mapNode->parameters.at ("adapt.map.min") == 20.0f);
-    REQUIRE (mapNode->parameters.count ("adapt.map.max") == 1);
-    CHECK (mapNode->parameters.at ("adapt.map.max") == 20000.0f);
-
-    // Wired in sequence: alloc.pitch -> normalise.in, normalise.out ->
-    // map.in, map.out -> svf.cutoff.
-    bool sourceToNormalise = false, normaliseToMap = false, mapToDestination = false;
+    // Wired directly: alloc.pitch -> remap.in, remap.out -> svf.cutoff.
+    bool sourceToRemap = false, remapToDestination = false;
     for (const auto& c : graph.getConnections())
     {
-        if (c.fromNodeId == "alloc" && c.fromPortId == "pitch" && c.toNodeId == normaliseNode->id && c.toPortId == "in")
-            sourceToNormalise = true;
-        if (c.fromNodeId == normaliseNode->id && c.fromPortId == "out" && c.toNodeId == mapNode->id && c.toPortId == "in")
-            normaliseToMap = true;
-        if (c.fromNodeId == mapNode->id && c.fromPortId == "out" && c.toNodeId == "svf" && c.toPortId == "filter.svf.cutoff")
-            mapToDestination = true;
+        if (c.fromNodeId == "alloc" && c.fromPortId == "pitch" && c.toNodeId == remapNode->id && c.toPortId == "in")
+            sourceToRemap = true;
+        if (c.fromNodeId == remapNode->id && c.fromPortId == "out" && c.toNodeId == "svf" && c.toPortId == "filter.svf.cutoff")
+            remapToDestination = true;
     }
-    CHECK (sourceToNormalise);
-    CHECK (normaliseToMap);
-    CHECK (mapToDestination);
+    CHECK (sourceToRemap);
+    CHECK (remapToDestination);
 }
 
 TEST_CASE ("connectWithAutoAdapt does not attempt to auto-insert mix.downmix (2-in-1-out doesn't fit a single splice)",

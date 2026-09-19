@@ -174,13 +174,14 @@ namespace bazalt
             return connect (fromNodeId, fromPortId, toNodeId, toPortId);
 
         // NeedsAdapters. A 1- or 2-step, single-input chain can be spliced
-        // in generically (adapt.map/adapt.normalise/adapt.threshold, and
-        // — M20 — a composed normalise-then-map pair for two different real
-        // quantities); mix.downmix's 2-in-1-out channels case is flagged
-        // but not auto-inserted (CanConnect.cpp's own comment explains
-        // why). Every step is a real, ordinary, visible node added to the
-        // graph below — never a hidden/implicit conversion inside the wire
-        // itself (ADR-0019's whole premise).
+        // in generically (adapt.map/adapt.normalise/adapt.threshold/
+        // adapt.remap today; ADR-0019's later waves — Envelope Follower,
+        // Sample & Hold, Note gate/value — may need the 2-step path this
+        // loop already supports); mix.downmix's 2-in-1-out channels case is
+        // flagged but not auto-inserted (CanConnect.cpp's own comment
+        // explains why). Every step is a real, ordinary, visible node added
+        // to the graph below — never a hidden/implicit conversion inside
+        // the wire itself (ADR-0019's whole premise).
         if (connectivity.adapterChain.empty() || connectivity.adapterChain.size() > 2)
             return { false, "No auto-insertable adapter for this connection: " + connectivity.reason };
 
@@ -218,12 +219,29 @@ namespace bazalt
                 // ships names its parameters "<typeId>.min"/"<typeId>.max"
                 // (adapt.map, adapt.normalise both do); a future adapter
                 // that doesn't follow this convention needs its own branch
-                // here, not a silent wrong guess. Each step seeds itself
+                // here, not a silent wrong guess. adapt.remap is exactly
+                // that case — it seeds from BOTH ends at once (its own
+                // four-parameter inMin/inMax/outMin/outMax shape, not a
+                // single min/max pair), since seedFromSourceRange and
+                // seedFromDestinationRange are both set on its step
+                // (CanConnect.cpp). Every other step still seeds itself
                 // independently from the ORIGINAL endpoints' own ranges
                 // (fromPort/toPort), not from whatever the previous step in
-                // the chain happens to be — correct for both today's
-                // single-step cases and the new two-step one.
-                if (step.seedFromDestinationRange && toPort->minValue.has_value() && toPort->maxValue.has_value())
+                // the chain happens to be.
+                if (step.typeId == "adapt.remap")
+                {
+                    if (fromPort->minValue.has_value() && fromPort->maxValue.has_value())
+                    {
+                        instance.parameters["adapt.remap.inMin"] = *fromPort->minValue;
+                        instance.parameters["adapt.remap.inMax"] = *fromPort->maxValue;
+                    }
+                    if (toPort->minValue.has_value() && toPort->maxValue.has_value())
+                    {
+                        instance.parameters["adapt.remap.outMin"] = *toPort->minValue;
+                        instance.parameters["adapt.remap.outMax"] = *toPort->maxValue;
+                    }
+                }
+                else if (step.seedFromDestinationRange && toPort->minValue.has_value() && toPort->maxValue.has_value())
                 {
                     instance.parameters[step.typeId + ".min"] = *toPort->minValue;
                     instance.parameters[step.typeId + ".max"] = *toPort->maxValue;

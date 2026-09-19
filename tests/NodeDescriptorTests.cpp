@@ -10,7 +10,7 @@ TEST_CASE ("NodeFactory::describeAll() returns a descriptor for every registered
     auto factory = buildDefaultNodeFactory();
     const auto descriptors = factory.describeAll();
 
-    REQUIRE (descriptors.size() == 23); // 8 M1/M2 DSP + 7 M7 utility (util.voiceSum removed M17) + 3 M16 adapters + 2 M17 instance types + 1 M18 io.noteIn + 2 M20 math (round, clamp)
+    REQUIRE (descriptors.size() == 24); // 8 M1/M2 DSP + 7 M7 utility (util.voiceSum removed M17) + 3 M16 adapters + 2 M17 instance types + 1 M18 io.noteIn + 3 M20 (math.round, math.clamp, adapt.remap)
 
     auto findByTypeId = [&] (const juce::String& typeId) -> const NodeDescriptor*
     {

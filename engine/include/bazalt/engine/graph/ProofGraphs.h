@@ -17,6 +17,7 @@
 #include "bazalt/engine/nodes/MultiplyNode.h"
 #include "bazalt/engine/nodes/RoundNode.h"
 #include "bazalt/engine/nodes/ClampNode.h"
+#include "bazalt/engine/nodes/RemapNode.h"
 #include "bazalt/engine/nodes/ListenNode.h"
 #include "bazalt/engine/nodes/OutputNode.h"
 #include "bazalt/engine/nodes/NormaliseNode.h"
@@ -52,6 +53,7 @@ namespace bazalt::engine
         factory.registerType ("math.multiply", [] { return std::make_unique<nodes::MultiplyNode>(); });
         factory.registerType ("math.round", [] { return std::make_unique<nodes::RoundNode>(); });
         factory.registerType ("math.clamp", [] { return std::make_unique<nodes::ClampNode>(); });
+        factory.registerType ("adapt.remap", [] { return std::make_unique<nodes::RemapNode>(); });
         factory.registerType ("view.listen", [] { return std::make_unique<nodes::ListenNode>(); });
         factory.registerType ("io.output", [] { return std::make_unique<nodes::OutputNode>(); });
         factory.registerType ("adapt.normalise", [] { return std::make_unique<nodes::NormaliseNode>(); });

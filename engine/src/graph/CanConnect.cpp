@@ -109,31 +109,23 @@ namespace bazalt::engine
             // Two different real quantities (e.g. Frequency and Pitch, or
             // Frequency and Time) — not in SIGNAL_TYPES.md §5's original
             // ten-pair table, but both sides are still real numeric ranges,
-            // so compose the two adapters that already handle a real<->
-            // Unipolar boundary individually: normalise the source into 0-1
-            // using its own declared range, then map that 0-1 value into
-            // the destination's declared range. A real, generic
-            // real-to-real rescale built from parts that already exist and
-            // are already tested — not a new adapter node, not a guessed
-            // conversion between the two quantities' meanings, and not
-            // hidden inside the wire: both steps are ordinary, visible,
-            // editable nodes once auto-inserted (GraphEditController::
-            // connectWithAutoAdapt), exactly like every other adapter here.
-            // Direct feedback: rejecting this pair (e.g. Pitch into a
-            // filter's Cutoff — pitch-tracking, a standard synthesis
-            // technique) was an unfinished case, not a deliberate design
-            // choice — CanConnectResult::adapterChain and ADR-0019 both
-            // already anticipated "at most two adapters in a chain."
-            AdapterStep toUnipolar { "adapt.normalise", "in" };
-            toUnipolar.seedFromSourceRange = true;
-            AdapterStep toDestination { "adapt.map", "in" };
-            toDestination.seedFromDestinationRange = true;
-
-            CanConnectResult result;
-            result.outcome = ConnectionOutcome::NeedsAdapters;
-            result.adapterChain = { toUnipolar, toDestination };
-            result.reason = "Different real quantities — remapped via Normalise then Map";
-            return result;
+            // so insert `adapt.remap` (NODE_CATALOG.md's own node — this is
+            // its MVP linear form, curve support grows it later rather than
+            // replacing it), seeded from BOTH ends at once: inMin/inMax
+            // from the source's own range, outMin/outMax from the
+            // destination's. A real, generic real-to-real rescale — not a
+            // guessed conversion between the two quantities' meanings, and
+            // not hidden inside the wire: the adapter is an ordinary,
+            // visible, editable node once auto-inserted
+            // (GraphEditController::connectWithAutoAdapt), exactly like
+            // every other adapter here. Direct feedback: rejecting this
+            // pair (e.g. Pitch into a filter's Cutoff — pitch-tracking, a
+            // standard synthesis technique) was an unfinished case, not a
+            // deliberate design choice.
+            AdapterStep step { "adapt.remap", "in" };
+            step.seedFromSourceRange = true;
+            step.seedFromDestinationRange = true;
+            return needsAdapter (step, "Different real quantities — remapped via Remap");
         }
     }
 
