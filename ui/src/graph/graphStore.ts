@@ -540,12 +540,18 @@ export function removeWire(id: string): void {
 */
 export function commitWireDrag(fromNodeId: string, fromPortId: string, target: { nodeId: string; portId: string } | null, detachedWireId?: string): void {
   if (!detachedWireId && !target) return
+  // Captured up front, before the optimistic step below can delete it from
+  // `wires` — the gesture callback runs asynchronously, after withHistory's
+  // synchronous optimistic-apply has already removed `detachedWireId` from
+  // the live map, so a lazy `wires.get(detachedWireId)` inside the gesture
+  // itself would always resolve to undefined and silently skip sending the
+  // real graphDisconnect command (the exact bug this fixes: the wire looked
+  // disconnected locally for a moment, then the following resync — which
+  // never actually happened server-side — snapped it back to connected).
+  const detachedWire = detachedWireId ? wires.get(detachedWireId) : undefined
   void withHistory(
     async () => {
-      if (detachedWireId) {
-        const wire = wires.get(detachedWireId)
-        if (wire) await fireCommand(() => graphDisconnect(wire.fromNodeId, wire.fromPortId, wire.toNodeId, wire.toPortId))
-      }
+      if (detachedWire) await fireCommand(() => graphDisconnect(detachedWire.fromNodeId, detachedWire.fromPortId, detachedWire.toNodeId, detachedWire.toPortId))
       if (target) await fireCommand(() => graphConnectWithAutoAdapt(fromNodeId, fromPortId, target.nodeId, target.portId))
     },
     () => {
