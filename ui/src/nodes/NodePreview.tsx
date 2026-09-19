@@ -4,7 +4,17 @@
 // (instanceId set), subscribes the engine-side tap and draws whatever the
 // shared render loop (previewRenderLoop.ts, C3) hands it each frame,
 // reusing M5's own draw functions (telemetryDraw.ts) verbatim.
-import { useEffect, useId, useRef } from 'react'
+//
+// M20 (C2): only actually subscribed/registered while the canvas element
+// is near the viewport (IntersectionObserver, root: null — the browser's
+// own viewport, not InfiniteCanvas's own clipping bounds; a node scrolled
+// under a side panel while technically still inside the browser viewport
+// stays subscribed in that edge case, an accepted simplification rather
+// than threading InfiniteCanvas's scroll container down through NodeCard/
+// GraphSurface just for this). This is what keeps the 64-tap cap from
+// being a real ceiling once a graph has hundreds of nodes — most are
+// off-screen at once (NODE_EDITOR.md §9).
+import { useEffect, useId, useRef, useState } from 'react'
 import type { PreviewDescriptor } from '../graph/descriptorTypes'
 import { subscribeNodePreview, unsubscribeNodePreview, tapNameForPreview, frameTypeForPreviewKind } from '../graph/previewSubscriptions'
 import { getInterpolatedTap } from '../telemetry/telemetryClient'
@@ -17,6 +27,11 @@ interface NodePreviewProps {
   preview: PreviewDescriptor
 }
 
+// A generous margin so a preview subscribes just before it scrolls into
+// view and unsubscribes only once well clear of it, rather than thrashing
+// subscribe/unsubscribe right at the viewport's exact edge.
+const VISIBILITY_ROOT_MARGIN = '200px'
+
 /** One node's one declared preview — a node with more than one previews[]
     entry mounts one of these per entry (NodeCard.tsx decides where). Renders
     nothing for a kind with no real producer yet (frameTypeForPreviewKind
@@ -28,16 +43,27 @@ export function NodePreview({ nodeId, preview }: NodePreviewProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
   const id = useId()
   const frameType = frameTypeForPreviewKind(preview.kind)
-
-  useEffect(() => {
-    if (!frameType) return
-    void subscribeNodePreview(nodeId, preview.portId, preview.kind)
-    return () => unsubscribeNodePreview(nodeId, preview.portId, preview.kind)
-  }, [nodeId, preview.portId, preview.kind, frameType])
+  const [visible, setVisible] = useState(false)
 
   useEffect(() => {
     const canvas = canvasRef.current
     if (!canvas || !frameType) return
+    const observer = new IntersectionObserver(([entry]) => setVisible(entry.isIntersecting), {
+      rootMargin: VISIBILITY_ROOT_MARGIN,
+    })
+    observer.observe(canvas)
+    return () => observer.disconnect()
+  }, [frameType])
+
+  useEffect(() => {
+    if (!visible || !frameType) return
+    void subscribeNodePreview(nodeId, preview.portId, preview.kind)
+    return () => unsubscribeNodePreview(nodeId, preview.portId, preview.kind)
+  }, [visible, nodeId, preview.portId, preview.kind, frameType])
+
+  useEffect(() => {
+    const canvas = canvasRef.current
+    if (!visible || !canvas || !frameType) return
     const ctx = canvas.getContext('2d')
     if (!ctx) return
 
@@ -67,7 +93,7 @@ export function NodePreview({ nodeId, preview }: NodePreviewProps) {
 
     registerPreviewRenderer(id, render)
     return () => unregisterPreviewRenderer(id)
-  }, [nodeId, preview.portId, preview.kind, frameType, id])
+  }, [visible, nodeId, preview.portId, preview.kind, frameType, id])
 
   if (!frameType) return null
 
