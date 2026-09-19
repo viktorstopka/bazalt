@@ -4,10 +4,13 @@
 #include "bazalt/engine/nodes/MapNode.h"
 #include "bazalt/engine/nodes/AddNode.h"
 #include "bazalt/engine/nodes/MultiplyNode.h"
+#include "bazalt/engine/nodes/RoundNode.h"
+#include "bazalt/engine/nodes/ClampNode.h"
 #include "bazalt/engine/nodes/ListenNode.h"
 #include "bazalt/engine/nodes/OutputNode.h"
 #include "bazalt/engine/nodes/InstanceMixNode.h"
 #include <algorithm>
+#include <limits>
 
 using namespace bazalt::engine;
 using namespace bazalt::engine::nodes;
@@ -124,4 +127,78 @@ TEST_CASE ("InstanceMixNode outputs silence if asked to process a block size tha
 
     for (int i = 0; i < processNumSamples; ++i)
         CHECK (output[i] == 0.0f);
+}
+
+TEST_CASE ("RoundNode quantizes to the nearest multiple of step, mode selects rounding direction",
+           "[engine][nodes][util][M20]")
+{
+    RoundNode node;
+
+    // Default: step=1, mode=nearest -> plain integer rounding.
+    auto roundOf = [&] (float in)
+    {
+        float out = 0.0f;
+        float inputs[2] = { in, std::numeric_limits<float>::quiet_NaN() };
+        node.processSample (inputs, &out);
+        return out;
+    };
+    CHECK (roundOf (2.4f) == 2.0f);
+    CHECK (roundOf (2.5f) == 3.0f);
+    CHECK (roundOf (-2.4f) == -2.0f);
+
+    // A non-1 step quantizes onto an arbitrary grid, not just integers.
+    node.setParameter ("math.round.step", 0.5f);
+    CHECK (roundOf (0.63f) == 0.5f);
+    CHECK (roundOf (0.8f) == 1.0f);
+
+    // Floor/Ceil modes, step back to 1.
+    node.setParameter ("math.round.step", 1.0f);
+    node.setParameter ("math.round.mode", 1.0f); // floor
+    CHECK (roundOf (2.9f) == 2.0f);
+    node.setParameter ("math.round.mode", 2.0f); // ceil
+    CHECK (roundOf (2.1f) == 3.0f);
+}
+
+TEST_CASE ("RoundNode's step port live-modulates and falls back to setParameter when unconnected",
+           "[engine][nodes][util][M20]")
+{
+    RoundNode node;
+    node.setParameter ("math.round.step", 1.0f);
+
+    float out = 0.0f;
+    float liveStep[2] = { 7.4f, 2.0f }; // live step of 2, ignoring the statically-configured 1
+    node.processSample (liveStep, &out);
+    CHECK (out == 8.0f); // 7.4 quantized to the nearest multiple of 2
+}
+
+TEST_CASE ("ClampNode clamps to its low/high ports, swapped if low > high", "[engine][nodes][util][M20]")
+{
+    ClampNode node;
+
+    auto clampOf = [&] (float in, float low, float high)
+    {
+        float out = 0.0f;
+        float inputs[3] = { in, low, high };
+        node.processSample (inputs, &out);
+        return out;
+    };
+
+    CHECK (clampOf (0.5f, 0.0f, 1.0f) == 0.5f);
+    CHECK (clampOf (-1.0f, 0.0f, 1.0f) == 0.0f);
+    CHECK (clampOf (2.0f, 0.0f, 1.0f) == 1.0f);
+    CHECK (clampOf (0.5f, 1.0f, 0.0f) == 0.5f); // swapped low/high still clamps correctly
+}
+
+TEST_CASE ("ClampNode's low/high ports fall back to setParameter's static value exactly when unconnected",
+           "[engine][nodes][util][M20]")
+{
+    ClampNode node;
+    node.setParameter ("math.clamp.low", 10.0f);
+    node.setParameter ("math.clamp.high", 20.0f);
+
+    float out = 0.0f;
+    const auto kNaN = std::numeric_limits<float>::quiet_NaN();
+    float inputs[3] = { 5.0f, kNaN, kNaN };
+    node.processSample (inputs, &out);
+    CHECK (out == 10.0f);
 }
