@@ -327,6 +327,20 @@ export const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, InfiniteCanvasPro
     const remeasureNode = (id: string, el: HTMLElement): void => {
       nodeOffsetCache.set(id, measureNodeLocalPortOffsets(el, getCamera().zoom))
     }
+    // A node just seen for the first time keeps getting remeasured for a few
+    // more frames rather than trusting that very first getBoundingClientRect()
+    // forever — found via real hands-on testing (restoring a persisted
+    // session, which mounts every node card in one React commit instead of
+    // one at a time): several nodes' cards weren't at their final CSS layout
+    // yet on the frame they were first queried (parameter-value pills/text
+    // still settling their width), and ResizeObserver's own first callback
+    // can land on that same already-shifted size, so it never fires again to
+    // correct it — the wrong offset then sticks forever, producing cables
+    // that render pinned to nothing. This is a real layout-settling race,
+    // separate from (and found after fixing) the camera-zoom/transform
+    // ordering race elsewhere in this file.
+    const NODE_SETTLE_FRAMES = 10
+    const nodeSettleFramesRemaining = new Map<string, number>()
     const nodeResizeObserver = new ResizeObserver((entries) => {
       for (const entry of entries) {
         const el = entry.target as HTMLElement
@@ -356,10 +370,20 @@ export const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, InfiniteCanvasPro
         if (el) nodeResizeObserver.unobserve(el)
         nodeElByIdCache.delete(id)
         nodeOffsetCache.delete(id)
+        nodeSettleFramesRemaining.delete(id)
       }
       let pending = false
       for (const id of currentIds) {
-        if (nodeElByIdCache.has(id)) continue
+        if (nodeElByIdCache.has(id)) {
+          const remaining = nodeSettleFramesRemaining.get(id) ?? 0
+          if (remaining > 0) {
+            const el = nodeElByIdCache.get(id)
+            if (el) remeasureNode(id, el)
+            nodeSettleFramesRemaining.set(id, remaining - 1)
+            pending = true
+          }
+          continue
+        }
         const el = container.querySelector<HTMLElement>(`[data-node-instance="${id}"]`)
         if (!el) {
           pending = true
@@ -368,6 +392,8 @@ export const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, InfiniteCanvasPro
         nodeResizeObserver.observe(el)
         nodeElByIdCache.set(id, el)
         remeasureNode(id, el)
+        nodeSettleFramesRemaining.set(id, NODE_SETTLE_FRAMES)
+        pending = true
       }
       return pending
     }
