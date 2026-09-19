@@ -10,6 +10,32 @@
 using namespace bazalt;
 using namespace bazalt::engine;
 
+namespace
+{
+    // M20: no real node declares a preview yet (that's a later step once
+    // the render/tap-push side exists to back one) — a synthetic node is
+    // the only way to exercise the full Node::getPreviews() ->
+    // NodeDescriptor::previews -> JSON pipeline end to end today.
+    class SyntheticPreviewNode : public Node
+    {
+    public:
+        int getNumOutputPorts() const noexcept override { return 1; }
+        std::vector<PortDescriptor> getOutputPorts() const override { return { { "out", SignalType::Audio } }; }
+        void processSample (const float*, float* outputs) noexcept override { outputs[0] = 0.0f; }
+
+        std::vector<PreviewDescriptor> getPreviews() const override
+        {
+            PreviewDescriptor preview;
+            preview.kind = PreviewKind::Spectrum;
+            preview.portId = "out";
+            preview.fftSize = 4096;
+            preview.tiltDbPerOctave = 3.0f;
+            preview.averaging = 0.5f;
+            return { preview };
+        }
+    };
+}
+
 // Verifies the JSON shape ui/src/graph/descriptorTypes.ts expects
 // (NODE_EDITOR.md §3) — this is a pure data transform (no WebView, no
 // PluginEditor construction needed), so it's tested directly at the
@@ -86,6 +112,38 @@ TEST_CASE ("nodeDescriptorToVar serializes osc.analog.shape's M14 enum metadata 
     CHECK ((*options)[0]["id"].toString() == "sine");
     CHECK ((*options)[0]["label"].toString() == "Sine");
     CHECK ((*options)[3]["id"].toString() == "triangle");
+}
+
+TEST_CASE ("nodeDescriptorToVar serializes an empty previews[] for a node that declares none",
+           "[plugin][NodeDescriptorJson][M20]")
+{
+    const auto descriptor = describeNode ("util.constant", nodes::ConstantNode {});
+    const auto var = nodeDescriptorToVar (descriptor);
+    const auto* previews = var["previews"].getArray();
+    REQUIRE (previews != nullptr);
+    CHECK (previews->isEmpty());
+}
+
+TEST_CASE ("nodeDescriptorToVar serializes a declared preview end to end",
+           "[plugin][NodeDescriptorJson][M20]")
+{
+    const auto descriptor = describeNode ("test.syntheticPreview", SyntheticPreviewNode {});
+    const auto var = nodeDescriptorToVar (descriptor);
+
+    const auto* previews = var["previews"].getArray();
+    REQUIRE (previews != nullptr);
+    REQUIRE (previews->size() == 1);
+    const auto& preview = (*previews)[0];
+    CHECK (preview["kind"].toString() == "spectrum");
+    CHECK (preview["portId"].toString() == "out");
+    CHECK ((int) preview["fftSize"] == 4096);
+    CHECK ((float) preview["tiltDbPerOctave"] == 3.0f);
+    CHECK ((float) preview["averaging"] == 0.5f);
+    // Fields belonging to other kinds still serialize with their defaults
+    // — additive/flat, never an omitted key depending on which kind is
+    // active (matches PortDescriptor/ParameterDescriptor's own convention).
+    CHECK (preview["triggerMode"].toString() == "free");
+    CHECK (preview["meterMode"].toString() == "peak");
 }
 
 TEST_CASE ("nodeDescriptorsToVar serializes every registered type exactly once",

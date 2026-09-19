@@ -159,6 +159,35 @@ export interface ParameterDescriptor {
   isStructural: boolean
 }
 
+/** M20 — engine/include/bazalt/engine/graph/PreviewDescriptor.h's own
+    taxonomy comment has the full rationale for which kinds are real vs.
+    documented-for-later; this mirror carries all of them since the schema
+    is additive regardless of which the UI currently knows how to render.
+*/
+export type PreviewKind =
+  | 'waveform'
+  | 'spectrum'
+  | 'meter'
+  | 'shapeWithPlayhead'
+  | 'rollingHistory'
+  | 'eventImpulse'
+  | 'spectrogram'
+  | 'goniometer'
+
+export type ScopeTriggerMode = 'free' | 'risingEdge' | 'perNote'
+export type MeterMode = 'peak' | 'rms' | 'truePeak' | 'histogram'
+
+export interface PreviewDescriptor {
+  kind: PreviewKind
+  portId: string
+  timeWindowSeconds: number
+  triggerMode: ScopeTriggerMode
+  fftSize: number
+  tiltDbPerOctave: number
+  averaging: number
+  meterMode: MeterMode
+}
+
 export interface NodeDescriptor {
   typeId: string
   title: string
@@ -168,6 +197,12 @@ export interface NodeDescriptor {
   inputs: PortDescriptor[]
   outputs: PortDescriptor[]
   parameters: ParameterDescriptor[]
+  /** Always a real (possibly empty) array from NodeFactory::describeAll();
+      optional here only because mockDescriptors.ts's UI-only entries don't
+      populate it — treat an absent value as an empty array everywhere it's
+      read, same convention as isMock below.
+  */
+  previews?: PreviewDescriptor[]
   /** UI-only flag, not part of the C++ schema (NODE_EDITOR.md §3's "mock
       (UI-only) descriptors... marked as mocks") — true for every entry in
       mockDescriptors.ts, absent/false for anything NodeFactory::describeAll()

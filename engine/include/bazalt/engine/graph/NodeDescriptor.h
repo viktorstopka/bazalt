@@ -23,6 +23,7 @@ namespace bazalt::engine
         std::vector<PortDescriptor> inputs;
         std::vector<PortDescriptor> outputs;
         std::vector<ParameterDescriptor> parameters;
+        std::vector<PreviewDescriptor> previews;
     };
 
     /** Builds a NodeDescriptor from a live Node instance's metadata calls
@@ -41,6 +42,7 @@ namespace bazalt::engine
         descriptor.inputs = node.getInputPorts();
         descriptor.outputs = node.getOutputPorts();
         descriptor.parameters = node.getParameters();
+        descriptor.previews = node.getPreviews();
         return descriptor;
     }
 }

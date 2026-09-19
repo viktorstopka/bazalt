@@ -1,6 +1,7 @@
 #pragma once
 
 #include "bazalt/engine/graph/PortDescriptor.h"
+#include "bazalt/engine/graph/PreviewDescriptor.h"
 #include "bazalt/engine/graph/NoteEvent.h"
 #include <juce_core/juce_core.h>
 #include <vector>
@@ -59,6 +60,16 @@ namespace bazalt::engine
         virtual std::vector<PortDescriptor> getInputPorts() const { return {}; }
         virtual std::vector<PortDescriptor> getOutputPorts() const { return {}; }
         virtual std::vector<ParameterDescriptor> getParameters() const { return {}; }
+
+        /** M20 — a node's own default visualization(s), declared once here
+            rather than hardcoded anywhere in the UI (NodeCard.tsx needs no
+            edit for a new node to get a working preview). Empty default:
+            most nodes declare nothing and keep their current layout
+            unchanged; a node like random.stepped (once built) declares one
+            entry on its "out" port. See PreviewDescriptor.h for the full
+            taxonomy and which kinds are real vs. documented-for-later.
+        */
+        virtual std::vector<PreviewDescriptor> getPreviews() const { return {}; }
 
         // Node-level UI metadata (M7, NODE_EDITOR.md §3) — defaulted so
         // every pre-M7 node keeps compiling unchanged; retrofitting real

@@ -5,12 +5,16 @@ namespace bazalt
     namespace
     {
         using bazalt::engine::Curve;
+        using bazalt::engine::MeterMode;
         using bazalt::engine::NodeLayoutVariant;
         using bazalt::engine::ParameterDescriptor;
         using bazalt::engine::Polarity;
         using bazalt::engine::PortDescriptor;
         using bazalt::engine::PortGroup;
+        using bazalt::engine::PreviewDescriptor;
+        using bazalt::engine::PreviewKind;
         using bazalt::engine::Quantity;
+        using bazalt::engine::ScopeTriggerMode;
         using bazalt::engine::SignalType;
         using bazalt::engine::ValueKind;
 
@@ -227,6 +231,63 @@ namespace bazalt
             return juce::var (obj);
         }
 
+        // ---- Previews (M20) ------------------------------------------------
+        juce::String previewKindToString (PreviewKind kind)
+        {
+            switch (kind)
+            {
+                case PreviewKind::Waveform:          return "waveform";
+                case PreviewKind::Spectrum:           return "spectrum";
+                case PreviewKind::Meter:               return "meter";
+                case PreviewKind::ShapeWithPlayhead:   return "shapeWithPlayhead";
+                case PreviewKind::RollingHistory:      return "rollingHistory";
+                case PreviewKind::EventImpulse:        return "eventImpulse";
+                case PreviewKind::Spectrogram:         return "spectrogram";
+                case PreviewKind::Goniometer:          return "goniometer";
+            }
+            jassertfalse;
+            return "waveform";
+        }
+
+        juce::String triggerModeToString (ScopeTriggerMode mode)
+        {
+            switch (mode)
+            {
+                case ScopeTriggerMode::Free:       return "free";
+                case ScopeTriggerMode::RisingEdge: return "risingEdge";
+                case ScopeTriggerMode::PerNote:    return "perNote";
+            }
+            jassertfalse;
+            return "free";
+        }
+
+        juce::String meterModeToString (MeterMode mode)
+        {
+            switch (mode)
+            {
+                case MeterMode::Peak:      return "peak";
+                case MeterMode::Rms:       return "rms";
+                case MeterMode::TruePeak:  return "truePeak";
+                case MeterMode::Histogram: return "histogram";
+            }
+            jassertfalse;
+            return "peak";
+        }
+
+        juce::var previewDescriptorToVar (const PreviewDescriptor& preview)
+        {
+            auto* obj = new juce::DynamicObject();
+            obj->setProperty ("kind", previewKindToString (preview.kind));
+            obj->setProperty ("portId", preview.portId);
+            obj->setProperty ("timeWindowSeconds", preview.timeWindowSeconds);
+            obj->setProperty ("triggerMode", triggerModeToString (preview.triggerMode));
+            obj->setProperty ("fftSize", preview.fftSize);
+            obj->setProperty ("tiltDbPerOctave", preview.tiltDbPerOctave);
+            obj->setProperty ("averaging", preview.averaging);
+            obj->setProperty ("meterMode", meterModeToString (preview.meterMode));
+            return juce::var (obj);
+        }
+
         template <typename Descriptor, typename ToVarFn>
         juce::var descriptorListToVar (const std::vector<Descriptor>& descriptors, ToVarFn toVar)
         {
@@ -249,6 +310,7 @@ namespace bazalt
         obj->setProperty ("inputs", descriptorListToVar (descriptor.inputs, portDescriptorToVar));
         obj->setProperty ("outputs", descriptorListToVar (descriptor.outputs, portDescriptorToVar));
         obj->setProperty ("parameters", descriptorListToVar (descriptor.parameters, parameterDescriptorToVar));
+        obj->setProperty ("previews", descriptorListToVar (descriptor.previews, previewDescriptorToVar));
         return juce::var (obj);
     }
 
