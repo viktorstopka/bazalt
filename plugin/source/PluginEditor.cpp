@@ -264,7 +264,8 @@ namespace bazalt
         // output buffer, or every voice-domain tap slot is already in use.
         options = options.withNativeFunction ("subscribeNodePreviewTap", [&processor] (Args args, Completion completion)
         {
-            completion (processor.subscribeVisualizationTap (argString (args, 0), argString (args, 1)));
+            const auto kind = previewKindFromString (argString (args, 2));
+            completion (processor.subscribeVisualizationTap (argString (args, 0), argString (args, 1), kind));
         });
 
         options = options.withNativeFunction ("unsubscribeNodePreviewTap", [&processor] (Args args, Completion completion)

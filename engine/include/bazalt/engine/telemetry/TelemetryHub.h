@@ -49,6 +49,20 @@ namespace bazalt::engine
           safety issue. Revisit if M11's real per-node wiring makes this
           worse than that in practice.
     */
+    /** M20: which frame type(s) a subscriber actually needs computed for a
+        tap — a Waveform preview only needs Oscilloscope frames, a Meter
+        preview only needs Meter frames, etc. Every field defaults true so
+        an existing caller that doesn't pass this (M4's baseline main/aux
+        taps, still wanting all three for the M5 analysis panel) keeps
+        getting exactly today's behaviour unchanged.
+    */
+    struct TelemetryFrameTypesNeeded
+    {
+        bool oscilloscope = true;
+        bool spectrum = true;
+        bool meter = true;
+    };
+
     class TelemetryHub
     {
     public:
@@ -83,11 +97,12 @@ namespace bazalt::engine
             Never returns nullptr — with maxTaps slots there is always an
             eviction victim.
         */
-        Tap* subscribeTap (const juce::String& name)
+        Tap* subscribeTap (const juce::String& name, TelemetryFrameTypesNeeded needed = {})
         {
             if (auto* existing = findSlotByName (name))
             {
                 existing->lastUsedSequence = ++sequenceCounter;
+                existing->frameTypesMask.store (frameTypesToMask (needed), std::memory_order_relaxed);
                 return existing->tap.get();
             }
 
@@ -98,6 +113,7 @@ namespace bazalt::engine
             slot->name = name;
             slot->lastUsedSequence = ++sequenceCounter;
             slot->tap->prepare (slot->tap->getCapacity()); // reset ring contents for the new subscriber
+            slot->frameTypesMask.store (frameTypesToMask (needed), std::memory_order_relaxed);
             // "demo."-prefixed taps have no real pusher (M8's UI-only
             // rendering stress test subscribes synthetic per-cable taps
             // that don't correspond to any real engine signal, on purpose
@@ -152,6 +168,21 @@ namespace bazalt::engine
             return slots[slotIndex].synthetic.load (std::memory_order_relaxed);
         }
 
+        /** M20 — whether `type` is actually needed for this slot's current
+            subscriber (a Waveform preview only ever needs Oscilloscope, for
+            instance). AnalysisThread checks this before doing the work to
+            compute+publish each frame type, so a narrowly-scoped preview
+            tap stops paying for FFTs/ballistics nobody reads. Every M4
+            baseline tap subscribes with the all-true default, so this is a
+            pure scope *reduction* for taps that ask for it, never a
+            behaviour change for anything that doesn't.
+        */
+        bool isFrameTypeNeeded (size_t slotIndex, TelemetryFrameType type) const noexcept
+        {
+            const auto mask = slots[slotIndex].frameTypesMask.load (std::memory_order_relaxed);
+            return (mask & (1u << (uint32_t) type)) != 0;
+        }
+
         Tap* getTapBySlot (size_t slotIndex) const noexcept { return slots[slotIndex].tap.get(); }
 
         TelemetryFrameBuffer* getFrameBufferBySlot (size_t slotIndex, TelemetryFrameType type) const noexcept
@@ -160,11 +191,21 @@ namespace bazalt::engine
         }
 
     private:
+        static uint32_t frameTypesToMask (TelemetryFrameTypesNeeded needed) noexcept
+        {
+            uint32_t mask = 0;
+            if (needed.oscilloscope) mask |= (1u << (uint32_t) TelemetryFrameType::Oscilloscope);
+            if (needed.spectrum)     mask |= (1u << (uint32_t) TelemetryFrameType::Spectrum);
+            if (needed.meter)        mask |= (1u << (uint32_t) TelemetryFrameType::Meter);
+            return mask;
+        }
+
         struct Slot
         {
             juce::String name; // message-thread-owned only
             std::atomic<bool> active { false };
             std::atomic<bool> synthetic { false }; // see subscribeTap()'s "demo." note
+            std::atomic<uint32_t> frameTypesMask { 0b111 }; // M20 — see isFrameTypeNeeded()'s own comment; defaults to all 3
             uint64_t lastUsedSequence = 0; // message-thread-owned only
             std::unique_ptr<Tap> tap;
             std::array<std::unique_ptr<TelemetryFrameBuffer>, 3> frameBuffers;

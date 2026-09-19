@@ -146,3 +146,49 @@ TEST_CASE ("AnalysisThread publishes all three frame types for every tap", "[eng
         }
     }
 }
+
+TEST_CASE ("A Waveform-only tap subscription never triggers Spectrum or Meter publishing",
+           "[engine][telemetry][AnalysisThread][M20]")
+{
+    TelemetryHub hub;
+    hub.prepare (8192, 16384);
+
+    AnalysisThread analysis (hub);
+    analysis.prepare (44100.0);
+    analysis.startThread();
+
+    // Waveform previews only ever read Oscilloscope frames
+    // (PluginProcessor.cpp's frameTypesNeededFor()) — subscribe with
+    // exactly that scope, matching what subscribeVisualizationTap() does
+    // for a real Waveform-kind preview.
+    auto* tap = hub.subscribeTap ("node:test:out", { true, false, false });
+    REQUIRE (tap != nullptr);
+
+    std::vector<float> block (2048);
+    for (int i = 0; i < 2048; ++i)
+        block[(size_t) i] = std::sin (0.05f * (float) i);
+
+    for (int i = 0; i < 20; ++i)
+    {
+        tap->push (block.data(), (int) block.size());
+        juce::Thread::sleep (10);
+    }
+
+    analysis.stopThread (2000);
+
+    std::vector<std::byte> dest (16384);
+
+    auto* oscilloscopeBuffer = hub.getFrameBuffer ("node:test:out", TelemetryFrameType::Oscilloscope);
+    REQUIRE (oscilloscopeBuffer != nullptr);
+    CHECK (oscilloscopeBuffer->readLatest (dest.data(), dest.size()) > 0);
+
+    // Never published — AnalysisThread must have skipped the FFT/ballistics
+    // work entirely for this tap, not just declined to publish afterward.
+    auto* spectrumBuffer = hub.getFrameBuffer ("node:test:out", TelemetryFrameType::Spectrum);
+    REQUIRE (spectrumBuffer != nullptr);
+    CHECK (spectrumBuffer->readLatest (dest.data(), dest.size()) == 0);
+
+    auto* meterBuffer = hub.getFrameBuffer ("node:test:out", TelemetryFrameType::Meter);
+    REQUIRE (meterBuffer != nullptr);
+    CHECK (meterBuffer->readLatest (dest.data(), dest.size()) == 0);
+}

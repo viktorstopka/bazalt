@@ -26,8 +26,8 @@ TEST_CASE ("subscribeVisualizationTap rejects an unknown node or port", "[plugin
     BazaltAudioProcessor processor;
     processor.prepareToPlay (44100.0, 512);
 
-    CHECK_FALSE (processor.subscribeVisualizationTap ("no-such-node", "out"));
-    CHECK_FALSE (processor.subscribeVisualizationTap ("osc", "no-such-port"));
+    CHECK_FALSE (processor.subscribeVisualizationTap ("no-such-node", "out", bazalt::engine::PreviewKind::Waveform));
+    CHECK_FALSE (processor.subscribeVisualizationTap ("osc", "no-such-port", bazalt::engine::PreviewKind::Waveform));
 }
 
 TEST_CASE ("subscribeVisualizationTap on a real voice-domain port receives real pushed values",
@@ -36,7 +36,7 @@ TEST_CASE ("subscribeVisualizationTap on a real voice-domain port receives real 
     BazaltAudioProcessor processor;
     processor.prepareToPlay (44100.0, 512);
 
-    REQUIRE (processor.subscribeVisualizationTap ("osc", "out"));
+    REQUIRE (processor.subscribeVisualizationTap ("osc", "out", bazalt::engine::PreviewKind::Waveform));
     auto* tap = processor.getTelemetryHub().subscribeTap ("node:osc:out");
     REQUIRE (tap != nullptr);
 
@@ -75,7 +75,7 @@ TEST_CASE ("subscribeVisualizationTap on instance.allocator's pitch output re-po
     BazaltAudioProcessor processor;
     processor.prepareToPlay (44100.0, 512);
 
-    REQUIRE (processor.subscribeVisualizationTap ("allocator", "pitch"));
+    REQUIRE (processor.subscribeVisualizationTap ("allocator", "pitch", bazalt::engine::PreviewKind::Waveform));
 
     // Read the tap's own raw ring buffer directly (bypassing AnalysisThread,
     // which runs on its own timer/thread and isn't deterministic to await
@@ -104,7 +104,7 @@ TEST_CASE ("unsubscribeVisualizationTap stops a voice-domain tap from receiving 
     BazaltAudioProcessor processor;
     processor.prepareToPlay (44100.0, 512);
 
-    REQUIRE (processor.subscribeVisualizationTap ("allocator", "pitch"));
+    REQUIRE (processor.subscribeVisualizationTap ("allocator", "pitch", bazalt::engine::PreviewKind::Waveform));
     auto* tap = processor.getTelemetryHub().subscribeTap ("node:allocator:pitch");
     REQUIRE (tap != nullptr);
 
@@ -119,7 +119,7 @@ TEST_CASE ("unsubscribeVisualizationTap stops a voice-domain tap from receiving 
     // After unsubscribing, the slot is freed and the plan's tap pointer is
     // cleared — re-subscribing must still work cleanly (no stale/dangling
     // state left behind from the first subscription).
-    REQUIRE (processor.subscribeVisualizationTap ("allocator", "pitch"));
+    REQUIRE (processor.subscribeVisualizationTap ("allocator", "pitch", bazalt::engine::PreviewKind::Waveform));
     playNote (processor, 84);
     auto* reTap = processor.getTelemetryHub().subscribeTap ("node:allocator:pitch");
     REQUIRE (reTap != nullptr);

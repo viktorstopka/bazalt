@@ -4,6 +4,7 @@
 #include <juce_events/juce_events.h>
 #include "bazalt/engine/graph/ExecutionPlan.h"
 #include "bazalt/engine/graph/PlanSwapper.h"
+#include "bazalt/engine/graph/PreviewDescriptor.h"
 #include "bazalt/engine/graph/VoiceManager.h"
 #include "bazalt/engine/graph/NodeFactory.h"
 #include "bazalt/engine/patch/PatchDocument.h"
@@ -114,7 +115,7 @@ namespace bazalt
             ExecutionPlan::outputBufferIndexByNodeAndPort's own comment).
             Message-thread only.
         */
-        bool subscribeVisualizationTap (const juce::String& nodeId, const juce::String& portId);
+        bool subscribeVisualizationTap (const juce::String& nodeId, const juce::String& portId, bazalt::engine::PreviewKind kind);
         void unsubscribeVisualizationTap (const juce::String& nodeId, const juce::String& portId);
 
     private:

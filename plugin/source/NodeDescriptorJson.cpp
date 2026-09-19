@@ -318,4 +318,17 @@ namespace bazalt
     {
         return descriptorListToVar (descriptors, nodeDescriptorToVar);
     }
+
+    bazalt::engine::PreviewKind previewKindFromString (const juce::String& kind)
+    {
+        using bazalt::engine::PreviewKind;
+        if (kind == "spectrum")           return PreviewKind::Spectrum;
+        if (kind == "meter")              return PreviewKind::Meter;
+        if (kind == "shapeWithPlayhead")  return PreviewKind::ShapeWithPlayhead;
+        if (kind == "rollingHistory")     return PreviewKind::RollingHistory;
+        if (kind == "eventImpulse")       return PreviewKind::EventImpulse;
+        if (kind == "spectrogram")        return PreviewKind::Spectrogram;
+        if (kind == "goniometer")         return PreviewKind::Goniometer;
+        return PreviewKind::Waveform; // "waveform", or an unrecognized string
+    }
 }

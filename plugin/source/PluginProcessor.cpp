@@ -241,7 +241,29 @@ namespace bazalt
         }
     }
 
-    bool BazaltAudioProcessor::subscribeVisualizationTap (const juce::String& nodeId, const juce::String& portId)
+    namespace
+    {
+        // M20: which TelemetryFrameType(s) each preview kind actually reads
+        // — AnalysisThread skips computing/publishing anything not needed
+        // here (TelemetryHub::isFrameTypeNeeded). Kinds with no real
+        // producer yet (PreviewDescriptor.h's own "documented for later"
+        // list) fall through to the all-true default — harmless (nothing
+        // subscribes with one of those kinds today) and forward-compatible
+        // once a real one does.
+        bazalt::engine::TelemetryFrameTypesNeeded frameTypesNeededFor (bazalt::engine::PreviewKind kind)
+        {
+            using bazalt::engine::PreviewKind;
+            switch (kind)
+            {
+                case PreviewKind::Waveform: return { true, false, false };
+                case PreviewKind::Spectrum: return { false, true, false };
+                case PreviewKind::Meter:    return { false, false, true };
+                default:                    return {};
+            }
+        }
+    }
+
+    bool BazaltAudioProcessor::subscribeVisualizationTap (const juce::String& nodeId, const juce::String& portId, bazalt::engine::PreviewKind kind)
     {
         // Global domain checked first: a node only ever lives in one domain
         // (DomainSplitter's own invariant), and the global plan — when one
@@ -256,7 +278,7 @@ namespace bazalt
                     const auto portIt = nodeIt->second.find (portId);
                     if (portIt != nodeIt->second.end())
                     {
-                        auto* tap = telemetryHub.subscribeTap ("node:" + nodeId + ":" + portId);
+                        auto* tap = telemetryHub.subscribeTap ("node:" + nodeId + ":" + portId, frameTypesNeededFor (kind));
                         plan->setTapForBufferIndex (portIt->second, tap);
                         return true;
                     }
@@ -292,7 +314,7 @@ namespace bazalt
         if (freeSlot == nullptr)
             return false; // all maxVoiceDomainTaps slots in use — bounded, matches TelemetryHub's own cap
 
-        auto* tap = telemetryHub.subscribeTap ("node:" + nodeId + ":" + portId);
+        auto* tap = telemetryHub.subscribeTap ("node:" + nodeId + ":" + portId, frameTypesNeededFor (kind));
         freeSlot->nodeId = nodeId;
         freeSlot->portId = portId;
         freeSlot->bufferIndex = portIt->second;

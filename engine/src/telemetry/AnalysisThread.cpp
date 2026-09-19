@@ -101,9 +101,17 @@ namespace bazalt::engine
 
         ++sequenceNumber;
 
-        publishOscilloscope (slotIndex, scratchSamples.data(), numRead);
-        publishSpectrum (slotIndex, scratchSamples.data(), numRead);
-        publishMeter (slotIndex, scratchSamples.data(), numRead, elapsedSeconds);
+        // M20: only do the work a subscriber actually asked for — a
+        // Waveform-only preview tap stops paying for an FFT nobody reads.
+        // Every M4 baseline tap subscribes with the all-true default, so
+        // this is a pure scope reduction, never a behaviour change for
+        // anything that doesn't ask for it.
+        if (hub.isFrameTypeNeeded (slotIndex, TelemetryFrameType::Oscilloscope))
+            publishOscilloscope (slotIndex, scratchSamples.data(), numRead);
+        if (hub.isFrameTypeNeeded (slotIndex, TelemetryFrameType::Spectrum))
+            publishSpectrum (slotIndex, scratchSamples.data(), numRead);
+        if (hub.isFrameTypeNeeded (slotIndex, TelemetryFrameType::Meter))
+            publishMeter (slotIndex, scratchSamples.data(), numRead, elapsedSeconds);
     }
 
     void AnalysisThread::publishOscilloscope (size_t slotIndex, const float* samples, int numSamples)

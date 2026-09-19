@@ -21,4 +21,15 @@ namespace bazalt
     */
     juce::var nodeDescriptorToVar (const bazalt::engine::NodeDescriptor& descriptor);
     juce::var nodeDescriptorsToVar (const std::vector<bazalt::engine::NodeDescriptor>& descriptors);
+
+    /** M20 — the reverse of previewKindToString's internal mapping (this
+        file's own .cpp), needed at the one place a preview kind travels
+        the other direction: the UI passing which kind it's subscribing a
+        tap for (PluginEditor.cpp's subscribeNodePreviewTap), so
+        AnalysisThread only computes the frame type(s) that kind actually
+        reads. Defaults to Waveform for an unrecognized string rather than
+        asserting — a native-function argument is untrusted input, not an
+        internal invariant.
+    */
+    bazalt::engine::PreviewKind previewKindFromString (const juce::String& kind);
 }
