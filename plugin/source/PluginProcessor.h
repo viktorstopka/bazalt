@@ -102,12 +102,28 @@ namespace bazalt
         bazalt::engine::PlanSwapper& getGlobalPlanSwapper() noexcept { return globalPlanSwapper; }
         void setHasGlobalDomain (bool hasIt) noexcept { hasGlobalDomain.store (hasIt, std::memory_order_release); }
 
+        /** M20 — subscribes a visualization tap for a real node's output
+            port, resolving whether it lives in the global domain (one
+            plan, tapped once, never re-pointed) or the voice domain (8
+            independent plans — tapped on whichever one
+            VoiceManager::getMostRecentlyTriggeredVoice() currently names,
+            re-pointed live as new notes trigger, see handleMidiEvent()).
+            Returns false if no currently-compiled plan resolves this
+            (nodeId, portId) to a real output buffer (it doesn't exist, or
+            is per-sample-region-internal with no external copy — see
+            ExecutionPlan::outputBufferIndexByNodeAndPort's own comment).
+            Message-thread only.
+        */
+        bool subscribeVisualizationTap (const juce::String& nodeId, const juce::String& portId);
+        void unsubscribeVisualizationTap (const juce::String& nodeId, const juce::String& portId);
+
     private:
         static BusesProperties makeBusLayout();
 
         using VoicePlanPtrs = std::array<bazalt::engine::ExecutionPlan*, numVoices>;
 
         void handleMidiEvent (const juce::MidiMessage& message, const VoicePlanPtrs& voicePlans);
+        void repointVoiceDomainTaps (int newVoiceIndex, const VoicePlanPtrs& voicePlans) noexcept;
         void renderVoiceRange (int startSample, int numSamples, const VoicePlanPtrs& voicePlans) noexcept;
         void triggerVoiceNote (bazalt::engine::ExecutionPlan* plan, float pitch, float velocity) noexcept;
         void finalizeInstanceMixIntoOutput (juce::AudioBuffer<float>& output, int numSamples) noexcept;
@@ -176,6 +192,31 @@ namespace bazalt
         bazalt::engine::TelemetryHub telemetryHub;
         bazalt::engine::AnalysisThread analysisThread { telemetryHub };
         std::array<bazalt::engine::Tap*, (size_t) (1 + numAuxBuses)> tapPointers {}; // [0]=main, [1..4]=aux1..4 — cached once in prepareToPlay so processBlock never does a map lookup
+
+        // M20 — voice-domain visualization taps needing re-pointing as the
+        // most-recently-triggered voice changes. Mirrors TelemetryHub::Slot's
+        // own message-thread-claims/audio-thread-reads pattern exactly
+        // (fully configure a slot, THEN set active=true last with release
+        // ordering, so a reader who observes active=true via acquire is
+        // guaranteed to also see a fully-configured bufferIndex/tap) —
+        // scoped here rather than in engine/ since it's specifically about
+        // redirecting between this processor's own 8 per-voice
+        // ExecutionPlans, not a generic engine mechanism. nodeId/portId are
+        // message-thread-owned (unsubscribe lookup only); bufferIndex/tap
+        // are write-once-before-activation, read-only after.
+        struct VoiceDomainTapSlot
+        {
+            std::atomic<bool> active { false };
+            juce::String nodeId, portId;
+            int bufferIndex = -1;
+            bazalt::engine::Tap* tap = nullptr;
+        };
+        static constexpr int maxVoiceDomainTaps = (int) bazalt::engine::TelemetryHub::maxTaps;
+        std::array<VoiceDomainTapSlot, (size_t) maxVoiceDomainTaps> voiceDomainTapSlots;
+        // Audio-thread-owned only (handleMidiEvent is the only reader/writer,
+        // and it always runs on the audio thread via processBlock) — not
+        // atomic, matches every other audio-thread-only piece of state here.
+        int lastPointedVoiceForTaps = -1;
 
         double currentSampleRate = 44100.0;
         int currentBlockSize = 512;

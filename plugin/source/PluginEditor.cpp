@@ -253,20 +253,23 @@ namespace bazalt
             completion (nodeDescriptorsToVar (processor.getNodeFactory().describeAll()));
         });
 
-        // M8 (NODE_EDITOR.md §9): dynamic, viewport-driven tap subscription
-        // — not a graph-editing command (no recompile involved), so these
-        // don't go through GraphEditController. Always "succeeds" from the
-        // caller's perspective (TelemetryHub::subscribeTap always returns a
-        // tap, LRU-evicting if the pool is full); there's nothing to reject.
-        options = options.withNativeFunction ("telemetrySubscribeTap", [&processor] (Args args, Completion completion)
+        // M20 (NODE_EDITOR.md §9): dynamic, viewport-driven preview-tap
+        // subscription, keyed by (nodeId, portId) — resolved against
+        // whichever plan (global or voice-domain) currently contains that
+        // node, not a raw hub-slot claim by an arbitrary string (that lower
+        // -level operation never had a real caller — this is the first one).
+        // Not a graph-editing command (no recompile involved), so these
+        // don't go through GraphEditController. completion(false) means no
+        // currently-compiled plan resolves this (nodeId, portId) to a real
+        // output buffer, or every voice-domain tap slot is already in use.
+        options = options.withNativeFunction ("subscribeNodePreviewTap", [&processor] (Args args, Completion completion)
         {
-            processor.getTelemetryHub().subscribeTap (argString (args, 0));
-            completion (true);
+            completion (processor.subscribeVisualizationTap (argString (args, 0), argString (args, 1)));
         });
 
-        options = options.withNativeFunction ("telemetryUnsubscribeTap", [&processor] (Args args, Completion completion)
+        options = options.withNativeFunction ("unsubscribeNodePreviewTap", [&processor] (Args args, Completion completion)
         {
-            processor.getTelemetryHub().unsubscribeTap (argString (args, 0));
+            processor.unsubscribeVisualizationTap (argString (args, 0), argString (args, 1));
             completion (true);
         });
 

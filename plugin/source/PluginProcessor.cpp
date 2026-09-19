@@ -165,6 +165,27 @@ namespace bazalt
             noteIn->injectNoteOn (pitch, velocity);
     }
 
+    void BazaltAudioProcessor::repointVoiceDomainTaps (int newVoiceIndex, const VoicePlanPtrs& voicePlans) noexcept
+    {
+        if (newVoiceIndex == lastPointedVoiceForTaps)
+            return;
+
+        const auto oldVoiceIndex = lastPointedVoiceForTaps;
+        lastPointedVoiceForTaps = newVoiceIndex;
+
+        for (auto& slot : voiceDomainTapSlots)
+        {
+            if (! slot.active.load (std::memory_order_acquire))
+                continue;
+
+            if (oldVoiceIndex >= 0 && voicePlans[(size_t) oldVoiceIndex] != nullptr)
+                voicePlans[(size_t) oldVoiceIndex]->setTapForBufferIndex (slot.bufferIndex, nullptr);
+
+            if (voicePlans[(size_t) newVoiceIndex] != nullptr)
+                voicePlans[(size_t) newVoiceIndex]->setTapForBufferIndex (slot.bufferIndex, slot.tap);
+        }
+    }
+
     void BazaltAudioProcessor::handleMidiEvent (const juce::MidiMessage& message, const VoicePlanPtrs& voicePlans)
     {
         if (message.isNoteOn())
@@ -173,6 +194,12 @@ namespace bazalt
             const auto voiceIndex = voiceManager.noteOn (noteId);
             const auto pitch = (float) message.getNoteNumber();
             const auto velocity = message.getFloatVelocity();
+
+            // M20: the preview tap follows whichever voice was just played,
+            // whether it went straight to Active or is still fading out its
+            // stolen predecessor — same "most recently triggered" value
+            // VoiceManager itself now tracks.
+            repointVoiceDomainTaps (voiceIndex, voicePlans);
 
             // M17: a stolen voice defers its actual retrigger until its
             // fade-out completes (renderVoiceRange) — DOMAINS.md §5's
@@ -212,6 +239,102 @@ namespace bazalt
                     if (auto* noteIn = dynamic_cast<bazalt::engine::nodes::IoNoteInNode*> (plan->getNodeById ("noteIn")))
                         noteIn->injectPitchBend (bendSemitones);
         }
+    }
+
+    bool BazaltAudioProcessor::subscribeVisualizationTap (const juce::String& nodeId, const juce::String& portId)
+    {
+        // Global domain checked first: a node only ever lives in one domain
+        // (DomainSplitter's own invariant), and the global plan — when one
+        // exists — is the simpler case (exactly one plan, never re-pointed).
+        if (hasGlobalDomain.load (std::memory_order_acquire))
+        {
+            if (auto* plan = globalPlanSwapper.peekCurrentPlan())
+            {
+                const auto nodeIt = plan->outputBufferIndexByNodeAndPort.find (nodeId);
+                if (nodeIt != plan->outputBufferIndexByNodeAndPort.end())
+                {
+                    const auto portIt = nodeIt->second.find (portId);
+                    if (portIt != nodeIt->second.end())
+                    {
+                        auto* tap = telemetryHub.subscribeTap ("node:" + nodeId + ":" + portId);
+                        plan->setTapForBufferIndex (portIt->second, tap);
+                        return true;
+                    }
+                }
+            }
+        }
+
+        // Voice domain: every voice's plan shares the same topology (all
+        // compiled from the same NodeGraph), so voice 0's plan is only ever
+        // used here to resolve the buffer index — the actual tap gets
+        // pointed at whichever voice is currently most-recently-triggered
+        // (or voice 0 if no note has ever been played yet).
+        auto* representativePlan = voicePlanSwappers[0].peekCurrentPlan();
+        if (representativePlan == nullptr)
+            return false;
+
+        const auto nodeIt = representativePlan->outputBufferIndexByNodeAndPort.find (nodeId);
+        if (nodeIt == representativePlan->outputBufferIndexByNodeAndPort.end())
+            return false;
+        const auto portIt = nodeIt->second.find (portId);
+        if (portIt == nodeIt->second.end())
+            return false;
+
+        auto* freeSlot = static_cast<VoiceDomainTapSlot*> (nullptr);
+        for (auto& slot : voiceDomainTapSlots)
+        {
+            if (! slot.active.load (std::memory_order_acquire))
+            {
+                freeSlot = &slot;
+                break;
+            }
+        }
+        if (freeSlot == nullptr)
+            return false; // all maxVoiceDomainTaps slots in use — bounded, matches TelemetryHub's own cap
+
+        auto* tap = telemetryHub.subscribeTap ("node:" + nodeId + ":" + portId);
+        freeSlot->nodeId = nodeId;
+        freeSlot->portId = portId;
+        freeSlot->bufferIndex = portIt->second;
+        freeSlot->tap = tap;
+        freeSlot->active.store (true, std::memory_order_release);
+
+        const auto currentVoice = voiceManager.getMostRecentlyTriggeredVoice();
+        const auto voiceToPoint = currentVoice >= 0 ? currentVoice : 0;
+        if (auto* plan = voicePlanSwappers[(size_t) voiceToPoint].peekCurrentPlan())
+            plan->setTapForBufferIndex (portIt->second, tap);
+
+        return true;
+    }
+
+    void BazaltAudioProcessor::unsubscribeVisualizationTap (const juce::String& nodeId, const juce::String& portId)
+    {
+        if (auto* plan = globalPlanSwapper.peekCurrentPlan())
+        {
+            const auto nodeIt = plan->outputBufferIndexByNodeAndPort.find (nodeId);
+            if (nodeIt != plan->outputBufferIndexByNodeAndPort.end())
+            {
+                const auto portIt = nodeIt->second.find (portId);
+                if (portIt != nodeIt->second.end())
+                    plan->setTapForBufferIndex (portIt->second, nullptr);
+            }
+        }
+
+        for (auto& slot : voiceDomainTapSlots)
+        {
+            if (! slot.active.load (std::memory_order_acquire) || slot.nodeId != nodeId || slot.portId != portId)
+                continue;
+
+            const auto currentVoice = voiceManager.getMostRecentlyTriggeredVoice();
+            const auto voiceToPoint = currentVoice >= 0 ? currentVoice : 0;
+            if (auto* plan = voicePlanSwappers[(size_t) voiceToPoint].peekCurrentPlan())
+                plan->setTapForBufferIndex (slot.bufferIndex, nullptr);
+
+            slot.active.store (false, std::memory_order_release);
+            break;
+        }
+
+        telemetryHub.unsubscribeTap ("node:" + nodeId + ":" + portId);
     }
 
     void BazaltAudioProcessor::renderVoiceRange (int startSample, int numSamples, const VoicePlanPtrs& voicePlans) noexcept

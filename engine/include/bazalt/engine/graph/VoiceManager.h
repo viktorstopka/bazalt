@@ -80,6 +80,7 @@ namespace bazalt::engine
                 voice.noteId = noteId;
                 voice.age = nextAge++;
                 voice.silentSamplesAccumulated = 0;
+                mostRecentlyTriggeredVoice = index;
                 return index;
             }
 
@@ -88,8 +89,20 @@ namespace bazalt::engine
             voice.stage = VoiceStage::Stealing;
             voice.stealFadeSamplesRemaining = stealFadeSamples;
             voice.stealFadeGainAtStart = 1.0f;
+            mostRecentlyTriggeredVoice = index;
             return index;
         }
+
+        /** M20 — which voice most recently received a noteOn() call
+            (whether it went straight to Active or is still mid-steal-fade).
+            Used to decide which of this voice's 8 independent
+            ExecutionPlans a voice-domain preview tap should currently read
+            from: the one you're most likely actually looking at right
+            after playing a note (this plan's own explicit design choice,
+            over always-voice-0 or an 8-voice aggregate). -1 before the
+            first note is ever triggered.
+        */
+        int getMostRecentlyTriggeredVoice() const noexcept { return mostRecentlyTriggeredVoice; }
 
         void setPendingNoteOn (int voiceIndex, PendingNoteOn pending) noexcept
         {
@@ -258,5 +271,6 @@ namespace bazalt::engine
 
         std::vector<Voice> voices;
         uint64_t nextAge = 0;
+        int mostRecentlyTriggeredVoice = -1;
     };
 }

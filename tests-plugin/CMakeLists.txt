@@ -34,6 +34,7 @@ target_sources(PluginTests
         NodeDescriptorJsonTests.cpp
         PatchStateTests.cpp
         StressGraphTests.cpp
+        VisualizationTapTests.cpp
         VoiceRenderTests.cpp
 )
 
