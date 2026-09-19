@@ -53,7 +53,7 @@ namespace bazalt::engine
         struct PendingNoteOn
         {
             NoteId noteId = 0;
-            float frequency = 440.0f;
+            float pitch = 60.0f; // absolute MIDI note number (M18, ADR-0024) — was "frequency" (Hz) before pitch became a real port
             float velocity = 1.0f;
         };
 

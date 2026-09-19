@@ -1,6 +1,7 @@
 #pragma once
 
 #include "bazalt/engine/graph/Node.h"
+#include "bazalt/engine/graph/NoteEvent.h"
 #include "bazalt/engine/AlignedBuffer.h"
 #include <juce_core/juce_core.h>
 #include <algorithm>
@@ -52,6 +53,16 @@ namespace bazalt::engine
             int nodeSlot = -1;
             std::vector<InputRef> inputs;             // one per input port
             std::vector<int> outputBufferIndices;     // one per output port, into blockBuffers
+
+            // M18 (ADR-0024): a connected `SignalType::Note` port is routed
+            // through `noteBuffers` instead of the ordinary `inputs`/
+            // `outputBufferIndices` above (that port's own `inputs` entry,
+            // if it has one, stays `Silence` and is unused). Only one Note
+            // input and one Note output per node is supported — see
+            // ADR-0024's own reasoning; -1 means "this node has none, or
+            // its Note port is unconnected."
+            int noteInputBufferIndex = -1;
+            int noteOutputBufferIndex = -1;
         };
 
         struct PerSampleRegionStep
@@ -134,6 +145,13 @@ namespace bazalt::engine
         juce::String externalInputNodeId;
         std::vector<AlignedBuffer> blockBuffers;    // one per block-rate node-output port
         std::vector<float> regionScalars;           // one per per-sample-region-internal node-output port
+
+        // M18 (ADR-0024): one entry per connected Note-typed output port,
+        // each `maxBlockSize` long — BlockStep's noteInputBufferIndex/
+        // noteOutputBufferIndex index into this. Per-sample-region (Note
+        // ports aren't supported inside a feedback cycle — GraphCompiler
+        // rejects that at compile time, see ADR-0024).
+        std::vector<std::vector<NoteEvent>> noteBuffers;
         std::vector<Step> steps;                    // schedule, in execution order
         int finalOutputBufferIndex = -1;             // into blockBuffers; holds the plan's audible output after process()
         int maxBlockSize = 0;
@@ -168,7 +186,18 @@ namespace bazalt::engine
         }
 
     private:
-        static constexpr int maxPortsPerNode = 8;
+        // M18: bumped from 8 — InstanceAllocatorNode already has 9 output
+        // ports and its own doc comment expects more (Pressure/Slide/
+        // ReleaseVelocity/Position/UnisonIndex/UnisonDetune) once something
+        // drives them. This ceiling was never actually exercised by
+        // process() before M18 wired instance.allocator into a real,
+        // executed graph for the first time — a real stack-array overrun
+        // (undefined behaviour, not just an assertion) that this milestone
+        // is what first triggered it. Keep this and Node.h's own
+        // maxPortsPerNode in sync — they bound the same contract from two
+        // sides (the compiler's per-step scratch arrays here, the default
+        // processBlock() loop's scratch arrays there).
+        static constexpr int maxPortsPerNode = 16;
 
         float readInput (const InputRef& ref, int sampleIndexForBlockBuffer) const noexcept;
     };

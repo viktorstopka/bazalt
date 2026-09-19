@@ -15,6 +15,7 @@ add_executable(EngineTests
     GraphCompilerTests.cpp
     NanGuardTests.cpp
     NodeDescriptorTests.cpp
+    NoteEventTests.cpp
     OversamplingStageTests.cpp
     PatchSerializerTests.cpp
     PlanSwapperTests.cpp

@@ -1,8 +1,8 @@
 #include <catch2/catch_test_macros.hpp>
 #include "bazalt/engine/graph/ProofGraphs.h"
 #include "bazalt/engine/graph/GraphCompiler.h"
-#include "bazalt/engine/nodes/AdsrNode.h"
 #include "bazalt/engine/nodes/NoiseBurstNode.h"
+#include "bazalt/engine/nodes/IoNoteInNode.h"
 #include <cmath>
 #include <vector>
 
@@ -31,10 +31,12 @@ TEST_CASE ("Voice proof graph is silent before noteOn, sounds during sustain, de
     REQUIRE (result.success);
 
     auto& plan = result.plan;
-    plan.getNodeById ("osc")->setParameter ("osc.analog.frequency", 220.0f);
 
-    auto* adsr = dynamic_cast<nodes::AdsrNode*> (plan.getNodeById ("env"));
-    REQUIRE (adsr != nullptr);
+    // M18 (ADR-0024): "osc"/"env" no longer take frequency/gate directly —
+    // instance.allocator's real pitch/gate ports drive them now, fed by
+    // io.noteIn.
+    auto* noteIn = dynamic_cast<nodes::IoNoteInNode*> (plan.getNodeById ("noteIn"));
+    REQUIRE (noteIn != nullptr);
 
     const auto* outputPtr = plan.blockBuffers[(size_t) plan.finalOutputBufferIndex].getBlock().getChannelPointer (0);
 
@@ -44,7 +46,7 @@ TEST_CASE ("Voice proof graph is silent before noteOn, sounds during sustain, de
     CHECK (rmsOf (beforeNoteOn) == 0.0f);
 
     // After noteOn, well into sustain: real signal.
-    adsr->noteOn();
+    noteIn->injectNoteOn (57.0f, 1.0f); // A3, ~220Hz — matches the tone this test has always rendered
     for (int i = 0; i < 20; ++i)
         plan.process (blockSize);
 
@@ -56,7 +58,7 @@ TEST_CASE ("Voice proof graph is silent before noteOn, sounds during sustain, de
 
     // After noteOff and enough blocks for the release tail to finish:
     // back to silence.
-    adsr->noteOff();
+    noteIn->injectNoteOff();
     for (int i = 0; i < 40; ++i)
         plan.process (blockSize);
 

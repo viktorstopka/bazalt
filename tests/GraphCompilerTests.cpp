@@ -86,6 +86,34 @@ namespace
         int count = 0;
     };
 
+    // M18 (ADR-0024): an Audio self-loop (forces a per-sample region) that
+    // also has a Note-typed output — the minimal way to prove GraphCompiler
+    // rejects a Note connection whose endpoint lands inside a feedback
+    // cycle, since neither real Note-capable node (io.noteIn, has no
+    // inputs at all; instance.allocator, whose only input IS its Note
+    // port) can actually be wired into a real cycle themselves.
+    class NoteProducerWithAudioLoopNode : public Node
+    {
+    public:
+        int getNumInputPorts() const noexcept override { return 1; }
+        int getNumOutputPorts() const noexcept override { return 2; }
+        std::vector<PortDescriptor> getInputPorts() const override { return { { "in", SignalType::Audio } }; }
+        std::vector<PortDescriptor> getOutputPorts() const override
+        {
+            return { { "out", SignalType::Audio }, { "notes", SignalType::Note } };
+        }
+        void processSample (const float* inputs, float* outputs) noexcept override { outputs[0] = inputs[0]; }
+    };
+
+    class NoteSinkNode : public Node
+    {
+    public:
+        int getNumInputPorts() const noexcept override { return 1; }
+        int getNumOutputPorts() const noexcept override { return 0; }
+        std::vector<PortDescriptor> getInputPorts() const override { return { { "spawn", SignalType::Note } }; }
+        void processSample (const float*, float*) noexcept override {}
+    };
+
     NodeFactory buildTestFactory()
     {
         NodeFactory factory;
@@ -93,6 +121,8 @@ namespace
         factory.registerType ("test.constant", [] { return std::make_unique<ConstantNode>(); });
         factory.registerType ("test.blockonly", [] { return std::make_unique<BlockOnlyNode>(); });
         factory.registerType ("test.counter", [] { return std::make_unique<CounterNode>(); });
+        factory.registerType ("test.noteProducerWithAudioLoop", [] { return std::make_unique<NoteProducerWithAudioLoopNode>(); });
+        factory.registerType ("test.noteSink", [] { return std::make_unique<NoteSinkNode>(); });
         return factory;
     }
 }
@@ -275,4 +305,22 @@ TEST_CASE ("GraphCompiler builds a fresh node instead of reusing when that node'
     second.plan.process (1);
     const auto* output = second.plan.blockBuffers[(size_t) second.plan.finalOutputBufferIndex].getBlock().getChannelPointer (0);
     CHECK (output[0] == 0.0f); // fresh object, starts from 0 again — safe, not a state race
+}
+
+TEST_CASE ("GraphCompiler rejects a Note connection whose endpoint is inside a feedback cycle (M18, ADR-0024)",
+           "[engine][GraphCompiler][Note][M18]")
+{
+    NodeGraph graph;
+    graph.addNode ({ "loop", "test.noteProducerWithAudioLoop", {}, {}, {} });
+    graph.addNode ({ "sink", "test.noteSink", {}, {}, {} });
+
+    graph.addConnection ({ "loop", "out", "loop", "in" }); // self-loop -> per-sample region
+    graph.addConnection ({ "loop", "notes", "sink", "spawn" });
+    graph.setOutput ("loop", "out");
+
+    auto factory = buildTestFactory();
+    auto result = GraphCompiler::compile (graph, factory, { 44100.0, 64 }, 1);
+
+    CHECK_FALSE (result.success);
+    CHECK (result.errorMessage.isNotEmpty());
 }

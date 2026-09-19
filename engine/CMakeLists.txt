@@ -35,6 +35,7 @@ target_sources(engine
             include/bazalt/engine/SmoothedParameter.h
             include/bazalt/engine/SvfFilter.h
             include/bazalt/engine/graph/SignalType.h
+            include/bazalt/engine/graph/NoteEvent.h
             include/bazalt/engine/graph/PortDescriptor.h
             include/bazalt/engine/graph/Node.h
             include/bazalt/engine/graph/NodeGraph.h
@@ -68,6 +69,7 @@ target_sources(engine
             include/bazalt/engine/nodes/DownmixNode.h
             include/bazalt/engine/nodes/InstanceAllocatorNode.h
             include/bazalt/engine/nodes/InstanceMixNode.h
+            include/bazalt/engine/nodes/IoNoteInNode.h
             include/bazalt/engine/patch/PatchDocument.h
             include/bazalt/engine/patch/PatchSerializer.h
             include/bazalt/engine/telemetry/Tap.h

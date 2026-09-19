@@ -109,7 +109,7 @@ namespace bazalt
 
         void handleMidiEvent (const juce::MidiMessage& message, const VoicePlanPtrs& voicePlans);
         void renderVoiceRange (int startSample, int numSamples, const VoicePlanPtrs& voicePlans) noexcept;
-        void triggerVoiceNote (bazalt::engine::ExecutionPlan* plan, float frequency, float velocity) noexcept;
+        void triggerVoiceNote (bazalt::engine::ExecutionPlan* plan, float pitch, float velocity) noexcept;
         void finalizeInstanceMixIntoOutput (juce::AudioBuffer<float>& output, int numSamples) noexcept;
         void updateAuxLevelsAndPassthrough (juce::AudioBuffer<float>& mainOutput, int numSamples);
         void setDefaultMacroMappings();

@@ -2,6 +2,7 @@
 #include "PluginProcessor.h"
 #include <algorithm>
 #include <cmath>
+#include <vector>
 
 using namespace bazalt;
 
@@ -225,4 +226,63 @@ TEST_CASE ("A per-voice delay tail keeps the voice alive past its envelope's own
     REQUIRE (withoutTail >= 0);
     REQUIRE (withTail >= 0);
     CHECK (withTail > withoutTail); // the delay's own lag genuinely extends audible output past the envelope's own release
+}
+
+TEST_CASE ("A pitch-bend message continuously shifts pitch with no special-cased path",
+           "[plugin][render][M18]")
+{
+    // M18's own exit criterion (ADR-0024): pitch bend folds straight into
+    // io.noteIn's continuous "pitch" output, so it needs no dedicated
+    // routing beyond the ordinary Control connection osc.analog's "pitch"
+    // port already has. Proven here by confirming a pitch-wheel message
+    // measurably changes the rendered waveform, not by measuring the
+    // resulting frequency precisely.
+    BazaltAudioProcessor processor;
+    processor.prepareToPlay (44100.0, 512);
+
+    juce::AudioBuffer<float> buffer (2, 512);
+
+    juce::MidiBuffer noteOn;
+    noteOn.addEvent (juce::MidiMessage::noteOn (1, 60, (juce::uint8) 100), 0);
+    buffer.clear();
+    processor.processBlock (buffer, noteOn);
+
+    juce::MidiBuffer empty;
+    for (int block = 0; block < 10; ++block)
+    {
+        buffer.clear();
+        processor.processBlock (buffer, empty);
+    }
+
+    buffer.clear();
+    processor.processBlock (buffer, empty);
+    const std::vector<float> unbent (buffer.getReadPointer (0), buffer.getReadPointer (0) + buffer.getNumSamples());
+
+    juce::MidiBuffer bend;
+    bend.addEvent (juce::MidiMessage::pitchWheel (1, 8192 + 4096), 0); // +1 semitone at the default +-2 semitone range
+    buffer.clear();
+    processor.processBlock (buffer, bend);
+
+    for (int block = 0; block < 5; ++block) // let the new frequency's phase visibly diverge
+    {
+        buffer.clear();
+        processor.processBlock (buffer, empty);
+    }
+
+    buffer.clear();
+    processor.processBlock (buffer, empty);
+    const std::vector<float> bent (buffer.getReadPointer (0), buffer.getReadPointer (0) + buffer.getNumSamples());
+
+    for (auto s : bent)
+        REQUIRE (std::isfinite (s));
+
+    double diffSumSquares = 0.0;
+    for (size_t i = 0; i < unbent.size(); ++i)
+    {
+        const auto diff = bent[i] - unbent[i];
+        diffSumSquares += (double) diff * (double) diff;
+    }
+    const auto diffRms = (float) std::sqrt (diffSumSquares / (double) unbent.size());
+
+    CHECK (diffRms > 0.02f); // the bent waveform meaningfully diverges from the unbent one
 }

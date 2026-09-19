@@ -124,8 +124,49 @@ namespace bazalt::engine::nodes
             }
         }
 
+        /** M18 (ADR-0024): the real end of the "spawn" input's Note-typed
+            wiring — `io.noteIn`'s produceNoteBlock() feeds this per-sample
+            buffer, whose start/stop edges call the SAME noteOn()/noteOff()
+            below that a direct C++ poke (tests, render-cli-style tools)
+            also calls. `pendingNoteBlock` is only valid for the immediately
+            following processBlock() call this block, per Node.h's own
+            contract — never retained past it.
+        */
+        void consumeNoteBlock (const NoteEvent* input, int numSamples) noexcept override
+        {
+            pendingNoteBlock = input;
+            pendingNoteBlockLength = numSamples;
+        }
+
+        void processBlock (const float* const* inputs, float* const* outputs, int numSamples) noexcept override
+        {
+            juce::ignoreUnused (inputs);
+
+            for (int i = 0; i < numSamples; ++i)
+            {
+                if (pendingNoteBlock != nullptr && i < pendingNoteBlockLength)
+                {
+                    const auto& note = pendingNoteBlock[i];
+                    if (note.startEvent)
+                        noteOn (note.pitch, note.velocity);
+                    if (note.stopEvent)
+                        noteOff();
+                }
+
+                float sampleOut[numOutputs];
+                processSample (nullptr, sampleOut);
+                for (int o = 0; o < numOutputs; ++o)
+                    outputs[o][i] = sampleOut[o];
+            }
+
+            pendingNoteBlock = nullptr;
+        }
+
         /** Direct C++ poke, message/audio-thread call from whoever drives
-            this voice (PluginProcessor) — see class comment.
+            this voice (PluginProcessor, or a test/tool bypassing the graph
+            entirely) — see class comment. Also what consumeNoteBlock()
+            above calls internally on a real Note connection's start/stop
+            edges, so both paths share one implementation.
         */
         void noteOn (float pitchIn, float velocityIn) noexcept
         {
@@ -177,5 +218,8 @@ namespace bazalt::engine::nodes
         float random1Value = 0.0f;
         float random2Value = 0.0f;
         juce::Random random;
+
+        const NoteEvent* pendingNoteBlock = nullptr; // M18 — valid only for the processBlock() call following consumeNoteBlock()
+        int pendingNoteBlockLength = 0;
     };
 }

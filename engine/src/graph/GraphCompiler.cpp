@@ -31,6 +31,15 @@ namespace bazalt::engine
         // or (only while still inside its own region step) a region scalar.
         using OutputLocationMap = std::unordered_map<PortKey, ExecutionPlan::InputRef, PortKeyHash>;
 
+        // M18 (ADR-0024): a Note-typed connection, tracked separately from
+        // incomingSource/resolveInput — it's routed through
+        // ExecutionPlan::noteBuffers instead of the ordinary float
+        // blockBuffers/regionScalars path.
+        struct NoteConnection
+        {
+            int fromSlot, fromPort, toSlot, toPort;
+        };
+
         //==============================================================================
         // Tarjan's SCC algorithm on the node-level dependency graph
         // (successors[v] = nodes v directly feeds). Emits SCCs in reverse
@@ -265,6 +274,8 @@ namespace bazalt::engine
         std::unordered_map<PortKey, PortKey, PortKeyHash> incomingSource; // (toSlot,toPort) -> (fromSlot,fromPort)
         std::vector<std::vector<int>> successors ((size_t) numNodes);
         std::vector<std::unordered_set<int>> successorSet ((size_t) numNodes); // for dedup
+        std::vector<NoteConnection> noteConnections; // M18 (ADR-0024)
+        std::unordered_set<PortKey, PortKeyHash> noteInputsUsed; // duplicate-connection guard for Note inputs, tracked separately from incomingSource
 
         for (const auto& connection : graph.getConnections())
         {
@@ -321,6 +332,29 @@ namespace bazalt::engine
 
             const PortKey toKey { toIt->second, toPortIt->second };
 
+            // M18 (ADR-0024): a Note-typed connection still participates in
+            // ordinary successors/SCC scheduling (so the producer is
+            // guaranteed to run before the consumer, same as any other
+            // edge) but is routed around incomingSource/resolveInput
+            // entirely — ExecutionPlan::noteBuffers carries it instead.
+            if (fromPort.type == SignalType::Note)
+            {
+                if (noteInputsUsed.find (toKey) != noteInputsUsed.end())
+                {
+                    result.errorMessage = "Input port already connected: " + connection.toNodeId
+                                           + " port " + connection.toPortId;
+                    return result;
+                }
+
+                noteInputsUsed.insert (toKey);
+                noteConnections.push_back ({ fromIt->second, fromPortIt->second, toIt->second, toPortIt->second });
+
+                if (successorSet[(size_t) fromIt->second].insert (toIt->second).second)
+                    successors[(size_t) fromIt->second].push_back (toIt->second);
+
+                continue;
+            }
+
             if (incomingSource.find (toKey) != incomingSource.end())
             {
                 result.errorMessage = "Input port already connected: " + connection.toNodeId
@@ -332,6 +366,34 @@ namespace bazalt::engine
 
             if (successorSet[(size_t) fromIt->second].insert (toIt->second).second)
                 successors[(size_t) fromIt->second].push_back (toIt->second);
+        }
+
+        // ---- Note buffers (M18, ADR-0024) ---------------------------------
+        // One ExecutionPlan::noteBuffers entry per connected Note-typed
+        // OUTPUT port, shared by every consumer wired to it (fan-out works
+        // exactly like an ordinary blockBuffer — several InputRefs pointing
+        // at the same index).
+        std::unordered_map<PortKey, int, PortKeyHash> noteOutputBufferIndexFor;
+        std::unordered_map<PortKey, int, PortKeyHash> noteInputBufferIndexFor;
+
+        for (const auto& nc : noteConnections)
+        {
+            const PortKey fromKey { nc.fromSlot, nc.fromPort };
+            auto it = noteOutputBufferIndexFor.find (fromKey);
+            int bufferIndex;
+
+            if (it == noteOutputBufferIndexFor.end())
+            {
+                plan.noteBuffers.emplace_back ((size_t) prepareInfo.maxBlockSize);
+                bufferIndex = (int) plan.noteBuffers.size() - 1;
+                noteOutputBufferIndexFor[fromKey] = bufferIndex;
+            }
+            else
+            {
+                bufferIndex = it->second;
+            }
+
+            noteInputBufferIndexFor[{ nc.toSlot, nc.toPort }] = bufferIndex;
         }
 
         // ---- Strongly connected components -> schedule order -------------
@@ -404,6 +466,24 @@ namespace bazalt::engine
                     outputLocation[{ slot, p }] = { ExecutionPlan::InputRef::Kind::BlockBuffer, bufferIndex };
                 }
 
+                // M18 (ADR-0024): a connected Note-typed port routes through
+                // noteBuffers instead of the ordinary arrays just built
+                // above (that port's own `inputs`/blockBuffers entry, if it
+                // has one, is simply unused).
+                for (int p = 0; p < numInputs; ++p)
+                {
+                    const auto it = noteInputBufferIndexFor.find ({ slot, p });
+                    if (it != noteInputBufferIndexFor.end())
+                        blockStep.noteInputBufferIndex = it->second;
+                }
+
+                for (int p = 0; p < numOutputs; ++p)
+                {
+                    const auto it = noteOutputBufferIndexFor.find ({ slot, p });
+                    if (it != noteOutputBufferIndexFor.end())
+                        blockStep.noteOutputBufferIndex = it->second;
+                }
+
                 ExecutionPlan::Step step;
                 step.kind = ExecutionPlan::Step::Kind::Block;
                 step.block = std::move (blockStep);
@@ -420,6 +500,24 @@ namespace bazalt::engine
                     result.errorMessage = "Node '" + graphNodes[(size_t) slot].id
                                            + "' is inside a feedback cycle but doesn't support per-sample processing";
                     return result;
+                }
+            }
+
+            // M18 (ADR-0024): Note ports aren't supported inside a
+            // per-sample region — nothing needs that yet, and silently
+            // ignoring a Note connection there would be worse than a clear
+            // compile error.
+            for (int slot : scc)
+            {
+                for (const auto& nc : noteConnections)
+                {
+                    if (nc.fromSlot == slot || nc.toSlot == slot)
+                    {
+                        result.errorMessage = "Node '" + graphNodes[(size_t) slot].id
+                                               + "' has a Note-typed connection but is inside a feedback cycle — "
+                                               + "Note ports inside a per-sample region aren't supported yet";
+                        return result;
+                    }
                 }
             }
 

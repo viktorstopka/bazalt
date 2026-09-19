@@ -10,7 +10,7 @@ TEST_CASE ("NodeFactory::describeAll() returns a descriptor for every registered
     auto factory = buildDefaultNodeFactory();
     const auto descriptors = factory.describeAll();
 
-    REQUIRE (descriptors.size() == 20); // 8 M1/M2 DSP + 7 M7 utility (util.voiceSum removed M17) + 3 M16 adapters + 2 M17 instance types (ProofGraphs.h)
+    REQUIRE (descriptors.size() == 21); // 8 M1/M2 DSP + 7 M7 utility (util.voiceSum removed M17) + 3 M16 adapters + 2 M17 instance types + 1 M18 io.noteIn (ProofGraphs.h)
 
     auto findByTypeId = [&] (const juce::String& typeId) -> const NodeDescriptor*
     {
@@ -25,7 +25,9 @@ TEST_CASE ("NodeFactory::describeAll() returns a descriptor for every registered
     CHECK (osc->title == "Oscillator");
     CHECK (osc->category == "Generators");
     CHECK (osc->layoutVariant == NodeLayoutVariant::Standard);
-    CHECK (osc->inputs.empty());
+    REQUIRE (osc->inputs.size() == 1); // "pitch" (M18, ADR-0024)
+    CHECK (osc->inputs[0].id == "pitch");
+    CHECK (osc->inputs[0].type == SignalType::Control);
     REQUIRE (osc->outputs.size() == 1);
     CHECK (osc->outputs[0].id == "out");
     CHECK (osc->outputs[0].type == SignalType::Audio);

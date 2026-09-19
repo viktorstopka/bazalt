@@ -33,7 +33,16 @@ namespace bazalt::engine
                 for (int o = 0; o < numOutputs; ++o)
                     outputPtrs[o] = blockBuffers[(size_t) blockStep.outputBufferIndices[(size_t) o]].getBlock().getChannelPointer (0);
 
+                // M18 (ADR-0024): Note ports are routed around the ordinary
+                // inputPtrs/outputPtrs float arrays above — a node that
+                // consumes/produces Note data reads/writes it here instead.
+                if (blockStep.noteInputBufferIndex >= 0)
+                    node->consumeNoteBlock (noteBuffers[(size_t) blockStep.noteInputBufferIndex].data(), numSamples);
+
                 node->processBlock (inputPtrs, outputPtrs, numSamples);
+
+                if (blockStep.noteOutputBufferIndex >= 0)
+                    node->produceNoteBlock (noteBuffers[(size_t) blockStep.noteOutputBufferIndex].data(), numSamples);
             }
             else
             {

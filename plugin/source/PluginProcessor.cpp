@@ -3,8 +3,8 @@
 #include "bazalt/engine/graph/ProofGraphs.h"
 #include "bazalt/engine/graph/GraphCompiler.h"
 #include "bazalt/engine/patch/PatchSerializer.h"
-#include "bazalt/engine/nodes/AdsrNode.h"
 #include "bazalt/engine/nodes/InstanceMixNode.h"
+#include "bazalt/engine/nodes/IoNoteInNode.h"
 #include <array>
 #include <cstring>
 
@@ -151,23 +151,18 @@ namespace bazalt
         return true;
     }
 
-    void BazaltAudioProcessor::triggerVoiceNote (bazalt::engine::ExecutionPlan* plan, float frequency, float velocity) noexcept
+    void BazaltAudioProcessor::triggerVoiceNote (bazalt::engine::ExecutionPlan* plan, float pitch, float velocity) noexcept
     {
         if (plan == nullptr)
             return;
 
         plan->reset(); // fresh phase/envelope/filter state for the (possibly stolen) voice
 
-        if (auto* osc = plan->getNodeById ("osc"))
-            osc->setParameter ("osc.analog.frequency", frequency);
-
-        if (auto* adsr = dynamic_cast<bazalt::engine::nodes::AdsrNode*> (plan->getNodeById ("env")))
-            adsr->noteOn();
-
-        // Not yet consumed by the default graph's nodes (env.adsr has no
-        // velocity-sensitivity today) — captured for API completeness;
-        // instance.allocator's own noteOn() (M17) does accept it already.
-        juce::ignoreUnused (velocity);
+        // M18 (ADR-0024): the one remaining direct C++ poke — everything
+        // downstream (instance.allocator's outputs into osc's "pitch" and
+        // env's "gate") is now real graph wiring, not further pokes.
+        if (auto* noteIn = dynamic_cast<bazalt::engine::nodes::IoNoteInNode*> (plan->getNodeById ("noteIn")))
+            noteIn->injectNoteOn (pitch, velocity);
     }
 
     void BazaltAudioProcessor::handleMidiEvent (const juce::MidiMessage& message, const VoicePlanPtrs& voicePlans)
@@ -176,7 +171,7 @@ namespace bazalt
         {
             const auto noteId = (bazalt::engine::VoiceManager::NoteId) ((message.getChannel() << 8) | message.getNoteNumber());
             const auto voiceIndex = voiceManager.noteOn (noteId);
-            const auto frequency = (float) juce::MidiMessage::getMidiNoteInHertz (message.getNoteNumber());
+            const auto pitch = (float) message.getNoteNumber();
             const auto velocity = message.getFloatVelocity();
 
             // M17: a stolen voice defers its actual retrigger until its
@@ -185,11 +180,11 @@ namespace bazalt
             // allocation retriggers immediately, exactly as before.
             if (voiceManager.getStage (voiceIndex) == bazalt::engine::VoiceStage::Stealing)
             {
-                voiceManager.setPendingNoteOn (voiceIndex, { noteId, frequency, velocity });
+                voiceManager.setPendingNoteOn (voiceIndex, { noteId, pitch, velocity });
                 return;
             }
 
-            triggerVoiceNote (voicePlans[(size_t) voiceIndex], frequency, velocity);
+            triggerVoiceNote (voicePlans[(size_t) voiceIndex], pitch, velocity);
         }
         else if (message.isNoteOff())
         {
@@ -197,8 +192,25 @@ namespace bazalt
             const auto voiceIndex = voiceManager.noteOff (noteId);
 
             if (voiceIndex >= 0 && voicePlans[(size_t) voiceIndex] != nullptr)
-                if (auto* adsr = dynamic_cast<bazalt::engine::nodes::AdsrNode*> (voicePlans[(size_t) voiceIndex]->getNodeById ("env")))
-                    adsr->noteOff();
+                if (auto* noteIn = dynamic_cast<bazalt::engine::nodes::IoNoteInNode*> (voicePlans[(size_t) voiceIndex]->getNodeById ("noteIn")))
+                    noteIn->injectNoteOff();
+        }
+        else if (message.isPitchWheel())
+        {
+            // M18 exit criterion: a pitch-bend render confirms continuous
+            // Pitch needs no special-cased path — folded straight into
+            // io.noteIn's continuous "pitch" output (ADR-0024), applied to
+            // every voice (pitch bend is channel-wide, not per-note, so it
+            // isn't routed through VoiceManager's single-target allocation
+            // the way note-on/off are).
+            constexpr float pitchBendRangeSemitones = 2.0f; // standard default MIDI pitch bend range
+            const auto normalized = ((float) message.getPitchWheelValue() - 8192.0f) / 8192.0f; // -1..~1
+            const auto bendSemitones = normalized * pitchBendRangeSemitones;
+
+            for (auto* plan : voicePlans)
+                if (plan != nullptr)
+                    if (auto* noteIn = dynamic_cast<bazalt::engine::nodes::IoNoteInNode*> (plan->getNodeById ("noteIn")))
+                        noteIn->injectPitchBend (bendSemitones);
         }
     }
 
@@ -251,7 +263,7 @@ namespace bazalt
                 if (completed)
                 {
                     const auto pending = voiceManager.getPendingNoteOn (voiceIndex);
-                    triggerVoiceNote (plan, pending.frequency, pending.velocity);
+                    triggerVoiceNote (plan, pending.pitch, pending.velocity);
                     voiceManager.completeSteal (voiceIndex);
 
                     // The new note starts right where the fade left off,

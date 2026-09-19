@@ -1,6 +1,7 @@
 #pragma once
 
 #include "bazalt/engine/graph/PortDescriptor.h"
+#include "bazalt/engine/graph/NoteEvent.h"
 #include <juce_core/juce_core.h>
 #include <vector>
 
@@ -99,8 +100,9 @@ namespace bazalt::engine
         {
             // Fixed-size scratch, not std::vector: this default runs on the
             // audio thread once wired into a live plugin (M3), so it must
-            // not allocate. Every M2 node stays well under this port count.
-            static constexpr int maxPortsPerNode = 8;
+            // not allocate. Bumped from 8 in M18 — keep in sync with
+            // ExecutionPlan.h's own maxPortsPerNode (see its comment).
+            static constexpr int maxPortsPerNode = 16;
             const auto numInputs = getNumInputPorts();
             const auto numOutputs = getNumOutputPorts();
             jassert (numInputs <= maxPortsPerNode && numOutputs <= maxPortsPerNode);
@@ -118,6 +120,32 @@ namespace bazalt::engine
                 for (int out = 0; out < numOutputs; ++out)
                     outputs[out][i] = outSample[out];
             }
+        }
+
+        /** M18 (ADR-0024) — only meaningful for a node with a connected
+            output port of `SignalType::Note`. Called once per block-rate
+            schedule step, immediately before `processBlock()`, filling
+            `output[0..numSamples)` with this node's per-sample Note state.
+            Must not allocate, lock, log, or block, exactly like
+            `processSample()`/`processBlock()`.
+        */
+        virtual void produceNoteBlock (NoteEvent* output, int numSamples) noexcept
+        {
+            juce::ignoreUnused (output, numSamples);
+        }
+
+        /** M18 (ADR-0024) — only meaningful for a node with a connected
+            input port of `SignalType::Note`. Called once per block-rate
+            schedule step, immediately before `processBlock()`, handing the
+            node `numSamples` of the producer's per-sample Note state.
+            `input` is owned by the `ExecutionPlan` and is only valid for
+            the duration of this call — a node that needs it during its own
+            `processBlock()` override should store the pointer as a member
+            for that one call, not retain it past it.
+        */
+        virtual void consumeNoteBlock (const NoteEvent* input, int numSamples) noexcept
+        {
+            juce::ignoreUnused (input, numSamples);
         }
     };
 }

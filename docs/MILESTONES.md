@@ -379,14 +379,32 @@ found and fixed along the way: a real cross-thread mutation race in the first st
 (reusing a node's object while still calling `setParameter()` on it), caught by the existing
 concurrent-edit test before it shipped.
 
-## M18 — `Note` as a real port type, MIDI rewired
+## M18 — `Note` as a real port type, MIDI rewired — done
 
-`io.noteIn` translates MIDI into real `Note` events; `PluginProcessor::handleMidiEvent`'s direct
-`dynamic_cast`/`getNodeById()` path is rewired onto `Note`-port delivery into `instance.allocator`.
+`io.noteIn` (new) translates MIDI into real `Note` events; `PluginProcessor::handleMidiEvent`'s
+direct pokes onto "osc"/"env" are gone, replaced by exactly one direct poke onto `io.noteIn`
+(`injectNoteOn`/`injectNoteOff`/`injectPitchBend`) — everything downstream is real graph wiring:
+`io.noteIn.notes` → `instance.allocator.spawn` (a genuine compiled `Note` connection, ADR-0024) →
+`allocator`'s existing `pitch`/`gate` outputs → new real input ports on `osc.analog`/`env.adsr`.
+`buildVoiceProofGraph()` now includes `noteIn`/`allocator` for the first time (M17 shipped
+`instance.allocator` but never actually placed it in the running graph).
 
-**Exit criteria**: the existing MIDI-driven proof graph, rebuilt using `io.noteIn` →
-`instance.allocator` → the rest, produces audio indistinguishable from today's hardwired path for
-the same MIDI file; a pitch-bend render confirms continuous `Pitch` needs no special-cased path.
+A `Note`-typed port doesn't fit `ExecutionPlan`'s one-float-per-port model (a note payload is gate +
+pitch + velocity + start/stop together) — `ADR-0024` gives it its own per-block `NoteEvent` buffer
+(`ExecutionPlan::noteBuffers`, `Node::produceNoteBlock()`/`consumeNoteBlock()`), routed around the
+ordinary `blockBuffers`/`incomingSource` machinery but still participating in ordinary
+producer-before-consumer scheduling. Caught and fixed along the way: a real, previously-latent
+stack-array overrun — `InstanceAllocatorNode` has always had 9 output ports but `ExecutionPlan`'s
+fixed per-step scratch arrays were sized for 8, and M17 never actually ran it through `process()` to
+notice; `maxPortsPerNode` is now 16 in both `ExecutionPlan.cpp` and `Node.h`.
+
+**Exit criteria — both met**: the existing MIDI-driven proof graph, rebuilt using `io.noteIn` →
+`instance.allocator` → the rest, produces audio indistinguishable from before (same tests, same
+render-cli tone, same RMS thresholds — `osc.analog`/`env.adsr`'s new ports fall back to their old
+direct-`setParameter`/`noteOn()` behaviour whenever left unconnected, so nothing that doesn't wire
+them regresses); a pitch-bend render (`tests-plugin/VoiceRenderTests.cpp`) confirms the continuous
+`pitch` port needs no special-cased path for bend — it's folded into `io.noteIn`'s output like any
+other continuous value change.
 
 ## M19 — Wire the editor to the real engine
 

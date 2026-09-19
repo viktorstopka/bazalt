@@ -122,14 +122,26 @@ ctest --test-dir build -C Debug -R PluginTests --output-on-failure
   before a Release build is usable for anything beyond Debug-only dev.
 - `COMPANY_NAME`/`PRODUCT_NAME` in `plugin/CMakeLists.txt` are placeholders
   pending real publisher info.
-- Note/Event data still doesn't route through node ports, even now that real
-  MIDI input exists (M3). `PluginProcessor::handleMidiEvent` translates MIDI
-  straight into `noteOn()`/`setParameter()`/`dynamic_cast<AdsrNode*>` calls
-  on each voice's compiled node instances via `ExecutionPlan::getNodeById()`
-  — this was a deliberate scoping call (full Note-typed port signal routing
-  is a bigger change that only earns its cost once a live graph editor needs
-  it), not an oversight. `SignalType::Note`/`Event` still exist in the enum,
-  unused by any port.
+- `Note` routes through real ports as of M18 (ADR-0024) — `PluginProcessor::
+  handleMidiEvent` now translates MIDI into exactly one direct poke
+  (`IoNoteInNode::injectNoteOn`/`injectNoteOff`/`injectPitchBend` on each
+  voice's `"noteIn"` node), and everything downstream is ordinary graph
+  wiring: `io.noteIn`'s Note-typed `"notes"` output feeds `instance.
+  allocator`'s `"spawn"` input via a real compiled connection, and
+  `allocator`'s own `"pitch"`/`"gate"` outputs feed real `osc.analog`/
+  `env.adsr` input ports (both using the `hasFallbackWhenUnconnected`
+  NaN-sentinel, so any graph that leaves them unconnected keeps behaving
+  exactly like before M18). A connected `Note` port doesn't use
+  `ExecutionPlan`'s ordinary `blockBuffers` — it gets a dedicated
+  `NoteEvent`-typed buffer (`ExecutionPlan::noteBuffers`, `Node::
+  produceNoteBlock()`/`consumeNoteBlock()`) since a note payload (gate,
+  pitch, velocity, start/stop) doesn't fit one float per sample. Only one
+  `Note` input and one `Note` output per node is supported, and a `Note`
+  port inside a feedback cycle is rejected at compile time — neither
+  limitation is hit by anything that exists yet. `SignalType::Event` still
+  has no real consumer (`allocator`'s own `"start"`/`"stop"` outputs are
+  declared but nothing's wired to them) — that's still open, not this
+  milestone's job.
 - Each voice still gets its own fully independent `ExecutionPlan` (compiled
   `numVoices` times from the same `NodeGraph`) — `ExecutionPlan::nodes` is
   not one shared plan with a separate per-voice state pool keyed by

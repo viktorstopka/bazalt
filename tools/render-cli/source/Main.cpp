@@ -4,8 +4,8 @@
 
 #include "bazalt/engine/graph/ProofGraphs.h"
 #include "bazalt/engine/graph/GraphCompiler.h"
-#include "bazalt/engine/nodes/AdsrNode.h"
 #include "bazalt/engine/nodes/NoiseBurstNode.h"
+#include "bazalt/engine/nodes/IoNoteInNode.h"
 
 #include <algorithm>
 #include <functional>
@@ -92,22 +92,24 @@ namespace
         }
 
         auto& plan = result.plan;
-        plan.getNodeById ("osc")->setParameter ("osc.analog.frequency", 220.0f);
 
-        auto* adsr = dynamic_cast<nodes::AdsrNode*> (plan.getNodeById ("env"));
-        jassert (adsr != nullptr);
+        // M18 (ADR-0024): "osc"/"env" no longer take frequency/gate
+        // directly — instance.allocator's real pitch/gate ports drive them
+        // now, fed by io.noteIn, exactly like PluginProcessor.
+        auto* noteIn = dynamic_cast<nodes::IoNoteInNode*> (plan.getNodeById ("noteIn"));
+        jassert (noteIn != nullptr);
 
         const auto totalSamples = (int) (sampleRate * 1.6);
         const auto noteOffSample = (int) (sampleRate * 1.0);
         bool noteOffSent = false;
 
-        adsr->noteOn();
+        noteIn->injectNoteOn (57.0f, 1.0f); // A3, ~220Hz — matches the tone this tool has always rendered
 
         auto buffer = renderPlan (plan, totalSamples, blockSize, [&] (int sampleOffset)
         {
             if (! noteOffSent && sampleOffset >= noteOffSample)
             {
-                adsr->noteOff();
+                noteIn->injectNoteOff();
                 noteOffSent = true;
             }
         });

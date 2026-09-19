@@ -4,19 +4,26 @@
 #include "bazalt/engine/graph/ValueTypes.h"
 #include "bazalt/engine/PolyBlepOscillator.h"
 #include <algorithm>
+#include <cmath>
 
 namespace bazalt::engine::nodes
 {
-    /** Stable type id: "osc.analog". No inputs; one Audio output. Frequency
-        and shape are set directly (not through a port — the M2 proof
-        graphs drive them from outside via setParameter/setFrequency, ahead
-        of full Note-port routing which lands once a real node-graph editor
-        needs it — see CLAUDE.md's "known interim simplifications").
+    /** Stable type id: "osc.analog". One Audio output. Frequency and shape
+        default to being set directly via setParameter (the M2 proof
+        graphs' own pattern — still exactly how a graph that leaves "pitch"
+        unconnected behaves). M18 (ADR-0024) adds a real "pitch" input
+        port — absolute semitones, continuous, so a live pitch-bend needs
+        no special-cased path — using the same `hasFallbackWhenUnconnected`
+        NaN-sentinel `DelayNode.h` established: unconnected reads NaN and
+        this node falls back to whatever setParameter("osc.analog.frequency")
+        last set, exactly today's behaviour; connected, the port's value
+        (converted from semitones to Hz) drives the oscillator every
+        sample instead.
     */
     class OscillatorNode : public Node
     {
     public:
-        static constexpr int numInputs = 0;
+        static constexpr int numInputs = 1; // pitch
         static constexpr int numOutputs = 1;
 
         void prepare (const NodePrepareInfo& info) override { oscillator.prepare (info.sampleRate); }
@@ -28,7 +35,12 @@ namespace bazalt::engine::nodes
         juce::String getTitle() const override { return "Oscillator"; }
         juce::String getCategory() const override { return "Generators"; }
 
-        std::vector<PortDescriptor> getInputPorts() const override { return {}; }
+        std::vector<PortDescriptor> getInputPorts() const override
+        {
+            return { PortDescriptor { .id = "pitch", .type = SignalType::Control, .unit = "st",
+                                       .minValue = 0.0f, .maxValue = 127.0f, .defaultValue = 60.0f,
+                                       .hasFallbackWhenUnconnected = true, .quantity = Quantity::Pitch } };
+        }
         std::vector<PortDescriptor> getOutputPorts() const override
         {
             return { { "out", SignalType::Audio } };
@@ -83,8 +95,17 @@ namespace bazalt::engine::nodes
 
         void setWaveform (OscillatorWaveform waveform) noexcept { oscillator.setWaveform (waveform); }
 
-        void processSample (const float*, float* outputs) noexcept override
+        void processSample (const float* inputs, float* outputs) noexcept override
         {
+            // NaN means "pitch" is unconnected (GraphCompiler.cpp's
+            // hasFallbackWhenUnconnected sentinel) — fall back to whatever
+            // setParameter("osc.analog.frequency") last set. A real
+            // connection converts semitones -> Hz every sample instead,
+            // re-evaluated live so a continuous pitch-bend needs no
+            // special path (ADR-0024).
+            if (! std::isnan (inputs[0]))
+                oscillator.setFrequency (440.0f * std::pow (2.0f, (inputs[0] - 69.0f) / 12.0f));
+
             outputs[0] = oscillator.renderNextSample();
         }
 

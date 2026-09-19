@@ -22,6 +22,7 @@
 #include "bazalt/engine/nodes/DownmixNode.h"
 #include "bazalt/engine/nodes/InstanceAllocatorNode.h"
 #include "bazalt/engine/nodes/InstanceMixNode.h"
+#include "bazalt/engine/nodes/IoNoteInNode.h"
 
 namespace bazalt::engine
 {
@@ -54,22 +55,34 @@ namespace bazalt::engine
         factory.registerType ("mix.downmix", [] { return std::make_unique<nodes::DownmixNode>(); });
         factory.registerType ("instance.allocator", [] { return std::make_unique<nodes::InstanceAllocatorNode>(); });
         factory.registerType ("instance.mix", [] { return std::make_unique<nodes::InstanceMixNode>(); });
+        factory.registerType ("io.noteIn", [] { return std::make_unique<nodes::IoNoteInNode>(); });
         return factory;
     }
 
-    /** ARCHITECTURE.md §3.4's example voice path: note -> PolyBLEP osc ->
-        SVF -> ADSR-gated amp -> out. Purely acyclic — every node schedules
-        as an ordinary block-rate step.
+    /** ARCHITECTURE.md §3.4's example voice path, M18-rewired (ADR-0024):
+        MIDI -> io.noteIn -> instance.allocator -> PolyBLEP osc (pitch) ->
+        SVF -> ADSR-gated amp (gate) -> out. Purely acyclic — every node
+        schedules as an ordinary block-rate step. `instance.allocator`'s
+        "spawn" input is a real Note-typed connection now, not the inert
+        placeholder M17 shipped it with; `osc`/`env`'s "pitch"/"gate" ports
+        are real too — `PluginProcessor::triggerVoiceNote`/`handleMidiEvent`
+        poke `noteIn` directly (the one remaining direct C++ poke) and
+        everything downstream of it is ordinary graph wiring.
     */
     inline NodeGraph buildVoiceProofGraph()
     {
         NodeGraph graph;
 
+        graph.addNode ({ "noteIn", "io.noteIn", {}, {}, {} });
+        graph.addNode ({ "allocator", "instance.allocator", {}, {}, {} });
         graph.addNode ({ "osc", "osc.analog", {}, {}, {} });
         graph.addNode ({ "svf", "filter.svf", {}, { { "filter.svf.cutoff", 3000.0f }, { "filter.svf.resonance", 0.9f } }, {} });
         graph.addNode ({ "env", "env.adsr", {}, {}, {} });
         graph.addNode ({ "amp", "mix.gain", {}, {}, {} });
 
+        graph.addConnection ({ "noteIn", "notes", "allocator", "spawn" });
+        graph.addConnection ({ "allocator", "pitch", "osc", "pitch" });
+        graph.addConnection ({ "allocator", "gate", "env", "gate" });
         graph.addConnection ({ "osc", "out", "svf", "in" });
         graph.addConnection ({ "svf", "out", "amp", "audio" });
         graph.addConnection ({ "env", "out", "amp", "gain" });
