@@ -30,6 +30,13 @@ namespace bazalt::engine::nodes
             return { { "out", SignalType::Audio } };
         }
 
+        /** M20 step 8: a default Meter on the VCA's own output — the plan's
+            own example of an obvious real-node home for a preview kind. */
+        std::vector<PreviewDescriptor> getPreviews() const override
+        {
+            return { PreviewDescriptor { .kind = PreviewKind::Meter, .portId = "out" } };
+        }
+
         void processSample (const float* inputs, float* outputs) noexcept override
         {
             outputs[0] = inputs[0] * inputs[1];

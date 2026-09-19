@@ -66,6 +66,18 @@ namespace bazalt::engine::nodes
             return { { "out", SignalType::Audio } };
         }
 
+        /** M20 step 8: the first real node wired end to end onto the
+            visualization system — a plain Waveform on the oscillator's own
+            audio output, the simplest possible proof of the whole pipeline
+            (declaration -> subscribeVisualizationTap -> tap push -> UI
+            render). VisualizationTapTests.cpp already exercises this exact
+            (nodeId "osc", portId "out") pair.
+        */
+        std::vector<PreviewDescriptor> getPreviews() const override
+        {
+            return { PreviewDescriptor { .kind = PreviewKind::Waveform, .portId = "out" } };
+        }
+
         std::vector<ParameterDescriptor> getParameters() const override
         {
             // "shape" is quantized to one of 4 waveforms by
