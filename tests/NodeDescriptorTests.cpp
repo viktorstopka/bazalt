@@ -25,19 +25,20 @@ TEST_CASE ("NodeFactory::describeAll() returns a descriptor for every registered
     CHECK (osc->title == "Oscillator");
     CHECK (osc->category == "Generators");
     CHECK (osc->layoutVariant == NodeLayoutVariant::Standard);
-    REQUIRE (osc->inputs.size() == 1); // "pitch" (M18, ADR-0024)
+    REQUIRE (osc->inputs.size() == 2); // "pitch" (M18, ADR-0024), "osc.analog.frequency" (M20)
     CHECK (osc->inputs[0].id == "pitch");
     CHECK (osc->inputs[0].type == SignalType::Control);
+    CHECK (osc->inputs[1].id == "osc.analog.frequency");
     REQUIRE (osc->outputs.size() == 1);
     CHECK (osc->outputs[0].id == "out");
     CHECK (osc->outputs[0].type == SignalType::Audio);
-    REQUIRE (osc->parameters.size() == 2);
+    REQUIRE (osc->parameters.size() == 1); // "shape" only — "frequency" is a port now (M20)
 
     const auto* svf = findByTypeId ("filter.svf");
     REQUIRE (svf != nullptr);
     CHECK (svf->title == "SVF Filter");
     CHECK (svf->category == "Filters");
-    REQUIRE (svf->inputs.size() == 1);
+    REQUIRE (svf->inputs.size() == 3); // "in", "cutoff", "resonance" (M20)
     CHECK (svf->inputs[0].id == "in");
 
     const auto* amp = findByTypeId ("mix.gain");

@@ -17,11 +17,23 @@ namespace bazalt::engine::nodes
         rising/falling edge on the incoming boolean level calls the SAME
         noteOn()/noteOff() internally instead — real gate-port wiring and a
         direct C++ poke are two paths to one implementation, never two.
+
+        M20 (direct feedback: "there is no reason why ADSR ... wouldn't be
+        modulatable"): attack/decay/sustain/release move from
+        ParameterDescriptor to real Control-type input ports, same
+        NaN-sentinel pattern, same dotted ids (`env.adsr.attack` etc. —
+        unchanged so an existing saved patch's stored value still applies
+        via the exact same setParameter() call, whether or not anything's
+        actually wired to it). `juce::ADSR::setParameters()` is cheap
+        (coefficient recalculation only, no allocation — it's already
+        called from the host-automation path, which the audio thread's own
+        allocation trap already proves RT-safe) so calling it every sample
+        while modulated costs nothing worth guarding against.
     */
     class AdsrNode : public Node
     {
     public:
-        static constexpr int numInputs = 1; // gate
+        static constexpr int numInputs = 5; // gate, attack, decay, sustain, release
         static constexpr int numOutputs = 1;
 
         void prepare (const NodePrepareInfo& info) override
@@ -44,20 +56,22 @@ namespace bazalt::engine::nodes
 
         std::vector<PortDescriptor> getInputPorts() const override
         {
-            return { PortDescriptor { .id = "gate", .type = SignalType::Boolean, .hasFallbackWhenUnconnected = true } };
+            return {
+                PortDescriptor { .id = "gate", .type = SignalType::Boolean, .hasFallbackWhenUnconnected = true },
+                ValueTypes::timeSecondsPort ("env.adsr.attack", "Attack", 0.01f),
+                ValueTypes::timeSecondsPort ("env.adsr.decay", "Decay", 0.1f),
+                PortDescriptor { .id = "env.adsr.sustain", .type = SignalType::Control, .label = "Sustain",
+                                  .minValue = 0.0f, .maxValue = 1.0f, .defaultValue = 0.7f,
+                                  .hasFallbackWhenUnconnected = true, .quantity = Quantity::Unipolar, .polarity = Polarity::Unipolar },
+                ValueTypes::timeSecondsPort ("env.adsr.release", "Release", 0.2f),
+            };
         }
         std::vector<PortDescriptor> getOutputPorts() const override
         {
             return { { "out", SignalType::Control } };
         }
 
-        std::vector<ParameterDescriptor> getParameters() const override
-        {
-            return { ValueTypes::timeSecondsParameter ("env.adsr.attack", "Attack", 0.01f),
-                     ValueTypes::timeSecondsParameter ("env.adsr.decay", "Decay", 0.1f),
-                     { "env.adsr.sustain", 0.0f, 1.0f, 0.7f, 1.0f, "", "Sustain" },
-                     ValueTypes::timeSecondsParameter ("env.adsr.release", "Release", 0.2f) };
-        }
+        std::vector<ParameterDescriptor> getParameters() const override { return {}; }
 
         void setParameter (const juce::String& parameterId, float value) override
         {
@@ -95,6 +109,17 @@ namespace bazalt::engine::nodes
                     adsr.noteOff();
                 previousGate = gate;
             }
+
+            // Same NaN fallback for each stage's own value — unconnected
+            // means "leave whatever setParameter() last set," connected
+            // means "track this signal live," per-input, independently.
+            bool changed = false;
+            if (! std::isnan (inputs[1])) { parameters.attack = inputs[1]; changed = true; }
+            if (! std::isnan (inputs[2])) { parameters.decay = inputs[2]; changed = true; }
+            if (! std::isnan (inputs[3])) { parameters.sustain = inputs[3]; changed = true; }
+            if (! std::isnan (inputs[4])) { parameters.release = inputs[4]; changed = true; }
+            if (changed)
+                adsr.setParameters (parameters);
 
             outputs[0] = adsr.getNextSample();
         }

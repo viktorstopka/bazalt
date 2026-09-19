@@ -89,6 +89,20 @@ namespace bazalt::engine::ValueTypes
                                       .curve = Curve::Logarithmic };
     }
 
+    inline PortDescriptor timeSecondsPort (juce::String id, juce::String label, float defaultValue, float maxSeconds = 10.0f, bool hasFallbackWhenUnconnected = true)
+    {
+        return PortDescriptor { .id = std::move (id),
+                                 .type = SignalType::Control,
+                                 .label = std::move (label),
+                                 .unit = "s",
+                                 .minValue = 0.0f,
+                                 .maxValue = maxSeconds,
+                                 .defaultValue = defaultValue,
+                                 .hasFallbackWhenUnconnected = hasFallbackWhenUnconnected,
+                                 .quantity = Quantity::Time,
+                                 .curve = Curve::Logarithmic };
+    }
+
     inline ParameterDescriptor timeMsParameter (juce::String id, juce::String displayName, float defaultValue, float maxMs = 5000.0f)
     {
         return ParameterDescriptor { .id = std::move (id),

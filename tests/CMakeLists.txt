@@ -13,6 +13,7 @@ add_executable(EngineTests
     DomainSplitterTests.cpp
     EngineVersionTests.cpp
     GraphCompilerTests.cpp
+    ModulatablePortsTests.cpp
     NanGuardTests.cpp
     NodeDescriptorTests.cpp
     NoteEventTests.cpp

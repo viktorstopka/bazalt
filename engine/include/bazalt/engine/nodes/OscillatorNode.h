@@ -8,22 +8,39 @@
 
 namespace bazalt::engine::nodes
 {
-    /** Stable type id: "osc.analog". One Audio output. Frequency and shape
-        default to being set directly via setParameter (the M2 proof
-        graphs' own pattern — still exactly how a graph that leaves "pitch"
-        unconnected behaves). M18 (ADR-0024) adds a real "pitch" input
-        port — absolute semitones, continuous, so a live pitch-bend needs
-        no special-cased path — using the same `hasFallbackWhenUnconnected`
-        NaN-sentinel `DelayNode.h` established: unconnected reads NaN and
-        this node falls back to whatever setParameter("osc.analog.frequency")
-        last set, exactly today's behaviour; connected, the port's value
-        (converted from semitones to Hz) drives the oscillator every
-        sample instead.
+    /** Stable type id: "osc.analog". One Audio output. Shape stays a plain
+        ParameterDescriptor — it's a discrete waveform *selector*
+        (isStructural: switching it swaps which PolyBLEP correction table
+        renderNextSample() uses), not a continuous value, so modulating it
+        at signal rate would just be jarring rather than something a
+        listener would call "modulation" (the same reasoning that keeps
+        instance.mix/instance.allocator's own mode-style settings static).
+
+        M18 (ADR-0024) added a real "pitch" input port — absolute
+        semitones, continuous, so a live pitch-bend needs no special-cased
+        path — using the `hasFallbackWhenUnconnected` NaN-sentinel
+        `DelayNode.h` established: unconnected reads NaN and this node
+        falls back to whatever setParameter("osc.analog.frequency") last
+        set; connected, the port's value (converted from semitones to Hz)
+        drives the oscillator every sample instead.
+
+        M20 (direct feedback: "there is no reason why ... Oscillator
+        Frequency wouldn't be modulatable") adds a second, parallel
+        "osc.analog.frequency" *port* alongside pitch (same dotted id the
+        old parameter used, so an existing saved patch's stored value still
+        applies unchanged) — a direct Hz value rather than pitch's
+        semitone-relative-to-a-note framing, for modulating frequency
+        directly (an LFO into a drone oscillator with no note-tracking
+        upstream, say) without needing a pitch-domain conversion first.
+        Pitch wins whenever both are connected (see processSample) since it
+        already unconditionally overwrote frequency every sample connected
+        or not; neither connected leaves the oscillator at whatever
+        setParameter() last configured, exactly like before this change.
     */
     class OscillatorNode : public Node
     {
     public:
-        static constexpr int numInputs = 1; // pitch
+        static constexpr int numInputs = 2; // pitch, frequency
         static constexpr int numOutputs = 1;
 
         void prepare (const NodePrepareInfo& info) override { oscillator.prepare (info.sampleRate); }
@@ -37,9 +54,12 @@ namespace bazalt::engine::nodes
 
         std::vector<PortDescriptor> getInputPorts() const override
         {
-            return { PortDescriptor { .id = "pitch", .type = SignalType::Control, .unit = "st",
-                                       .minValue = 0.0f, .maxValue = 127.0f, .defaultValue = 60.0f,
-                                       .hasFallbackWhenUnconnected = true, .quantity = Quantity::Pitch } };
+            return {
+                PortDescriptor { .id = "pitch", .type = SignalType::Control, .unit = "st",
+                                  .minValue = 0.0f, .maxValue = 127.0f, .defaultValue = 60.0f,
+                                  .hasFallbackWhenUnconnected = true, .quantity = Quantity::Pitch },
+                ValueTypes::frequencyPort ("osc.analog.frequency", "Frequency", 440.0f),
+            };
         }
         std::vector<PortDescriptor> getOutputPorts() const override
         {
@@ -70,8 +90,7 @@ namespace bazalt::engine::nodes
             // order below matches waveformForShapeValue()'s switch only
             // because nothing has migrated off that coupling yet, not
             // because order is meant to matter.
-            return { ValueTypes::frequencyParameter ("osc.analog.frequency", "Frequency", 440.0f),
-                     ParameterDescriptor { .id = "osc.analog.shape",
+            return { ParameterDescriptor { .id = "osc.analog.shape",
                                             .minValue = 0.0f,
                                             .maxValue = 3.0f,
                                             .defaultValue = 1.0f,
@@ -97,14 +116,18 @@ namespace bazalt::engine::nodes
 
         void processSample (const float* inputs, float* outputs) noexcept override
         {
-            // NaN means "pitch" is unconnected (GraphCompiler.cpp's
-            // hasFallbackWhenUnconnected sentinel) — fall back to whatever
-            // setParameter("osc.analog.frequency") last set. A real
-            // connection converts semitones -> Hz every sample instead,
-            // re-evaluated live so a continuous pitch-bend needs no
-            // special path (ADR-0024).
+            // NaN means the port is unconnected (GraphCompiler.cpp's
+            // hasFallbackWhenUnconnected sentinel). Pitch (semitones,
+            // converted to Hz) wins whenever connected, matching its
+            // pre-M20 behaviour of unconditionally overwriting frequency
+            // every sample; frequency (direct Hz) drives it only when
+            // pitch isn't connected; if neither is connected, the
+            // oscillator is left at whatever setParameter() last
+            // configured, exactly like before either port existed.
             if (! std::isnan (inputs[0]))
                 oscillator.setFrequency (440.0f * std::pow (2.0f, (inputs[0] - 69.0f) / 12.0f));
+            else if (! std::isnan (inputs[1]))
+                oscillator.setFrequency (inputs[1]);
 
             outputs[0] = oscillator.renderNextSample();
         }
