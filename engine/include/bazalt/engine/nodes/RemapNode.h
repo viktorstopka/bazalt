@@ -42,16 +42,30 @@ namespace bazalt::engine::nodes
 
         std::vector<PortDescriptor> getInputPorts() const override
         {
+            // minValue/maxValue are the actual (very wide, effectively
+            // unbounded in practice) hard clamp — matching
+            // NormaliseNode.h's own "-100000..100000" convention for a
+            // range that's genuinely arbitrary rather than physically
+            // limited. softMin/softMax (0..1) are only the slider's
+            // default *visual* range — direct feedback: dragging past a
+            // port's visually-shown range must still reach the value an
+            // auto-seeded remap actually needs (e.g. 20000 for a
+            // frequency's own max), not get clamped to whatever the
+            // fallback slider background happened to show.
             return {
                 { "in", SignalType::Control },
                 PortDescriptor { .id = "adapt.remap.inMin", .type = SignalType::Control, .label = "In Min",
-                                  .defaultValue = 0.0f, .hasFallbackWhenUnconnected = true },
+                                  .minValue = -100000.0f, .maxValue = 100000.0f, .defaultValue = 0.0f,
+                                  .hasFallbackWhenUnconnected = true, .softMin = 0.0f, .softMax = 1.0f },
                 PortDescriptor { .id = "adapt.remap.inMax", .type = SignalType::Control, .label = "In Max",
-                                  .defaultValue = 1.0f, .hasFallbackWhenUnconnected = true },
+                                  .minValue = -100000.0f, .maxValue = 100000.0f, .defaultValue = 1.0f,
+                                  .hasFallbackWhenUnconnected = true, .softMin = 0.0f, .softMax = 1.0f },
                 PortDescriptor { .id = "adapt.remap.outMin", .type = SignalType::Control, .label = "Out Min",
-                                  .defaultValue = 0.0f, .hasFallbackWhenUnconnected = true },
+                                  .minValue = -100000.0f, .maxValue = 100000.0f, .defaultValue = 0.0f,
+                                  .hasFallbackWhenUnconnected = true, .softMin = 0.0f, .softMax = 1.0f },
                 PortDescriptor { .id = "adapt.remap.outMax", .type = SignalType::Control, .label = "Out Max",
-                                  .defaultValue = 1.0f, .hasFallbackWhenUnconnected = true },
+                                  .minValue = -100000.0f, .maxValue = 100000.0f, .defaultValue = 1.0f,
+                                  .hasFallbackWhenUnconnected = true, .softMin = 0.0f, .softMax = 1.0f },
             };
         }
 

@@ -46,8 +46,35 @@ import './ValueSlider.css'
 export interface ValueSliderProps {
   label: string
   value: number
+  /** Visual range only — the fill bar's proportion and how much value one
+      pixel of drag covers (`sensitivity` below). Not a clamp: dragging or
+      scrolling past either edge keeps moving the value at the same rate,
+      it just reads off-scale visually (the fill simply caps at 0%/100%).
+      Direct feedback, citing Blender: "the slider has max at 10 if that is
+      the max, visually (as in the background)... but you can, even via
+      dragging, move it higher." Callers pass a port/parameter's
+      softMin/softMax here when declared (a comfortable default range for
+      a value with no real hard limit), falling back to minValue/maxValue
+      when they aren't.
+  */
   min: number
   max: number
+  /** The actual clamp — a value can never be typed, dragged, or scrolled
+      past these, because doing so would be physically/semantically
+      meaningless for this specific quantity (a filter cutoff can't go
+      negative, a pitch can't exceed 127). Omitted entirely means
+      unbounded: no real limit exists (e.g. a Remap node's own inMin/
+      inMax/outMin/outMax), so nothing here should invent one — this is
+      NOT the same as `min`/`max` above being absent, which still fall
+      back to a generic 0-10 visual range at the call site.
+  */
+  hardMin?: number
+  hardMax?: number
+  /** Double-click resets to this value, when given (a descriptor's own
+      defaultValue) — direct feedback asked whether this exists; it didn't.
+      Omitted where no default makes sense.
+  */
+  defaultValue?: number
   isInteger: boolean
   unit: string
   color: string
@@ -59,6 +86,7 @@ export interface ValueSliderProps {
 }
 
 const DRAG_THRESHOLD_PX = 3
+const DOUBLE_CLICK_MS = 300
 const WHEEL_COMMIT_DEBOUNCE_MS = 400
 const WHEEL_STEP_FRACTION = 0.02 // one wheel "tick" ~= 2% of the full range
 const PRECISION_FACTOR = 0.15 // holding Shift: drag/scroll move the value at ~15% of normal speed
@@ -74,8 +102,10 @@ function formatValue(value: number, decimals: number): string {
   return value.toFixed(decimals)
 }
 
-export function ValueSlider({ label, value, min, max, isInteger, unit, color, onCommit }: ValueSliderProps) {
+export function ValueSlider({ label, value, min, max, hardMin, hardMax, defaultValue, isInteger, unit, color, onCommit }: ValueSliderProps) {
   const decimals = isInteger ? 0 : 2
+  const clampMin = hardMin ?? -Infinity
+  const clampMax = hardMax ?? Infinity
 
   // No onCommit (gallery demo context): the slider becomes its own
   // uncontrolled source of truth instead of silently doing nothing on
@@ -100,6 +130,7 @@ export function ValueSlider({ label, value, min, max, isInteger, unit, color, on
   const rootRef = useRef<HTMLDivElement | null>(null)
   const dragRef = useRef<{ startX: number; startY: number; lastX: number; lastY: number; moved: boolean } | null>(null)
   const wheelTimeoutRef = useRef<number | null>(null)
+  const clickTimeoutRef = useRef<number | null>(null)
   const editResolvedRef = useRef(false)
 
   const updateLiveValue = (next: number | null): void => {
@@ -110,6 +141,7 @@ export function ValueSlider({ label, value, min, max, isInteger, unit, color, on
   useEffect(
     () => () => {
       if (wheelTimeoutRef.current !== null) window.clearTimeout(wheelTimeoutRef.current)
+      if (clickTimeoutRef.current !== null) window.clearTimeout(clickTimeoutRef.current)
     },
     [],
   )
@@ -118,7 +150,7 @@ export function ValueSlider({ label, value, min, max, isInteger, unit, color, on
   const fraction = clamp((displayValue - min) / (max - min || 1), 0, 1)
 
   const commit = (next: number): void => {
-    commitOut(roundTo(clamp(next, min, max), decimals))
+    commitOut(roundTo(clamp(next, clampMin, clampMax), decimals))
   }
 
   // Distance (px) the drag needs to cover, on either axis, to sweep the
@@ -172,7 +204,7 @@ export function ValueSlider({ label, value, min, max, isInteger, unit, color, on
       const factor = ev.shiftKey ? PRECISION_FACTOR : 1
       const current = liveValueRef.current ?? startValue
       const next = current + (stepDx - stepDy) * sensitivity() * factor
-      updateLiveValue(roundTo(clamp(next, min, max), decimals))
+      updateLiveValue(roundTo(clamp(next, clampMin, clampMax), decimals))
     }
     const onUp = (): void => {
       window.removeEventListener('mousemove', onMove)
@@ -185,9 +217,23 @@ export function ValueSlider({ label, value, min, max, isInteger, unit, color, on
       if (wasDrag && finalLive !== null) {
         commit(finalLive)
       } else if (!wasDrag) {
-        // A clean click, no drag: enter type-to-edit mode instead.
-        editResolvedRef.current = false
-        setEditing(true)
+        // A clean click, no drag. Disambiguated from a double-click (reset
+        // to default) by waiting one short window before committing to
+        // edit mode — direct feedback asked whether double-click-to-reset
+        // exists; it didn't. A plain single click still enters edit mode,
+        // just DOUBLE_CLICK_MS later than before, the standard cost of
+        // telling one click from the first half of two.
+        if (clickTimeoutRef.current !== null) {
+          window.clearTimeout(clickTimeoutRef.current)
+          clickTimeoutRef.current = null
+          if (defaultValue !== undefined) commit(defaultValue)
+        } else {
+          clickTimeoutRef.current = window.setTimeout(() => {
+            clickTimeoutRef.current = null
+            editResolvedRef.current = false
+            setEditing(true)
+          }, DOUBLE_CLICK_MS)
+        }
       }
     }
     window.addEventListener('mousemove', onMove)
@@ -200,7 +246,7 @@ export function ValueSlider({ label, value, min, max, isInteger, unit, color, on
     const factor = e.shiftKey ? PRECISION_FACTOR : 1
     const step = (max - min) * WHEEL_STEP_FRACTION * factor
     const direction = e.deltaY < 0 ? 1 : -1 // scrolling "up"/away increases, matching most DAW conventions
-    const next = roundTo(clamp((liveValueRef.current ?? committedValue) + direction * step, min, max), decimals)
+    const next = roundTo(clamp((liveValueRef.current ?? committedValue) + direction * step, clampMin, clampMax), decimals)
     updateLiveValue(next)
     if (wheelTimeoutRef.current !== null) window.clearTimeout(wheelTimeoutRef.current)
     wheelTimeoutRef.current = window.setTimeout(() => {

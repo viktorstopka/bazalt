@@ -20,7 +20,15 @@ export function classifyPortUiKind(port: Pick<PortDescriptor, 'type' | 'unit' | 
 
   if (port.isInteger) return 'integer'
 
-  const isNormalisedZeroToOne = (port.minValue === null || port.minValue === 0) && (port.maxValue === null || port.maxValue === 1)
+  // Direct feedback: an UNDECLARED range must not be treated the same as a
+  // genuinely-declared 0-1 one — a port with no minValue/maxValue at all
+  // (adapt.remap's "out", math.add/math.multiply's "out", any node whose
+  // output range is inherently context-dependent) was rendering as
+  // Modulation-orange purely because null happened to satisfy this check,
+  // not because it's actually a normalised 0-1 signal. "They're just
+  // numbers" (white/Value) is the correct default for an unknown range;
+  // Modulation is reserved for a port that actually declares 0-1.
+  const isNormalisedZeroToOne = port.minValue === 0 && port.maxValue === 1
   if (!port.unit && isNormalisedZeroToOne) return 'modulation'
 
   return 'value'

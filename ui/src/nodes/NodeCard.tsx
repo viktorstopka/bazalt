@@ -229,13 +229,17 @@ function PortLabel({ port, connected, demoValue }: { port: PortDescriptor; conne
   )
 }
 
-/** Precision/range is deliberately generic for now — direct instruction:
-    "let's not focus on the types of values" (integer stepping, log scale,
-    real per-node bounds) until the real node architecture settles. A port
-    with real descriptor bounds (PortDescriptor.minValue/maxValue) still
-    uses them; one without (common for a mock/demo port, or any real one
-    that never got bounds assigned) falls back to a plain 0-10 range so the
-    slider has *something* sensible to drag across, 2 decimals throughout.
+/** minValue/maxValue (when a port genuinely declares them) are the real,
+    physically-meaningful hard limit — passed to ValueSlider as
+    hardMin/hardMax, which it never lets a value go past regardless of how
+    it's entered. softMin/softMax (when declared) are just a comfortable
+    default drag range — passed as ValueSlider's plain min/max, which only
+    drives the fill bar and drag sensitivity, never clamps. A port with no
+    declared bounds at all (common for a mock/demo port, or a real one like
+    adapt.remap's own range ports, which are genuinely unbounded) falls
+    back to a plain 0-10 *visual* range and no hard clamp at all — direct
+    feedback, citing Blender: a value should still be enterable past
+    whatever the slider visually shows as its typical range.
 */
 function PortRow({
   direction,
@@ -275,8 +279,11 @@ function PortRow({
         <ValueSlider
           label={port.label || humanizeId(port.id)}
           value={value ?? port.defaultValue}
-          min={port.minValue ?? 0}
-          max={port.maxValue ?? 10}
+          min={port.softMin ?? port.minValue ?? 0}
+          max={port.softMax ?? port.maxValue ?? 10}
+          hardMin={port.minValue ?? undefined}
+          hardMax={port.maxValue ?? undefined}
+          defaultValue={port.defaultValue}
           isInteger={port.isInteger}
           unit={port.unit}
           color={port.isPolyPlaceholder ? tokens.color.portPoly : portUiStyle(port).color}
@@ -338,6 +345,9 @@ function ParameterRow({
   value,
   minValue,
   maxValue,
+  softMin,
+  softMax,
+  defaultValue,
   isInteger,
   unit,
   options,
@@ -348,6 +358,9 @@ function ParameterRow({
   value: number
   minValue: number
   maxValue: number
+  softMin?: number | null
+  softMax?: number | null
+  defaultValue?: number
   isInteger: boolean
   unit: string
   options?: string[]
@@ -359,7 +372,19 @@ function ParameterRow({
       {options && options.length > 0 ? (
         <TriggerSelect label={displayName} options={options} selectedIndex={value} color={color} onCommit={onCommit} />
       ) : (
-        <ValueSlider label={displayName} value={value} min={minValue} max={maxValue} isInteger={isInteger} unit={unit} color={color} onCommit={onCommit} />
+        <ValueSlider
+          label={displayName}
+          value={value}
+          min={softMin ?? minValue}
+          max={softMax ?? maxValue}
+          hardMin={minValue}
+          hardMax={maxValue}
+          defaultValue={defaultValue}
+          isInteger={isInteger}
+          unit={unit}
+          color={color}
+          onCommit={onCommit}
+        />
       )}
     </div>
   )
@@ -434,6 +459,9 @@ function StandardBody({ descriptor, state, instanceId }: { descriptor: NodeDescr
           value={paramValue(state, p.id, p.defaultValue)}
           minValue={p.minValue}
           maxValue={p.maxValue}
+          softMin={p.softMin}
+          softMax={p.softMax}
+          defaultValue={p.defaultValue}
           isInteger={p.isInteger}
           unit={p.unit}
           options={p.options}
@@ -504,6 +532,9 @@ function HorizontalBody({ descriptor, state, instanceId }: { descriptor: NodeDes
             value={paramValue(state, p.id, p.defaultValue)}
             minValue={p.minValue}
             maxValue={p.maxValue}
+            softMin={p.softMin}
+            softMax={p.softMax}
+            defaultValue={p.defaultValue}
             isInteger={p.isInteger}
             unit={p.unit}
             options={p.options}
