@@ -1,7 +1,8 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useId, useRef } from 'react'
 import { TelemetryFrameType } from '../telemetry/parseTelemetryFrame'
 import { getInterpolatedTap, type TapName } from '../telemetry/telemetryClient'
 import { tokens } from '../theme/tokens'
+import { registerPreviewRenderer, unregisterPreviewRenderer } from './previewRenderLoop'
 
 export type ScopeKind = 'scope' | 'spectrum' | 'meter'
 
@@ -83,14 +84,18 @@ function drawMeter(ctx: CanvasRenderingContext2D, width: number, height: number,
 
 /** One oscilloscope/spectrum/meter canvas, driven entirely outside React's
     render cycle (ARCHITECTURE.md §7): reads the latest interpolated
-    telemetry payload each of its own rAF ticks and draws directly, with no
-    React state involved in the render path itself. Each panel runs its own
-    rAF loop — fine at M5's fixed count of 15 small canvases; the real node
-    editor (M11) coordinates many more previews through one shared loop
-    instead, see NODE_EDITOR.md §9.
+    telemetry payload once per shared-loop tick (previewRenderLoop.ts, M20
+    C3) and draws directly, with no React state involved in the render path
+    itself. Through M5 each instance ran its own independent rAF loop —
+    fine at M5's fixed count of 15 small canvases, but NODE_EDITOR.md §9
+    calls for one shared loop once the node editor's dynamic preview count
+    replaces this panel; this component and the node editor's own inline
+    previews (NodeCard.tsx, M20 C5) now both register with that one loop
+    instead of each owning one.
 */
 export function TelemetryScope({ tap, kind, label }: TelemetryScopeProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
+  const id = useId()
 
   useEffect(() => {
     const canvas = canvasRef.current
@@ -98,7 +103,6 @@ export function TelemetryScope({ tap, kind, label }: TelemetryScopeProps) {
     const ctx = canvas.getContext('2d')
     if (!ctx) return
 
-    let rafHandle = 0
     const frameType = FRAME_TYPE_BY_KIND[kind]
 
     const render = () => {
@@ -120,13 +124,11 @@ export function TelemetryScope({ tap, kind, label }: TelemetryScopeProps) {
         else if (kind === 'spectrum') drawSpectrum(ctx, width, height, tapData.payload)
         else drawMeter(ctx, width, height, tapData.payload)
       }
-
-      rafHandle = requestAnimationFrame(render)
     }
 
-    rafHandle = requestAnimationFrame(render)
-    return () => cancelAnimationFrame(rafHandle)
-  }, [tap, kind])
+    registerPreviewRenderer(id, render)
+    return () => unregisterPreviewRenderer(id)
+  }, [tap, kind, id])
 
   return (
     <div className="telemetry-scope">
