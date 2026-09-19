@@ -1,5 +1,6 @@
 #include "PluginEditor.h"
 #include "NodeDescriptorJson.h"
+#include "bazalt/engine/patch/PatchSerializer.h"
 #include "bazalt/engine/telemetry/TelemetryFrame.h"
 #include <optional>
 
@@ -123,6 +124,15 @@ namespace bazalt
         {
             return index < args.size() ? (float) args[index] : 0.0f;
         }
+
+        // setProperty's value can be any JSON-shaped var (a rename's string,
+        // a bypass flag's bool, a future property's number) — unlike the
+        // other commands' typed args above, this one passes it through
+        // as-is, matching NodeInstance::properties' own juce::var storage.
+        juce::var argVar (const juce::Array<juce::var>& args, int index)
+        {
+            return index < args.size() ? args[index] : juce::var();
+        }
     }
 
     juce::WebBrowserComponent::Options BazaltAudioProcessorEditor::withGraphCommands (
@@ -173,6 +183,63 @@ namespace bazalt
         {
             auto& controller = processor.getGraphEditController();
             const auto result = controller.setOutput (argString (args, 0), argString (args, 1));
+            completion (commandResultToVar (result));
+        });
+
+        options = options.withNativeFunction ("graphMoveNode", [&processor] (Args args, Completion completion)
+        {
+            auto& controller = processor.getGraphEditController();
+            const auto result = controller.moveNode (argString (args, 0), argFloat (args, 1), argFloat (args, 2));
+            completion (commandResultToVar (result));
+        });
+
+        options = options.withNativeFunction ("graphSetProperty", [&processor] (Args args, Completion completion)
+        {
+            auto& controller = processor.getGraphEditController();
+            const auto result = controller.setProperty (argString (args, 0), argString (args, 1), argVar (args, 2));
+            completion (commandResultToVar (result));
+        });
+
+        // M19 (ADR-0025): the UI predicts canConnect (a hand-mirrored TS
+        // port, ui/src/graph/canConnect.ts) for live wire-drag feedback, but
+        // committing a connection always goes through the real engine
+        // decision — connectWithAutoAdapt (M16) so a real NeedsAdapters
+        // outcome actually inserts the adapter chain, not just a flat
+        // connect that would reject it.
+        options = options.withNativeFunction ("graphConnectWithAutoAdapt", [&processor] (Args args, Completion completion)
+        {
+            auto& controller = processor.getGraphEditController();
+            const auto result = controller.connectWithAutoAdapt (argString (args, 0), argString (args, 1),
+                                                                   argString (args, 2), argString (args, 3));
+            completion (commandResultToVar (result));
+        });
+
+        // M19 (ADR-0025): undo/redo is a client-side history of whole-graph
+        // snapshots, not a per-command inverse log — graphGetSnapshot/
+        // graphRestoreSnapshot are its only two moving parts, both reusing
+        // the M0-M8 PatchDocument/PatchSerializer round-trip already proven
+        // for real patch save/load (a graph-only snapshot is just a
+        // PatchDocument with empty macro/view/meta fields nothing reads
+        // back out of it).
+        options = options.withNativeFunction ("graphGetSnapshot", [&processor] (Args, Completion completion)
+        {
+            auto& controller = processor.getGraphEditController();
+            const auto json = bazalt::engine::serializePatchToJson (
+                bazalt::engine::PatchDocument::fromNodeGraph (controller.getGraph()), false);
+            completion (json);
+        });
+
+        options = options.withNativeFunction ("graphRestoreSnapshot", [&processor] (Args args, Completion completion)
+        {
+            const auto parsed = bazalt::engine::parsePatchFromJson (argString (args, 0));
+            if (! parsed.success)
+            {
+                completion (commandResultToVar ({ false, parsed.errorMessage }));
+                return;
+            }
+
+            auto& controller = processor.getGraphEditController();
+            const auto result = controller.setGraph (parsed.document.toNodeGraph());
             completion (commandResultToVar (result));
         });
 

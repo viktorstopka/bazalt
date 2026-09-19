@@ -1,0 +1,74 @@
+// M19 (ADR-0006/ADR-0025): thin async wrappers over every graph-editing
+// native function PluginEditor.cpp's withGraphCommands() registers — the
+// actual sending end of the M7 command bridge, which existed but had no UI
+// caller before this milestone (getNodeDescriptors, fetchNodeDescriptors.ts,
+// was the only one called from JS until now). Same `typeof window.__JUCE__
+// === 'undefined'` guard fetchNodeDescriptors.ts already established, for
+// plain-browser iteration outside the real WebView.
+import { getNativeFunction } from '@juce-framework/webview'
+
+export interface CommandResult {
+  success: boolean
+  errorMessage: string
+}
+
+const NOT_IN_WEBVIEW: CommandResult = { success: false, errorMessage: 'Not running inside the plugin WebView' }
+
+async function callCommand(name: string, ...args: unknown[]): Promise<CommandResult> {
+  if (typeof window.__JUCE__ === 'undefined') return NOT_IN_WEBVIEW
+  const result = await getNativeFunction(name)(...args)
+  return result as CommandResult
+}
+
+export function graphAddNode(typeId: string, nodeId: string, x: number, y: number): Promise<CommandResult> {
+  return callCommand('graphAddNode', typeId, nodeId, x, y)
+}
+
+export function graphDeleteNode(nodeId: string): Promise<CommandResult> {
+  return callCommand('graphDeleteNode', nodeId)
+}
+
+export function graphDisconnect(fromNodeId: string, fromPortId: string, toNodeId: string, toPortId: string): Promise<CommandResult> {
+  return callCommand('graphDisconnect', fromNodeId, fromPortId, toNodeId, toPortId)
+}
+
+/** Always the real command a UI-initiated connect should call — gives all
+    three of canConnect's outcomes real behaviour (Ok connects directly,
+    NeedsAdapters inserts the real adapter chain, Reject fails with the
+    engine's own reason), unlike a flat graphConnect call which only ever
+    succeeds or fails outright. See canConnect.ts for the client-side
+    prediction used for live drag feedback before a drop is attempted.
+*/
+export function graphConnectWithAutoAdapt(fromNodeId: string, fromPortId: string, toNodeId: string, toPortId: string): Promise<CommandResult> {
+  return callCommand('graphConnectWithAutoAdapt', fromNodeId, fromPortId, toNodeId, toPortId)
+}
+
+export function graphSetParameterValue(nodeId: string, parameterId: string, value: number): Promise<CommandResult> {
+  return callCommand('graphSetParameterValue', nodeId, parameterId, value)
+}
+
+export function graphMoveNode(nodeId: string, x: number, y: number): Promise<CommandResult> {
+  return callCommand('graphMoveNode', nodeId, x, y)
+}
+
+/** Backs both rename ("title") and bypass ("bypassed") — see
+    GraphEditController::setProperty's own doc comment. Neither has a real
+    DSP-level effect yet (no bypass audio behaviour exists in the engine) —
+    this only makes the value real and persisted, not audible.
+*/
+export function graphSetProperty(nodeId: string, propertyKey: string, value: string | number | boolean): Promise<CommandResult> {
+  return callCommand('graphSetProperty', nodeId, propertyKey, value)
+}
+
+/** Returns the current graph as a JSON string (a PatchDocument with empty
+    macro/view/meta fields — see ADR-0025), or null outside the real WebView.
+*/
+export async function graphGetSnapshot(): Promise<string | null> {
+  if (typeof window.__JUCE__ === 'undefined') return null
+  const result = await getNativeFunction('graphGetSnapshot')()
+  return typeof result === 'string' ? result : null
+}
+
+export function graphRestoreSnapshot(json: string): Promise<CommandResult> {
+  return callCommand('graphRestoreSnapshot', json)
+}

@@ -29,6 +29,15 @@
   opacity: 0.8;
 }
 
+.top-bar-error {
+  font-size: 12px;
+  color: var(--color-error);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 40vw;
+}
+
 .top-bar-spacer {
   flex: 1;
 }

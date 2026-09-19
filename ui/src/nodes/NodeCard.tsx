@@ -145,9 +145,9 @@ function isEditableInNode(port: PortDescriptor): boolean {
 
 /** Whether an editable-in-node port's fallback is a plain numeric range
     (renders as a ValueSlider) as opposed to a discrete preset list (renders
-    as a TriggerSelect — see PortRow below). Reuses the same numeric/audio/
-    trigger/boolean split ui/src/graph/wireRules.ts's canConnect() already
-    groups ports by, rather than inventing a second classification.
+    as a TriggerSelect — see PortRow below). Reuses classifyPortUiKind's
+    existing numeric/audio/trigger/boolean split rather than inventing a
+    second classification.
 */
 function hasNumericFallback(port: PortDescriptor): boolean {
   const kind = classifyPortUiKind(port)

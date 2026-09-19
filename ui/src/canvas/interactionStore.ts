@@ -107,21 +107,7 @@ export interface WireDragGesture {
   */
   hoverReplacing?: boolean
 }
-/** Dragging a cable stub out of an unconnected, macro-able input port (see
-    graphStore.ts's isMacroablePort) with no fixed destination in mind —
-    distinct from WireDragGesture (which always represents a real, typed
-    output->input connection-in-progress and drives its own hover/replace
-    machinery) because this one only ever resolves one of two ways on
-    mouseup: release on empty canvas space commits addMacroFromPort;
-    release anywhere else (a node, a port, an overlay) just cancels. No
-    hover-target state needed as a result.
-*/
-export interface DragToMacroGesture {
-  kind: 'dragToMacro'
-  nodeId: string
-  portId: string
-}
-export type Gesture = PanGesture | BoxSelectGesture | NodeDragGesture | WireDragGesture | DragToMacroGesture | null
+export type Gesture = PanGesture | BoxSelectGesture | NodeDragGesture | WireDragGesture | null
 
 let gesture: Gesture = null
 export function getGesture(): Gesture {

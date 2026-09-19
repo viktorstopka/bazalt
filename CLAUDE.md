@@ -195,22 +195,32 @@ ctest --test-dir build -C Debug -R PluginTests --output-on-failure
   groups the same merged real+mock descriptor catalog the M9 gallery uses.
   Snap-to-grid (`SnapSettings.sizeWorldUnits`) is now read by node drag and
   ghost placement, closing the gap M5's own note used to flag here.
-- **M10's node editor canvas is deliberately not wired to the real engine.**
-  `ui/src/graph/graphStore.ts` is a local, client-side graph model (nodes,
-  wires, selection, undo/redo) — placing, wiring, moving, deleting,
-  renaming, and bypassing nodes on the M10 canvas never calls
-  `graphAddNode`/`graphConnect`/etc. (the M7 command bridge, ADR-0006), and
-  nothing persists across a reload (`PatchDocument` is untouched). This was
-  a deliberate scope call for M10, not an oversight: the real node
-  architecture (which engine node types exist, their final port/param
-  shapes) isn't settled yet, so wiring the interface to the real command
-  bridge now would likely need redoing once it is. The Add menu's catalog
-  still merges real descriptors (`fetchNodeDescriptors`, read-only) with
-  `mockDescriptors.ts` — only the placed *instances* and their wiring are
-  local. Whenever the engine side is ready, keep `InfiniteCanvas.tsx`'s/
-  `GraphSurface.tsx`'s interaction logic and swap `graphStore.ts`'s local
-  mutations for real command-bridge calls underneath the same UI, rather
-  than rebuilding the interactions themselves.
+- **The node editor canvas is wired to the real engine as of M19** (ADR-0025)
+  — `ui/src/graph/graphStore.ts` mirrors the actual running `NodeGraph`, not
+  a local prototype. Placing, wiring, moving, deleting, renaming, and
+  bypassing a node all fire real commands (`graphAddNode`/
+  `graphConnectWithAutoAdapt`/`graphMoveNode`/`graphDeleteNode`/
+  `graphSetProperty`/...) over the M7 bridge (ADR-0006) and only update the
+  visible graph once the engine confirms the result — not optimistically
+  (ADR-0025's own deviation from `NODE_EDITOR.md` §6, deliberate: a local
+  WebView round-trip is fast enough that this costs no perceptible
+  responsiveness, and there is then never a local/engine state to
+  reconcile). Undo/redo is whole-graph JSON snapshots
+  (`graphGetSnapshot`/`graphRestoreSnapshot`), not per-command inverses —
+  ADR-0025 has the full reasoning. The canvas is **real-graph-only**: the
+  Add menu's catalog no longer merges `mockDescriptors.ts` in (mocks stay in
+  the read-only M9 component gallery, `ComponentGallery.tsx`, which fetches
+  its own separate copy), and the M10 "drag a port out to create a Macro"
+  shortcut is retired outright — its target, `mock.macro`, has no real
+  engine equivalent (`util.macro`, ADR-0015, is proposed but not built).
+  `rename`/`bypass` are real, persisted `NodeInstance.properties` writes
+  (`GraphEditController::setProperty`, new) but **bypass has no real DSP
+  effect yet** — nothing in `GraphCompiler`/`ExecutionPlan` reads the
+  `bypassed` property to skip or pass through a node; toggling it changes
+  only what's stored and displayed, not the compiled audio. `move` similarly
+  needed a new command (`GraphEditController::moveNode`) that didn't exist
+  before M19 — a pure position write, no DSP implications (`GraphCompiler`'s
+  state-pool reuse check doesn't compare `position`).
 - `ui/src/theme/tokens.ts` is the single source of truth for every colour/
   font/spacing/stroke value (resolves ARCHITECTURE.md §7's "TBD in M5" note
   on how DOM and canvas share one theme definition): `applyTokensToCss()`
@@ -226,13 +236,16 @@ ctest --test-dir build -C Debug -R PluginTests --output-on-failure
   hand-edit `lib/`) only if the JUCE version pin in ADR-0001 ever changes.
 - The M7 command bridge (`GraphEditController`, `PluginEditor::
   withGraphCommands()`'s `graphAddNode`/`graphDeleteNode`/`graphConnect`/
-  `graphDisconnect`/`graphSetParameterValue` native functions) is real and
-  tested (`tests-plugin/GraphEditControllerTests.cpp` drives
-  `GraphEditController` directly). **Still no UI caller for these
-  graph-editing commands** — don't assume one exists; that's M10's job.
-  `getNodeDescriptors` (M9, ADR-0007) is the first native function the UI
-  actually calls — it's read-only (no graph mutation, no recompile, no
-  undo step), fetched once by the component gallery at load.
+  `graphDisconnect`/`graphSetParameterValue`/`graphSetOutput`/`graphMoveNode`/
+  `graphSetProperty`/`graphConnectWithAutoAdapt`/`graphGetSnapshot`/
+  `graphRestoreSnapshot` native functions) is real and tested
+  (`tests-plugin/GraphEditControllerTests.cpp` drives `GraphEditController`
+  directly). As of M19, the UI is a real caller — `ui/src/graph/
+  graphCommands.ts` wraps every one of them; see the node-editor-canvas note
+  above and ADR-0025 for how the store uses them. `getNodeDescriptors` (M9,
+  ADR-0007) was the first native function the UI ever called and is still
+  the only read-only one (fetched once by both the canvas and the component
+  gallery, each independently).
 - `instance.mix`/`instance.allocator`/`DomainSplitter` (NODE_EDITOR.md §7,
   ADR pending for the domain-partitioning design) are real and tested at
   the engine level (`tests/DomainSplitterTests.cpp`), but `PluginProcessor`'s

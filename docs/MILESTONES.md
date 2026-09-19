@@ -406,22 +406,39 @@ them regresses); a pitch-bend render (`tests-plugin/VoiceRenderTests.cpp`) confi
 `pitch` port needs no special-cased path for bend — it's folded into `io.noteIn`'s output like any
 other continuous value change.
 
-## M19 — Wire the editor to the real engine
+## M19 — Wire the editor to the real engine — done
 
-The actual prerequisite for "test each batch in the app," not previously scoped anywhere. Replace
-`ui/src/graph/graphStore.ts`'s local-only mutations with real calls through the M7 command bridge
-(`graphAddNode`/`graphDeleteNode`/`graphConnect`/`graphDisconnect`/`graphSetParameterValue`, plus
-M8's `graphSetOutput`/`applyBatch`) for every interaction M10 already built — place, wire, move,
-delete, rename, bypass. Keep M10's interaction logic (`InfiniteCanvas.tsx`, `GraphSurface.tsx`)
-exactly as-is, per CLAUDE.md's own already-stated plan: swap the local mutations underneath the same
-UI, don't rebuild the interactions. Wire the UI's live wire-drag feedback to the real, generated
-`canConnect` (M16) instead of `wireRules.ts`'s guess. Verify patch save/load round-trips through the
-now-real graph and node set.
+Replaced `ui/src/graph/graphStore.ts`'s local-only mutations with real calls through the M7 command
+bridge (`ui/src/graph/graphCommands.ts`) for every M10 interaction: place (`graphAddNode`), wire
+(`graphConnectWithAutoAdapt`), move (`graphMoveNode`, new — no command for this existed before),
+delete (`graphDeleteNode`), rename/bypass (`graphSetProperty`, new generic command — see below), plus
+splice-insert (a real composite of disconnect+addNode+2×connect, one undo step). Kept
+`InfiniteCanvas.tsx`'s/`GraphSurface.tsx`'s interaction logic unchanged, exactly as CLAUDE.md's own
+prior note said to. Replaced `ui/src/graph/wireRules.ts`'s classification-bucket guess with
+`ui/src/graph/canConnect.ts`, a hand-mirrored port of the real `CanConnect.cpp` decision logic (ADR
+-0018's "generated" is aspirational the same way `NodeDescriptorJson.cpp`/`descriptorTypes.ts` are —
+two hand-synced representations, not a codegen tool).
+
+Two real scope decisions made and recorded as ADRs before implementing, since the milestone's own
+one-line description didn't anticipate them: undo/redo is whole-graph JSON snapshots
+(`graphGetSnapshot`/`graphRestoreSnapshot`), not `NODE_EDITOR.md` §6's per-command inverse log
+(ADR-0025); and the canvas became **real-graph-only** — the M10 demo seed graph was entirely
+`mock.*` nodes with no engine backing and no concept of "the audio output" at all, so it's retired
+in favour of loading the actual running graph on open. `mock.*` stays in the read-only M9 component
+gallery only. The M10 "drag a port out to create a Macro" shortcut is retired outright (its target,
+`mock.macro`, has no real engine equivalent — `util.macro`/ADR-0015 isn't built).
 
 **Exit criteria**: you place a node from the Add menu, wire it to another real node, and hear the
-result change live in the Standalone app, with zero code changes in between — that's the actual
-gate. Undo/redo works against the real graph, not a local snapshot. A rejected connection shows the
-real rejection reason in the error banner.
+result change live in the Standalone app, with zero code changes in between — mechanically true
+(every interaction is a real command now), not yet manually confirmed in the app by ear — that's
+real hands-on testing only you can do. Undo/redo works against the real graph (ADR-0025's snapshot
+mechanism, not a local-only snapshot). A rejected connection surfaces the engine's real rejection
+reason in a new top-bar error banner. Not done, honestly: **bypass has no audio effect** (the
+property is real and persisted, but `GraphCompiler`/`ExecutionPlan` doesn't read it yet) — a real gap
+for whenever generic node bypass gets designed, not silently assumed solved. Every action awaits the
+engine's confirmation before updating the display, rather than `NODE_EDITOR.md` §6's proposed
+optimistic-then-reconcile flow (ADR-0025) — imperceptible at today's local-WebView round-trip speed,
+but a real, deliberate simplification worth knowing about if it ever isn't.
 
 ## M20 — Standardized visualization system
 

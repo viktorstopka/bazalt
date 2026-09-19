@@ -62,13 +62,17 @@ function App() {
   // Undo/Redo is the one keyboard-only action (Ctrl+Z/Shift+Z/Y) that never
   // got a visible UI fallback (M10_REVIEW.md §16/§23's retrospective) — the
   // most likely shortcut to be intercepted by a host DAW's own accelerators.
-  const { canUndo, canRedo } = useGraphSnapshot()
+  const { canUndo, canRedo, lastError } = useGraphSnapshot()
 
   return (
     <div id="app-root">
       <InfiniteCanvas ref={canvasHandleRef} snapSettings={snapSettings}>
         <div className="top-bar">
           <span className="top-bar-title">Bazalt</span>
+          {/* M19 (NODE_EDITOR.md §6): "a rejected command surfaces as an
+              error banner" — the real engine's own rejection reason for the
+              most recent command, cleared at the start of the next gesture. */}
+          {lastError && <span className="top-bar-error">{lastError}</span>}
           <div className="top-bar-spacer" />
           <button className="top-bar-icon-button" onClick={() => undo()} disabled={!canUndo} title="Undo (Ctrl+Z)" aria-label="Undo">
             <UndoIcon />

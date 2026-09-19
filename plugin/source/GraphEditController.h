@@ -86,6 +86,27 @@ namespace bazalt
         */
         CommandResult setOutput (const juce::String& nodeId, const juce::String& portId);
 
+        /** M19 — a pure position update, no DSP implications at all
+            (`GraphCompiler`'s state-pool reuse check doesn't compare
+            `position`, so this never disrupts a sounding voice's state).
+            Still goes through the ordinary recompile+publish path for
+            consistency with every other command, not because a position
+            change could plausibly fail to compile.
+        */
+        CommandResult moveNode (const juce::String& nodeId, float x, float y);
+
+        /** M19 — the generic `setProperty` command `NODE_EDITOR.md` §6
+            always planned ("rename, Macro constraints, ..."), writing into
+            `NodeInstance::properties` (the `var`-typed bag that's existed
+            since M7 with no command ever writing it). Used for a node's
+            display-name override (`"title"`) and its bypass flag
+            (`"bypassed"`) — both real, persisted, round-tripped metadata;
+            neither has any DSP-level effect yet (no bypass audio behaviour
+            exists in `GraphCompiler`/`ExecutionPlan`), which is a real,
+            documented gap, not silently assumed solved.
+        */
+        CommandResult setProperty (const juce::String& nodeId, const juce::String& propertyKey, juce::var value);
+
         /** Replaces the whole graph in one step (patch load) — rolled back
             to the previous graph, same as any other command, if the new
             one doesn't compile.

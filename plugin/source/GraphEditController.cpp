@@ -266,6 +266,40 @@ namespace bazalt
         return result;
     }
 
+    GraphEditController::CommandResult GraphEditController::moveNode (const juce::String& nodeId, float x, float y)
+    {
+        auto* node = graph.findNode (nodeId);
+        if (node == nullptr)
+            return { false, "No such node: " + nodeId };
+
+        const auto previousGraph = graph;
+        node->position = { x, y };
+
+        auto result = recompileAndPublish();
+        if (! result.success)
+            graph = previousGraph;
+
+        return result;
+    }
+
+    GraphEditController::CommandResult GraphEditController::setProperty (const juce::String& nodeId,
+                                                                           const juce::String& propertyKey,
+                                                                           juce::var value)
+    {
+        auto* node = graph.findNode (nodeId);
+        if (node == nullptr)
+            return { false, "No such node: " + nodeId };
+
+        const auto previousGraph = graph;
+        node->properties[propertyKey] = std::move (value);
+
+        auto result = recompileAndPublish();
+        if (! result.success)
+            graph = previousGraph;
+
+        return result;
+    }
+
     GraphEditController::CommandResult GraphEditController::setGraph (bazalt::engine::NodeGraph newGraph)
     {
         const auto previousGraph = graph;

@@ -277,3 +277,89 @@ TEST_CASE ("A live-edited graph round-trips exactly through getStateAsJson/loadS
     REQUIRE (extra->parameters.count ("util.constant.value") == 1);
     CHECK (extra->parameters.at ("util.constant.value") == 0.75f);
 }
+
+TEST_CASE ("A graph snapshot round-trips through PatchDocument/PatchSerializer and restores via setGraph",
+           "[plugin][GraphEditController][M19][ADR-0025]")
+{
+    // Exercises exactly what the graphGetSnapshot/graphRestoreSnapshot
+    // native functions do internally (PluginEditor.cpp) — undo/redo's only
+    // two moving parts (ADR-0025), with no WebView involved.
+    BazaltAudioProcessor processor;
+    processor.prepareToPlay (44100.0, 512);
+
+    auto& controller = processor.getGraphEditController();
+
+    REQUIRE (controller.addNode ("math.add", "extra", 10.0f, 20.0f).success);
+    REQUIRE (controller.setParameterValue ("svf", "filter.svf.cutoff", 1234.0f).success);
+
+    const auto snapshot = bazalt::engine::serializePatchToJson (
+        bazalt::engine::PatchDocument::fromNodeGraph (controller.getGraph()), false);
+
+    // Diverge further from the snapshot...
+    REQUIRE (controller.deleteNode ("extra").success);
+    REQUIRE (controller.setParameterValue ("svf", "filter.svf.cutoff", 999.0f).success);
+    REQUIRE (controller.getGraph().findNode ("extra") == nullptr);
+
+    // ...then "undo" by restoring the snapshot.
+    const auto parsed = bazalt::engine::parsePatchFromJson (snapshot);
+    REQUIRE (parsed.success);
+    REQUIRE (controller.setGraph (parsed.document.toNodeGraph()).success);
+
+    REQUIRE (controller.getGraph().findNode ("extra") != nullptr);
+    CHECK (controller.getGraph().findNode ("svf")->parameters.at ("filter.svf.cutoff") == 1234.0f);
+    CHECK (controller.getGraph().getNodes().size() == 7); // noteIn, allocator, osc, svf, env, amp, extra
+}
+
+TEST_CASE ("moveNode updates position without disturbing the node's DSP object identity",
+           "[plugin][GraphEditController][M19]")
+{
+    BazaltAudioProcessor processor;
+    processor.prepareToPlay (44100.0, 512);
+
+    auto& controller = processor.getGraphEditController();
+
+    auto* before = processor.getVoicePlanSwapper (0).peekCurrentPlan()->getNodeById ("osc");
+    REQUIRE (before != nullptr);
+
+    REQUIRE (controller.moveNode ("osc", 123.0f, 456.0f).success);
+    CHECK (controller.getGraph().findNode ("osc")->position.x == 123.0f);
+    CHECK (controller.getGraph().findNode ("osc")->position.y == 456.0f);
+
+    // M17's state pool: a position-only edit doesn't change (id, type,
+    // parameters), so the exact same compiled Node object survives —
+    // moving a node mid-note must not reset its DSP state.
+    auto* after = processor.getVoicePlanSwapper (0).peekCurrentPlan()->getNodeById ("osc");
+    CHECK (after == before);
+
+    CHECK_FALSE (controller.moveNode ("nonexistent", 0.0f, 0.0f).success);
+}
+
+TEST_CASE ("setProperty writes into NodeInstance::properties and round-trips through a snapshot",
+           "[plugin][GraphEditController][M19]")
+{
+    BazaltAudioProcessor processor;
+    processor.prepareToPlay (44100.0, 512);
+
+    auto& controller = processor.getGraphEditController();
+
+    REQUIRE (controller.setProperty ("osc", "title", juce::var ("My Oscillator")).success);
+    REQUIRE (controller.setProperty ("osc", "bypassed", juce::var (true)).success);
+
+    const auto* node = controller.getGraph().findNode ("osc");
+    REQUIRE (node != nullptr);
+    CHECK (node->properties.at ("title").toString() == "My Oscillator");
+    CHECK ((bool) node->properties.at ("bypassed"));
+
+    const auto snapshot = bazalt::engine::serializePatchToJson (
+        bazalt::engine::PatchDocument::fromNodeGraph (controller.getGraph()), false);
+    const auto parsed = bazalt::engine::parsePatchFromJson (snapshot);
+    REQUIRE (parsed.success);
+
+    const auto restoredGraph = parsed.document.toNodeGraph();
+    const auto* restoredNode = restoredGraph.findNode ("osc");
+    REQUIRE (restoredNode != nullptr);
+    CHECK (restoredNode->properties.at ("title").toString() == "My Oscillator");
+    CHECK ((bool) restoredNode->properties.at ("bypassed"));
+
+    CHECK_FALSE (controller.setProperty ("nonexistent", "title", juce::var ("x")).success);
+}
