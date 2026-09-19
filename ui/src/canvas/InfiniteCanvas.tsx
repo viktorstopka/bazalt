@@ -266,12 +266,24 @@ export const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, InfiniteCanvasPro
   // non-zero — not just the very first time ever (M10_REVIEW.md §4):
   // deleting every node and adding one back later re-triggers this too.
   useEffect(() => {
+    // Real descriptors and the real graph snapshot arrive from two
+    // independent async fetches (ensureInitialized(), M19) — nodes.length
+    // can go 0->N before descriptorsLoaded is true, at which point
+    // GraphSurface.tsx renders nothing yet (resolveNodeDescriptor returns
+    // undefined), so measureNodeWorldBounds finds no DOM elements and
+    // centerViewAtDefaultZoom() silently no-ops. Since
+    // prevNodeCountForAutoFit still updated to a nonzero value on that
+    // failed attempt, the 0->nonzero edge this effect watches for would
+    // never fire again — permanently skipping the auto-centre-on-load this
+    // was supposed to do. Wait for descriptors too before treating the
+    // transition as "consumed".
+    if (!snapshot.descriptorsLoaded) return
     const count = snapshot.nodes.length
     if (prevNodeCountForAutoFit === 0 && count > 0) {
       requestAnimationFrame(() => centerViewAtDefaultZoom())
     }
     prevNodeCountForAutoFit = count
-  }, [snapshot.nodes.length, centerViewAtDefaultZoom])
+  }, [snapshot.nodes.length, snapshot.descriptorsLoaded, centerViewAtDefaultZoom])
 
   useEffect(() => {
     const container = containerRef.current
@@ -323,7 +335,20 @@ export const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, InfiniteCanvasPro
       }
       requestFrame()
     })
-    const syncNodeOffsetCache = (currentNodes: ReadonlyArray<{ id: string }>): void => {
+    // Returns whether any node still has no cached measurement — real
+    // engine data arrives from two independent async fetches (the graph
+    // snapshot and the descriptor catalog, ensureInitialized()), so a node
+    // can legitimately exist in the graph for one or more frames before
+    // React has actually painted its card (it renders nothing at all until
+    // BOTH have arrived — GraphSurface.tsx's resolveNodeDescriptor()
+    // returns undefined until descriptors load). The querySelector below
+    // finding nothing that frame is a real, expected transient state, not
+    // a bug on its own — but frame()'s caller MUST keep the RAF loop alive
+    // until it resolves, or nothing ever measures these nodes at all once
+    // `dirty` next goes false with no gesture/ghost active (a real bug this
+    // return value fixes: cables silently rendered from stale/absent
+    // offsets — found via real hands-on testing, M19).
+    const syncNodeOffsetCache = (currentNodes: ReadonlyArray<{ id: string }>): boolean => {
       const currentIds = new Set(currentNodes.map((n) => n.id))
       for (const id of [...nodeElByIdCache.keys()]) {
         if (currentIds.has(id)) continue
@@ -332,14 +357,19 @@ export const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, InfiniteCanvasPro
         nodeElByIdCache.delete(id)
         nodeOffsetCache.delete(id)
       }
+      let pending = false
       for (const id of currentIds) {
         if (nodeElByIdCache.has(id)) continue
         const el = container.querySelector<HTMLElement>(`[data-node-instance="${id}"]`)
-        if (!el) continue // not painted yet this frame — picked up on a later graph change or frame
+        if (!el) {
+          pending = true
+          continue // not painted yet this frame — the caller keeps looping until it is
+        }
+        nodeResizeObserver.observe(el)
         nodeElByIdCache.set(id, el)
         remeasureNode(id, el)
-        nodeResizeObserver.observe(el)
       }
+      return pending
     }
 
     // A port's connected-state can change its glyph's rendered size (dot
@@ -445,11 +475,26 @@ export const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, InfiniteCanvasPro
       const currentDpr = window.devicePixelRatio || 1
       if (currentDpr !== size.dpr) resize() // M10_REVIEW.md 0.5: catches a monitor-DPI change without needing an unrelated resize
 
+      // Camera must be read AND applied to the world layer's CSS transform
+      // before any port measurement happens below (syncNodeOffsetCache ->
+      // remeasureNode -> getBoundingClientRect()). Port measurement divides
+      // by getCamera().zoom independently — if the DOM still visually
+      // reflected a stale zoom (this used to be applied at the END of
+      // frame(), one call site down), a frame landing right when zoom is
+      // changing (e.g. centerViewAtDefaultZoom's fit-view RAF) would measure
+      // against last frame's transform while dividing by this frame's zoom,
+      // producing a wrong, internally-inconsistent world-space offset that
+      // only self-corrected if a later frame happened to re-measure under a
+      // now-consistent DOM state. Root cause of the intermittent "cables
+      // connect to the wrong place" bug — reproduced across several
+      // relaunches with identical code before this fix.
+      const camera = getCamera()
+      world.style.transform = `translate(${camera.panX}px, ${camera.panY}px) scale(${camera.zoom})`
+
       const graphNow = getGraphSnapshot()
-      syncNodeOffsetCache(graphNow.nodes)
+      const hasUnmeasuredNodes = syncNodeOffsetCache(graphNow.nodes)
 
       const g = getGesture()
-      const camera = getCamera()
 
       // A node-drag hasn't committed to the store yet (only on mouseup) —
       // substitute its live (already-snapped) position when building
@@ -606,10 +651,10 @@ export const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, InfiniteCanvasPro
       // Chromium repaints the DOM content fresh at every scale, all the
       // time — more paint work per frame, but at M10's node counts that's
       // imperceptible, and it's never blurry, ever, with no settle delay to
-      // tune.
-      world.style.transform = `translate(${camera.panX}px, ${camera.panY}px) scale(${camera.zoom})`
+      // tune. (Transform itself is applied at the top of frame(), before
+      // port measurement — see the comment there.)
 
-      if (dirty || getGesture() !== null || getGhost() !== null) {
+      if (dirty || getGesture() !== null || getGhost() !== null || hasUnmeasuredNodes) {
         rafHandle = requestAnimationFrame(frame)
       } else {
         looping = false

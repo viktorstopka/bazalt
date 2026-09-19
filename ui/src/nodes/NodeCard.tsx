@@ -13,6 +13,21 @@ import { ValueSlider } from './ValueSlider'
 import { TriggerSelect } from './TriggerSelect'
 import './NodeCard.css'
 
+/** PortDescriptor.h's own contract: "falls back to id in the UI if empty" —
+    several real ports/parameters never got an explicit label/displayName
+    filled in (osc.analog's "out", math.add's "a"/"b", ...), which used to
+    render as a raw, inconsistently-cased id. This turns any such id/
+    camelCase-boundary into a consistent Title Case display string (never
+    touches an explicit label/displayName when one is set) — direct
+    feedback: "I would like for EVERY port to be consistently named". Not
+    applied to portUiKind.ts's own case-insensitive name-matching (that
+    already lowercases both sides itself for that unrelated purpose).
+*/
+function humanizeId(id: string): string {
+  const spaced = id.replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+  return spaced.charAt(0).toUpperCase() + spaced.slice(1)
+}
+
 export interface NodeCardState {
   selected?: boolean
   bypassed?: boolean
@@ -206,13 +221,9 @@ function PortGlyph({
 function PortLabel({ port, connected, demoValue }: { port: PortDescriptor; connected: boolean; demoValue?: string }) {
   const style = portUiStyle(port)
   const color = port.isPolyPlaceholder ? tokens.color.portPoly : style.color
-  // PortDescriptor.h's own contract: "falls back to id in the UI if empty"
-  // — several real M1/M2/M7 nodes (osc.analog's "out", math.add's "a"/"b",
-  // ...) never got a display label filled in, so this is a real, expected
-  // case, not a malformed descriptor.
   return (
     <span className="node-port-label" style={{ color }}>
-      {port.label || port.id}
+      {port.label || humanizeId(port.id)}
       {connected && <span className="node-port-live-value"> {demoValue}</span>}
     </span>
   )
@@ -262,7 +273,7 @@ function PortRow({
       {direction === 'input' && <PortGlyph port={port} side="left" instanceId={instanceId} connected={connected} />}
       {showSlider ? (
         <ValueSlider
-          label={port.label || port.id}
+          label={port.label || humanizeId(port.id)}
           value={value ?? port.defaultValue}
           min={port.minValue ?? 0}
           max={port.maxValue ?? 10}
@@ -273,7 +284,7 @@ function PortRow({
         />
       ) : showTriggerSelect ? (
         <TriggerSelect
-          label={port.label || port.id}
+          label={port.label || humanizeId(port.id)}
           options={port.options!}
           selectedIndex={value ?? port.defaultValue}
           color={portUiStyle(port).color}
@@ -298,7 +309,7 @@ function MergedRowView({ row, instanceId, connected }: { row: MergedRow; instanc
   // the same trick PortGlyph already uses to "cut" the border it sits on),
   // so the line reads as one continuous stroke broken only where the label
   // text covers it.
-  const label = row.output.label || row.input.label || row.output.id
+  const label = row.output.label || row.input.label || humanizeId(row.output.id)
   const lineColor = row.output.isPolyPlaceholder ? tokens.color.portPoly : portUiStyle(row.output).color
   return (
     <div className="node-row node-row-port node-row-merged">
@@ -419,7 +430,7 @@ function StandardBody({ descriptor, state, instanceId }: { descriptor: NodeDescr
         <ParameterRow
           key={p.id}
           id={p.id}
-          displayName={p.displayName || p.id}
+          displayName={p.displayName || humanizeId(p.id)}
           value={paramValue(state, p.id, p.defaultValue)}
           minValue={p.minValue}
           maxValue={p.maxValue}
@@ -489,7 +500,7 @@ function HorizontalBody({ descriptor, state, instanceId }: { descriptor: NodeDes
           <ParameterRow
             key={p.id}
             id={p.id}
-            displayName={p.displayName || p.id}
+            displayName={p.displayName || humanizeId(p.id)}
             value={paramValue(state, p.id, p.defaultValue)}
             minValue={p.minValue}
             maxValue={p.maxValue}

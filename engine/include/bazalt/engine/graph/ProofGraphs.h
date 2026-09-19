@@ -73,12 +73,21 @@ namespace bazalt::engine
     {
         NodeGraph graph;
 
-        graph.addNode ({ "noteIn", "io.noteIn", {}, {}, {} });
-        graph.addNode ({ "allocator", "instance.allocator", {}, {}, {} });
-        graph.addNode ({ "osc", "osc.analog", {}, {}, {} });
-        graph.addNode ({ "svf", "filter.svf", {}, { { "filter.svf.cutoff", 3000.0f }, { "filter.svf.resonance", 0.9f } }, {} });
-        graph.addNode ({ "env", "env.adsr", {}, {}, {} });
-        graph.addNode ({ "amp", "mix.gain", {}, {}, {} });
+        // Hand-placed, not left at the (0,0) NodePosition default every one
+        // of these would otherwise share — a real gap found via actual
+        // hands-on testing (M19): with no position, every node in the
+        // default graph rendered exactly stacked on top of every other,
+        // and every cable had to converge on that same single point,
+        // reading as a chaotic mess of crossing lines with nothing to do
+        // with a rendering bug. Roughly follows the signal flow left to
+        // right: noteIn/allocator feed osc (pitch) and env (gate) below/
+        // beside them; osc -> svf -> amp; env -> amp.
+        graph.addNode ({ "noteIn", "io.noteIn", { 40.0f, 40.0f }, {}, {} });
+        graph.addNode ({ "allocator", "instance.allocator", { 340.0f, 40.0f }, {}, {} });
+        graph.addNode ({ "env", "env.adsr", { 640.0f, 40.0f }, {}, {} });
+        graph.addNode ({ "osc", "osc.analog", { 340.0f, 420.0f }, {}, {} });
+        graph.addNode ({ "svf", "filter.svf", { 640.0f, 420.0f }, { { "filter.svf.cutoff", 3000.0f }, { "filter.svf.resonance", 0.9f } }, {} });
+        graph.addNode ({ "amp", "mix.gain", { 940.0f, 230.0f }, {}, {} });
 
         graph.addConnection ({ "noteIn", "notes", "allocator", "spawn" });
         graph.addConnection ({ "allocator", "pitch", "osc", "pitch" });

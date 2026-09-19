@@ -77,13 +77,24 @@ function NodeWrapper({ node, descriptor, selected, selection, connectedPortIds, 
   // Callback ref (not a layout effect): fires exactly when React attaches
   // this DOM node, which is the earliest point `.node-title`'s real
   // geometry can be measured — see getTitleGeometry's own comment.
+  //
+  // Width is NOT just the current title's rendered width: a short existing
+  // name (e.g. "SVF") measures only a few characters wide, leaving no room
+  // to see a longer replacement being typed — direct feedback: "the input
+  // field is so small I cannot see what I'm typing". Widened to a sensible
+  // minimum, capped so it doesn't overflow past the node card's own right
+  // edge (it's absolutely positioned, so temporarily overlapping the
+  // title-bar icons while actively renaming is fine).
+  const RENAME_INPUT_MIN_WIDTH = 140
   const positionRenameInput = (el: HTMLInputElement | null) => {
     if (!el || !wrapperRef.current) return
     const geometry = getTitleGeometry(wrapperRef.current)
     if (!geometry) return
+    const maxWidth = wrapperRef.current.offsetWidth - geometry.left - 8
+    const width = Math.max(geometry.width, Math.min(RENAME_INPUT_MIN_WIDTH, maxWidth))
     el.style.left = `${geometry.left}px`
     el.style.top = `${geometry.top}px`
-    el.style.width = `${geometry.width}px`
+    el.style.width = `${width}px`
     el.style.height = `${geometry.height}px`
   }
 

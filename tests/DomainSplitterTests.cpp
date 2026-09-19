@@ -179,9 +179,15 @@ TEST_CASE ("DomainSplitter rejects instance.allocator placed downstream of insta
     CHECK (result.errorMessage.contains ("voice domain"));
 }
 
-TEST_CASE ("DomainSplitter rejects instance.mix with no connection into its input port",
-           "[engine][DomainSplitter][M17]")
+TEST_CASE ("DomainSplitter treats an unwired instance.mix as no domain boundary yet, not an error",
+           "[engine][DomainSplitter][M17][M19]")
 {
+    // A freshly-placed instance.mix (before the user has wired anything
+    // into it) must not make the whole graph fail to compile — the UI
+    // places a node, then wires it, as two separate commands, so the
+    // in-between state has to be valid. Found via real hands-on testing
+    // (M19) after the original "reject unless already wired" behavior
+    // made instance.mix impossible to ever place through the Add menu.
     NodeGraph graph;
     graph.addNode ({ "instancemix", "instance.mix", {}, {}, {} });
     graph.addNode ({ "masterout", "io.output", {}, {}, {} });
@@ -189,8 +195,30 @@ TEST_CASE ("DomainSplitter rejects instance.mix with no connection into its inpu
     graph.setOutput ("masterout", "out");
 
     const auto result = DomainSplitter::split (graph);
+    REQUIRE (result.success);
+    CHECK_FALSE (result.hasGlobalDomain);
+    CHECK (result.voiceGraph.getNodes().size() == 2);
+}
+
+TEST_CASE ("DomainSplitter rejects instance.mix with more than one connection into its input port",
+           "[engine][DomainSplitter][M19]")
+{
+    NodeGraph graph;
+    graph.addNode ({ "instancemix", "instance.mix", {}, {}, {} });
+    graph.addNode ({ "src1", "util.constant", {}, {}, {} });
+    graph.addNode ({ "src2", "util.constant", {}, {}, {} });
+    graph.addNode ({ "masterout", "io.output", {}, {}, {} });
+    // NodeGraph itself doesn't prevent double-wiring an input (only
+    // GraphCompiler/the UI do) — DomainSplitter must still catch it since
+    // it inspects the raw connection list before GraphCompiler ever runs.
+    graph.addConnection ({ "src1", "out", "instancemix", "in" });
+    graph.addConnection ({ "src2", "out", "instancemix", "in" });
+    graph.addConnection ({ "instancemix", "out", "masterout", "in" });
+    graph.setOutput ("masterout", "out");
+
+    const auto result = DomainSplitter::split (graph);
     CHECK_FALSE (result.success);
-    CHECK (result.errorMessage.contains ("exactly one connection"));
+    CHECK (result.errorMessage.contains ("at most one connection"));
 }
 
 TEST_CASE ("DomainSplitter rejects an orphaned node connected to neither domain", "[engine][DomainSplitter]")

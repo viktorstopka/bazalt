@@ -97,9 +97,29 @@ namespace bazalt::engine
             }
         }
 
-        if (incomingCount != 1)
+        // A freshly-placed instance.mix has no connection yet — that must
+        // be placeable on its own (the UI places a node, then wires it, as
+        // two separate commands; requiring the wire to already exist would
+        // make it impossible to ever place one at all). Treat this exactly
+        // like "no instance.mix node present" (the domain boundary simply
+        // isn't active yet) rather than rejecting the whole graph — a real
+        // gap found via actual hands-on testing (M19), not caught by any
+        // test, since every existing test builds its graph in one shot via
+        // setGraph() rather than incrementally via addNode()+connect().
+        // Only a genuine double-connection (which the UI itself never
+        // produces, but a hand-edited or scripted patch could) stays an
+        // error.
+        if (incomingCount == 0)
         {
-            result.errorMessage = "instance.mix must have exactly one connection into its 'in' port (found "
+            result.success = true;
+            result.hasGlobalDomain = false;
+            result.voiceGraph = graph;
+            return result;
+        }
+
+        if (incomingCount > 1)
+        {
+            result.errorMessage = "instance.mix must have at most one connection into its 'in' port (found "
                                    + juce::String (incomingCount) + ")";
             return result;
         }
