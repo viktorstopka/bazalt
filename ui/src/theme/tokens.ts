@@ -40,7 +40,7 @@ export const tokens = {
     portValue: '#e8e8ea',
     portInteger: '#e6c85b',
     portTrigger: '#8c7fff',
-    portBoolean: '#5b8fff',
+    portBoolean: '#7cc6f7',
     portPoly: '#4ade80',
 
     // Node-body surface (M9 component gallery; NODE_EDITOR.md §10 — DOM

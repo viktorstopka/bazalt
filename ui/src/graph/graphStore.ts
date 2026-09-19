@@ -24,15 +24,36 @@
 //
 // Undo/redo (ADR-0025): a client-side stack of whole-graph JSON snapshots
 // (from graphGetSnapshot/graphRestoreSnapshot), not a per-command inverse
-// log. Every exported mutating action here is NOT optimistic (deviating
-// from NODE_EDITOR.md §6's "apply immediately, reconcile after" proposal,
-// a deliberate M19 simplification): it awaits the real command's result and
-// only then updates local nodes/wires from the engine's own confirmed
-// state, so there is never a local/engine divergence to reconcile. A local
-// WebView native-function round-trip is fast enough (no network involved)
-// that this costs no perceptible responsiveness — every mutating action
-// here already only commits once per user gesture (a full drag, not per
-// frame), never on every intermediate tick.
+// log.
+//
+// Every exported mutating action IS locally optimistic (ADR-0025 Amendment,
+// M20 — corrects that ADR's original "not optimistic" call): each one
+// applies its own effect to local nodes/wires/selection *synchronously*,
+// before the real command is even sent, then reconciles from the engine's
+// own confirmed snapshot once the round trip resolves. The original
+// non-optimistic design awaited the command's result first and only then
+// updated local state — reasoned (wrongly, per real hands-on testing) to
+// "cost no perceptible responsiveness" since the round trip is local, no
+// network involved. It does not: every gesture-completion handler
+// (ValueSlider's onUp, InfiniteCanvas's node-drag/wire-drag mouseup) clears
+// its own LIVE/preview rendering state synchronously and immediately, and
+// with nothing optimistic to fall back on, rendering reverted to the STALE
+// pre-gesture store value for the round trip's duration before the resync
+// corrected it — a real, visible glitch on every single node move,
+// parameter drag, connect, and disconnect (release a dragged node/slider
+// and it visibly snaps back before snapping to the right place; connect a
+// wire and it briefly vanishes; disconnect one and it briefly reappears).
+// Since the gesture-clearing and the optimistic store update now both
+// happen synchronously within the same event-handler tick, there is never
+// a frame where the live preview is gone but the store hasn't caught up.
+// The post-command resync (graphGetSnapshot) is still unconditional and
+// authoritative — it corrects anything the optimistic guess couldn't
+// predict (e.g. connectWithAutoAdapt silently inserting an adapter node)
+// and undoes the optimistic guess entirely if the command is rejected
+// (rare enough — most rejections are caught by canConnect.ts's own
+// prediction before a command is even sent — that a brief flash-then-
+// revert there is an acceptable, honest "that didn't work" signal rather
+// than the previous glitch-on-every-gesture cost).
 import type { NodeDescriptor } from './descriptorTypes'
 import { fetchNodeDescriptors } from './fetchNodeDescriptors'
 import { canConnectPorts, findPort, type ConnectionEndpoint } from './canConnect'
@@ -267,19 +288,29 @@ export function undo(): void {
     const beforeJson = past.pop()
     if (beforeJson === undefined || engineSnapshotCache === null) return
     const afterJson = engineSnapshotCache
+
+    // Optimistic: apply the target state immediately (it's already fully
+    // known, no guessing needed) rather than waiting on the round trip —
+    // same reasoning as every other action in this file (see header
+    // comment).
+    const optimistic = patchJsonToLocalState(beforeJson)
+    nodes = optimistic.nodes
+    wires = optimistic.wires
+    lastError = null
+    notify()
+
     const result = await graphRestoreSnapshot(beforeJson)
     if (!result.success) {
       past.push(beforeJson) // put it back — the restore itself was rejected
+      const reverted = patchJsonToLocalState(afterJson)
+      nodes = reverted.nodes
+      wires = reverted.wires
       lastError = result.errorMessage
       notify()
       return
     }
     future.push(afterJson)
     engineSnapshotCache = beforeJson
-    const state = patchJsonToLocalState(beforeJson)
-    nodes = state.nodes
-    wires = state.wires
-    lastError = null
     notify()
   })()
 }
@@ -289,19 +320,25 @@ export function redo(): void {
     const afterJson = future.pop()
     if (afterJson === undefined || engineSnapshotCache === null) return
     const beforeJson = engineSnapshotCache
+
+    const optimistic = patchJsonToLocalState(afterJson)
+    nodes = optimistic.nodes
+    wires = optimistic.wires
+    lastError = null
+    notify()
+
     const result = await graphRestoreSnapshot(afterJson)
     if (!result.success) {
       future.push(afterJson)
+      const reverted = patchJsonToLocalState(beforeJson)
+      nodes = reverted.nodes
+      wires = reverted.wires
       lastError = result.errorMessage
       notify()
       return
     }
     past.push(beforeJson)
     engineSnapshotCache = afterJson
-    const state = patchJsonToLocalState(afterJson)
-    nodes = state.nodes
-    wires = state.wires
-    lastError = null
     notify()
   })()
 }
@@ -320,14 +357,22 @@ async function fireCommand(fire: () => Promise<CommandResult>): Promise<boolean>
 
 /** Wraps one user gesture (a single command, or a short sequence the UI
     treats as one gesture — spliceInsert's disconnect+addNode+2×connect):
-    captures the engine's current snapshot as "before", runs the gesture,
-    then re-syncs local nodes/wires from the engine's own confirmed state
-    and pushes a history entry if anything actually changed. Clears
-    lastError at the start, exactly once per gesture, not per sub-command.
+    applies `optimistic` (if given) to local nodes/wires/selection
+    synchronously and notifies immediately — see this file's header comment
+    on why this has to happen before the command is even sent, not after —
+    then runs the gesture, then re-syncs local nodes/wires from the engine's
+    own confirmed state (correcting the optimistic guess, or undoing it
+    entirely if the gesture was rejected) and pushes a history entry if
+    anything actually changed. Clears lastError at the start, exactly once
+    per gesture, not per sub-command.
 */
-async function withHistory(gesture: () => Promise<void>): Promise<void> {
+async function withHistory(gesture: () => Promise<void>, optimistic?: () => void): Promise<void> {
   lastError = null
   const beforeJson = engineSnapshotCache
+  if (optimistic) {
+    optimistic()
+    notify()
+  }
   await gesture()
 
   const afterJson = await graphGetSnapshot()
@@ -349,33 +394,54 @@ async function withHistory(gesture: () => Promise<void>): Promise<void> {
 
 export async function addNode(typeId: string, x: number, y: number): Promise<string> {
   const id = makeId('node')
-  await withHistory(async () => {
-    const ok = await fireCommand(() => graphAddNode(typeId, id, x, y))
-    if (ok) selection = new Set([id])
-  })
+  await withHistory(
+    () => fireCommand(() => graphAddNode(typeId, id, x, y)).then(() => undefined),
+    () => {
+      nodes.set(id, { id, typeId, x, y, bypassed: false })
+      selection = new Set([id])
+    },
+  )
   return id
 }
 
 /** Removes the given nodes, one command per node, in one undo step. */
 export function deleteNodes(ids: readonly string[]): void {
   if (ids.length === 0) return
-  void withHistory(async () => {
-    for (const id of ids) {
-      selection.delete(id)
-      await fireCommand(() => graphDeleteNode(id))
-    }
-  })
+  void withHistory(
+    async () => {
+      for (const id of ids) await fireCommand(() => graphDeleteNode(id))
+    },
+    () => {
+      for (const id of ids) {
+        selection.delete(id)
+        nodes.delete(id)
+      }
+      for (const [wId, wire] of [...wires]) {
+        if (ids.includes(wire.fromNodeId) || ids.includes(wire.toNodeId)) wires.delete(wId)
+      }
+    },
+  )
 }
 
 export function renameNode(id: string, title: string | undefined): void {
-  void withHistory(() => fireCommand(() => graphSetProperty(id, 'title', title && title.trim().length > 0 ? title.trim() : '')).then(() => undefined))
+  const trimmed = title && title.trim().length > 0 ? title.trim() : ''
+  void withHistory(
+    () => fireCommand(() => graphSetProperty(id, 'title', trimmed)).then(() => undefined),
+    () => {
+      const node = nodes.get(id)
+      if (node) nodes.set(id, { ...node, titleOverride: trimmed.length > 0 ? trimmed : undefined })
+    },
+  )
 }
 
 export function toggleBypass(id: string): void {
   const node = nodes.get(id)
   if (!node) return
   const next = !node.bypassed
-  void withHistory(() => fireCommand(() => graphSetProperty(id, 'bypassed', next)).then(() => undefined))
+  void withHistory(
+    () => fireCommand(() => graphSetProperty(id, 'bypassed', next)).then(() => undefined),
+    () => nodes.set(id, { ...node, bypassed: next }),
+  )
 }
 
 /** Toggles bypass on every given node independently, in one undo step —
@@ -385,13 +451,22 @@ export function toggleBypass(id: string): void {
 */
 export function toggleBypassMany(ids: readonly string[]): void {
   if (ids.length === 0) return
-  void withHistory(async () => {
-    for (const id of ids) {
-      const node = nodes.get(id)
-      if (!node) continue
-      await fireCommand(() => graphSetProperty(id, 'bypassed', !node.bypassed))
-    }
-  })
+  const nextBysById = new Map<string, boolean>()
+  for (const id of ids) {
+    const node = nodes.get(id)
+    if (node) nextBysById.set(id, !node.bypassed)
+  }
+  void withHistory(
+    async () => {
+      for (const [id, next] of nextBysById) await fireCommand(() => graphSetProperty(id, 'bypassed', next))
+    },
+    () => {
+      for (const [id, next] of nextBysById) {
+        const node = nodes.get(id)
+        if (node) nodes.set(id, { ...node, bypassed: next })
+      }
+    },
+  )
 }
 
 /** One undo step per commit — called once, when a ValueSlider drag ends or
@@ -400,7 +475,13 @@ export function toggleBypassMany(ids: readonly string[]): void {
     follows for node dragging).
 */
 export function setParameterValue(nodeId: string, parameterId: string, value: number): void {
-  void withHistory(() => fireCommand(() => graphSetParameterValue(nodeId, parameterId, value)).then(() => undefined))
+  void withHistory(
+    () => fireCommand(() => graphSetParameterValue(nodeId, parameterId, value)).then(() => undefined),
+    () => {
+      const node = nodes.get(nodeId)
+      if (node) nodes.set(nodeId, { ...node, parameterValues: { ...node.parameterValues, [parameterId]: value } })
+    },
+  )
 }
 
 export function setSelection(ids: readonly string[]): void {
@@ -418,19 +499,36 @@ export function setSelection(ids: readonly string[]): void {
 */
 export function commitNodeMoves(updates: ReadonlyArray<{ id: string; x: number; y: number }>): void {
   if (updates.length === 0) return
-  void withHistory(async () => {
-    for (const update of updates) await fireCommand(() => graphMoveNode(update.id, update.x, update.y))
-  })
+  void withHistory(
+    async () => {
+      for (const update of updates) await fireCommand(() => graphMoveNode(update.id, update.x, update.y))
+    },
+    () => {
+      for (const update of updates) {
+        const node = nodes.get(update.id)
+        if (node) nodes.set(update.id, { ...node, x: update.x, y: update.y })
+      }
+    },
+  )
 }
 
 export function addWire(fromNodeId: string, fromPortId: string, toNodeId: string, toPortId: string): void {
-  void withHistory(() => fireCommand(() => graphConnectWithAutoAdapt(fromNodeId, fromPortId, toNodeId, toPortId)).then(() => undefined))
+  void withHistory(
+    () => fireCommand(() => graphConnectWithAutoAdapt(fromNodeId, fromPortId, toNodeId, toPortId)).then(() => undefined),
+    () => {
+      const id = wireId(toNodeId, toPortId)
+      wires.set(id, { id, fromNodeId, fromPortId, toNodeId, toPortId })
+    },
+  )
 }
 
 export function removeWire(id: string): void {
   const wire = wires.get(id)
   if (!wire) return
-  void withHistory(() => fireCommand(() => graphDisconnect(wire.fromNodeId, wire.fromPortId, wire.toNodeId, wire.toPortId)).then(() => undefined))
+  void withHistory(
+    () => fireCommand(() => graphDisconnect(wire.fromNodeId, wire.fromPortId, wire.toNodeId, wire.toPortId)).then(() => undefined),
+    () => wires.delete(id),
+  )
 }
 
 /** Resolves a completed wire-drag gesture (InfiniteCanvas.tsx) in one undo
@@ -442,13 +540,22 @@ export function removeWire(id: string): void {
 */
 export function commitWireDrag(fromNodeId: string, fromPortId: string, target: { nodeId: string; portId: string } | null, detachedWireId?: string): void {
   if (!detachedWireId && !target) return
-  void withHistory(async () => {
-    if (detachedWireId) {
-      const wire = wires.get(detachedWireId)
-      if (wire) await fireCommand(() => graphDisconnect(wire.fromNodeId, wire.fromPortId, wire.toNodeId, wire.toPortId))
-    }
-    if (target) await fireCommand(() => graphConnectWithAutoAdapt(fromNodeId, fromPortId, target.nodeId, target.portId))
-  })
+  void withHistory(
+    async () => {
+      if (detachedWireId) {
+        const wire = wires.get(detachedWireId)
+        if (wire) await fireCommand(() => graphDisconnect(wire.fromNodeId, wire.fromPortId, wire.toNodeId, wire.toPortId))
+      }
+      if (target) await fireCommand(() => graphConnectWithAutoAdapt(fromNodeId, fromPortId, target.nodeId, target.portId))
+    },
+    () => {
+      if (detachedWireId) wires.delete(detachedWireId)
+      if (target) {
+        const id = wireId(target.nodeId, target.portId)
+        wires.set(id, { id, fromNodeId, fromPortId, toNodeId: target.nodeId, toPortId: target.portId })
+      }
+    },
+  )
 }
 
 function splicePrimaryPorts(descriptor: NodeDescriptor): { inputId: string; outputId: string } | undefined {
@@ -499,13 +606,23 @@ export function spliceInsert(wireIdToSplice: string, typeId: string, x: number, 
 
   const newNodeId = makeId('node')
 
-  void withHistory(async () => {
-    if (!(await fireCommand(() => graphDisconnect(wire.fromNodeId, wire.fromPortId, wire.toNodeId, wire.toPortId)))) return
-    if (!(await fireCommand(() => graphAddNode(typeId, newNodeId, x, y)))) return
-    if (!(await fireCommand(() => graphConnectWithAutoAdapt(wire.fromNodeId, wire.fromPortId, newNodeId, primary.inputId)))) return
-    if (!(await fireCommand(() => graphConnectWithAutoAdapt(newNodeId, primary.outputId, wire.toNodeId, wire.toPortId)))) return
-    selection = new Set([newNodeId])
-  })
+  void withHistory(
+    async () => {
+      if (!(await fireCommand(() => graphDisconnect(wire.fromNodeId, wire.fromPortId, wire.toNodeId, wire.toPortId)))) return
+      if (!(await fireCommand(() => graphAddNode(typeId, newNodeId, x, y)))) return
+      if (!(await fireCommand(() => graphConnectWithAutoAdapt(wire.fromNodeId, wire.fromPortId, newNodeId, primary.inputId)))) return
+      if (!(await fireCommand(() => graphConnectWithAutoAdapt(newNodeId, primary.outputId, wire.toNodeId, wire.toPortId)))) return
+    },
+    () => {
+      wires.delete(wireIdToSplice)
+      nodes.set(newNodeId, { id: newNodeId, typeId, x, y, bypassed: false })
+      const inWireId = wireId(newNodeId, primary.inputId)
+      const outWireId = wireId(wire.toNodeId, wire.toPortId)
+      wires.set(inWireId, { id: inWireId, fromNodeId: wire.fromNodeId, fromPortId: wire.fromPortId, toNodeId: newNodeId, toPortId: primary.inputId })
+      wires.set(outWireId, { id: outWireId, fromNodeId: newNodeId, fromPortId: primary.outputId, toNodeId: wire.toNodeId, toPortId: wire.toPortId })
+      selection = new Set([newNodeId])
+    },
+  )
 
   return newNodeId
 }
