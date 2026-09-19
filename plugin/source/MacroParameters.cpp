@@ -57,8 +57,9 @@ namespace bazalt
                 const auto targetValue = mapping.rangeMin + value * (mapping.rangeMax - mapping.rangeMin);
 
                 for (int i = 0; i < numPlans; ++i)
-                    if (auto* node = plans[i]->getNodeById (mapping.targetNodeId))
-                        node->setParameter (mapping.targetParameterId, targetValue);
+                    if (plans[i] != nullptr)
+                        if (auto* node = plans[i]->getNodeById (mapping.targetNodeId))
+                            node->setParameter (mapping.targetParameterId, targetValue);
             }
         }
     }

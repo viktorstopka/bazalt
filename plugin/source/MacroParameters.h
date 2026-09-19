@@ -46,7 +46,15 @@ namespace bazalt
             result to every mapped target across every plan given. Call
             once per processBlock, before rendering any voice. Takes a raw
             pointer + count (not std::vector) deliberately — this runs on
-            the audio thread and must not allocate.
+            the audio thread and must not allocate. A null entry in `plans`
+            is a real, expected case (a voice's PlanSwapper hasn't been
+            published to yet — e.g. the first few processBlock() calls can
+            race the message thread's initial GraphEditController::prepare()
+            publish, since JUCE doesn't guarantee prepareToPlay() has fully
+            returned before the audio callback starts) and is silently
+            skipped, matching renderVoiceRange()'s own null check — found by
+            a real Standalone-app crash this null check was originally
+            missing for.
         */
         void applyToPlans (bazalt::engine::ExecutionPlan* const* plans, int numPlans, int numSamples) noexcept;
 
