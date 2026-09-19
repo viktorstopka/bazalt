@@ -39,3 +39,20 @@ rule (ADR-0017).
   editable/deletable afterward like any other node — no hidden state anywhere in the chain.
 - A conversion requiring more than two adapters is rejected outright; the user builds it explicitly —
   this caps chain complexity by construction, not by convention.
+
+## Amendment (M20) — two different real quantities compose Normalise+Map, not a bare Reject
+Two Control ports with different real (non-Dimensionless, non-normalised) quantities — e.g. Pitch
+into a filter's Frequency-quantity Cutoff, pitch-tracking, a standard synthesis technique — were a
+hard `Reject` from M16 through M20, flagged in `CanConnect.cpp`'s own comment as "a real, open gap,"
+not a deliberate final answer. Direct feedback after M20 made real-quantity ports common enough to
+actually hit this pair: rejecting it contradicted this ADR's own premise (real quantities are numeric
+ranges; two adapters that already handle a real↔Unipolar boundary individually compose into a real↔
+real one) and the "at most two adapters" ceiling this ADR already set. `connectControl()` now returns
+a 2-step chain for this case — `adapt.normalise` (seeded from the source's own range) into `adapt.map`
+(seeded from the destination's own range) — using the exact same two adapter nodes and seeding
+mechanism the first wave shipped, not a new node. This is not one of the original ten named pairs;
+it's a new pair this ADR's own chain-length ceiling already accommodated. `GraphEditController::
+connectWithAutoAdapt` inserts both as real, visible, independently editable nodes, spaced along the
+source→destination line, exactly like a single-step insertion — never a hidden/implicit conversion.
+`Dimensionless` stays an unconditional free pass (no adapter, no rescaling) — whether *that* should
+also start requiring a remap when ranges differ is a separate, larger question, not decided here.

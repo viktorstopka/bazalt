@@ -54,7 +54,13 @@ function connectControl(from: PortDescriptor, to: PortDescriptor): CanConnectRes
   if (isRealQuantity(from.quantity) && isNormalisedQuantity(to.quantity)) {
     return needsAdapters('Real-quantity value into a modulation-range port needs a Normalise')
   }
-  return reject('Incompatible Control quantities with no defined adapter')
+  // Two different real quantities (e.g. Frequency and Pitch) — composed via
+  // Normalise then Map, same as CanConnect.cpp's mirrored case. Live
+  // wire-drag prediction only needs the outcome (NeedsAdapters renders
+  // identically to Ok during a drag, per this file's own header comment);
+  // the actual two-node insertion happens engine-side, in
+  // GraphEditController::connectWithAutoAdapt, once the drop commits.
+  return needsAdapters('Different real quantities — remapped via Normalise then Map')
 }
 
 function dataTagAccepted(produced: string, required: string): boolean {

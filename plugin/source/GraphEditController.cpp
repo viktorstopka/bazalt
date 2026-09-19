@@ -173,48 +173,75 @@ namespace bazalt
         if (connectivity.outcome == bazalt::engine::ConnectionOutcome::Ok)
             return connect (fromNodeId, fromPortId, toNodeId, toPortId);
 
-        // NeedsAdapters. Only a single-step, single-input chain can be
-        // spliced in generically (adapt.map/adapt.normalise/adapt.threshold);
-        // mix.downmix's 2-in-1-out channels case is flagged but not
-        // auto-inserted (CanConnect.cpp's own comment explains why).
-        if (connectivity.adapterChain.size() != 1)
+        // NeedsAdapters. A 1- or 2-step, single-input chain can be spliced
+        // in generically (adapt.map/adapt.normalise/adapt.threshold, and
+        // — M20 — a composed normalise-then-map pair for two different real
+        // quantities); mix.downmix's 2-in-1-out channels case is flagged
+        // but not auto-inserted (CanConnect.cpp's own comment explains
+        // why). Every step is a real, ordinary, visible node added to the
+        // graph below — never a hidden/implicit conversion inside the wire
+        // itself (ADR-0019's whole premise).
+        if (connectivity.adapterChain.empty() || connectivity.adapterChain.size() > 2)
             return { false, "No auto-insertable adapter for this connection: " + connectivity.reason };
 
-        const auto& step = connectivity.adapterChain.front();
-        if (step.typeId == "mix.downmix")
+        if (connectivity.adapterChain.front().typeId == "mix.downmix")
             return { false, connectivity.reason };
 
-        const auto adapterId = uniqueAdapterNodeId (graph, fromNodeId + "_" + toNodeId + "_adapter");
-        const auto midX = (fromNode->position.x + toNode->position.x) * 0.5f;
-        const auto midY = (fromNode->position.y + toNode->position.y) * 0.5f;
+        const auto numSteps = (int) connectivity.adapterChain.size();
 
         return applyBatch ([&] (bazalt::engine::NodeGraph& g)
         {
-            bazalt::engine::NodeInstance instance;
-            instance.id = adapterId;
-            instance.type = step.typeId;
-            instance.position = { midX, midY };
+            auto currentFromNodeId = fromNodeId;
+            auto currentFromPortId = fromPortId;
 
-            // Seeding (SIGNAL_TYPES.md §5's "Seeding" column) — by
-            // convention every min/max-seeded adapter this milestone ships
-            // names its parameters "<typeId>.min"/"<typeId>.max"
-            // (adapt.map, adapt.normalise both do); a future adapter that
-            // doesn't follow this convention needs its own branch here,
-            // not a silent wrong guess.
-            if (step.seedFromDestinationRange && toPort->minValue.has_value() && toPort->maxValue.has_value())
+            for (int i = 0; i < numSteps; ++i)
             {
-                instance.parameters[step.typeId + ".min"] = *toPort->minValue;
-                instance.parameters[step.typeId + ".max"] = *toPort->maxValue;
-            }
-            else if (step.seedFromSourceRange && fromPort->minValue.has_value() && fromPort->maxValue.has_value())
-            {
-                instance.parameters[step.typeId + ".min"] = *fromPort->minValue;
-                instance.parameters[step.typeId + ".max"] = *fromPort->maxValue;
+                const auto& step = connectivity.adapterChain[(size_t) i];
+                const auto idSuffix = numSteps == 1 ? juce::String ("_adapter") : ("_adapter" + juce::String (i + 1));
+                const auto adapterId = uniqueAdapterNodeId (graph, fromNodeId + "_" + toNodeId + idSuffix);
+
+                // Position: a single adapter keeps the original midpoint; a
+                // two-step chain spaces its nodes at 1/3 and 2/3 along the
+                // source->destination line instead of stacking both on top
+                // of each other.
+                const auto t = numSteps == 1 ? 0.5f : (i == 0 ? (1.0f / 3.0f) : (2.0f / 3.0f));
+                const auto posX = fromNode->position.x + (toNode->position.x - fromNode->position.x) * t;
+                const auto posY = fromNode->position.y + (toNode->position.y - fromNode->position.y) * t;
+
+                bazalt::engine::NodeInstance instance;
+                instance.id = adapterId;
+                instance.type = step.typeId;
+                instance.position = { posX, posY };
+
+                // Seeding (SIGNAL_TYPES.md §5's "Seeding" column) — by
+                // convention every min/max-seeded adapter this milestone
+                // ships names its parameters "<typeId>.min"/"<typeId>.max"
+                // (adapt.map, adapt.normalise both do); a future adapter
+                // that doesn't follow this convention needs its own branch
+                // here, not a silent wrong guess. Each step seeds itself
+                // independently from the ORIGINAL endpoints' own ranges
+                // (fromPort/toPort), not from whatever the previous step in
+                // the chain happens to be — correct for both today's
+                // single-step cases and the new two-step one.
+                if (step.seedFromDestinationRange && toPort->minValue.has_value() && toPort->maxValue.has_value())
+                {
+                    instance.parameters[step.typeId + ".min"] = *toPort->minValue;
+                    instance.parameters[step.typeId + ".max"] = *toPort->maxValue;
+                }
+                else if (step.seedFromSourceRange && fromPort->minValue.has_value() && fromPort->maxValue.has_value())
+                {
+                    instance.parameters[step.typeId + ".min"] = *fromPort->minValue;
+                    instance.parameters[step.typeId + ".max"] = *fromPort->maxValue;
+                }
+
+                g.addNode (std::move (instance));
+                g.addConnection ({ currentFromNodeId, currentFromPortId, adapterId, step.inputPortId });
+
+                currentFromNodeId = adapterId;
+                currentFromPortId = step.outputPortId;
             }
 
-            g.addNode (std::move (instance));
-            g.addConnection ({ fromNodeId, fromPortId, adapterId, step.inputPortId });
-            g.addConnection ({ adapterId, step.outputPortId, toNodeId, toPortId });
+            g.addConnection ({ currentFromNodeId, currentFromPortId, toNodeId, toPortId });
         });
     }
 

@@ -88,24 +88,13 @@ TEST_CASE ("connectWithAutoAdapt inserts and seeds a real adapt.map node for Uni
     CHECK (adapterToDestination);
 }
 
-TEST_CASE ("connectWithAutoAdapt rejects two different real quantities with no mutation and a descriptive error",
+TEST_CASE ("connectWithAutoAdapt rejects a connection to an unknown port with no mutation and a descriptive error",
            "[plugin][GraphEditController][CanConnect][M16]")
 {
     BazaltAudioProcessor processor;
     processor.prepareToPlay (44100.0, 512);
     auto& controller = processor.getGraphEditController();
 
-    // osc.analog has no real-quantity Control *port* to test against
-    // directly, so use two nodes whose ports carry different real
-    // quantities: delay.line.samples (Time) and... there is no second real
-    // non-Dimensionless Control port among real nodes yet other than
-    // Time-tagged ones, so this exercises the Frequency<->Time case via
-    // adapt.normalise's own generic input (Dimensionless) fed FROM a
-    // Time-tagged source instead — Dimensionless accepts anything, so
-    // assert the genuinely-incompatible case directly through canConnect's
-    // own unit tests (CanConnectTests.cpp) and here assert the *rejection
-    // plumbing* using an unknown-port case instead, which every real
-    // command path must also reject cleanly.
     REQUIRE (controller.addNode ("delay.line", "dly", 0.0f, 0.0f).success);
 
     const auto nodesBefore = controller.getGraph().getNodes().size();
@@ -116,6 +105,65 @@ TEST_CASE ("connectWithAutoAdapt rejects two different real quantities with no m
     CHECK (result.errorMessage.isNotEmpty());
     CHECK (controller.getGraph().getNodes().size() == nodesBefore);
     CHECK (controller.getGraph().getConnections().size() == connectionsBefore);
+}
+
+TEST_CASE ("connectWithAutoAdapt composes Normalise+Map for two different real quantities (M20: Pitch into a filter's Cutoff)",
+           "[plugin][GraphEditController][CanConnect][M20]")
+{
+    // Instance Allocator's "pitch" output (Quantity::Pitch, 0-127) into SVF
+    // Filter's "cutoff" input (Quantity::Frequency, 20-20000) — pitch-
+    // tracking a filter cutoff, a standard synthesis technique, and exactly
+    // the pair that used to be a bare Reject before M20 composed the two
+    // already-existing adapters into a chain instead.
+    BazaltAudioProcessor processor;
+    processor.prepareToPlay (44100.0, 512);
+    auto& controller = processor.getGraphEditController();
+
+    REQUIRE (controller.addNode ("instance.allocator", "alloc", 0.0f, 0.0f).success);
+
+    const auto result = controller.connectWithAutoAdapt ("alloc", "pitch", "svf", "filter.svf.cutoff");
+    REQUIRE (result.success);
+
+    const auto& graph = controller.getGraph();
+    const bazalt::engine::NodeInstance* normaliseNode = nullptr;
+    const bazalt::engine::NodeInstance* mapNode = nullptr;
+    for (const auto& n : graph.getNodes())
+    {
+        if (n.type == "adapt.normalise")
+            normaliseNode = &n;
+        else if (n.type == "adapt.map")
+            mapNode = &n;
+    }
+    REQUIRE (normaliseNode != nullptr);
+    REQUIRE (mapNode != nullptr);
+
+    // Normalise seeded from the SOURCE's range (pitch: 0-127).
+    REQUIRE (normaliseNode->parameters.count ("adapt.normalise.min") == 1);
+    CHECK (normaliseNode->parameters.at ("adapt.normalise.min") == 0.0f);
+    REQUIRE (normaliseNode->parameters.count ("adapt.normalise.max") == 1);
+    CHECK (normaliseNode->parameters.at ("adapt.normalise.max") == 127.0f);
+
+    // Map seeded from the DESTINATION's range (cutoff: 20-20000).
+    REQUIRE (mapNode->parameters.count ("adapt.map.min") == 1);
+    CHECK (mapNode->parameters.at ("adapt.map.min") == 20.0f);
+    REQUIRE (mapNode->parameters.count ("adapt.map.max") == 1);
+    CHECK (mapNode->parameters.at ("adapt.map.max") == 20000.0f);
+
+    // Wired in sequence: alloc.pitch -> normalise.in, normalise.out ->
+    // map.in, map.out -> svf.cutoff.
+    bool sourceToNormalise = false, normaliseToMap = false, mapToDestination = false;
+    for (const auto& c : graph.getConnections())
+    {
+        if (c.fromNodeId == "alloc" && c.fromPortId == "pitch" && c.toNodeId == normaliseNode->id && c.toPortId == "in")
+            sourceToNormalise = true;
+        if (c.fromNodeId == normaliseNode->id && c.fromPortId == "out" && c.toNodeId == mapNode->id && c.toPortId == "in")
+            normaliseToMap = true;
+        if (c.fromNodeId == mapNode->id && c.fromPortId == "out" && c.toNodeId == "svf" && c.toPortId == "filter.svf.cutoff")
+            mapToDestination = true;
+    }
+    CHECK (sourceToNormalise);
+    CHECK (normaliseToMap);
+    CHECK (mapToDestination);
 }
 
 TEST_CASE ("connectWithAutoAdapt does not attempt to auto-insert mix.downmix (2-in-1-out doesn't fit a single splice)",

@@ -106,15 +106,34 @@ namespace bazalt::engine
                 return needsAdapter (step, "Real-quantity value into a modulation-range port needs a Normalise");
             }
 
-            // Two different real quantities (e.g. Frequency into Time), or
-            // Unipolar into Bipolar / vice versa: not in SIGNAL_TYPES.md
-            // §5's table and not resolvable by Map/Normalise (those are
-            // specifically about the normalised<->real boundary, not
-            // real<->real or normalised<->normalised). Reject rather than
-            // guess at a conversion the design docs never specified —
-            // flagged as a real, open gap (RECONCILIATION.md-style), not
-            // silently allowed or silently invented.
-            return reject ("Incompatible Control quantities with no defined adapter");
+            // Two different real quantities (e.g. Frequency and Pitch, or
+            // Frequency and Time) — not in SIGNAL_TYPES.md §5's original
+            // ten-pair table, but both sides are still real numeric ranges,
+            // so compose the two adapters that already handle a real<->
+            // Unipolar boundary individually: normalise the source into 0-1
+            // using its own declared range, then map that 0-1 value into
+            // the destination's declared range. A real, generic
+            // real-to-real rescale built from parts that already exist and
+            // are already tested — not a new adapter node, not a guessed
+            // conversion between the two quantities' meanings, and not
+            // hidden inside the wire: both steps are ordinary, visible,
+            // editable nodes once auto-inserted (GraphEditController::
+            // connectWithAutoAdapt), exactly like every other adapter here.
+            // Direct feedback: rejecting this pair (e.g. Pitch into a
+            // filter's Cutoff — pitch-tracking, a standard synthesis
+            // technique) was an unfinished case, not a deliberate design
+            // choice — CanConnectResult::adapterChain and ADR-0019 both
+            // already anticipated "at most two adapters in a chain."
+            AdapterStep toUnipolar { "adapt.normalise", "in" };
+            toUnipolar.seedFromSourceRange = true;
+            AdapterStep toDestination { "adapt.map", "in" };
+            toDestination.seedFromDestinationRange = true;
+
+            CanConnectResult result;
+            result.outcome = ConnectionOutcome::NeedsAdapters;
+            result.adapterChain = { toUnipolar, toDestination };
+            result.reason = "Different real quantities — remapped via Normalise then Map";
+            return result;
         }
     }
 
