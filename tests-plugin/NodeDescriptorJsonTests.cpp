@@ -162,3 +162,23 @@ TEST_CASE ("nodeDescriptorsToVar serializes every registered type exactly once",
     for (const auto& entry : *array)
         CHECK (entry["typeId"].toString().isNotEmpty());
 }
+
+TEST_CASE ("nodeDescriptorToVar flags a polymorphic-port node, and only that one, so the UI can resolve its real types",
+           "[plugin][NodeDescriptorJson][Reroute]")
+{
+    // Without this flag the UI predicts wires against Reroute's declared
+    // default (Audio) and rejects a Control cable the engine accepts.
+    const auto factory = buildDefaultNodeFactory();
+
+    auto flagFor = [&] (const juce::String& typeId)
+    {
+        const auto node = factory.create (typeId);
+        REQUIRE (node != nullptr);
+        return nodeDescriptorToVar (describeNode (typeId, *node)).getProperty ("hasPolymorphicPorts", juce::var());
+    };
+
+    CHECK (flagFor ("util.reroute").isBool());
+    CHECK ((bool) flagFor ("util.reroute"));
+    CHECK (flagFor ("osc.analog").isBool());
+    CHECK_FALSE ((bool) flagFor ("osc.analog"));
+}

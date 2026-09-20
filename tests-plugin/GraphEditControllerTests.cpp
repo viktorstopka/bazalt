@@ -424,3 +424,52 @@ TEST_CASE ("Wiring past a growable group's maximum is rejected and leaves the gr
     CHECK_FALSE (controller.connect ("k", "out", "sum", "in.03").success); // non-canonical id names no port
     CHECK (controller.getGraph().getConnections().size() == before);
 }
+
+TEST_CASE ("A Reroute accepts a non-Audio cable through the controller, and forwards it to a matching port",
+           "[plugin][GraphEditController][Reroute]")
+{
+    // The Priority-1 Reroute fix was first tested only against GraphCompiler.
+    // The editor goes through connectWithAutoAdapt, which pre-checks with
+    // canConnect against the node's DEFAULT descriptor (Audio) — so this is the
+    // path that has to work for the fix to be real for a user.
+    BazaltAudioProcessor processor;
+    processor.prepareToPlay (44100.0, 512);
+
+    auto& controller = processor.getGraphEditController();
+
+    REQUIRE (controller.addNode ("util.constant", "k", 0.0f, 0.0f).success);
+    REQUIRE (controller.addNode ("util.reroute", "rr", 0.0f, 0.0f).success);
+    REQUIRE (controller.addNode ("math.subtract", "sub", 0.0f, 0.0f).success);
+
+    const auto intoReroute = controller.connectWithAutoAdapt ("k", "out", "rr", "in");
+    INFO (intoReroute.errorMessage);
+    REQUIRE (intoReroute.success);
+
+    const auto outOfReroute = controller.connectWithAutoAdapt ("rr", "out", "sub", "a");
+    INFO (outOfReroute.errorMessage);
+    CHECK (outOfReroute.success);
+}
+
+TEST_CASE ("A Reroute still rejects, through the controller, a downstream port its resolved type can't feed",
+           "[plugin][GraphEditController][Reroute]")
+{
+    // Skipping the default-descriptor pre-check must not turn "polymorphic"
+    // into "accepts anything": the compiler's resolved-type canConnect still
+    // rejects, and a rejected command leaves the graph exactly as it was.
+    BazaltAudioProcessor processor;
+    processor.prepareToPlay (44100.0, 512);
+
+    auto& controller = processor.getGraphEditController();
+
+    REQUIRE (controller.addNode ("io.noteIn", "notes", 0.0f, 0.0f).success);
+    REQUIRE (controller.addNode ("util.reroute", "rr", 0.0f, 0.0f).success);
+    REQUIRE (controller.addNode ("math.subtract", "sub", 0.0f, 0.0f).success);
+
+    REQUIRE (controller.connectWithAutoAdapt ("notes", "notes", "rr", "in").success); // a Note cable into a Reroute
+
+    const auto connectionsBefore = controller.getGraph().getConnections().size();
+    const auto rejected = controller.connectWithAutoAdapt ("rr", "out", "sub", "a"); // Note -> Control
+    CHECK_FALSE (rejected.success);
+    CHECK (rejected.errorMessage.isNotEmpty());
+    CHECK (controller.getGraph().getConnections().size() == connectionsBefore);
+}

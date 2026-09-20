@@ -64,7 +64,7 @@ namespace bazalt::engine
         /** docs/CLEANUP.md Priority 1 #2 — true for a node whose declared
             port type is decided by what's connected to it (currently only
             RerouteNode) rather than fixed at construction. GraphCompiler
-            resolves these (resolveIncomingSignalType()) before running
+            resolves these (resolveIncomingPort()) before running
             canConnect() on any connection touching this node, iterating to
             a fixed point so a chain of several such nodes resolves
             correctly regardless of declaration order. Most nodes have
@@ -85,20 +85,32 @@ namespace bazalt::engine
         virtual int getGroupPortCount() const noexcept { return -1; }
         virtual void setGroupPortCount (int count) noexcept { juce::ignoreUnused (count); }
 
-        /** Called with the resolved SignalType of whatever currently feeds
-            this node's own polymorphic input, once per compile, before that
-            connection (or any connection from this node's own output) is
-            validated. Only meaningful when hasPolymorphicPorts() is true.
+        /** Called once per compile, for every connection into this node,
+            with the PORT id it lands on and the full descriptor of the
+            output feeding it — before that connection (or any connection
+            from this node's own outputs) is validated. Only meaningful when
+            hasPolymorphicPorts() is true. The node adopts whatever it wants
+            from `source` (its SignalType, its Quantity — util.reroute takes
+            both; logic.select ignores its own `condition` port and adopts
+            only for the two data inputs). The compiler calls this repeatedly,
+            to a fixed point, so a source that is itself an unresolved
+            polymorphic node is re-offered once it resolves — do NOT lock onto
+            the first call. If several sources could set the same thing,
+            break the tie by a fixed port priority, never by arrival order
+            (which varies with connection order and with which pass you're
+            on); the compiler's later canConnect pass then rejects the
+            losing, mismatched connection with the ordinary error.
             Message-thread only (compile time), never called from the audio
-            thread. Scoped to the SignalTypes that share the ordinary
-            block-buffer/Note mechanisms (Audio/Control/Boolean/Event/
-            Spectral/Note) — SignalType::Data is a fundamentally different
-            runtime representation (a DataPublisher-swapped pointer, not a
-            per-sample value) and isn't handled by this mechanism; a node
-            overriding this should reject/ignore a Data-typed incoming
-            connection rather than claim to support it.
+            thread. SignalType::Data is a fundamentally
+            different runtime representation (a DataPublisher-swapped
+            pointer, not a per-sample value) and isn't handled by this
+            mechanism; a node overriding this should ignore a Data-typed
+            source rather than claim to support it.
         */
-        virtual void resolveIncomingSignalType (SignalType incomingType) noexcept { juce::ignoreUnused (incomingType); }
+        virtual void resolveIncomingPort (const juce::String& toPortId, const PortDescriptor& source) noexcept
+        {
+            juce::ignoreUnused (toPortId, source);
+        }
 
         /** M20 — a node's own default visualization(s), declared once here
             rather than hardcoded anywhere in the UI (NodeCard.tsx needs no

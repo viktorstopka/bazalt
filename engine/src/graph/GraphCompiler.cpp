@@ -176,6 +176,23 @@ namespace bazalt::engine
         }
     }
 
+    namespace
+    {
+        // The (SignalType, Quantity) of every port of one node, inputs then
+        // outputs — what polymorphic resolution can change, and so what "did
+        // this node change" means for the fixed-point loop.
+        std::vector<std::pair<int, int>> portSignature (const std::vector<PortDescriptor>& inputs, const std::vector<PortDescriptor>& outputs)
+        {
+            std::vector<std::pair<int, int>> signature;
+            signature.reserve (inputs.size() + outputs.size());
+            for (const auto& port : inputs)
+                signature.emplace_back ((int) port.type, (int) port.quantity);
+            for (const auto& port : outputs)
+                signature.emplace_back ((int) port.type, (int) port.quantity);
+            return signature;
+        }
+    }
+
     CompileResult GraphCompiler::compile (const NodeGraph& graph,
                                            const NodeFactory& factory,
                                            const NodePrepareInfo& prepareInfo,
@@ -260,7 +277,7 @@ namespace bazalt::engine
                         // A polymorphic-port node (RerouteNode) is never
                         // reused, even with an identical id/type/params:
                         // the resolution pass below mutates it via
-                        // resolveIncomingSignalType(), which would break
+                        // resolveIncomingPort(), which would break
                         // the "never mutate a reused node" rule above, AND
                         // a reused one would keep whatever type the LAST
                         // graph resolved it to even if its input has since
@@ -359,15 +376,21 @@ namespace bazalt::engine
                 if (fromPortIt == fromPorts.end() || toPortIt == toPorts.end())
                     continue;
 
-                const auto incomingType = outputPortsBySlot[(size_t) fromIt->second][(size_t) fromPortIt->second].type;
-                const auto currentType = inputPortsBySlot[(size_t) toIt->second][(size_t) toPortIt->second].type;
+                // Did the node actually change what it reports? Comparing the
+                // resolved signature (not "incoming differs from current") is
+                // what makes this converge when a node deliberately ignores a
+                // source — it keeps its first adoption, so a second, different
+                // source must not count as a change every pass.
+                const auto signatureBefore = portSignature (inputPortsBySlot[(size_t) toIt->second], outputPortsBySlot[(size_t) toIt->second]);
+                toNode->resolveIncomingPort (connection.toPortId, outputPortsBySlot[(size_t) fromIt->second][(size_t) fromPortIt->second]);
 
-                if (incomingType != currentType)
+                auto inputsNow = toNode->getInputPorts();
+                auto outputsNow = toNode->getOutputPorts();
+                if (portSignature (inputsNow, outputsNow) != signatureBefore)
                 {
-                    toNode->resolveIncomingSignalType (incomingType);
+                    inputPortsBySlot[(size_t) toIt->second] = std::move (inputsNow);
+                    outputPortsBySlot[(size_t) toIt->second] = std::move (outputsNow);
                     portIdIndexBySlot[(size_t) toIt->second] = buildPortIdIndex (*toNode);
-                    inputPortsBySlot[(size_t) toIt->second] = toNode->getInputPorts();
-                    outputPortsBySlot[(size_t) toIt->second] = toNode->getOutputPorts();
                     anyChanged = true;
                 }
             }

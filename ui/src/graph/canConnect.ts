@@ -106,6 +106,11 @@ export interface ConnectionEndpoint {
   portId: string
   direction: 'input' | 'output'
   port: PortDescriptor
+  /** A polymorphic node (util.reroute) with nothing feeding it yet: its declared
+      port type is only a default, so there is nothing real to predict with. See
+      graphStore.endpointFor().
+  */
+  unresolved?: boolean
 }
 
 /** Also resolves a growable-group member the default descriptor doesn't list
@@ -130,5 +135,7 @@ export function findPort(descriptor: { inputs: PortDescriptor[]; outputs: PortDe
 export function canConnect(output: ConnectionEndpoint, input: ConnectionEndpoint): boolean {
   if (output.direction !== 'output' || input.direction !== 'input') return false
   if (output.nodeId === input.nodeId) return false
+  // Nothing real to predict with: let the drop through and let the engine decide.
+  if (output.unresolved || input.unresolved) return true
   return canConnectPorts(output.port, input.port).outcome !== 'reject'
 }

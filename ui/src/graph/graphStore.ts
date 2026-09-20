@@ -268,13 +268,42 @@ export function ensureInitialized(): void {
 // ---- Endpoint lookup (shared by wire-drag hit-testing and rendering) ----
 
 export function getEndpoint(nodeId: string, portId: string, direction: 'input' | 'output'): ConnectionEndpoint | undefined {
+  return endpointFor(nodeId, portId, direction, new Set())
+}
+
+/** A polymorphic node (util.reroute) declares Audio ports, but that is only its
+    unconnected default — its real type is whatever feeds it (Node.h,
+    hasPolymorphicPorts(); the engine resolves it in GraphCompiler). Predicting
+    a wire against the declared Audio would reject a Control cable the engine
+    accepts and draw every rerouted cable pink, so resolve it here the same way:
+    follow the wire into the node, recursively through chains of them.
+    `seen` breaks a cycle of reroutes, which never resolves to anything.
+    A polymorphic node with nothing feeding it yet has no type to predict
+    with, so it is marked `unresolved` and canConnect() lets the drop through
+    — the engine decides, and its rejection reason reaches the error banner.
+*/
+function endpointFor(nodeId: string, portId: string, direction: 'input' | 'output', seen: Set<string>): ConnectionEndpoint | undefined {
   const node = nodes.get(nodeId)
   if (!node) return undefined
   const descriptor = getDescriptor(node.typeId)
   if (!descriptor) return undefined
   const port = findPort(descriptor, portId, direction)
   if (!port) return undefined
-  return { nodeId, portId, direction, port }
+  if (!descriptor.hasPolymorphicPorts) return { nodeId, portId, direction, port }
+
+  if (!seen.has(nodeId)) {
+    seen.add(nodeId)
+    for (const wire of wires.values()) {
+      if (wire.toNodeId !== nodeId) continue
+      const upstream = endpointFor(wire.fromNodeId, wire.fromPortId, 'output', seen)
+      if (upstream && !upstream.unresolved) {
+        const { type, quantity, unit, minValue, maxValue, isInteger, polarity } = upstream.port
+        return { nodeId, portId, direction, port: { ...port, type, quantity, unit, minValue, maxValue, isInteger, polarity } }
+      }
+      break // a polymorphic node has one source; if it is unresolved, so is this
+    }
+  }
+  return { nodeId, portId, direction, port, unresolved: true }
 }
 
 export function findWireAtInput(nodeId: string, portId: string): GraphWire | undefined {

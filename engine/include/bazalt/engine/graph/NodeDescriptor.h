@@ -24,6 +24,14 @@ namespace bazalt::engine
         std::vector<PortDescriptor> outputs;
         std::vector<ParameterDescriptor> parameters;
         std::vector<PreviewDescriptor> previews;
+
+        /** Node::hasPolymorphicPorts(): the declared port types here are just
+            the unconnected defaults — a placed node's real types follow
+            what's wired to it (util.reroute). The UI needs to know, because
+            predicting a connection against the default (Audio) would reject a
+            Control cable the engine accepts.
+        */
+        bool hasPolymorphicPorts = false;
     };
 
     /** Builds a NodeDescriptor from a live Node instance's metadata calls
@@ -43,6 +51,7 @@ namespace bazalt::engine
         descriptor.outputs = node.getOutputPorts();
         descriptor.parameters = node.getParameters();
         descriptor.previews = node.getPreviews();
+        descriptor.hasPolymorphicPorts = node.hasPolymorphicPorts();
         return descriptor;
     }
 }

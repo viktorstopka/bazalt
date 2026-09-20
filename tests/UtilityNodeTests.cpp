@@ -96,7 +96,8 @@ TEST_CASE ("RerouteNode defaults to Audio and adopts the resolved type on both p
 
     for (const auto type : { SignalType::Control, SignalType::Boolean, SignalType::Event, SignalType::Note })
     {
-        node.resolveIncomingSignalType (type);
+        PortDescriptor source { "src", type };
+        node.resolveIncomingPort ("in", source);
         CHECK (node.getInputPorts()[0].type == type);
         CHECK (node.getOutputPorts()[0].type == type);
     }
@@ -108,10 +109,28 @@ TEST_CASE ("RerouteNode refuses to adopt SignalType::Data, leaving its type unch
     // Data is a DataPublisher-swapped pointer, not a per-sample value —
     // Reroute has no way to forward it, so it must not claim to.
     RerouteNode node;
-    node.resolveIncomingSignalType (SignalType::Control);
-    node.resolveIncomingSignalType (SignalType::Data);
+    node.resolveIncomingPort ("in", PortDescriptor { "src", SignalType::Control });
+    node.resolveIncomingPort ("in", PortDescriptor { "src", SignalType::Data });
 
     CHECK (node.getInputPorts()[0].type == SignalType::Control);
+    CHECK (node.getOutputPorts()[0].type == SignalType::Control);
+}
+
+TEST_CASE ("RerouteNode carries the source's quantity too, so a rerouted Frequency is still a Frequency",
+           "[engine][nodes][util][Reroute]")
+{
+    // Type alone isn't enough: canConnect decides adapters from the quantity,
+    // so a Reroute that dropped it would let a Frequency reach a Pitch port
+    // with no adapter, exactly the unit mix-up adapt.remap exists to prevent.
+    RerouteNode node;
+    CHECK (node.getOutputPorts()[0].quantity == Quantity::Dimensionless); // unresolved default
+
+    PortDescriptor source { "f", SignalType::Control };
+    source.quantity = Quantity::Frequency;
+    node.resolveIncomingPort ("in", source);
+
+    CHECK (node.getInputPorts()[0].quantity == Quantity::Frequency);
+    CHECK (node.getOutputPorts()[0].quantity == Quantity::Frequency);
     CHECK (node.getOutputPorts()[0].type == SignalType::Control);
 }
 

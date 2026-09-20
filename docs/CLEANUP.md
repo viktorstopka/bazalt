@@ -52,7 +52,7 @@ Two real implementation options, scoped:
 Recommend (a) first; revisit (b) only if a real patch needs to bypass a node
 inside a feedback loop.
 
-### 2. `RerouteNode` can no longer reroute non-Audio signals — ✅ FIXED (real polymorphic ports via `Node::hasPolymorphicPorts()`/`resolveIncomingSignalType()`; never reused across recompiles)
+### 2. `RerouteNode` can no longer reroute non-Audio signals — ✅ FIXED (real polymorphic ports via `Node::hasPolymorphicPorts()`/`resolveIncomingPort()`; never reused across recompiles). **Correction:** the first fix (c4e98f4) only worked inside `GraphCompiler` — `GraphEditController::connectWithAutoAdapt` and the UI's wire-drag prediction still checked against Reroute's default Audio ports and rejected a Control cable, so no user could actually use it. Completed at the command layer and in the UI in M21 (controller skips the default-descriptor pre-check for polymorphic endpoints; `graphStore.endpointFor()` resolves them from the incoming wire), with controller-level tests
 `RerouteNode.h`'s own doc comment claims "the engine doesn't type-check
 connections at all today" — false since M16's `canConnect()` started
 rejecting incompatible types at compile time. Real consequence, not just a

@@ -203,6 +203,12 @@ export interface NodeDescriptor {
       read, same convention as isMock below.
   */
   previews?: PreviewDescriptor[]
+  /** Node::hasPolymorphicPorts() (util.reroute): the ports declared above are only
+      the unconnected defaults; a placed node's real port types follow what's
+      wired to it. Absent on mock descriptors (none are polymorphic). See
+      graphStore.getEndpoint() for how the UI resolves them.
+  */
+  hasPolymorphicPorts?: boolean
   /** UI-only flag, not part of the C++ schema (NODE_EDITOR.md §3's "mock
       (UI-only) descriptors... marked as mocks") — true for every entry in
       mockDescriptors.ts, absent/false for anything NodeFactory::describeAll()

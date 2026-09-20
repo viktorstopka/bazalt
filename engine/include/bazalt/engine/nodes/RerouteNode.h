@@ -17,10 +17,10 @@ namespace bazalt::engine::nodes
         hardcoded Audio one — `resolvedType` starts at `SignalType::Audio`
         (preserving today's behaviour for an unconnected Reroute, or one
         fed by an Audio source) and GraphCompiler calls
-        `resolveIncomingSignalType()` once per compile, before validating
+        `resolveIncomingPort()` once per compile, before validating
         any connection touching this node, to make both ports report
         whatever type actually feeds this node's input (Node.h's own doc
-        comment on `hasPolymorphicPorts()`/`resolveIncomingSignalType()` has
+        comment on `hasPolymorphicPorts()`/`resolveIncomingPort()` has
         the full compiler-side mechanism, including how a chain of several
         Reroutes resolves to a fixed point).
 
@@ -32,7 +32,7 @@ namespace bazalt::engine::nodes
         routing is keyed by (nodeSlot, port), never node type, so this
         needed no compiler changes beyond the polymorphic-resolution pass
         itself). Deliberately does NOT support `SignalType::Data`
-        (`resolveIncomingSignalType` ignores a Data request, leaving
+        (`resolveIncomingPort` ignores a Data source, leaving
         `resolvedType` at whatever it already was) — Data is a
         `DataPublisher`-swapped pointer, not a per-sample/per-block value,
         a fundamentally different mechanism this node doesn't implement;
@@ -60,20 +60,33 @@ namespace bazalt::engine::nodes
 
         bool hasPolymorphicPorts() const noexcept override { return true; }
 
-        void resolveIncomingSignalType (SignalType incomingType) noexcept override
+        // Adopts the source's SignalType AND Quantity: a Frequency cable rerouted
+        // stays a Frequency cable, so canConnect still sees the real unit on the
+        // far side (a Pitch port beyond it needs its adapter, exactly as if the
+        // Reroute weren't there). Always takes the latest offer (the compiler
+        // re-offers to a fixed point, so a chain of Reroutes declared sink-first
+        // still resolves). A Reroute has one input, and the compiler's
+        // one-source-per-input check runs after this pass, so which of two
+        // conflicting cables "wins" here never reaches the audio.
+        void resolveIncomingPort (const juce::String& toPortId, const PortDescriptor& source) noexcept override
         {
-            if (incomingType != SignalType::Data)
-                resolvedType = incomingType;
+            juce::ignoreUnused (toPortId);
+
+            if (source.type == SignalType::Data)
+                return;
+
+            resolvedType = source.type;
+            resolvedQuantity = source.quantity;
         }
 
         std::vector<PortDescriptor> getInputPorts() const override
         {
-            return { { "in", resolvedType } };
+            return { PortDescriptor { .id = "in", .type = resolvedType, .quantity = resolvedQuantity } };
         }
 
         std::vector<PortDescriptor> getOutputPorts() const override
         {
-            return { PortDescriptor { .id = "out", .type = resolvedType, .isPrimaryOutput = true } };
+            return { PortDescriptor { .id = "out", .type = resolvedType, .isPrimaryOutput = true, .quantity = resolvedQuantity } };
         }
 
         void processSample (const float* inputs, float* outputs) noexcept override { outputs[0] = inputs[0]; }
@@ -92,6 +105,7 @@ namespace bazalt::engine::nodes
 
     private:
         SignalType resolvedType = SignalType::Audio;
+        Quantity resolvedQuantity = Quantity::Dimensionless;
         std::vector<NoteEvent> noteScratch;
     };
 }

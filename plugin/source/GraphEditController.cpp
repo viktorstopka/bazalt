@@ -177,6 +177,26 @@ namespace bazalt
         if (toPort == nullptr)
             return { false, "Node '" + toNodeId + "' has no input port '" + toPortId + "'" };
 
+        // A polymorphic-port node (util.reroute) has no fixed port type to
+        // pre-check against: what its ports report is decided by what's wired
+        // to them, which only GraphCompiler's resolution pass knows (Node.h,
+        // hasPolymorphicPorts()). The default descriptor read above says
+        // "Audio", so canConnect() against it would reject a Control cable
+        // into a Reroute outright — and did, until this check existed.
+        // GraphCompiler is the authority on validity anyway (its own canConnect
+        // pass runs on the resolved types and rejects a real mismatch with the
+        // same reason text), so for these endpoints go straight to connect().
+        // The cost is that no adapter is auto-inserted across a Reroute; the
+        // user gets the compiler's rejection instead of a silent conversion.
+        auto isPolymorphic = [&factory] (const bazalt::engine::NodeInstance& instance)
+        {
+            const auto node = factory.create (instance.type);
+            return node != nullptr && node->hasPolymorphicPorts();
+        };
+
+        if (isPolymorphic (*fromNode) || isPolymorphic (*toNode))
+            return connect (fromNodeId, fromPortId, toNodeId, toPortId);
+
         const auto connectivity = bazalt::engine::canConnect (*fromPort, *toPort);
 
         if (connectivity.outcome == bazalt::engine::ConnectionOutcome::Reject)

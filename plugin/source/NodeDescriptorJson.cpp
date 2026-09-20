@@ -311,6 +311,7 @@ namespace bazalt
         obj->setProperty ("outputs", descriptorListToVar (descriptor.outputs, portDescriptorToVar));
         obj->setProperty ("parameters", descriptorListToVar (descriptor.parameters, parameterDescriptorToVar));
         obj->setProperty ("previews", descriptorListToVar (descriptor.previews, previewDescriptorToVar));
+        obj->setProperty ("hasPolymorphicPorts", descriptor.hasPolymorphicPorts);
         return juce::var (obj);
     }
 
