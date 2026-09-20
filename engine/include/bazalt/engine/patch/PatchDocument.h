@@ -55,10 +55,17 @@ namespace bazalt::engine
         *current* registered port order — the only source of truth
         available for old data; a patch saved before a node's ports were
         reordered is a real (accepted) migration risk, not silently solved.
+
+        Schema v3 (M21): math.add, math.multiply and mix.sum became growable
+        port groups (PortGroups.h), so their `a`/`b` inputs are now
+        `in.0`/`in.1`. `PatchSerializer`'s v2→v3 migration renames those two
+        port IDs on every connection into a node of those types — the
+        CLAUDE.md rule-3 way of changing a shipped port ID (never a bare
+        rename): an old patch keeps loading and wiring exactly as before.
     */
     struct PatchDocument
     {
-        static constexpr int currentSchemaVersion = 2;
+        static constexpr int currentSchemaVersion = 3;
 
         int schemaVersion = currentSchemaVersion;
         std::vector<NodeInstance> nodes;

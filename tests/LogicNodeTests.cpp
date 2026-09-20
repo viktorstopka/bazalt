@@ -1,9 +1,11 @@
 #include <catch2/catch_test_macros.hpp>
 #include "bazalt/engine/graph/GraphCompiler.h"
 #include "bazalt/engine/graph/ProofGraphs.h"
+#include "bazalt/engine/nodes/LogicBooleanNode.h"
 #include "bazalt/engine/nodes/LogicNotNode.h"
 #include "bazalt/engine/nodes/LogicToggleNode.h"
 #include <limits>
+#include <vector>
 
 using namespace bazalt::engine;
 using namespace bazalt::engine::nodes;
@@ -118,4 +120,68 @@ TEST_CASE ("threshold -> logic.toggle -> env.adsr gate compiles and toggles, so 
     // rising edge, then it stays above), so the toggle flips on once and holds.
     for (int i = 0; i < 8; ++i)
         CHECK (output[i] == 1.0f);
+}
+
+TEST_CASE ("LogicBooleanNode applies each op over only its WIRED inputs", "[engine][nodes][logic][M21]")
+{
+    const auto unwired = std::numeric_limits<float>::quiet_NaN(); // GraphCompiler's sentinel for an unwired fallback port
+
+    auto resultOf = [&] (float opValue, std::vector<float> inputs)
+    {
+        LogicBooleanNode node;
+        node.setGroupPortCount ((int) inputs.size());
+        node.setParameter ("logic.boolean.op", opValue);
+
+        float out = -1.0f;
+        node.processSample (inputs.data(), &out);
+        return out;
+    };
+
+    // AND (default): every wired input true. The spare port must not force false.
+    CHECK (resultOf (0.0f, { 1.0f, 1.0f }) == 1.0f);
+    CHECK (resultOf (0.0f, { 1.0f, 0.0f }) == 0.0f);
+    CHECK (resultOf (0.0f, { 1.0f, unwired }) == 1.0f);
+    CHECK (resultOf (0.0f, { 1.0f, 1.0f, unwired }) == 1.0f);
+
+    // OR
+    CHECK (resultOf (1.0f, { 0.0f, 1.0f }) == 1.0f);
+    CHECK (resultOf (1.0f, { 0.0f, 0.0f }) == 0.0f);
+    CHECK (resultOf (1.0f, { 0.0f, unwired }) == 0.0f);
+
+    // XOR is parity across however many are wired.
+    CHECK (resultOf (2.0f, { 1.0f, 1.0f, 1.0f }) == 1.0f);
+    CHECK (resultOf (2.0f, { 1.0f, 1.0f, 0.0f }) == 0.0f);
+    CHECK (resultOf (2.0f, { 1.0f, unwired, unwired }) == 1.0f);
+
+    // NAND / NOR
+    CHECK (resultOf (3.0f, { 1.0f, 1.0f }) == 0.0f);
+    CHECK (resultOf (3.0f, { 1.0f, 0.0f }) == 1.0f);
+    CHECK (resultOf (4.0f, { 0.0f, 0.0f }) == 1.0f);
+    CHECK (resultOf (4.0f, { 1.0f, 0.0f }) == 0.0f);
+
+    // Nothing wired: false for every op, including the inverting ones.
+    for (const auto op : { 0.0f, 1.0f, 2.0f, 3.0f, 4.0f })
+        CHECK (resultOf (op, { unwired, unwired }) == 0.0f);
+
+    // "True" is > 0.5, the threshold env.adsr's gate uses.
+    CHECK (resultOf (0.0f, { 0.6f, 0.6f }) == 1.0f);
+    CHECK (resultOf (0.0f, { 0.6f, 0.4f }) == 0.0f);
+}
+
+TEST_CASE ("LogicBooleanNode's group size is clamped to 2..16 and drives its declared ports", "[engine][nodes][logic][M21]")
+{
+    LogicBooleanNode node;
+    CHECK (node.getInputPorts().size() == 2);
+    CHECK (node.getNumInputPorts() == 2);
+
+    node.setGroupPortCount (5);
+    REQUIRE (node.getInputPorts().size() == 5);
+    CHECK (node.getNumInputPorts() == 5);
+    CHECK (node.getInputPorts()[4].id == "in.4");
+    CHECK (node.getInputPorts()[4].type == SignalType::Boolean);
+
+    node.setGroupPortCount (99);
+    CHECK (node.getGroupPortCount() == 16);
+    node.setGroupPortCount (0);
+    CHECK (node.getGroupPortCount() == 2);
 }

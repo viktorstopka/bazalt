@@ -3,6 +3,7 @@
 #include "bazalt/engine/graph/CanConnect.h"
 #include "bazalt/engine/graph/DomainSplitter.h"
 #include "bazalt/engine/graph/GraphCompiler.h"
+#include "bazalt/engine/graph/PortGroups.h"
 #include "bazalt/engine/graph/ProofGraphs.h"
 
 namespace bazalt
@@ -37,6 +38,17 @@ namespace bazalt
                 return nullptr;
 
             storage = node->getInputPorts();
+
+            // A growable-group member beyond the default count (in.5 on a
+            // math.add that starts with in.0/in.1) only exists once it's
+            // wired — GraphCompiler sizes the group from the connections —
+            // so size this throwaway node for the port being asked about.
+            if (const auto groupIndex = bazalt::engine::portGroupIndexOf (storage, portId); groupIndex >= 0)
+            {
+                node->setGroupPortCount (groupIndex + 1);
+                storage = node->getInputPorts();
+            }
+
             for (const auto& port : storage)
                 if (port.id == portId)
                     return &port;

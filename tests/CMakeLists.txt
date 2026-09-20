@@ -14,6 +14,7 @@ add_executable(EngineTests
     EngineVersionTests.cpp
     ExecutionPlanTapTests.cpp
     GraphCompilerTests.cpp
+    GrowablePortsTests.cpp
     LogicNodeTests.cpp
     MathNodeTests.cpp
     MixNodeTests.cpp

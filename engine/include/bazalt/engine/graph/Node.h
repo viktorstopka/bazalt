@@ -72,6 +72,19 @@ namespace bazalt::engine
         */
         virtual bool hasPolymorphicPorts() const noexcept { return false; }
 
+        /** Growable port groups (SIGNAL_TYPES.md §6; PortGroups.h has the
+            whole mechanism). -1 (the default) means this node has no
+            growable group. Otherwise: how many members of the group the
+            node currently declares from getInputPorts(), which
+            GraphCompiler sets via setGroupPortCount() — derived from the
+            connections, never stored in the graph — before it reads the
+            node's ports. Message-thread only; never called from the audio
+            thread, and never on a node the audio thread might be running
+            (the compiler won't reuse a group node whose count changes).
+        */
+        virtual int getGroupPortCount() const noexcept { return -1; }
+        virtual void setGroupPortCount (int count) noexcept { juce::ignoreUnused (count); }
+
         /** Called with the resolved SignalType of whatever currently feeds
             this node's own polymorphic input, once per compile, before that
             connection (or any connection from this node's own output) is
@@ -137,9 +150,9 @@ namespace bazalt::engine
         {
             // Fixed-size scratch, not std::vector: this default runs on the
             // audio thread once wired into a live plugin (M3), so it must
-            // not allocate. Bumped from 8 in M18 — keep in sync with
-            // ExecutionPlan.h's own maxPortsPerNode (see its comment).
-            static constexpr int maxPortsPerNode = 16;
+            // not allocate. Bumped from 8 in M18 and to 32 in M21 — keep in sync
+            // with ExecutionPlan.h's own maxPortsPerNode (see its comment).
+            static constexpr int maxPortsPerNode = 32;
             const auto numInputs = getNumInputPorts();
             const auto numOutputs = getNumOutputPorts();
             jassert (numInputs <= maxPortsPerNode && numOutputs <= maxPortsPerNode);

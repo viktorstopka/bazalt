@@ -76,8 +76,8 @@ namespace bazalt
 
                 const auto id = "reduce" + juce::String (addNodeCount++);
                 graph.addNode ({ id, "math.add", {}, {}, {} });
-                graph.addConnection ({ lhs, "out", id, "a" });
-                graph.addConnection ({ rhs, "out", id, "b" });
+                graph.addConnection ({ lhs, "out", id, "in.0" });
+                graph.addConnection ({ rhs, "out", id, "in.1" });
 
                 pending.push_back (id);
             }

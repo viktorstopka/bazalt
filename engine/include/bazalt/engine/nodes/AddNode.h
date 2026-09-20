@@ -1,32 +1,37 @@
 #pragma once
 
-#include "bazalt/engine/graph/Node.h"
+#include "bazalt/engine/nodes/GrowableGroupNode.h"
+#include <array>
+#include <cmath>
 
 namespace bazalt::engine::nodes
 {
-    /** Stable type id: "math.add" (renamed M14, was "util.add"). Two
-        numeric (Control) inputs, one output = a + b — spawned by
-        Alt-dragging between two nodes whose primary outputs are both
-        numbers (NODE_EDITOR.md §7's Alt-drag Mix/Add/Multiply; Mix
-        itself reuses "mix.sum" for the audio case).
+    /** Stable type id: "math.add" (renamed M14, was "util.add"). Sums 2..16
+        numeric (Control) inputs — spawned by Alt-dragging between two nodes
+        whose primary outputs are both numbers (NODE_EDITOR.md §7's Alt-drag
+        Mix/Add/Multiply; Mix itself reuses "mix.sum" for the audio case).
 
-        Growable-port behaviour (SIGNAL_TYPES.md §6, `PortGroup` in
-        PortDescriptor.h since M14) is still deferred — this fixed
-        2-input version is what M7 needs and what M14 leaves unchanged.
-        `NODE_CATALOG.md`'s `math.add` entry is the real, growable
-        version this node becomes in M21 (Batch A): a `PortGroup`-tagged
-        `in.0..in.N`, `processSample` summing however many are actually
-        wired, `numInputs` no longer a compile-time constant. Don't treat
-        the M14 schema addition as having already done that work — the
-        struct exists, nothing here uses it yet.
+        M21: a real growable port group (`in.0..in.N`, PortGroups.h has the
+        mechanism). Ports were `a`/`b` before M21 — patch schema v3
+        migrates them to `in.0`/`in.1` (CLAUDE.md rule 3: an ID is never
+        just renamed; the migration is what keeps old patches loading).
+
+        An unwired input isn't ignored, it reads its own stored value
+        (default 0, the identity for a sum), which is what NodeCard shows as
+        that port's in-node slider — so "A + 5" needs no Constant node. The
+        spare port revealed for the next cable, and a hole left by a removed
+        one, therefore contribute nothing until something is wired or typed.
     */
-    class AddNode : public Node
+    class AddNode : public GrowableGroupNode
     {
     public:
-        static constexpr int numInputs = 2;
+        static constexpr int minInputs = 2;
+        static constexpr int maxInputs = 16;
         static constexpr int numOutputs = 1;
 
-        int getNumInputPorts() const noexcept override { return numInputs; }
+        AddNode() noexcept : GrowableGroupNode (minInputs, maxInputs) {}
+
+        int getNumInputPorts() const noexcept override { return groupCount; }
         int getNumOutputPorts() const noexcept override { return numOutputs; }
 
         juce::String getTitle() const override { return "Add"; }
@@ -34,7 +39,12 @@ namespace bazalt::engine::nodes
 
         std::vector<PortDescriptor> getInputPorts() const override
         {
-            return { { "a", SignalType::Control }, { "b", SignalType::Control } };
+            std::vector<PortDescriptor> ports;
+            ports.reserve ((size_t) groupCount);
+            const auto group = groupFor ("in.");
+            for (int i = 0; i < groupCount; ++i)
+                ports.push_back (makeNumericGroupPort (group, i, 0.0f));
+            return ports;
         }
 
         std::vector<PortDescriptor> getOutputPorts() const override
@@ -42,9 +52,21 @@ namespace bazalt::engine::nodes
             return { PortDescriptor { .id = "out", .type = SignalType::Control, .isPrimaryOutput = true } };
         }
 
+        void setParameter (const juce::String& parameterId, float value) override
+        {
+            if (const auto index = parsePortGroupIndex (parameterId, "in."); index >= 0 && index < maxInputs)
+                storedValues[(size_t) index] = value;
+        }
+
         void processSample (const float* inputs, float* outputs) noexcept override
         {
-            outputs[0] = inputs[0] + inputs[1];
+            auto sum = 0.0f;
+            for (int i = 0; i < groupCount; ++i)
+                sum += std::isnan (inputs[i]) ? storedValues[(size_t) i] : inputs[i];
+            outputs[0] = sum;
         }
+
+    private:
+        std::array<float, maxInputs> storedValues {}; // identity 0 until an in-node value is set
     };
 }

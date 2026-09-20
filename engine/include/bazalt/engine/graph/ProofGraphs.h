@@ -36,6 +36,7 @@
 #include "bazalt/engine/nodes/CrossfadeNode.h"
 #include "bazalt/engine/nodes/LogicNotNode.h"
 #include "bazalt/engine/nodes/LogicToggleNode.h"
+#include "bazalt/engine/nodes/LogicBooleanNode.h"
 
 namespace bazalt::engine
 {
@@ -83,6 +84,7 @@ namespace bazalt::engine
         factory.registerType ("mix.crossfade", [] { return std::make_unique<nodes::CrossfadeNode>(); });
         factory.registerType ("logic.not", [] { return std::make_unique<nodes::LogicNotNode>(); });
         factory.registerType ("logic.toggle", [] { return std::make_unique<nodes::LogicToggleNode>(); });
+        factory.registerType ("logic.boolean", [] { return std::make_unique<nodes::LogicBooleanNode>(); });
         return factory;
     }
 
@@ -146,8 +148,8 @@ namespace bazalt::engine
         graph.addNode ({ "delay", "delay.line", {}, { { "delay.line.samples", 200.0f } }, {} });
         graph.addNode ({ "damp", "filter.onepole", {}, { { "filter.onepole.coefficient", 0.5f } }, {} });
 
-        graph.addConnection ({ "excite", "out", "mix", "a" });
-        graph.addConnection ({ "damp", "out", "mix", "b" });
+        graph.addConnection ({ "excite", "out", "mix", "in.0" });
+        graph.addConnection ({ "damp", "out", "mix", "in.1" });
         graph.addConnection ({ "mix", "out", "delay", "in" });
         graph.addConnection ({ "delay", "out", "damp", "in" });
 

@@ -1,6 +1,7 @@
 #include "bazalt/engine/patch/PatchSerializer.h"
 #include <functional>
 #include <unordered_map>
+#include <unordered_set>
 
 namespace bazalt::engine
 {
@@ -292,6 +293,43 @@ namespace bazalt::engine
             return juce::var (root);
         }
 
+        // v2 -> v3 (M21): math.add / math.multiply / mix.sum became growable
+        // port groups, so their fixed `a`/`b` inputs are now `in.0`/`in.1`
+        // (PortGroups.h). Only the two port IDs on connections INTO nodes of
+        // those three types change; nothing else in a v2 document mentions
+        // them (none of the three has a parameter or a macro-mappable
+        // value), and outputs were and stay `out`.
+        juce::var migrateV2ToV3 (juce::var v2Root)
+        {
+            auto root = v2Root.clone(); // deep copy — the caller's document is left untouched
+
+            std::unordered_map<juce::String, juce::String> nodeTypeById;
+            if (auto* nodes = root["nodes"].getArray())
+                for (const auto& node : *nodes)
+                    nodeTypeById[node["id"].toString()] = node["type"].toString();
+
+            static const std::unordered_set<juce::String> growableTypes { "math.add", "math.multiply", "mix.sum" };
+
+            if (auto* connections = root["connections"].getArray())
+            {
+                for (auto& connection : *connections)
+                {
+                    const auto typeIt = nodeTypeById.find (connection["toNodeId"].toString());
+                    if (typeIt == nodeTypeById.end() || growableTypes.find (typeIt->second) == growableTypes.end())
+                        continue;
+
+                    const auto portId = connection["toPortId"].toString();
+                    if (portId == "a")
+                        connection.getDynamicObject()->setProperty ("toPortId", "in.0");
+                    else if (portId == "b")
+                        connection.getDynamicObject()->setProperty ("toPortId", "in.1");
+                }
+            }
+
+            root.getDynamicObject()->setProperty ("schemaVersion", 3);
+            return root;
+        }
+
         // vN -> vN+1 migrations, keyed by the version they migrate FROM.
         using Migration = std::function<juce::var (juce::var)>;
 
@@ -299,6 +337,7 @@ namespace bazalt::engine
         {
             static const std::unordered_map<int, Migration> migrations {
                 { 1, migrateV1ToV2 },
+                { 2, migrateV2ToV3 },
             };
             return migrations;
         }

@@ -363,3 +363,64 @@ TEST_CASE ("setProperty writes into NodeInstance::properties and round-trips thr
 
     CHECK_FALSE (controller.setProperty ("nonexistent", "title", juce::var ("x")).success);
 }
+
+TEST_CASE ("Wiring a growable group's spare port through the controller grows it; a removed cable leaves a hole",
+           "[plugin][GraphEditController][PortGroups][M21]")
+{
+    // This is the exact path the editor takes when a cable is dropped on the
+    // spare `in.N` port revealed after the last wired one: the controller has
+    // to accept a port that the node's DEFAULT descriptor doesn't list yet.
+    BazaltAudioProcessor processor;
+    processor.prepareToPlay (44100.0, 512);
+
+    auto& controller = processor.getGraphEditController();
+
+    REQUIRE (controller.addNode ("math.add", "sum", 0.0f, 0.0f).success);
+    for (const auto* id : { "k0", "k1", "k2" })
+        REQUIRE (controller.addNode ("util.constant", id, 0.0f, 0.0f).success);
+
+    REQUIRE (controller.connectWithAutoAdapt ("k0", "out", "sum", "in.0").success);
+    REQUIRE (controller.connectWithAutoAdapt ("k1", "out", "sum", "in.1").success);
+    REQUIRE (controller.connectWithAutoAdapt ("k2", "out", "sum", "in.2").success); // beyond the default two ports
+
+    auto connectionsInto = [&] (const juce::String& nodeId)
+    {
+        std::vector<juce::String> ports;
+        for (const auto& c : controller.getGraph().getConnections())
+            if (c.toNodeId == nodeId)
+                ports.push_back (c.toPortId);
+        return ports;
+    };
+
+    CHECK (connectionsInto ("sum").size() == 3);
+
+    // Remove the middle cable: in.0 and in.2 stay exactly where they were.
+    REQUIRE (controller.disconnect ("k1", "out", "sum", "in.1").success);
+    const std::vector<juce::String> expected { "in.0", "in.2" };
+    CHECK (connectionsInto ("sum") == expected);
+
+    // The port list is a function of the connections, so this still compiles
+    // and a later cable into the hole is accepted.
+    REQUIRE (controller.connect ("k1", "out", "sum", "in.1").success);
+    CHECK (connectionsInto ("sum").size() == 3);
+}
+
+TEST_CASE ("Wiring past a growable group's maximum is rejected and leaves the graph unchanged",
+           "[plugin][GraphEditController][PortGroups][M21]")
+{
+    BazaltAudioProcessor processor;
+    processor.prepareToPlay (44100.0, 512);
+
+    auto& controller = processor.getGraphEditController();
+
+    REQUIRE (controller.addNode ("math.add", "sum", 0.0f, 0.0f).success);
+    REQUIRE (controller.addNode ("util.constant", "k", 0.0f, 0.0f).success);
+    REQUIRE (controller.connect ("k", "out", "sum", "in.15").success); // the last valid port
+
+    const auto before = controller.getGraph().getConnections().size();
+
+    CHECK_FALSE (controller.connect ("k", "out", "sum", "in.16").success);
+    CHECK_FALSE (controller.connectWithAutoAdapt ("k", "out", "sum", "in.16").success);
+    CHECK_FALSE (controller.connect ("k", "out", "sum", "in.03").success); // non-canonical id names no port
+    CHECK (controller.getGraph().getConnections().size() == before);
+}

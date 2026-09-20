@@ -1,5 +1,6 @@
 #include "bazalt/engine/graph/GraphCompiler.h"
 #include "bazalt/engine/graph/CanConnect.h"
+#include "bazalt/engine/graph/PortGroups.h"
 #include <algorithm>
 #include <functional>
 #include <limits>
@@ -200,6 +201,20 @@ namespace bazalt::engine
         // descriptor, not just its resolved index.
         std::vector<std::vector<PortDescriptor>> outputPortsBySlot ((size_t) numNodes);
 
+        // Every input port ID each node is connected to, indexed once here so
+        // growable-group sizing (PortGroups.h) doesn't rescan the whole
+        // connection list per node.
+        std::unordered_map<juce::String, std::vector<juce::String>> incomingPortIdsByNode;
+        for (const auto& connection : graph.getConnections())
+            incomingPortIdsByNode[connection.toNodeId].push_back (connection.toPortId);
+
+        const auto incomingPortIdsFor = [&incomingPortIdsByNode] (const juce::String& nodeId) -> const std::vector<juce::String>&
+        {
+            static const std::vector<juce::String> none;
+            const auto it = incomingPortIdsByNode.find (nodeId);
+            return it == incomingPortIdsByNode.end() ? none : it->second;
+        };
+
         for (int slot = 0; slot < numNodes; ++slot)
         {
             const auto& instance = graphNodes[(size_t) slot];
@@ -253,7 +268,17 @@ namespace bazalt::engine
                         // Audio, so the same graph would then compile
                         // differently depending on edit history). Such a
                         // node holds no DSP state worth carrying forward.
-                        reused = (node != nullptr && ! node->hasPolymorphicPorts());
+                        //
+                        // A growable-group node (PortGroups.h) is reused only
+                        // if the number of group ports this graph needs is the
+                        // one it already has: changing it would mutate a node
+                        // the audio thread may still be running, exactly the
+                        // case the rule above forbids. Adding a cable to a
+                        // group's spare port therefore gives that one node a
+                        // fresh state (same as editing its parameters, above);
+                        // every other node is still reused.
+                        reused = (node != nullptr && ! node->hasPolymorphicPorts()
+                                   && node->getGroupPortCount() == requiredPortGroupCount (*node, incomingPortIdsFor (instance.id)));
                     }
                 }
             }
@@ -267,6 +292,12 @@ namespace bazalt::engine
                     return result;
                 }
 
+                // Growable port groups (PortGroups.h): the group's size is
+                // derived from this graph's connections, never stored, and must
+                // be set before anything reads the node's ports.
+                if (const auto groupCount = requiredPortGroupCount (*node, incomingPortIdsFor (instance.id)); groupCount >= 0)
+                    node->setGroupPortCount (groupCount);
+
                 node->prepare (prepareInfo);
 
                 for (const auto& [paramId, value] : instance.parameters)
@@ -276,6 +307,18 @@ namespace bazalt::engine
             portIdIndexBySlot[(size_t) slot] = buildPortIdIndex (*node);
             inputPortsBySlot[(size_t) slot] = node->getInputPorts();
             outputPortsBySlot[(size_t) slot] = node->getOutputPorts();
+
+            // ExecutionPlan::process()'s per-step scratch arrays hold exactly
+            // maxPortsPerNode entries; a node declaring more would be a stack
+            // overrun (undefined behaviour in a release build, where the
+            // jassert there compiles out) — so it's a compile error here.
+            if ((int) inputPortsBySlot[(size_t) slot].size() > ExecutionPlan::maxPortsPerNode
+                || (int) outputPortsBySlot[(size_t) slot].size() > ExecutionPlan::maxPortsPerNode)
+            {
+                result.errorMessage = "Node '" + instance.id + "' declares more than "
+                                       + juce::String (ExecutionPlan::maxPortsPerNode) + " input or output ports";
+                return result;
+            }
             plan.nodeIdToSlot[instance.id] = slot;
             plan.nodeIdToType[instance.id] = instance.type;
             plan.nodeIdToAppliedParameters[instance.id] = instance.parameters;

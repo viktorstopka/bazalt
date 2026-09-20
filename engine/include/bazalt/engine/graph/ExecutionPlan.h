@@ -34,6 +34,22 @@ namespace bazalt::engine
     class ExecutionPlan
     {
     public:
+        // Most ports any one node may declare (inputs and outputs are each
+        // bounded separately). Public because GraphCompiler enforces it as a
+        // real compile error — process()'s per-step scratch arrays are this
+        // size, so a node past it would be a stack overrun (undefined
+        // behaviour in release; only a jassert in debug).
+        //
+        // M18: bumped from 8 — InstanceAllocatorNode already has 9 output
+        // ports (and expects more) — an overrun that was never exercised
+        // before M18 first ran instance.allocator in a real graph. M21:
+        // bumped from 16 to 32 for mix.sum, whose 16-input growable group
+        // carries a level companion each (2 ports per member). Keep this and
+        // Node.h's own maxPortsPerNode in sync — they bound the same
+        // contract from two sides (the compiler's per-step scratch arrays
+        // here, the default processBlock() loop's scratch arrays there).
+        static constexpr int maxPortsPerNode = 32;
+
         uint64_t generation = 0;
 
         /** Where a node input port reads its sample(s) from. */
@@ -241,19 +257,6 @@ namespace bazalt::engine
         }
 
     private:
-        // M18: bumped from 8 — InstanceAllocatorNode already has 9 output
-        // ports and its own doc comment expects more (Pressure/Slide/
-        // ReleaseVelocity/Position/UnisonIndex/UnisonDetune) once something
-        // drives them. This ceiling was never actually exercised by
-        // process() before M18 wired instance.allocator into a real,
-        // executed graph for the first time — a real stack-array overrun
-        // (undefined behaviour, not just an assertion) that this milestone
-        // is what first triggered it. Keep this and Node.h's own
-        // maxPortsPerNode in sync — they bound the same contract from two
-        // sides (the compiler's per-step scratch arrays here, the default
-        // processBlock() loop's scratch arrays there).
-        static constexpr int maxPortsPerNode = 16;
-
         float readInput (const InputRef& ref, int sampleIndexForBlockBuffer) const noexcept;
     };
 }
