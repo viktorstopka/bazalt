@@ -3,7 +3,9 @@
 #include "bazalt/engine/graph/PlanSwapper.h"
 #include "bazalt/engine/graph/ProofGraphs.h"
 #include "bazalt/engine/graph/Node.h"
+#include "bazalt/engine/nodes/RerouteNode.h"
 #include <algorithm>
+#include <array>
 #include <cmath>
 
 using namespace bazalt::engine;
@@ -114,9 +116,105 @@ namespace
         void processSample (const float*, float*) noexcept override {}
     };
 
+    // Control-typed twins of ConstantNode/ScaleNode — RerouteNode's
+    // polymorphic-port tests need a non-Audio source and consumer, since
+    // canConnect() would reject an Audio-typed Reroute into either.
+    class ControlConstantNode : public Node
+    {
+    public:
+        int getNumInputPorts() const noexcept override { return 0; }
+        int getNumOutputPorts() const noexcept override { return 1; }
+        std::vector<PortDescriptor> getOutputPorts() const override { return { { "out", SignalType::Control } }; }
+
+        void setParameter (const juce::String& id, float value) override
+        {
+            if (id == "value")
+                constantValue = value;
+        }
+
+        void processSample (const float*, float* outputs) noexcept override { outputs[0] = constantValue; }
+
+    private:
+        float constantValue = 0.0f;
+    };
+
+    class ControlScaleNode : public Node
+    {
+    public:
+        int getNumInputPorts() const noexcept override { return 1; }
+        int getNumOutputPorts() const noexcept override { return 1; }
+        std::vector<PortDescriptor> getInputPorts() const override { return { { "in", SignalType::Control } }; }
+        std::vector<PortDescriptor> getOutputPorts() const override { return { { "out", SignalType::Control } }; }
+
+        void setParameter (const juce::String& id, float value) override
+        {
+            if (id == "gain")
+                gain = value;
+        }
+
+        void processSample (const float* inputs, float* outputs) noexcept override { outputs[0] = inputs[0] * gain; }
+
+    private:
+        float gain = 1.0f;
+    };
+
+    // Emits one fixed Note (gate on, pitch 72, velocity 0.8, startEvent on
+    // the first sample of each block only) plus a plain Audio output so a
+    // graph containing it has something to designate via setOutput().
+    class NoteSourceNode : public Node
+    {
+    public:
+        int getNumInputPorts() const noexcept override { return 0; }
+        int getNumOutputPorts() const noexcept override { return 2; }
+        std::vector<PortDescriptor> getOutputPorts() const override
+        {
+            return { { "out", SignalType::Audio }, { "notes", SignalType::Note } };
+        }
+
+        void processSample (const float*, float* outputs) noexcept override
+        {
+            outputs[0] = 0.0f;
+            outputs[1] = 0.0f;
+        }
+
+        void produceNoteBlock (NoteEvent* output, int numSamples) noexcept override
+        {
+            for (int i = 0; i < numSamples; ++i)
+                output[i] = NoteEvent { .gate = true, .pitch = 72.0f, .velocity = 0.8f, .startEvent = (i == 0), .stopEvent = false };
+        }
+    };
+
+    // Records whatever Note data reaches its input, for the test to inspect
+    // after process() — a fixed array rather than a vector, matching the
+    // no-allocation-in-the-audio-path convention even though nothing arms
+    // the RT trap in these tests.
+    class NoteCaptureNode : public Node
+    {
+    public:
+        int getNumInputPorts() const noexcept override { return 1; }
+        int getNumOutputPorts() const noexcept override { return 0; }
+        std::vector<PortDescriptor> getInputPorts() const override { return { { "spawn", SignalType::Note } }; }
+        void processSample (const float*, float*) noexcept override {}
+
+        void consumeNoteBlock (const NoteEvent* input, int numSamples) noexcept override
+        {
+            capturedCount = juce::jmin (numSamples, (int) captured.size());
+            for (int i = 0; i < capturedCount; ++i)
+                captured[(size_t) i] = input[i];
+        }
+
+        std::array<NoteEvent, 64> captured {};
+        int capturedCount = 0;
+    };
+
     NodeFactory buildTestFactory()
     {
         NodeFactory factory;
+        factory.registerType ("util.reroute", [] { return std::make_unique<nodes::RerouteNode>(); });
+        factory.registerType ("test.controlConstant", [] { return std::make_unique<ControlConstantNode>(); });
+        factory.registerType ("test.controlScale", [] { return std::make_unique<ControlScaleNode>(); });
+        factory.registerType ("test.noteSource", [] { return std::make_unique<NoteSourceNode>(); });
+        factory.registerType ("test.noteCapture", [] { return std::make_unique<NoteCaptureNode>(); });
         factory.registerType ("test.scale", [] { return std::make_unique<ScaleNode>(); });
         factory.registerType ("test.constant", [] { return std::make_unique<ConstantNode>(); });
         factory.registerType ("test.blockonly", [] { return std::make_unique<BlockOnlyNode>(); });
@@ -307,6 +405,44 @@ TEST_CASE ("GraphCompiler builds a fresh node instead of reusing when that node'
     CHECK (output[0] == 0.0f); // fresh object, starts from 0 again — safe, not a state race
 }
 
+TEST_CASE ("A bypassed node passes its primary input straight through instead of running processBlock",
+           "[engine][GraphCompiler][bypass]")
+{
+    // docs/CLEANUP.md Priority 1 #1: NodeInstance::properties["bypassed"]
+    // used to have zero read sites anywhere in GraphCompiler/ExecutionPlan
+    // — toggling it changed only what was stored and displayed, never the
+    // compiled audio. ScaleNode (output = input * gain) makes the fix
+    // directly observable: bypassed, its "gain" multiply must never run at
+    // all, not just happen to produce the same number.
+    auto factory = buildTestFactory();
+
+    NodeGraph normalGraph;
+    normalGraph.addNode ({ "src", "test.constant", {}, { { "value", 5.0f } }, {} });
+    normalGraph.addNode ({ "a", "test.scale", {}, { { "gain", 3.0f } }, {} });
+    normalGraph.addConnection ({ "src", "out", "a", "in" });
+    normalGraph.setOutput ("a", "out");
+
+    auto normalResult = GraphCompiler::compile (normalGraph, factory, { 44100.0, 64 }, 1);
+    REQUIRE (normalResult.success);
+    normalResult.plan.process (8);
+    const auto* normalOutput = normalResult.plan.blockBuffers[(size_t) normalResult.plan.finalOutputBufferIndex].getBlock().getChannelPointer (0);
+    for (int i = 0; i < 8; ++i)
+        CHECK (normalOutput[i] == 15.0f); // 5 * 3, gain applied as normal
+
+    NodeGraph bypassedGraph;
+    bypassedGraph.addNode ({ "src", "test.constant", {}, { { "value", 5.0f } }, {} });
+    bypassedGraph.addNode ({ "a", "test.scale", {}, { { "gain", 3.0f } }, { { "bypassed", juce::var (true) } } });
+    bypassedGraph.addConnection ({ "src", "out", "a", "in" });
+    bypassedGraph.setOutput ("a", "out");
+
+    auto bypassedResult = GraphCompiler::compile (bypassedGraph, factory, { 44100.0, 64 }, 1);
+    REQUIRE (bypassedResult.success);
+    bypassedResult.plan.process (8);
+    const auto* bypassedOutput = bypassedResult.plan.blockBuffers[(size_t) bypassedResult.plan.finalOutputBufferIndex].getBlock().getChannelPointer (0);
+    for (int i = 0; i < 8; ++i)
+        CHECK (bypassedOutput[i] == 5.0f); // passed straight through — gain=3 never applied
+}
+
 TEST_CASE ("GraphCompiler rejects a Note connection whose endpoint is inside a feedback cycle (M18, ADR-0024)",
            "[engine][GraphCompiler][Note][M18]")
 {
@@ -323,4 +459,142 @@ TEST_CASE ("GraphCompiler rejects a Note connection whose endpoint is inside a f
 
     CHECK_FALSE (result.success);
     CHECK (result.errorMessage.isNotEmpty());
+}
+
+namespace
+{
+    NoteCaptureNode& captureNodeOf (CompileResult& result, const juce::String& nodeId)
+    {
+        auto* node = dynamic_cast<NoteCaptureNode*> (result.plan.nodes[(size_t) result.plan.nodeIdToSlot.at (nodeId)].get());
+        REQUIRE (node != nullptr);
+        return *node;
+    }
+}
+
+TEST_CASE ("A Reroute takes on a Control signal's type instead of forcing Audio (docs/CLEANUP.md P1 #2)",
+           "[engine][GraphCompiler][Reroute]")
+{
+    // Before the polymorphic-port fix, both Reroute ports were hardcoded
+    // Audio, so canConnect() rejected wiring one into any Control chain.
+    NodeGraph graph;
+    graph.addNode ({ "src", "test.controlConstant", {}, { { "value", 0.25f } }, {} });
+    graph.addNode ({ "rr", "util.reroute", {}, {}, {} });
+    graph.addNode ({ "scale", "test.controlScale", {}, { { "gain", 4.0f } }, {} });
+    graph.addConnection ({ "src", "out", "rr", "in" });
+    graph.addConnection ({ "rr", "out", "scale", "in" });
+    graph.setOutput ("scale", "out");
+
+    auto factory = buildTestFactory();
+    auto result = GraphCompiler::compile (graph, factory, { 44100.0, 64 }, 1);
+    REQUIRE (result.success);
+
+    result.plan.process (8);
+    const auto* output = result.plan.blockBuffers[(size_t) result.plan.finalOutputBufferIndex].getBlock().getChannelPointer (0);
+    for (int i = 0; i < 8; ++i)
+        CHECK (output[i] == 1.0f); // 0.25 * 4, passed through Reroute unchanged
+}
+
+TEST_CASE ("A Reroute carries Note data through intact (docs/CLEANUP.md P1 #2)",
+           "[engine][GraphCompiler][Reroute][Note]")
+{
+    NodeGraph graph;
+    graph.addNode ({ "src", "test.noteSource", {}, {}, {} });
+    graph.addNode ({ "rr", "util.reroute", {}, {}, {} });
+    graph.addNode ({ "cap", "test.noteCapture", {}, {}, {} });
+    graph.addConnection ({ "src", "notes", "rr", "in" });
+    graph.addConnection ({ "rr", "out", "cap", "spawn" });
+    graph.setOutput ("src", "out");
+
+    auto factory = buildTestFactory();
+    auto result = GraphCompiler::compile (graph, factory, { 44100.0, 64 }, 1);
+    REQUIRE (result.success);
+
+    result.plan.process (8);
+
+    auto& capture = captureNodeOf (result, "cap");
+    REQUIRE (capture.capturedCount == 8);
+    CHECK (capture.captured[0].gate);
+    CHECK (capture.captured[0].pitch == 72.0f);
+    CHECK (capture.captured[0].velocity == 0.8f);
+    CHECK (capture.captured[0].startEvent);   // only the block's first sample, exactly as the source emitted it
+    CHECK_FALSE (capture.captured[1].startEvent);
+    CHECK (capture.captured[7].gate);
+}
+
+TEST_CASE ("A chain of Reroutes resolves to the source's type regardless of node declaration order",
+           "[engine][GraphCompiler][Reroute][Note]")
+{
+    // Declared sink-first / source-last: a single forward pass over the
+    // node list would resolve rr1 too late for rr2 to see it, so this only
+    // passes if the compiler genuinely iterates to a fixed point.
+    NodeGraph graph;
+    graph.addNode ({ "cap", "test.noteCapture", {}, {}, {} });
+    graph.addNode ({ "rr2", "util.reroute", {}, {}, {} });
+    graph.addNode ({ "rr1", "util.reroute", {}, {}, {} });
+    graph.addNode ({ "src", "test.noteSource", {}, {}, {} });
+    graph.addConnection ({ "src", "notes", "rr1", "in" });
+    graph.addConnection ({ "rr1", "out", "rr2", "in" });
+    graph.addConnection ({ "rr2", "out", "cap", "spawn" });
+    graph.setOutput ("src", "out");
+
+    auto factory = buildTestFactory();
+    auto result = GraphCompiler::compile (graph, factory, { 44100.0, 64 }, 1);
+    REQUIRE (result.success);
+
+    result.plan.process (4);
+    auto& capture = captureNodeOf (result, "cap");
+    REQUIRE (capture.capturedCount == 4);
+    CHECK (capture.captured[0].pitch == 72.0f);
+    CHECK (capture.captured[0].startEvent);
+}
+
+TEST_CASE ("A Reroute fed one type still rejects a downstream port of an incompatible type",
+           "[engine][GraphCompiler][Reroute]")
+{
+    // Polymorphic must not mean "accepts anything": Note -> Reroute -> an
+    // Audio input has to fail canConnect() at the Reroute's OUTPUT side.
+    NodeGraph graph;
+    graph.addNode ({ "src", "test.noteSource", {}, {}, {} });
+    graph.addNode ({ "rr", "util.reroute", {}, {}, {} });
+    graph.addNode ({ "scale", "test.scale", {}, { { "gain", 1.0f } }, {} });
+    graph.addConnection ({ "src", "notes", "rr", "in" });
+    graph.addConnection ({ "rr", "out", "scale", "in" });
+    graph.setOutput ("scale", "out");
+
+    auto factory = buildTestFactory();
+    auto result = GraphCompiler::compile (graph, factory, { 44100.0, 64 }, 1);
+
+    CHECK_FALSE (result.success);
+    CHECK (result.errorMessage.isNotEmpty());
+}
+
+TEST_CASE ("A recompile never reuses a Reroute, so it can't keep a stale type after its input is disconnected",
+           "[engine][GraphCompiler][Reroute]")
+{
+    auto factory = buildTestFactory();
+
+    NodeGraph connected;
+    connected.addNode ({ "src", "test.controlConstant", {}, { { "value", 1.0f } }, {} });
+    connected.addNode ({ "rr", "util.reroute", {}, {}, {} });
+    connected.addConnection ({ "src", "out", "rr", "in" });
+    connected.setOutput ("rr", "out");
+
+    auto first = GraphCompiler::compile (connected, factory, { 44100.0, 64 }, 1);
+    REQUIRE (first.success);
+    CHECK (first.plan.nodes[(size_t) first.plan.nodeIdToSlot.at ("rr")]->getInputPorts()[0].type == SignalType::Control);
+
+    // Same node id/type/params, but nothing feeds it any more. A reused
+    // node object would still report Control; a fresh compile's default is
+    // Audio, and the same graph must compile the same way regardless of
+    // what was edited before it.
+    NodeGraph disconnected;
+    disconnected.addNode ({ "rr", "util.reroute", {}, {}, {} });
+    disconnected.setOutput ("rr", "out");
+
+    auto second = GraphCompiler::compile (disconnected, factory, { 44100.0, 64 }, 2, &first.plan);
+    REQUIRE (second.success);
+
+    const auto& secondNode = second.plan.nodes[(size_t) second.plan.nodeIdToSlot.at ("rr")];
+    CHECK (secondNode != first.plan.nodes[(size_t) first.plan.nodeIdToSlot.at ("rr")]);
+    CHECK (secondNode->getInputPorts()[0].type == SignalType::Audio);
 }

@@ -65,6 +65,25 @@ namespace bazalt::engine
             // its Note port is unconnected."
             int noteInputBufferIndex = -1;
             int noteOutputBufferIndex = -1;
+
+            // docs/CLEANUP.md Priority 1 #1: runtime skip-and-passthrough
+            // for a node with `NodeInstance::properties["bypassed"] == true`
+            // (GraphCompiler resolves this once per compile, from the
+            // node's own descriptor — process() must never call
+            // getOutputPorts() itself, that allocates). When true,
+            // process() skips node->processBlock() (and any Note routing)
+            // entirely and instead copies `inputs[0]` (the node's first
+            // declared input — "primary" by the same convention
+            // NodeCard.tsx's splitPorts() uses; Silence if the node has no
+            // inputs at all) straight into
+            // blockBuffers[bypassOutputBufferIndex]. Any OTHER input is
+            // silently ignored and any OTHER output is left untouched, not
+            // zeroed — nothing in the current node catalog has a
+            // bypass-relevant secondary output yet, so this hasn't needed a
+            // real answer. -1 means "not bypassed, or bypassed but the node
+            // has no output to fill."
+            bool bypassed = false;
+            int bypassOutputBufferIndex = -1;
         };
 
         struct PerSampleRegionStep

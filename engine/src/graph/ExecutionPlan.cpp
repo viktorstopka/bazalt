@@ -16,6 +16,22 @@ namespace bazalt::engine
                 auto& blockStep = step.block;
                 auto& node = nodes[(size_t) blockStep.nodeSlot];
 
+                if (blockStep.bypassed)
+                {
+                    if (blockStep.bypassOutputBufferIndex >= 0)
+                    {
+                        const auto* inputPtr = (! blockStep.inputs.empty() && blockStep.inputs[0].kind == InputRef::Kind::BlockBuffer)
+                                                    ? blockBuffers[(size_t) blockStep.inputs[0].index].getBlock().getChannelPointer (0)
+                                                    : silenceBuffer.data();
+                        auto* outputPtr = blockBuffers[(size_t) blockStep.bypassOutputBufferIndex].getBlock().getChannelPointer (0);
+
+                        for (int i = 0; i < numSamples; ++i)
+                            outputPtr[i] = inputPtr[i];
+                    }
+
+                    continue;
+                }
+
                 const auto numInputs = (int) blockStep.inputs.size();
                 jassert (numInputs <= maxPortsPerNode);
 

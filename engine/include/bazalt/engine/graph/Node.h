@@ -61,6 +61,32 @@ namespace bazalt::engine
         virtual std::vector<PortDescriptor> getOutputPorts() const { return {}; }
         virtual std::vector<ParameterDescriptor> getParameters() const { return {}; }
 
+        /** docs/CLEANUP.md Priority 1 #2 — true for a node whose declared
+            port type is decided by what's connected to it (currently only
+            RerouteNode) rather than fixed at construction. GraphCompiler
+            resolves these (resolveIncomingSignalType()) before running
+            canConnect() on any connection touching this node, iterating to
+            a fixed point so a chain of several such nodes resolves
+            correctly regardless of declaration order. Most nodes have
+            fixed ports and never override either method below.
+        */
+        virtual bool hasPolymorphicPorts() const noexcept { return false; }
+
+        /** Called with the resolved SignalType of whatever currently feeds
+            this node's own polymorphic input, once per compile, before that
+            connection (or any connection from this node's own output) is
+            validated. Only meaningful when hasPolymorphicPorts() is true.
+            Message-thread only (compile time), never called from the audio
+            thread. Scoped to the SignalTypes that share the ordinary
+            block-buffer/Note mechanisms (Audio/Control/Boolean/Event/
+            Spectral/Note) — SignalType::Data is a fundamentally different
+            runtime representation (a DataPublisher-swapped pointer, not a
+            per-sample value) and isn't handled by this mechanism; a node
+            overriding this should reject/ignore a Data-typed incoming
+            connection rather than claim to support it.
+        */
+        virtual void resolveIncomingSignalType (SignalType incomingType) noexcept { juce::ignoreUnused (incomingType); }
+
         /** M20 — a node's own default visualization(s), declared once here
             rather than hardcoded anywhere in the UI (NodeCard.tsx needs no
             edit for a new node to get a working preview). Empty default:

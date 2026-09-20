@@ -8,8 +8,17 @@ namespace bazalt::engine::nodes
     /** Stable type id: "adapt.map". Remaps a normalised 0..1 Modulation
         input onto a real-unit Value output — what connecting Modulation to
         Value auto-inserts (NODE_EDITOR.md §5), seeded from the target
-        port's own min/max metadata at insertion time (a UI-side concern;
-        this node just implements the remap once min/max are set).
+        port's own min/max metadata by `GraphEditController::
+        connectWithAutoAdapt` at insertion time (compare `NormaliseNode.h`'s
+        sibling comment, which correctly attributes this to
+        `CanConnect.h`/`AdapterStep` — this node just implements the remap
+        once min/max are set).
+
+        "in" is declared `Quantity::Unipolar` (docs/CLEANUP.md Priority 1
+        #4) to match what `NormaliseNode`'s own output declares — without
+        it, `canConnect`'s "same-or-Dimensionless quantity is Ok" rule let a
+        raw Frequency/Pitch value feed this port directly with no adapter
+        inserted at all, silently clamped as if it were already 0-1.
     */
     class MapNode : public Node
     {
@@ -25,7 +34,12 @@ namespace bazalt::engine::nodes
 
         std::vector<PortDescriptor> getInputPorts() const override
         {
-            return { PortDescriptor { .id = "in", .type = SignalType::Control, .minValue = 0.0f, .maxValue = 1.0f } };
+            return { PortDescriptor { .id = "in",
+                                       .type = SignalType::Control,
+                                       .minValue = 0.0f,
+                                       .maxValue = 1.0f,
+                                       .quantity = Quantity::Unipolar,
+                                       .polarity = Polarity::Unipolar } };
         }
 
         std::vector<PortDescriptor> getOutputPorts() const override

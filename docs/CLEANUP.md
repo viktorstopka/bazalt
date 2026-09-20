@@ -27,7 +27,7 @@ separate pass, prioritized below.
 
 These affect actual behavior today, independent of any documentation issue.
 
-### 1. `bypassed` has zero read sites (the one you explicitly flagged)
+### 1. `bypassed` has zero read sites (the one you explicitly flagged) — ✅ FIXED (option (a); test: "A bypassed node passes its primary input straight through…")
 Confirmed via full grep across `engine/` and `plugin/`: `GraphEditController::
 setProperty` writes and persists `bypassed`, but nothing in `GraphCompiler`,
 `ExecutionPlan`, or `PluginProcessor` ever reads it. Toggling bypass changes
@@ -52,7 +52,7 @@ Two real implementation options, scoped:
 Recommend (a) first; revisit (b) only if a real patch needs to bypass a node
 inside a feedback loop.
 
-### 2. `RerouteNode` can no longer reroute non-Audio signals
+### 2. `RerouteNode` can no longer reroute non-Audio signals — ✅ FIXED (real polymorphic ports via `Node::hasPolymorphicPorts()`/`resolveIncomingSignalType()`; never reused across recompiles)
 `RerouteNode.h`'s own doc comment claims "the engine doesn't type-check
 connections at all today" — false since M16's `canConnect()` started
 rejecting incompatible types at compile time. Real consequence, not just a
@@ -66,7 +66,7 @@ type-polymorphic port mechanism or, more simply, splitting into
 per-signal-type reroute variants (or documenting Audio-only as the
 deliberate scope and renaming/relabeling accordingly).
 
-### 3. `ThresholdNode`'s unconnected slider is cosmetic-only
+### 3. `ThresholdNode`'s unconnected slider is cosmetic-only — ✅ FIXED
 `threshold` declares `hasFallbackWhenUnconnected = true`, so the UI renders a
 draggable slider when it's unconnected. But `setParameter()` is a literal
 no-op and `processSample()` hardcodes the fallback to `0.5f` regardless of
@@ -76,7 +76,7 @@ for ADSR/Oscillator/SVF/OnePoleFilter (`isnan(input) ? storedValue : input`,
 with `setParameter` actually updating `storedValue`) — Threshold just never
 got the same treatment. Small, mechanical fix once picked up.
 
-### 4. `MapNode`'s "in" port has no declared quantity — a silent-garbage-in path
+### 4. `MapNode`'s "in" port has no declared quantity — a silent-garbage-in path — ✅ FIXED
 `MapNode`'s "in" port declares `minValue=0/maxValue=1` but no
 `Quantity::Unipolar`, while `NormaliseNode`'s output (the thing that's
 supposed to feed it) explicitly declares `Quantity::Unipolar`. Because

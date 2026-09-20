@@ -241,7 +241,19 @@ namespace bazalt::engine
                     if (slotIt != previousPlan->nodeIdToSlot.end())
                     {
                         node = previousPlan->nodes[(size_t) slotIt->second];
-                        reused = (node != nullptr);
+
+                        // A polymorphic-port node (RerouteNode) is never
+                        // reused, even with an identical id/type/params:
+                        // the resolution pass below mutates it via
+                        // resolveIncomingSignalType(), which would break
+                        // the "never mutate a reused node" rule above, AND
+                        // a reused one would keep whatever type the LAST
+                        // graph resolved it to even if its input has since
+                        // been disconnected (fresh-compile default is
+                        // Audio, so the same graph would then compile
+                        // differently depending on edit history). Such a
+                        // node holds no DSP state worth carrying forward.
+                        reused = (node != nullptr && ! node->hasPolymorphicPorts());
                     }
                 }
             }
@@ -268,6 +280,57 @@ namespace bazalt::engine
             plan.nodeIdToType[instance.id] = instance.type;
             plan.nodeIdToAppliedParameters[instance.id] = instance.parameters;
             plan.nodes.push_back (std::move (node));
+        }
+
+        // ---- Resolve polymorphic port types (docs/CLEANUP.md Priority 1 #2) ----
+        // Must run before canConnect() is ever called below: a node like
+        // RerouteNode reports whatever type it currently holds via
+        // getInputPorts()/getOutputPorts(), and those need to already
+        // reflect what's wired to its input before any connection touching
+        // it (incoming OR outgoing) is validated. Iterated to a fixed point
+        // — each pass can only propagate a resolved type one hop further
+        // along a chain of several such nodes, and a chain can be at most
+        // numNodes-1 hops long in a graph with numNodes nodes, so numNodes
+        // passes is a safe convergence bound (duplicate/invalid connections
+        // are left for the ordinary loop below to reject with a real error;
+        // this pass silently skips anything it can't resolve).
+        for (int pass = 0; pass < numNodes; ++pass)
+        {
+            bool anyChanged = false;
+
+            for (const auto& connection : graph.getConnections())
+            {
+                const auto fromIt = plan.nodeIdToSlot.find (connection.fromNodeId);
+                const auto toIt = plan.nodeIdToSlot.find (connection.toNodeId);
+                if (fromIt == plan.nodeIdToSlot.end() || toIt == plan.nodeIdToSlot.end())
+                    continue;
+
+                auto& toNode = plan.nodes[(size_t) toIt->second];
+                if (! toNode->hasPolymorphicPorts())
+                    continue;
+
+                const auto& fromPorts = portIdIndexBySlot[(size_t) fromIt->second].outputIndexById;
+                const auto fromPortIt = fromPorts.find (connection.fromPortId);
+                const auto& toPorts = portIdIndexBySlot[(size_t) toIt->second].inputIndexById;
+                const auto toPortIt = toPorts.find (connection.toPortId);
+                if (fromPortIt == fromPorts.end() || toPortIt == toPorts.end())
+                    continue;
+
+                const auto incomingType = outputPortsBySlot[(size_t) fromIt->second][(size_t) fromPortIt->second].type;
+                const auto currentType = inputPortsBySlot[(size_t) toIt->second][(size_t) toPortIt->second].type;
+
+                if (incomingType != currentType)
+                {
+                    toNode->resolveIncomingSignalType (incomingType);
+                    portIdIndexBySlot[(size_t) toIt->second] = buildPortIdIndex (*toNode);
+                    inputPortsBySlot[(size_t) toIt->second] = toNode->getInputPorts();
+                    outputPortsBySlot[(size_t) toIt->second] = toNode->getOutputPorts();
+                    anyChanged = true;
+                }
+            }
+
+            if (! anyChanged)
+                break;
         }
 
         // ---- Resolve connections to slot/port indices --------------------
@@ -464,6 +527,36 @@ namespace bazalt::engine
                     const auto bufferIndex = (int) plan.blockBuffers.size() - 1;
                     blockStep.outputBufferIndices.push_back (bufferIndex);
                     outputLocation[{ slot, p }] = { ExecutionPlan::InputRef::Kind::BlockBuffer, bufferIndex };
+                }
+
+                // docs/CLEANUP.md Priority 1 #1: resolve bypass here, once,
+                // rather than at process() time — ExecutionPlan::process()
+                // must never call getOutputPorts() itself (that allocates).
+                // "Primary" output is the one flagged isPrimaryOutput, or
+                // output 0 if none is (matching NodeCard.tsx's own
+                // splitPorts() convention); "primary" input is always input
+                // 0, already resolved into blockStep.inputs[0] above.
+                const auto& instanceProperties = graphNodes[(size_t) slot].properties;
+                const auto bypassedIt = instanceProperties.find ("bypassed");
+                if (bypassedIt != instanceProperties.end() && (bool) bypassedIt->second)
+                {
+                    blockStep.bypassed = true;
+
+                    if (numOutputs > 0)
+                    {
+                        const auto& outputs = outputPortsBySlot[(size_t) slot];
+                        auto primaryOutputPort = 0;
+                        for (int p = 0; p < (int) outputs.size(); ++p)
+                        {
+                            if (outputs[(size_t) p].isPrimaryOutput)
+                            {
+                                primaryOutputPort = p;
+                                break;
+                            }
+                        }
+
+                        blockStep.bypassOutputBufferIndex = blockStep.outputBufferIndices[(size_t) primaryOutputPort];
+                    }
                 }
 
                 // M18 (ADR-0024): a connected Note-typed port routes through

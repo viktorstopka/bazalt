@@ -84,6 +84,39 @@ TEST_CASE ("ThresholdNode's threshold port falls back to 50% when unconnected", 
     CHECK (out == 1.0f); // 0.6 >= the 0.5 fallback
 }
 
+TEST_CASE ("ThresholdNode's unconnected slider value actually changes when it fires (docs/CLEANUP.md P1 #3)",
+           "[engine][ThresholdNode]")
+{
+    // setParameter() used to be a literal no-op and the fallback was a
+    // hardcoded 0.5f, so dragging the slider changed the displayed number
+    // with zero effect on the sound.
+    const auto nan = std::numeric_limits<float>::quiet_NaN();
+    float out;
+
+    {
+        nodes::ThresholdNode node;
+        node.setParameter ("threshold", 0.8f);
+
+        float inputs[2] = { 0.6f, nan };
+        node.processSample (inputs, &out);
+        CHECK (out == 0.0f); // 0.6 is below the slider's 0.8 — under the old hardcoded 0.5 this fired
+
+        inputs[0] = 0.9f;
+        node.processSample (inputs, &out);
+        CHECK (out == 1.0f);
+    }
+
+    {
+        // A connected threshold always wins over the stored slider value.
+        nodes::ThresholdNode node;
+        node.setParameter ("threshold", 0.8f);
+
+        float inputs[2] = { 0.6f, 0.4f };
+        node.processSample (inputs, &out);
+        CHECK (out == 1.0f); // 0.6 >= the connected 0.4, stored 0.8 ignored
+    }
+}
+
 TEST_CASE ("DownmixNode's five modes compute the expected value", "[engine][DownmixNode][M16]")
 {
     nodes::DownmixNode node;

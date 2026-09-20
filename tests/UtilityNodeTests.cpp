@@ -1,5 +1,6 @@
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/catch_approx.hpp>
+#include "bazalt/engine/graph/CanConnect.h"
 #include "bazalt/engine/nodes/ConstantNode.h"
 #include "bazalt/engine/nodes/RerouteNode.h"
 #include "bazalt/engine/nodes/MapNode.h"
@@ -54,6 +55,64 @@ TEST_CASE ("MapNode remaps a 0..1 input onto its min/max range, clamped", "[engi
     CHECK (mapOf (0.5f) == 4100.0f);
     CHECK (mapOf (-1.0f) == 200.0f);  // clamped
     CHECK (mapOf (2.0f) == 8000.0f); // clamped
+}
+
+TEST_CASE ("MapNode's input declares Quantity::Unipolar, so a raw real-unit value can't feed it unadapted",
+           "[engine][nodes][util][CanConnect]")
+{
+    // docs/CLEANUP.md Priority 1 #4: with an undeclared (Dimensionless) "in"
+    // port, canConnect()'s "same-or-Dimensionless is Ok" rule let a 3000 Hz
+    // Frequency straight into Map with no adapter, silently clamped to 1.0
+    // as if it were already normalised.
+    const MapNode node;
+    const auto inputs = node.getInputPorts();
+    REQUIRE (inputs.size() == 1);
+    CHECK (inputs[0].quantity == Quantity::Unipolar);
+
+    PortDescriptor frequencySource { "f", SignalType::Control };
+    frequencySource.quantity = Quantity::Frequency;
+    frequencySource.minValue = 20.0f;
+    frequencySource.maxValue = 20000.0f;
+
+    const auto raw = canConnect (frequencySource, inputs[0]);
+    REQUIRE (raw.outcome == ConnectionOutcome::NeedsAdapters);
+    REQUIRE (raw.adapterChain.size() == 1);
+    CHECK (raw.adapterChain[0].typeId == "adapt.normalise");
+
+    // The intended feeder — an already-normalised Unipolar source — is still
+    // a direct, adapter-free connection.
+    PortDescriptor unipolarSource { "u", SignalType::Control };
+    unipolarSource.quantity = Quantity::Unipolar;
+    CHECK (canConnect (unipolarSource, inputs[0]).outcome == ConnectionOutcome::Ok);
+}
+
+TEST_CASE ("RerouteNode defaults to Audio and adopts the resolved type on both ports",
+           "[engine][nodes][util][Reroute]")
+{
+    RerouteNode node;
+    REQUIRE (node.hasPolymorphicPorts());
+    CHECK (node.getInputPorts()[0].type == SignalType::Audio);
+    CHECK (node.getOutputPorts()[0].type == SignalType::Audio);
+
+    for (const auto type : { SignalType::Control, SignalType::Boolean, SignalType::Event, SignalType::Note })
+    {
+        node.resolveIncomingSignalType (type);
+        CHECK (node.getInputPorts()[0].type == type);
+        CHECK (node.getOutputPorts()[0].type == type);
+    }
+}
+
+TEST_CASE ("RerouteNode refuses to adopt SignalType::Data, leaving its type unchanged",
+           "[engine][nodes][util][Reroute]")
+{
+    // Data is a DataPublisher-swapped pointer, not a per-sample value —
+    // Reroute has no way to forward it, so it must not claim to.
+    RerouteNode node;
+    node.resolveIncomingSignalType (SignalType::Control);
+    node.resolveIncomingSignalType (SignalType::Data);
+
+    CHECK (node.getInputPorts()[0].type == SignalType::Control);
+    CHECK (node.getOutputPorts()[0].type == SignalType::Control);
 }
 
 TEST_CASE ("AddNode and MultiplyNode compute a+b and a*b", "[engine][nodes][util]")

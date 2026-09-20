@@ -49,10 +49,16 @@ namespace bazalt::engine::nodes
             return { PortDescriptor { .id = "onThreshold", .type = SignalType::Event, .isPrimaryOutput = true } };
         }
 
-        void setParameter (const juce::String&, float) override
+        void setParameter (const juce::String& parameterId, float value) override
         {
-            // No parameters — "threshold" is a real port (per SIGNAL_TYPES.md
-            // §5's own default-seeding column), not a ParameterDescriptor.
+            // "threshold" is a real port, not a ParameterDescriptor (per
+            // SIGNAL_TYPES.md §5's own default-seeding column) — but its
+            // hasFallbackWhenUnconnected slider still commits through this
+            // same setParameter path (docs/CLEANUP.md Priority 1 #3: this
+            // used to be a no-op, so dragging the slider changed the
+            // displayed number with zero effect on the actual sound).
+            if (parameterId == "threshold")
+                storedThreshold = value;
         }
 
         void processSample (const float* inputs, float* outputs) noexcept override
@@ -60,7 +66,7 @@ namespace bazalt::engine::nodes
             static constexpr float hysteresis = 0.02f;
 
             const auto by = inputs[0];
-            const auto threshold = std::isnan (inputs[1]) ? 0.5f : inputs[1];
+            const auto threshold = std::isnan (inputs[1]) ? storedThreshold : inputs[1];
 
             const auto risingEdge = ! wasAboveHysteresisBand && by >= threshold;
             outputs[0] = risingEdge ? 1.0f : 0.0f; // Event: non-zero = fired this sample
@@ -73,5 +79,6 @@ namespace bazalt::engine::nodes
 
     private:
         bool wasAboveHysteresisBand = false;
+        float storedThreshold = 0.5f; // matches the "threshold" port's own declared defaultValue
     };
 }

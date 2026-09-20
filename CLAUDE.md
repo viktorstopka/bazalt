@@ -214,10 +214,15 @@ ctest --test-dir build -C Debug -R PluginTests --output-on-failure
   shortcut is retired outright — its target, `mock.macro`, has no real
   engine equivalent (`util.macro`, ADR-0015, is proposed but not built).
   `rename`/`bypass` are real, persisted `NodeInstance.properties` writes
-  (`GraphEditController::setProperty`, new) but **bypass has no real DSP
-  effect yet** — nothing in `GraphCompiler`/`ExecutionPlan` reads the
-  `bypassed` property to skip or pass through a node; toggling it changes
-  only what's stored and displayed, not the compiled audio. `move` similarly
+  (`GraphEditController::setProperty`, new). **Bypass is real DSP as of
+  docs/CLEANUP.md P1 #1**: `GraphCompiler` resolves `properties["bypassed"]`
+  into `BlockStep::bypassed`, and `ExecutionPlan::process()` then skips
+  `processBlock()` and copies the node's first declared input straight to
+  its primary output. Known limits, not bugs: it's a block-rate step only
+  (a bypassed node inside a per-sample feedback region still runs), any
+  secondary input is ignored, and a bypassed node's Note ports are not
+  forwarded (downstream sees no notes) — bypass is Audio/Control-only for
+  now. `move` similarly
   needed a new command (`GraphEditController::moveNode`) that didn't exist
   before M19 — a pure position write, no DSP implications (`GraphCompiler`'s
   state-pool reuse check doesn't compare `position`).
