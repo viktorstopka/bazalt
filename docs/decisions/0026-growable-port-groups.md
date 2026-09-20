@@ -77,4 +77,7 @@ Supporting choices:
 - Two limits, not bugs: a node has one shared index range across all its groups, and the group's
   `autoRevealOnLastConnected = false` is honoured by the UI but the engine never distinguishes it.
 - The compiler indexes incoming port ids per node once per compile. A per-node scan of every
-  connection was quadratic and measurably hurt the 500-node stress graph.
+  connection would be quadratic — the M8 stress graph is 500 `math.add` nodes against 1000
+  connections, roughly half a million string comparisons per compile, and a compile runs per voice
+  plus once for the global plan on every command. This is reasoning from the graph's size, not a
+  measurement: the indexed version was written first and no timing of the naive one was taken.
