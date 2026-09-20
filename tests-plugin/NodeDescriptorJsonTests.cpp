@@ -182,3 +182,37 @@ TEST_CASE ("nodeDescriptorToVar flags a polymorphic-port node, and only that one
     CHECK (flagFor ("osc.analog").isBool());
     CHECK_FALSE ((bool) flagFor ("osc.analog"));
 }
+
+TEST_CASE ("nodeDescriptorToVar reports each port's polymorphism, so the UI adopts a type only where the engine does",
+           "[plugin][NodeDescriptorJson][inheriting]")
+{
+    const auto factory = buildDefaultNodeFactory();
+
+    auto polymorphismOf = [&] (const juce::String& typeId, const juce::String& direction, const juce::String& portId) -> juce::String
+    {
+        const auto node = factory.create (typeId);
+        REQUIRE (node != nullptr);
+        const auto descriptor = nodeDescriptorToVar (describeNode (typeId, *node));
+        const auto* ports = descriptor.getProperty (juce::Identifier (direction), juce::var()).getArray();
+        REQUIRE (ports != nullptr);
+        for (const auto& port : *ports)
+            if (port["id"].toString() == portId)
+                return port["polymorphism"].toString();
+        FAIL ("no " << direction << " port " << portId << " on " << typeId);
+        return {};
+    };
+
+    // Reroute and select's data ports follow type AND quantity...
+    CHECK (polymorphismOf ("util.reroute", "inputs", "in") == "signalAndQuantity");
+    CHECK (polymorphismOf ("logic.select", "inputs", "whenTrue") == "signalAndQuantity");
+    CHECK (polymorphismOf ("logic.select", "outputs", "out") == "signalAndQuantity");
+    // ...but select's Boolean condition, on that same polymorphic node, stays fixed.
+    CHECK (polymorphismOf ("logic.select", "inputs", "condition") == "none");
+
+    // compare and sample&hold keep their type Control and follow only the quantity.
+    CHECK (polymorphismOf ("logic.compare", "inputs", "a") == "quantity");
+    CHECK (polymorphismOf ("adapt.sampleHold", "inputs", "in") == "quantity");
+    CHECK (polymorphismOf ("adapt.sampleHold", "inputs", "trigger") == "none");
+
+    CHECK (polymorphismOf ("osc.analog", "outputs", "out") == "none");
+}

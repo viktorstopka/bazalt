@@ -50,6 +50,17 @@ namespace bazalt
             return "unknown";
         }
 
+        juce::String polymorphismToString (bazalt::engine::PortPolymorphism polymorphism)
+        {
+            switch (polymorphism)
+            {
+                case bazalt::engine::PortPolymorphism::None:              return "none";
+                case bazalt::engine::PortPolymorphism::Quantity:          return "quantity";
+                case bazalt::engine::PortPolymorphism::SignalAndQuantity: return "signalAndQuantity";
+            }
+            return "none";
+        }
+
         juce::String channelsToString (bazalt::engine::Channels channels)
         {
             switch (channels)
@@ -205,6 +216,7 @@ namespace bazalt
             obj->setProperty ("group", portGroupToVar (port.group));
             obj->setProperty ("dataTags", dataTagsToVar (port.dataTags));
             obj->setProperty ("channels", channelsToString (port.channels));
+            obj->setProperty ("polymorphism", polymorphismToString (port.polymorphism));
             return juce::var (obj);
         }
 

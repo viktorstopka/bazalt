@@ -81,12 +81,12 @@ namespace bazalt::engine::nodes
 
         std::vector<PortDescriptor> getInputPorts() const override
         {
-            return { PortDescriptor { .id = "in", .type = resolvedType, .quantity = resolvedQuantity } };
+            return { PortDescriptor { .id = "in", .type = resolvedType, .quantity = resolvedQuantity, .polymorphism = PortPolymorphism::SignalAndQuantity } };
         }
 
         std::vector<PortDescriptor> getOutputPorts() const override
         {
-            return { PortDescriptor { .id = "out", .type = resolvedType, .isPrimaryOutput = true, .quantity = resolvedQuantity } };
+            return { PortDescriptor { .id = "out", .type = resolvedType, .isPrimaryOutput = true, .quantity = resolvedQuantity, .polymorphism = PortPolymorphism::SignalAndQuantity } };
         }
 
         void processSample (const float* inputs, float* outputs) noexcept override { outputs[0] = inputs[0]; }

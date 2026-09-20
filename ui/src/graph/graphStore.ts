@@ -271,16 +271,27 @@ export function getEndpoint(nodeId: string, portId: string, direction: 'input' |
   return endpointFor(nodeId, portId, direction, new Set())
 }
 
-/** A polymorphic node (util.reroute) declares Audio ports, but that is only its
-    unconnected default — its real type is whatever feeds it (Node.h,
-    hasPolymorphicPorts(); the engine resolves it in GraphCompiler). Predicting
-    a wire against the declared Audio would reject a Control cable the engine
-    accepts and draw every rerouted cable pink, so resolve it here the same way:
-    follow the wire into the node, recursively through chains of them.
-    `seen` breaks a cycle of reroutes, which never resolves to anything.
-    A polymorphic node with nothing feeding it yet has no type to predict
-    with, so it is marked `unresolved` and canConnect() lets the drop through
-    — the engine decides, and its rejection reason reaches the error banner.
+/** A polymorphic node (util.reroute, logic.select/compare, adapt.sampleHold)
+    declares default port types, but a placed one's real types follow what is
+    wired to it (Node.h, hasPolymorphicPorts(); the engine resolves it in
+    GraphCompiler). Predicting a wire against the declared defaults would
+    reject a Control cable into a Reroute the engine accepts, and draw a
+    rerouted cable pink, so resolve it here the same way.
+
+    Which ports: only those with a `polymorphism` other than 'none' (select's
+    Boolean `condition` stays as declared). Which source wins: the first
+    DECLARED polymorphic input that has a resolvable wire — the rule the
+    engine's InheritingPortsNode applies. What is adopted: always the quantity
+    (and unit/range, for colouring); the SignalType only for
+    'signalAndQuantity', since compare/sampleHold keep their values Control.
+
+    Recurses through chains of them; `seen` breaks a cycle, which never
+    resolves. A 'signalAndQuantity' port with nothing resolvable feeding it has
+    no type to predict with, so it is marked `unresolved` and canConnect() lets
+    the drop through — the engine decides, and its rejection reason reaches the
+    error banner. A 'quantity' port already has its right type, so it just
+    stays as declared (Dimensionless, accepting any quantity), exactly like the
+    engine's unwired default.
 */
 function endpointFor(nodeId: string, portId: string, direction: 'input' | 'output', seen: Set<string>): ConnectionEndpoint | undefined {
   const node = nodes.get(nodeId)
@@ -289,21 +300,32 @@ function endpointFor(nodeId: string, portId: string, direction: 'input' | 'outpu
   if (!descriptor) return undefined
   const port = findPort(descriptor, portId, direction)
   if (!port) return undefined
-  if (!descriptor.hasPolymorphicPorts) return { nodeId, portId, direction, port }
 
-  if (!seen.has(nodeId)) {
-    seen.add(nodeId)
-    for (const wire of wires.values()) {
-      if (wire.toNodeId !== nodeId) continue
-      const upstream = endpointFor(wire.fromNodeId, wire.fromPortId, 'output', seen)
-      if (upstream && !upstream.unresolved) {
-        const { type, quantity, unit, minValue, maxValue, isInteger, polarity } = upstream.port
-        return { nodeId, portId, direction, port: { ...port, type, quantity, unit, minValue, maxValue, isInteger, polarity } }
-      }
-      break // a polymorphic node has one source; if it is unresolved, so is this
-    }
+  const polymorphism = port.polymorphism ?? 'none'
+  if (!descriptor.hasPolymorphicPorts || polymorphism === 'none') return { nodeId, portId, direction, port }
+
+  const unresolvedEndpoint: ConnectionEndpoint =
+    polymorphism === 'signalAndQuantity' ? { nodeId, portId, direction, port, unresolved: true } : { nodeId, portId, direction, port }
+  if (seen.has(nodeId)) return unresolvedEndpoint
+  seen.add(nodeId)
+
+  for (const source of descriptor.inputs) {
+    if (!source.polymorphism || source.polymorphism === 'none') continue
+    const wire = [...wires.values()].find((w) => w.toNodeId === nodeId && w.toPortId === source.id)
+    if (!wire) continue // nothing on this source; a lower-priority one may still resolve the node
+
+    // The first declared source that HAS a wire decides, resolved or not: if its
+    // upstream can't say yet, the engine holds that default too rather than
+    // falling through to a lower-priority source.
+    const upstream = endpointFor(wire.fromNodeId, wire.fromPortId, 'output', seen)
+    if (!upstream || upstream.unresolved) return unresolvedEndpoint
+
+    const { type, quantity, unit, minValue, maxValue, isInteger, polarity } = upstream.port
+    const adopted = { ...port, quantity, unit, minValue, maxValue, isInteger, polarity }
+    if (polymorphism === 'signalAndQuantity') adopted.type = type
+    return { nodeId, portId, direction, port: adopted }
   }
-  return { nodeId, portId, direction, port, unresolved: true }
+  return unresolvedEndpoint
 }
 
 export function findWireAtInput(nodeId: string, portId: string): GraphWire | undefined {

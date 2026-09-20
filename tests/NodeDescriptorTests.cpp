@@ -10,7 +10,7 @@ TEST_CASE ("NodeFactory::describeAll() returns a descriptor for every registered
     auto factory = buildDefaultNodeFactory();
     const auto descriptors = factory.describeAll();
 
-    REQUIRE (descriptors.size() == 35); // 8 M1/M2 DSP + 7 M7 utility (util.voiceSum removed M17) + 3 M16 adapters + 2 M17 instance types + 1 M18 io.noteIn + 3 M20 (math.round, math.clamp, adapt.remap) + 10 M21 wave 1 (math.subtract/divide/abs/minmax/power/modulo/slew, mix.crossfade, logic.not/toggle) + 1 M21 wave 2 (logic.boolean, the first new growable-port-group node)
+    REQUIRE (descriptors.size() == 38); // 8 M1/M2 DSP + 7 M7 utility (util.voiceSum removed M17) + 3 M16 adapters + 2 M17 instance types + 1 M18 io.noteIn + 3 M20 (math.round, math.clamp, adapt.remap) + 10 M21 wave 1 (math.subtract/divide/abs/minmax/power/modulo/slew, mix.crossfade, logic.not/toggle) + 1 M21 wave 2 (logic.boolean, the first new growable-port-group node) + 3 M21 wave 3 (logic.select, logic.compare, adapt.sampleHold: the first type/quantity-inheriting nodes)
 
     auto findByTypeId = [&] (const juce::String& typeId) -> const NodeDescriptor*
     {

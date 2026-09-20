@@ -506,10 +506,16 @@ port ids were migrated, not renamed (patch schema v3). The node card reveals a s
 wired one. Design and trade-offs: **ADR-0026**. Verified in the running Standalone app: a saved schema-v2
 graph loads with its `math.add` cables on `In 1`/`In 2` and a third spare row.
 
-**Remaining: 9 new nodes and `util.macro` — and why it is not "just more nodes":**
-- **Quantity/type-inheriting ports** (`logic.compare`, `logic.select`, `adapt.sampleHold`): extends the
-  polymorphic-port mechanism built for `util.reroute` (`Node::resolveIncomingSignalType` passes only a
-  `SignalType` today, not a quantity).
+**Wave 3 — done: type/quantity-inheriting ports (29 of the 36 exist).** `logic.select` (any plain signal
+type; `condition` stays a fixed Boolean), `logic.compare` (`a`/`b`/`tolerance` share one quantity, so
+comparing a Frequency with a Pitch is a compile-time rejection instead of comparing 440 with 69) and
+`adapt.sampleHold` (quantity inherited, exponential `glide`). Built by generalising the polymorphic-port
+hook first written for `util.reroute` (`resolveIncomingPort(toPortId, source)`, per-port
+`PortDescriptor::polymorphism`, priority-by-declaration-order). Design: **ADR-0027**. This also
+completed CLEANUP P1 #2 properly — the Reroute fix had only worked inside `GraphCompiler`, and the
+command layer and the UI still rejected a Control cable into it.
+
+**Remaining: 6 new nodes and `util.macro` — and why it is not "just more nodes":**
 - **Host boundary** (`io.audioIn/control/transport`): `engine/` cannot depend on plugin libraries, so
   these need the same plain-data injection `io.noteIn` uses; `io.transport` needs the host playhead.
 - **`view.scope/spectrum/meter`**: their `timeWindow`/`mode` settings are per-instance, but

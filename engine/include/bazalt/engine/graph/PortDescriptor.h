@@ -130,6 +130,14 @@ namespace bazalt::engine
         Inherited
     };
 
+    /** What a port inherits from its source on a polymorphic node (M21). */
+    enum class PortPolymorphism
+    {
+        None,
+        Quantity,          // takes the source's Quantity; its SignalType is fixed (logic.compare, adapt.sampleHold)
+        SignalAndQuantity  // takes both (util.reroute, logic.select's data ports)
+    };
+
     /** UI-facing metadata for one port, fully decoupled from the DSP
         implementation (ARCHITECTURE.md §3.6) — enough for a future UI to
         build a socket without knowing the node's C++ type. `id` is a
@@ -221,6 +229,18 @@ namespace bazalt::engine
         // Meaningful only for a `type == SignalType::Audio` port. See
         // `Channels`' own doc comment above.
         Channels channels = Channels::Mono;
+
+        // ---- Polymorphism (M21) ---------------------------------------------
+        /** How this port's declared type/quantity follow what is wired to its
+            node (Node::hasPolymorphicPorts()); `None` for an ordinary port
+            and for a port on a polymorphic node that stays fixed (select's
+            Boolean `condition`). The type/quantity declared here are just the
+            unconnected defaults. When several INPUT ports of one node are
+            polymorphic, the one declared first wins if they disagree: the
+            engine nodes apply that rule (InheritingPortsNode.h) and the UI
+            mirrors it by declaration order (graphStore.endpointFor()).
+        */
+        PortPolymorphism polymorphism = PortPolymorphism::None;
     };
 
     /** UI-facing metadata for one parameter — enough to build a control

@@ -473,3 +473,34 @@ TEST_CASE ("A Reroute still rejects, through the controller, a downstream port i
     CHECK (rejected.errorMessage.isNotEmpty());
     CHECK (controller.getGraph().getConnections().size() == connectionsBefore);
 }
+
+TEST_CASE ("logic.select through the controller: data cables of any plain type, a fixed Boolean condition, and Note refused",
+           "[plugin][GraphEditController][inheriting][M21]")
+{
+    BazaltAudioProcessor processor;
+    processor.prepareToPlay (44100.0, 512);
+
+    auto& controller = processor.getGraphEditController();
+
+    REQUIRE (controller.addNode ("logic.select", "sel", 0.0f, 0.0f).success);
+    REQUIRE (controller.addNode ("logic.not", "cond", 0.0f, 0.0f).success);
+    REQUIRE (controller.addNode ("util.constant", "k", 0.0f, 0.0f).success);
+    REQUIRE (controller.addNode ("io.noteIn", "notes", 0.0f, 0.0f).success);
+
+    // A Boolean cable on `condition`, a Control cable on `whenTrue`: both fine.
+    CHECK (controller.connectWithAutoAdapt ("cond", "out", "sel", "condition").success);
+    CHECK (controller.connectWithAutoAdapt ("k", "out", "sel", "whenTrue").success);
+
+    // A Control cable must NOT be accepted on the fixed Boolean condition of an
+    // already-resolved select — polymorphic nodes don't become "accepts anything".
+    REQUIRE (controller.addNode ("util.constant", "k2", 0.0f, 0.0f).success);
+    const auto connectionsBefore = controller.getGraph().getConnections().size();
+    // (condition is already wired, so target a second select's condition instead)
+    REQUIRE (controller.addNode ("logic.select", "sel2", 0.0f, 0.0f).success);
+    CHECK_FALSE (controller.connectWithAutoAdapt ("k2", "out", "sel2", "condition").success);
+
+    // A Note can't ride through a select: it isn't a plain per-sample value.
+    CHECK_FALSE (controller.connectWithAutoAdapt ("notes", "notes", "sel2", "whenFalse").success);
+
+    CHECK (controller.getGraph().getConnections().size() == connectionsBefore);
+}

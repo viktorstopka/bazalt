@@ -116,6 +116,13 @@ export interface PortDescriptor {
   /** M16 — meaningful only when `type === 'audio'`. See engine's
       `Channels` enum (PortDescriptor.h) for the full rationale. */
   channels: 'mono' | 'stereo' | 'inherited'
+  /** PortDescriptor.h `polymorphism`: how this port's type/quantity follow what's wired
+      to its node (the declared values are only the unconnected defaults) —
+      'quantity' keeps the SignalType fixed, 'signalAndQuantity' takes both.
+      Absent on mock descriptors. The first-declared polymorphic input wins a
+      disagreement.
+  */
+  polymorphism?: 'none' | 'quantity' | 'signalAndQuantity'
 }
 
 export interface ParameterDescriptor {
