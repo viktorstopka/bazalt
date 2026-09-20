@@ -26,6 +26,16 @@
 #include "bazalt/engine/nodes/InstanceAllocatorNode.h"
 #include "bazalt/engine/nodes/InstanceMixNode.h"
 #include "bazalt/engine/nodes/IoNoteInNode.h"
+#include "bazalt/engine/nodes/SubtractNode.h"
+#include "bazalt/engine/nodes/DivideNode.h"
+#include "bazalt/engine/nodes/AbsNode.h"
+#include "bazalt/engine/nodes/MinMaxNode.h"
+#include "bazalt/engine/nodes/PowerNode.h"
+#include "bazalt/engine/nodes/ModuloNode.h"
+#include "bazalt/engine/nodes/SlewNode.h"
+#include "bazalt/engine/nodes/CrossfadeNode.h"
+#include "bazalt/engine/nodes/LogicNotNode.h"
+#include "bazalt/engine/nodes/LogicToggleNode.h"
 
 namespace bazalt::engine
 {
@@ -62,6 +72,17 @@ namespace bazalt::engine
         factory.registerType ("instance.allocator", [] { return std::make_unique<nodes::InstanceAllocatorNode>(); });
         factory.registerType ("instance.mix", [] { return std::make_unique<nodes::InstanceMixNode>(); });
         factory.registerType ("io.noteIn", [] { return std::make_unique<nodes::IoNoteInNode>(); });
+        // M21 Batch A, wave 1 — fixed-arity nodes needing no new infrastructure.
+        factory.registerType ("math.subtract", [] { return std::make_unique<nodes::SubtractNode>(); });
+        factory.registerType ("math.divide", [] { return std::make_unique<nodes::DivideNode>(); });
+        factory.registerType ("math.abs", [] { return std::make_unique<nodes::AbsNode>(); });
+        factory.registerType ("math.minmax", [] { return std::make_unique<nodes::MinMaxNode>(); });
+        factory.registerType ("math.power", [] { return std::make_unique<nodes::PowerNode>(); });
+        factory.registerType ("math.modulo", [] { return std::make_unique<nodes::ModuloNode>(); });
+        factory.registerType ("math.slew", [] { return std::make_unique<nodes::SlewNode>(); });
+        factory.registerType ("mix.crossfade", [] { return std::make_unique<nodes::CrossfadeNode>(); });
+        factory.registerType ("logic.not", [] { return std::make_unique<nodes::LogicNotNode>(); });
+        factory.registerType ("logic.toggle", [] { return std::make_unique<nodes::LogicToggleNode>(); });
         return factory;
     }
 

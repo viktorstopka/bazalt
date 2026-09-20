@@ -440,7 +440,7 @@ engine's confirmation before updating the display, rather than `NODE_EDITOR.md` 
 optimistic-then-reconcile flow (ADR-0025) — imperceptible at today's local-WebView round-trip speed,
 but a real, deliberate simplification worth knowing about if it ever isn't.
 
-## M20 — Standardized visualization system
+## M20 — Standardized visualization system — done
 
 A small, closed taxonomy of preview kinds — start with what M21/M22 need (Scope, Spectrum, Meter,
 EnvelopeWithPlayhead, PhaseMarker), extend the taxonomy later rather than front-loading all of it.
@@ -460,6 +460,16 @@ placeable nodes that reuse these same generic components to preview an arbitrary
 preview render correctly — no `NodeCard.tsx` edit for that specific node. The M8 stress-test's
 60fps-at-500-nodes number is re-measured with the shared loop active and doesn't regress.
 
+**Delivered, with two honest deviations from the text above.** Waveform/Spectrum/Meter are real end to
+end — `previews[]` declared in a node's C++ header, one shared render loop, viewport-gated tap
+subscription, per-tap frame-type selection — and `osc.analog`/`mix.gain` declare real previews, so the
+"a header declaration, zero `NodeCard.tsx` edits" criterion is met. **Not built:** `ShapeWithPlayhead`
+(the one kind covering `EnvelopeWithPlayhead`, `PhaseMarker`, wavetable and `data.table` previews) and
+the other declared-but-unproduced kinds — deferred by the M20 plan until a real node needs them, so
+`env.adsr` has no preview yet. **Not re-measured:** the 60fps-at-500-nodes criterion; its harness was
+deleted in M10 and only two node types declare previews, so there is no condition to measure (ADR-0008,
+M20 amendment).
+
 ---
 
 ## Node batches (M21–M28)
@@ -478,6 +488,33 @@ what you'd actually patch to try it, usually a `REFERENCE_PATCHES.md`/`NODE_CATA
 | M26 | Coupled physical modeling + benchmark | `excite.mallet/stickSlip/breath` (3, `feedback` ports wired for real this time), `resonator.string/tube/plate` (3), `filter.formant` (1) — 7 nodes, plus a dedicated per-sample-region CPU benchmark at real voice counts (concern flagged separately — most physical-modeling patches become cyclic once `feedback` is real, unlike everything before this batch) | **Bowed String**, **Breath/Wind**, full **Struck Body**. Exit criteria includes measured CPU numbers at 8+ voices, not just "it compiles" — same bar M8 set for the rendering split. |
 | M27 | Samplers, wavetable, file loading | `osc.wavetable` (1), `sampler.player/granular` (2), `data.load` (1) — 4 nodes | Load a real sample, play it pitched and granulated. |
 | M28 | Space effects + swarm/trigger configs | `space.reverb/diffuser` (2), `instance.allocator`'s Swarm-population/Swarm-transient/Trigger configurations (same typeId, new behavior, generalizing M17's Voice-only scope) | **Water**, **Crackle** (as a real swarm, not the single-instance stand-in from M23), **Cicada**, **Cicada Field** groups — the transient/persistent swarm reference patch, for real. |
+
+### M21 progress (Batch A) — in progress
+
+**Wave 1 — done, 10 new nodes (25 of the 36 now exist; 15 already did):** `math.subtract/divide/abs/minmax/power/modulo/slew`, `mix.crossfade`,
+`logic.not/toggle`. Fixed-arity nodes needing no new infrastructure; each header records its own design
+calls (`math.power` is sign-preserving so a bipolar input never goes NaN; `math.modulo` is floored;
+`math.slew` is an exponential lag with per-direction time constants, sample-rate-derived; `math.divide`'s
+`safeZero` is a parameter, not a port — a Boolean port with an unwired fallback gets a dot in the UI
+with no control to change it).
+
+**Remaining: 10 new nodes, `util.macro`, and growable upgrades to 3 existing ones — and why it is not "just more nodes":**
+- **Growable port groups** (`math.add/multiply`, `mix.sum`, `logic.boolean`): `PortGroup` exists only as
+  a descriptor field; those nodes are still fixed at two inputs and their headers say the growable
+  version is this milestone's job. Needs the compiler, the command bridge and the UI affordance.
+- **Quantity/type-inheriting ports** (`logic.compare`, `logic.select`, `adapt.sampleHold`): extends the
+  polymorphic-port mechanism built for `util.reroute` (`Node::resolveIncomingSignalType` passes only a
+  `SignalType` today, not a quantity).
+- **Host boundary** (`io.audioIn/control/transport`): `engine/` cannot depend on plugin libraries, so
+  these need the same plain-data injection `io.noteIn` uses; `io.transport` needs the host playhead.
+- **`view.scope/spectrum/meter`**: their `timeWindow`/`mode` settings are per-instance, but
+  `getPreviews()` is declared once per node type.
+- **`util.macro`: deferred past M21** (decision 2026-09-20). ADR-0015 is still Proposed; it commits to
+  the fixed 32-slot host-automation pool plus a slot-addressed node and deserves its own decision.
+
+**Known UI gap, not M21's to fix:** the UI never reads the engine's `enumOptions`, so every real enum
+parameter (`math.round`/`math.minmax` mode, `mix.downmix` mode, `mix.crossfade` law, `osc.analog` shape)
+renders as an integer slider instead of a labelled dropdown.
 
 ## M29 — Groups
 

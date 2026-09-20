@@ -7,12 +7,16 @@ WebView UI. Full design: `docs/ARCHITECTURE.md`. Node editor design (M7+):
 touching anything cross-cutting — this file is the condensed day-to-day
 ruleset, not a replacement for either.
 
-**M0–M9 are done and committed** (M0–M6 = the MVP; M7 = domain-aware graph
-model + command bridge; M8 = dynamic telemetry + rendering-split
-benchmark; M9 = descriptor schema end-to-end + component gallery — all
-node-editor-phase milestones from `docs/NODE_EDITOR.md`). M10 (canvas
-navigation, placement, wiring) is next. Each milestone must build, pass
-its tests, and be committed before the next one starts.
+**Milestones through M20 have landed** (M0–M6 = the MVP; M7–M10 = the node
+editor's model, telemetry, descriptors and canvas; M14–M18 = the
+value/signal/domain system; M19 = the editor wired to the real engine; M20 =
+standardized inline visualization). `docs/MILESTONES.md` is the per-milestone
+record and `git log` is the source of truth for what's committed — some
+headers there carry no "— done" marker even when the work landed (M20 did),
+and M12/M13 (interaction polish, assist menu) are still open UI milestones.
+**M21 (Node Batch A: math/logic/adapters/io/view) is in progress** — see its
+section in MILESTONES.md for what's built and what remains. Each milestone
+must build, pass its tests, and be committed before the next one starts.
 
 ## The non-negotiable rules
 
