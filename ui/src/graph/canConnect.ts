@@ -11,6 +11,7 @@
 // authority — see graphCommands.ts) — this file is prediction only, for
 // live wire-drag feedback before a drop is ever attempted.
 import type { PortDescriptor, Quantity } from './descriptorTypes'
+import { synthesizeGroupPort } from './portGroups'
 
 export type ConnectionOutcome = 'ok' | 'needsAdapters' | 'reject'
 
@@ -107,9 +108,16 @@ export interface ConnectionEndpoint {
   port: PortDescriptor
 }
 
+/** Also resolves a growable-group member the default descriptor doesn't list
+    (the spare `in.3` revealed on a node whose `in.0..in.2` are wired) — see
+    portGroups.ts. Without that, dropping a cable on the spare port would find
+    no port and be treated as a miss.
+*/
 export function findPort(descriptor: { inputs: PortDescriptor[]; outputs: PortDescriptor[] }, portId: string, direction: 'input' | 'output'): PortDescriptor | undefined {
   const list = direction === 'input' ? descriptor.inputs : descriptor.outputs
-  return list.find((p) => p.id === portId)
+  const listed = list.find((p) => p.id === portId)
+  if (listed || direction !== 'input') return listed
+  return synthesizeGroupPort(descriptor, portId)
 }
 
 /** Live wire-drag feedback only needs a yes/no (ADR-0010's colour scheme

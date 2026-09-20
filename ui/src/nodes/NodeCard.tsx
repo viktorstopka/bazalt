@@ -13,6 +13,7 @@ import { ValueSlider } from './ValueSlider'
 import { TriggerSelect } from './TriggerSelect'
 import { NodePreview } from './NodePreview'
 import { frameTypeForPreviewKind } from '../graph/previewSubscriptions'
+import { withRevealedGroupPorts } from '../graph/portGroups'
 import './NodeCard.css'
 
 /** PortDescriptor.h's own contract: "falls back to id in the UI if empty" —
@@ -641,7 +642,14 @@ function DecorationBody({ descriptor }: { descriptor: NodeDescriptor }) {
   )
 }
 
-export function NodeCard({ descriptor, state = {}, instanceId }: NodeCardProps) {
+export function NodeCard({ descriptor: declaredDescriptor, state = {}, instanceId }: NodeCardProps) {
+  // A placed node's growable port groups (math.add, mix.sum, ...) show every
+  // wired port plus one spare to drop the next cable on — the engine sizes the
+  // group from the connections, and this mirrors it (portGroups.ts). Only for a
+  // live instance: the gallery has no connections, so it keeps the default
+  // minimum-size descriptor exactly as before.
+  const descriptor = instanceId ? withRevealedGroupPorts(declaredDescriptor, state.connectedPortIds) : declaredDescriptor
+
   if (descriptor.icon === 'ear') return <EarIcon title={descriptor.title} />
   if (descriptor.layoutVariant === 'decoration') return <DecorationBody descriptor={descriptor} />
   if (descriptor.layoutVariant === 'singleton') return <SingletonBody descriptor={descriptor} state={state} instanceId={instanceId} />

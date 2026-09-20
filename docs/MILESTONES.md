@@ -498,10 +498,15 @@ calls (`math.power` is sign-preserving so a bipolar input never goes NaN; `math.
 `safeZero` is a parameter, not a port — a Boolean port with an unwired fallback gets a dot in the UI
 with no control to change it).
 
-**Remaining: 10 new nodes, `util.macro`, and growable upgrades to 3 existing ones — and why it is not "just more nodes":**
-- **Growable port groups** (`math.add/multiply`, `mix.sum`, `logic.boolean`): `PortGroup` exists only as
-  a descriptor field; those nodes are still fixed at two inputs and their headers say the growable
-  version is this milestone's job. Needs the compiler, the command bridge and the UI affordance.
+**Wave 2 — done: growable port groups, end to end (26 of the 36 exist).** `math.add`, `math.multiply`,
+`mix.sum` (with a per-input `level` companion) and the new `logic.boolean` take 2..16 inputs
+(`in.0..in.N`). The group size is derived from the connections, never stored; the compiler never reuses a
+group node whose size changes; `maxPortsPerNode` is 32 and now a real compile error. The shipped `a`/`b`
+port ids were migrated, not renamed (patch schema v3). The node card reveals a spare port after the last
+wired one. Design and trade-offs: **ADR-0026**. Verified in the running Standalone app: a saved schema-v2
+graph loads with its `math.add` cables on `In 1`/`In 2` and a third spare row.
+
+**Remaining: 9 new nodes and `util.macro` — and why it is not "just more nodes":**
 - **Quantity/type-inheriting ports** (`logic.compare`, `logic.select`, `adapt.sampleHold`): extends the
   polymorphic-port mechanism built for `util.reroute` (`Node::resolveIncomingSignalType` passes only a
   `SignalType` today, not a quantity).
