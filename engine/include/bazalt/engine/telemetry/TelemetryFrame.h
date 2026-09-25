@@ -29,6 +29,15 @@ namespace bazalt::engine
         uint32_t payloadNumFloats = 0;
     };
 
+    /** The largest spectrum an analysis frame can carry (an 8192-point FFT has
+        4096 bins) and so the size every frame buffer and every reader's copy
+        buffer must allow for: header plus that many floats. One constant, so
+        the analysis thread, the hub and the WebView resource provider cannot
+        drift apart (they were three separate 16384s before ADR-0029).
+    */
+    inline constexpr size_t maxSpectrumBins = 4096;
+    inline constexpr size_t maxTelemetryFrameBytes = sizeof (TelemetryFrameHeader) + maxSpectrumBins * sizeof (float);
+
     /** Packs header + payload into a contiguous byte buffer (header first,
         raw float32 payload immediately after, no padding). Writes into
         `out`, which the caller owns and preallocates — this runs on the

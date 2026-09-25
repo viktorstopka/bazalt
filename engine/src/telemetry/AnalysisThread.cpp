@@ -2,6 +2,7 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <cstdint>
 #include <cstring>
 
 namespace bazalt::engine
@@ -20,10 +21,26 @@ namespace bazalt::engine
 
         scratchSamples.assign (maxSamplesPerDrain, 0.0f);
         oscilloscopePayload.assign ((size_t) oscilloscopeBuckets * 2, 0.0f);
-        fftData.assign ((size_t) fftSize * 2, 0.0f);
+        fftData.assign ((size_t) maxFftSize * 2, 0.0f);
 
-        const auto maxFrameBytes = sizeof (TelemetryFrameHeader) + (size_t) fftSize * sizeof (float);
-        frameScratch.reserve (maxFrameBytes);
+        // Built once, here: a tap's fftSize setting selects among these and
+        // never allocates. (Left alone on a second prepare() - they don't
+        // depend on the sample rate.)
+        for (int i = 0; i < numFftOrders; ++i)
+        {
+            if (ffts[(size_t) i] == nullptr)
+            {
+                const auto order = TapSettings::minFftOrder + i;
+                ffts[(size_t) i] = std::make_unique<juce::dsp::FFT> (order);
+                windows[(size_t) i] = std::make_unique<juce::dsp::WindowingFunction<float>> (
+                    (size_t) 1 << order, juce::dsp::WindowingFunction<float>::hann);
+            }
+        }
+
+        spectrumAverage.assign (TelemetryHub::maxTaps * maxSpectrumBins, 0.0f);
+        spectrumAverageOrder.fill (0);
+
+        frameScratch.reserve (maxTelemetryFrameBytes);
 
         for (auto& ballistics : meterBallisticsBySlot)
         {
@@ -101,32 +118,67 @@ namespace bazalt::engine
 
         ++sequenceNumber;
 
+        // ADR-0029: how this tap wants to be analysed (window, FFT size, meter
+        // mode, ...). Defaults reproduce exactly what every tap got before.
+        const auto settings = hub.getTapSettingsBySlot (slotIndex);
+
         // M20: only do the work a subscriber actually asked for — a
         // Waveform-only preview tap stops paying for an FFT nobody reads.
         // Every M4 baseline tap subscribes with the all-true default, so
         // this is a pure scope reduction, never a behaviour change for
         // anything that doesn't ask for it.
         if (hub.isFrameTypeNeeded (slotIndex, TelemetryFrameType::Oscilloscope))
-            publishOscilloscope (slotIndex, scratchSamples.data(), numRead);
+            publishOscilloscope (slotIndex, scratchSamples.data(), numRead, settings);
         if (hub.isFrameTypeNeeded (slotIndex, TelemetryFrameType::Spectrum))
-            publishSpectrum (slotIndex, scratchSamples.data(), numRead);
+            publishSpectrum (slotIndex, scratchSamples.data(), numRead, settings);
         if (hub.isFrameTypeNeeded (slotIndex, TelemetryFrameType::Meter))
-            publishMeter (slotIndex, scratchSamples.data(), numRead, elapsedSeconds);
+            publishMeter (slotIndex, scratchSamples.data(), numRead, elapsedSeconds, settings);
     }
 
-    void AnalysisThread::publishOscilloscope (size_t slotIndex, const float* samples, int numSamples)
+    void AnalysisThread::publishOscilloscope (size_t slotIndex, const float* samples, int numSamples, const TapSettings& settings)
     {
-        const auto samplesPerBucket = std::max (1, numSamples / oscilloscopeBuckets);
+        // Which samples to show. A window of 0 keeps the pre-ADR-0029 behaviour
+        // (everything the tap returned); otherwise the newest `window` of them,
+        // or - re-triggered - the newest window that starts on a rising edge.
+        const auto requested = settings.scopeWindowSeconds > 0.0f
+                                   ? (int) std::lround ((double) settings.scopeWindowSeconds * sampleRate)
+                                   : numSamples;
+        const auto window = std::clamp (requested, std::min (numSamples, oscilloscopeBuckets), numSamples);
+
+        auto start = numSamples - window;
+
+        if (settings.scopeTrigger == ScopeTriggerMode::RisingEdge && numSamples > window)
+        {
+            // The crossing level is the middle of what was read, so it works for
+            // a bipolar signal (crossing zero) and a unipolar control signal
+            // alike. The latest crossing that still leaves a full window after
+            // it wins; a flat signal, or one with no rising edge, just stays free.
+            const auto [lowest, highest] = std::minmax_element (samples, samples + numSamples);
+            const auto level = 0.5f * (*lowest + *highest);
+
+            for (int i = numSamples - window; i >= 1; --i)
+            {
+                if (samples[i - 1] < level && samples[i] >= level)
+                {
+                    start = i;
+                    break;
+                }
+            }
+        }
 
         for (int b = 0; b < oscilloscopeBuckets; ++b)
         {
-            const auto start = b * samplesPerBucket;
-            const auto end = std::min (numSamples, start + samplesPerBucket);
+            // Proportional bucket edges, so every sample of the window lands in
+            // exactly one bucket (a fixed samples-per-bucket left a dead tail).
+            const auto bucketStart = start + (int) ((int64_t) b * window / oscilloscopeBuckets);
+            auto bucketEnd = start + (int) ((int64_t) (b + 1) * window / oscilloscopeBuckets);
+            bucketEnd = std::max (bucketEnd, bucketStart + 1);
+            bucketEnd = std::min (bucketEnd, numSamples);
 
             float lo = 0.0f, hi = 0.0f;
             bool any = false;
 
-            for (int i = start; i < end; ++i)
+            for (int i = bucketStart; i < bucketEnd; ++i)
             {
                 if (! any)
                 {
@@ -156,9 +208,15 @@ namespace bazalt::engine
             buffer->publish (frameScratch.data(), frameScratch.size());
     }
 
-    void AnalysisThread::publishSpectrum (size_t slotIndex, const float* samples, int numSamples)
+    void AnalysisThread::publishSpectrum (size_t slotIndex, const float* samples, int numSamples, const TapSettings& settings)
     {
-        std::fill (fftData.begin(), fftData.end(), 0.0f);
+        const auto order = std::clamp (settings.fftOrder, TapSettings::minFftOrder, TapSettings::maxFftOrder);
+        const auto fftSize = 1 << order;
+        const auto numBins = (size_t) (fftSize / 2);
+        auto& fft = *ffts[(size_t) (order - TapSettings::minFftOrder)];
+        auto& window = *windows[(size_t) (order - TapSettings::minFftOrder)];
+
+        std::fill (fftData.begin(), fftData.begin() + (std::ptrdiff_t) fftSize * 2, 0.0f);
 
         const auto numToCopy = std::min (numSamples, fftSize);
         std::memcpy (fftData.data(), samples + (numSamples - numToCopy), (size_t) numToCopy * sizeof (float));
@@ -166,7 +224,36 @@ namespace bazalt::engine
         window.multiplyWithWindowingTable (fftData.data(), (size_t) fftSize);
         fft.performFrequencyOnlyForwardTransform (fftData.data(), true);
 
-        const auto numBins = (uint32_t) (fftSize / 2);
+        // Smoothing runs on the raw magnitudes and tilt is applied after it, so
+        // changing the tilt never contaminates the running average. A new FFT
+        // size starts a fresh average: bin k means a different frequency now.
+        auto* average = spectrumAverage.data() + slotIndex * maxSpectrumBins;
+        const auto smoothing = std::clamp (settings.spectrumAveraging, 0.0f, 0.99f);
+        const auto continuing = smoothing > 0.0f && spectrumAverageOrder[slotIndex] == order;
+
+        for (size_t k = 0; k < numBins; ++k)
+            average[k] = continuing ? smoothing * average[k] + (1.0f - smoothing) * fftData[k] : fftData[k];
+
+        spectrumAverageOrder[slotIndex] = smoothing > 0.0f ? order : 0;
+
+        // Tilt: `tilt` dB per octave about 1 kHz, as a linear gain per bin.
+        // 10^(tilt * log2(x) / 20) == x^(tilt * log2(10) / 20).
+        const auto tilt = settings.spectrumTiltDbPerOctave;
+        const auto exponent = (double) tilt * 0.16609640474436813;
+        const auto binHz = sampleRate / (double) fftSize;
+
+        for (size_t k = 0; k < numBins; ++k)
+        {
+            auto value = average[k];
+
+            if (tilt != 0.0f)
+            {
+                const auto hz = (double) std::max<size_t> (k, 1) * binHz; // bin 0 (DC) takes bin 1's gain
+                value *= (float) std::pow (hz / 1000.0, exponent);
+            }
+
+            fftData[k] = value;
+        }
 
         TelemetryFrameHeader header;
         header.tapId = (uint32_t) slotIndex;
@@ -174,27 +261,110 @@ namespace bazalt::engine
         header.sampleRate = (float) sampleRate;
         header.sequenceNumber = sequenceNumber;
 
-        serializeTelemetryFrame (header, fftData.data(), numBins, frameScratch);
+        serializeTelemetryFrame (header, fftData.data(), (uint32_t) numBins, frameScratch);
 
         if (auto* buffer = hub.getFrameBufferBySlot (slotIndex, TelemetryFrameType::Spectrum))
             buffer->publish (frameScratch.data(), frameScratch.size());
     }
 
-    void AnalysisThread::publishMeter (size_t slotIndex, const float* samples, int numSamples, double elapsedSeconds)
+    namespace
     {
-        float peak = 0.0f;
+        // The 4x interpolation filter behind the true-peak meter: for each of
+        // the three points between two samples (a quarter, half and three
+        // quarters of the way), a 16-tap Hann-windowed sinc, normalised to unity
+        // gain at DC. Built once. An estimate of the true (inter-sample) peak
+        // that lands within a fraction of a dB on ordinary material - but NOT
+        // the ITU-R BS.1770 measurement, which specifies a longer polyphase
+        // filter, so it is labelled as an estimate on the node.
+        struct TruePeakFilter
+        {
+            static constexpr int tapsBefore = 7;  // samples before the interpolated point's left neighbour
+            static constexpr int tapsAfter = 8;   // ... and after
+            static constexpr int numTaps = tapsBefore + tapsAfter + 1;
+            static constexpr int numPhases = 3;
+
+            std::array<std::array<float, numTaps>, numPhases> coefficients {};
+
+            TruePeakFilter()
+            {
+                constexpr double pi = 3.14159265358979323846;
+
+                for (int phase = 0; phase < numPhases; ++phase)
+                {
+                    const auto fraction = 0.25 * (phase + 1);
+                    double sum = 0.0;
+
+                    for (int j = 0; j < numTaps; ++j)
+                    {
+                        const auto u = (double) (j - tapsBefore) - fraction; // distance from the interpolated point
+                        const auto sinc = std::abs (u) < 1.0e-9 ? 1.0 : std::sin (pi * u) / (pi * u);
+                        const auto window = 0.5 * (1.0 + std::cos (pi * u / 8.0));
+                        coefficients[(size_t) phase][(size_t) j] = (float) (sinc * window);
+                        sum += sinc * window;
+                    }
+
+                    for (auto& c : coefficients[(size_t) phase])
+                        c = (float) ((double) c / sum);
+                }
+            }
+        };
+
+        float interSamplePeak (const float* samples, int numSamples) noexcept
+        {
+            static const TruePeakFilter filter;
+
+            float peak = 0.0f;
+            for (int i = 0; i < numSamples; ++i)
+                peak = std::max (peak, std::abs (samples[i]));
+
+            // Only where the whole filter has real samples under it; the edges of
+            // the window are covered by the plain sample peak above.
+            for (int i = TruePeakFilter::tapsBefore; i + TruePeakFilter::tapsAfter < numSamples; ++i)
+            {
+                for (const auto& phase : filter.coefficients)
+                {
+                    float value = 0.0f;
+                    for (int j = 0; j < TruePeakFilter::numTaps; ++j)
+                        value += samples[i + j - TruePeakFilter::tapsBefore] * phase[(size_t) j];
+
+                    peak = std::max (peak, std::abs (value));
+                }
+            }
+
+            return peak;
+        }
+    }
+
+    void AnalysisThread::publishMeter (size_t slotIndex, const float* samples, int numSamples, double elapsedSeconds,
+                                       const TapSettings& settings)
+    {
+        float samplePeak = 0.0f;
         double sumSquares = 0.0;
 
         for (int i = 0; i < numSamples; ++i)
         {
-            peak = std::max (peak, std::abs (samples[i]));
+            samplePeak = std::max (samplePeak, std::abs (samples[i]));
             sumSquares += (double) samples[i] * (double) samples[i];
         }
 
         const auto rms = (float) std::sqrt (sumSquares / (double) numSamples);
-        const auto smoothedPeak = meterBallisticsBySlot[slotIndex].pushPeak (peak, elapsedSeconds);
 
-        const std::array<float, 2> payload { smoothedPeak, rms };
+        // The frame is always { line, bar }: the UI draws the second as a filled
+        // bar and the first as a line across it, whatever the mode. Peak (the
+        // long-standing behaviour): a ballistic peak line over the RMS bar.
+        // TruePeak: the same, with the 4x inter-sample peak in place of the sample
+        // peak. Rms: the line rides on the bar - one reading, no peak.
+        std::array<float, 2> payload {};
+
+        if (settings.meterMode == MeterMode::Rms)
+        {
+            payload = { rms, rms };
+        }
+        else
+        {
+            const auto peak = settings.meterMode == MeterMode::TruePeak ? interSamplePeak (samples, numSamples) : samplePeak;
+            payload = { meterBallisticsBySlot[slotIndex].pushPeak (peak, elapsedSeconds), rms };
+        }
 
         TelemetryFrameHeader header;
         header.tapId = (uint32_t) slotIndex;

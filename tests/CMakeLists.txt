@@ -16,6 +16,7 @@ add_executable(EngineTests
     GraphCompilerTests.cpp
     GrowablePortsTests.cpp
     HostInputNodeTests.cpp
+    TapSettingsTests.cpp
     InheritingPortsTests.cpp
     LogicNodeTests.cpp
     MathNodeTests.cpp

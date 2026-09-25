@@ -1,6 +1,7 @@
 #pragma once
 
 #include "bazalt/engine/telemetry/Tap.h"
+#include "bazalt/engine/telemetry/TapSettings.h"
 #include "bazalt/engine/telemetry/TelemetryFrame.h"
 #include "bazalt/engine/telemetry/TelemetryFrameBuffer.h"
 #include <juce_core/juce_core.h>
@@ -114,6 +115,7 @@ namespace bazalt::engine
             slot->lastUsedSequence = ++sequenceCounter;
             slot->tap->prepare (slot->tap->getCapacity()); // reset ring contents for the new subscriber
             slot->frameTypesMask.store (frameTypesToMask (needed), std::memory_order_relaxed);
+            storeSettings (*slot, TapSettings {}); // a new subscriber starts from the defaults
             // "demo."-prefixed taps have no real pusher (M8's UI-only
             // rendering stress test subscribes synthetic per-cable taps
             // that don't correspond to any real engine signal, on purpose
@@ -136,6 +138,35 @@ namespace bazalt::engine
                 slot->active.store (false, std::memory_order_release);
                 slot->name.clear();
             }
+        }
+
+        /** ADR-0029. Message-thread only. Sets how the named tap is analysed
+            (window, FFT size, meter mode, ...); a no-op if it isn't
+            subscribed. Written as relaxed atomics, so AnalysisThread picks the
+            new values up on its next drain without any locking.
+        */
+        void setTapSettings (const juce::String& name, const TapSettings& settings)
+        {
+            if (auto* slot = findSlotByName (name))
+                storeSettings (*slot, settings);
+        }
+
+        /** ADR-0029. Analysis thread: this slot's current settings. Fields are
+            read individually, so a snapshot taken mid-update can mix old and
+            new values for one drain - harmless, since every field is
+            independently valid.
+        */
+        TapSettings getTapSettingsBySlot (size_t slotIndex) const noexcept
+        {
+            const auto& slot = slots[slotIndex];
+            TapSettings settings;
+            settings.scopeWindowSeconds = slot.scopeWindowSeconds.load (std::memory_order_relaxed);
+            settings.scopeTrigger = (ScopeTriggerMode) slot.scopeTrigger.load (std::memory_order_relaxed);
+            settings.fftOrder = slot.fftOrder.load (std::memory_order_relaxed);
+            settings.spectrumTiltDbPerOctave = slot.spectrumTilt.load (std::memory_order_relaxed);
+            settings.spectrumAveraging = slot.spectrumAveraging.load (std::memory_order_relaxed);
+            settings.meterMode = (MeterMode) slot.meterMode.load (std::memory_order_relaxed);
+            return settings;
         }
 
         /** Message-thread only (e.g. the WebView resource provider fetching
@@ -191,6 +222,17 @@ namespace bazalt::engine
         }
 
     private:
+        template <typename SlotT>
+        static void storeSettings (SlotT& slot, const TapSettings& settings) noexcept
+        {
+            slot.scopeWindowSeconds.store (settings.scopeWindowSeconds, std::memory_order_relaxed);
+            slot.scopeTrigger.store ((int) settings.scopeTrigger, std::memory_order_relaxed);
+            slot.fftOrder.store (std::clamp (settings.fftOrder, TapSettings::minFftOrder, TapSettings::maxFftOrder), std::memory_order_relaxed);
+            slot.spectrumTilt.store (settings.spectrumTiltDbPerOctave, std::memory_order_relaxed);
+            slot.spectrumAveraging.store (settings.spectrumAveraging, std::memory_order_relaxed);
+            slot.meterMode.store ((int) settings.meterMode, std::memory_order_relaxed);
+        }
+
         static uint32_t frameTypesToMask (TelemetryFrameTypesNeeded needed) noexcept
         {
             uint32_t mask = 0;
@@ -206,6 +248,15 @@ namespace bazalt::engine
             std::atomic<bool> active { false };
             std::atomic<bool> synthetic { false }; // see subscribeTap()'s "demo." note
             std::atomic<uint32_t> frameTypesMask { 0b111 }; // M20 — see isFrameTypeNeeded()'s own comment; defaults to all 3
+
+            // ADR-0029 - see TapSettings. Individually atomic; a snapshot is
+            // getTapSettingsBySlot().
+            std::atomic<float> scopeWindowSeconds { 0.0f };
+            std::atomic<int> scopeTrigger { (int) ScopeTriggerMode::Free };
+            std::atomic<int> fftOrder { TapSettings::defaultFftOrder };
+            std::atomic<float> spectrumTilt { 0.0f };
+            std::atomic<float> spectrumAveraging { 0.0f };
+            std::atomic<int> meterMode { (int) MeterMode::Peak };
             uint64_t lastUsedSequence = 0; // message-thread-owned only
             std::unique_ptr<Tap> tap;
             std::array<std::unique_ptr<TelemetryFrameBuffer>, 3> frameBuffers;

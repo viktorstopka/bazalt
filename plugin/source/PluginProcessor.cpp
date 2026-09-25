@@ -118,7 +118,7 @@ namespace bazalt
         // while it's mid-run() would be a data race.
         analysisThread.stopThread (2000);
 
-        telemetryHub.prepare (8192, 16384);
+        telemetryHub.prepare (8192, bazalt::engine::maxTelemetryFrameBytes); // ADR-0029: room for the largest spectrum (8192-point FFT)
 
         // The 5 baseline taps (main output + 4 sidechains) are permanently
         // subscribed for the plugin's lifetime — never unsubscribed, so
@@ -301,8 +301,35 @@ namespace bazalt
         // asking again on every attach always yields the live Tap*. Holding it
         // while the port is unresolved is what lets the UI's polling find the
         // tap the moment a cable is wired.
-        subscription.tap = telemetryHub.subscribeTap ("node:" + subscription.nodeId + ":" + subscription.portId,
-                                                      frameTypesNeededFor (subscription.kind));
+        const auto tapName = "node:" + subscription.nodeId + ":" + subscription.portId;
+        subscription.tap = telemetryHub.subscribeTap (tapName, frameTypesNeededFor (subscription.kind));
+
+        // ADR-0029: how the tap is analysed - window, FFT size, meter mode - is
+        // read from the LIVE node's own preview declaration, so a viewer's
+        // settings (its parameters) are what the analysis thread applies. This
+        // runs on every attach, and every edit re-attaches, which is exactly
+        // what makes a parameter edit take effect. Every voice plan holds an
+        // identical node, so the first one found will do. No matching
+        // declaration (or no node yet) means the defaults.
+        bazalt::engine::Node* node = globalPlan != nullptr ? globalPlan->getNodeById (subscription.nodeId) : nullptr;
+        for (auto* plan : voicePlans)
+            if (node == nullptr && plan != nullptr)
+                node = plan->getNodeById (subscription.nodeId);
+
+        auto settings = bazalt::engine::TapSettings {};
+        if (node != nullptr)
+        {
+            for (const auto& preview : node->getPreviews())
+            {
+                if (preview.portId == subscription.portId)
+                {
+                    settings = bazalt::engine::TapSettings::fromPreview (preview);
+                    break;
+                }
+            }
+        }
+
+        telemetryHub.setTapSettings (tapName, settings);
 
         // A node lives in exactly one domain (DomainSplitter's own
         // invariant), so the global plan - when there is one - is checked

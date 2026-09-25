@@ -1,9 +1,9 @@
 # 0029 — `view.scope/spectrum/meter`: per-instance preview settings, input-port taps, taps that survive a recompile
 
 ## Status
-Accepted (M21), 2026-09-25 — the three open questions below were answered as recommended. Step 1 (the
-subscription registry) and step 2 (input-port taps and the three nodes, with the fixed analysis) are implemented;
-steps 3–4 are not yet.
+Accepted (M21), 2026-09-25 — the three open questions below were answered as recommended. Steps 1 (the
+subscription registry), 2 (input-port taps and the three nodes) and 3 (the settings, applied by `AnalysisThread`)
+are implemented; step 4 (the UI) is not yet.
 
 ## Context
 `view.scope`, `view.spectrum` and `view.meter` (NODE_CATALOG.md) are placeable nodes whose whole job is to show
@@ -39,7 +39,7 @@ descriptor fields stay as defaults for the component gallery.
 `node:<viewNodeId>:in`; the engine finds the output buffer feeding that input port (a new
 `ExecutionPlan` lookup by input port) and attaches there. Keying by the view node rather than the source means
 a scope and a spectrum on the same cable get independent taps with independent settings. An unconnected input
-makes `subscribe` return `false`, and the card shows its empty state.
+is accepted as pending (see 3b) and the card shows its empty state until a cable arrives.
 
 **3. Live subscriptions are a registry, re-applied after every publish.** The processor records each active
 `(nodeId, portId, kind)` on the message thread; `GraphEditController::recompileAndPublish()` ends by
@@ -73,6 +73,22 @@ tell a live tap from stale ring contents.
 
 **4. Per-tap settings are a small block of relaxed atomics in the hub's slot**, written on the message thread
 at attach time and read by `AnalysisThread` once per drain. Nothing on the audio thread changes.
+Built as `TapSettings` (`telemetry/TapSettings.h`), stored per slot in `TelemetryHub`. The defaults are exactly
+what every tap got before, so the five baseline taps of the M5 panel are untouched. The processor fills it from
+the live node's `getPreviews()` on every attach (`TapSettings::fromPreview`), which is what makes a parameter
+edit apply: the edit recompiles, the re-attach re-reads. `AnalysisThread` gained one FFT and window per size
+(built in `prepare()`), per-slot smoothing state, and `processSlotForTesting()` so each setting is tested
+against known input without racing a live thread.
+
+Decisions taken while building it: the meter frame stays `{ line, bar }` for every mode (the UI draws it as it
+always did, so it needs no change): `Peak` is the ballistic sample peak over an RMS bar as before, `TruePeak`
+swaps in a 4x inter-sample peak, `Rms` puts the line on the bar. The true peak is a 16-tap windowed-sinc
+estimate (a first cubic-interpolation version read about 1 dB low on a full-scale fs/4 sine, so it was dropped);
+it is not the ITU-R BS.1770 measurement and the node says so. Spectrum tilt and averaging are applied before
+publishing; averaging runs on raw magnitudes so a tilt change never contaminates it, and a new FFT size starts a
+fresh average. A rising-edge trigger uses the middle of the observed range as its level, so it works for a
+unipolar control signal as well as a bipolar one. Frame buffers and the WebView read buffer are now sized by one
+constant (`maxTelemetryFrameBytes`) that covers an 8192-point spectrum.
 
 **5. What each setting does, and what is deliberately not in the first cut.**
 

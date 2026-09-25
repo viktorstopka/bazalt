@@ -44,7 +44,10 @@ namespace bazalt::engine
     };
 
     /** view.scope's own spec (NODE_CATALOG.md): free-running, or
-        re-triggered on a rising edge / on each new note.
+        re-triggered on a rising edge / on each new note. ADR-0029: `Free` and
+        `RisingEdge` are analysed; `PerNote` needs note times a tap doesn't
+        carry, so it is declared but not offered, and TapSettings::fromPreview
+        treats it as `Free`.
     */
     enum class ScopeTriggerMode
     {
@@ -53,7 +56,11 @@ namespace bazalt::engine
         PerNote
     };
 
-    /** view.meter's own spec (NODE_CATALOG.md). */
+    /** view.meter's own spec (NODE_CATALOG.md). ADR-0029: `Peak`, `Rms` and
+        `TruePeak` are analysed; `Histogram` needs a new frame payload and
+        drawer, so it is declared but not offered, and
+        TapSettings::fromPreview treats it as `Peak`.
+    */
     enum class MeterMode
     {
         Peak,
@@ -69,6 +76,14 @@ namespace bazalt::engine
         every call site can keep using designated-initializer syntax and a
         future kind's params are just more defaulted fields, never a
         breaking change to this struct's shape.
+
+        These fields are what AnalysisThread applies (ADR-0029): whenever a
+        subscription is attached, the processor reads the LIVE node's
+        getPreviews() and hands the matching entry to TapSettings::fromPreview.
+        A node whose settings are per-instance (view.scope and friends) builds
+        the entry from its current parameters; a node that declares a fixed
+        preview (osc.analog's waveform) gets the values written here. Before
+        ADR-0029 they were serialized to the UI and used by nothing.
     */
     struct PreviewDescriptor
     {

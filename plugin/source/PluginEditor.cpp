@@ -76,9 +76,9 @@ namespace bazalt
             if (buffer == nullptr)
                 return std::nullopt;
 
-            // Sized to comfortably exceed the largest frame AnalysisThread
-            // ever publishes (the 2048-point spectrum: 1024 floats + header).
-            std::vector<std::byte> data (16384);
+            // The largest frame AnalysisThread can ever publish (an 8192-point
+            // spectrum, ADR-0029) - the same constant the frame buffers are sized by.
+            std::vector<std::byte> data (bazalt::engine::maxTelemetryFrameBytes);
             const auto numBytes = buffer->readLatest (data.data(), data.size());
             data.resize (numBytes);
 

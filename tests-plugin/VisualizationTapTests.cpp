@@ -3,6 +3,7 @@
 // the real Standalone-app-shaped processor (buildVoiceProofGraph's default
 // graph, real MIDI, real processBlock), not just ExecutionPlan in isolation
 // (that's ExecutionPlanTapTests.cpp's job).
+#include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 #include "PluginProcessor.h"
 #include "bazalt/engine/telemetry/Tap.h"
@@ -435,4 +436,107 @@ TEST_CASE ("view.scope and view.meter take Audio and Control; view.spectrum take
 
     REQUIRE (controller.disconnect ("control", "out", "scope", "in").success);
     CHECK_FALSE (controller.connect ("notes", "notes", "scope", "in").success);
+}
+
+// ---- ADR-0029 step 3: a viewer's parameters become its tap's analysis settings ----
+
+namespace
+{
+    // The settings the analysis thread would currently apply to this tap.
+    bazalt::engine::TapSettings settingsOf (BazaltAudioProcessor& processor, bazalt::engine::Tap* tap)
+    {
+        auto& hub = processor.getTelemetryHub();
+        bazalt::engine::TapSettings settings;
+        auto found = false;
+
+        for (size_t slot = 0; slot < bazalt::engine::TelemetryHub::maxTaps && ! found; ++slot)
+        {
+            if (hub.getTapBySlot (slot) == tap && hub.isSlotActive (slot))
+            {
+                settings = hub.getTapSettingsBySlot (slot);
+                found = true;
+            }
+        }
+
+        REQUIRE (found); // the tap must be in an active slot
+        return settings;
+    }
+}
+
+TEST_CASE ("A viewer's parameters set the analysis of its tap, and follow edits", "[plugin][telemetry][view][ADR-0029]")
+{
+    using bazalt::engine::MeterMode;
+    using bazalt::engine::ScopeTriggerMode;
+
+    BazaltAudioProcessor processor;
+    processor.prepareToPlay (44100.0, 512);
+    auto& controller = processor.getGraphEditController();
+    REQUIRE (controller.setGraph (graphWithViewers ({ { "scope", "view.scope" }, { "spectrum", "view.spectrum" }, { "meter", "view.meter" } })).success);
+    wire (processor, "scope");
+    wire (processor, "spectrum");
+    wire (processor, "meter");
+
+    REQUIRE (processor.subscribeVisualizationTap ("scope", "in", bazalt::engine::PreviewKind::Waveform));
+    REQUIRE (processor.subscribeVisualizationTap ("spectrum", "in", bazalt::engine::PreviewKind::Spectrum));
+    REQUIRE (processor.subscribeVisualizationTap ("meter", "in", bazalt::engine::PreviewKind::Meter));
+    auto* scopeTap = tapFor (processor, "scope", "in");
+    auto* spectrumTap = tapFor (processor, "spectrum", "in");
+    auto* meterTap = tapFor (processor, "meter", "in");
+
+    // As placed: every default.
+    auto scope = settingsOf (processor, scopeTap);
+    CHECK (scope.scopeWindowSeconds == Catch::Approx (0.05f));
+    CHECK (scope.scopeTrigger == ScopeTriggerMode::Free);
+    auto spectrum = settingsOf (processor, spectrumTap);
+    CHECK (spectrum.fftOrder == 11);
+    CHECK (spectrum.spectrumTiltDbPerOctave == 0.0f);
+    CHECK (settingsOf (processor, meterTap).meterMode == MeterMode::Peak);
+
+    // Each edit recompiles; the re-attach must pick the new value up.
+    REQUIRE (controller.setParameterValue ("scope", "view.scope.timeWindow", 10.0f).success);
+    REQUIRE (controller.setParameterValue ("scope", "view.scope.trigger", 1.0f).success);
+    scope = settingsOf (processor, scopeTap);
+    CHECK (scope.scopeWindowSeconds == Catch::Approx (0.010f));
+    CHECK (scope.scopeTrigger == ScopeTriggerMode::RisingEdge);
+
+    REQUIRE (controller.setParameterValue ("spectrum", "view.spectrum.fftSize", 4.0f).success);
+    REQUIRE (controller.setParameterValue ("spectrum", "view.spectrum.tilt", 3.0f).success);
+    REQUIRE (controller.setParameterValue ("spectrum", "view.spectrum.averaging", 0.5f).success);
+    spectrum = settingsOf (processor, spectrumTap);
+    CHECK (spectrum.fftOrder == 13);
+    CHECK (spectrum.spectrumTiltDbPerOctave == Catch::Approx (3.0f));
+    CHECK (spectrum.spectrumAveraging == Catch::Approx (0.5f));
+
+    REQUIRE (controller.setParameterValue ("meter", "view.meter.mode", 2.0f).success);
+    CHECK (settingsOf (processor, meterTap).meterMode == MeterMode::TruePeak);
+
+    // Editing one viewer leaves the others alone.
+    CHECK (settingsOf (processor, scopeTap).scopeWindowSeconds == Catch::Approx (0.010f));
+    REQUIRE (controller.setParameterValue ("meter", "view.meter.mode", 1.0f).success);
+    CHECK (settingsOf (processor, meterTap).meterMode == MeterMode::Rms);
+    CHECK (settingsOf (processor, spectrumTap).fftOrder == 13);
+}
+
+TEST_CASE ("A viewer placed with saved parameters starts with them, and a preview on an ordinary node uses its declaration",
+           "[plugin][telemetry][view][ADR-0029]")
+{
+    BazaltAudioProcessor processor;
+    processor.prepareToPlay (44100.0, 512);
+
+    auto graph = audioInToOutputGraph();
+    graph.addNode ({ "scope", "view.scope", {}, { { "view.scope.timeWindow", 5.0f }, { "view.scope.trigger", 1.0f } }, {} });
+    graph.addConnection ({ "in", "channel.0", "scope", "in" });
+    REQUIRE (processor.getGraphEditController().setGraph (graph).success);
+
+    REQUIRE (processor.subscribeVisualizationTap ("scope", "in", bazalt::engine::PreviewKind::Waveform));
+    const auto scope = settingsOf (processor, tapFor (processor, "scope", "in"));
+    CHECK (scope.scopeWindowSeconds == Catch::Approx (0.005f));
+    CHECK (scope.scopeTrigger == bazalt::engine::ScopeTriggerMode::RisingEdge);
+
+    // osc.analog declares a Waveform preview with the default 50 ms window;
+    // before ADR-0029 that number was descriptive only.
+    BazaltAudioProcessor voiceProcessor;
+    voiceProcessor.prepareToPlay (44100.0, 512);
+    REQUIRE (voiceProcessor.subscribeVisualizationTap ("osc", "out", bazalt::engine::PreviewKind::Waveform));
+    CHECK (settingsOf (voiceProcessor, tapFor (voiceProcessor, "osc", "out")).scopeWindowSeconds == Catch::Approx (0.05f));
 }
