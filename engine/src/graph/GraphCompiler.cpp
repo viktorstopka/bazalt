@@ -342,6 +342,13 @@ namespace bazalt::engine
             plan.nodes.push_back (std::move (node));
         }
 
+        // M21: remember which nodes want the host's per-block data (audio in,
+        // MIDI controllers, transport) so the audio thread can hand it to them
+        // without scanning the plan (ExecutionPlan::hostInputNodes).
+        for (const auto& node : plan.nodes)
+            if (node->wantsHostInputs())
+                plan.hostInputNodes.push_back (node.get());
+
         // ---- Resolve polymorphic port types (docs/CLEANUP.md Priority 1 #2) ----
         // Must run before canConnect() is ever called below: a node like
         // RerouteNode reports whatever type it currently holds via

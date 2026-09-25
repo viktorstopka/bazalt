@@ -65,6 +65,7 @@ namespace bazalt::engine
         {
             result.success = true;
             result.hasGlobalDomain = false;
+            result.monoOnly = instanceAllocatorCount == 0;
             result.voiceGraph = graph;
             return result;
         }
@@ -113,6 +114,7 @@ namespace bazalt::engine
         {
             result.success = true;
             result.hasGlobalDomain = false;
+            result.monoOnly = instanceAllocatorCount == 0;
             result.voiceGraph = graph;
             return result;
         }
@@ -134,7 +136,60 @@ namespace bazalt::engine
         // Backward from instance.mix (excluding itself) = voice domain.
         const auto voiceDomain = reachableFollowing (instanceMixId, predecessorsOf, false);
         // Forward from instance.mix (including itself) = global domain.
-        const auto globalDomain = reachableFollowing (instanceMixId, successorsOf, true);
+        auto globalDomain = reachableFollowing (instanceMixId, successorsOf, true);
+
+        // M21: mono sources. A node that is in neither set but feeds the global
+        // domain (io.audioIn, io.control, io.transport, a constant... feeding a
+        // chain after the mix) is not per-voice and not downstream of the mix,
+        // yet DOMAINS.md §2 is explicit that mono signals are free everywhere.
+        // Walk backward from every global node; whatever that reaches outside
+        // the voice domain is a mono source and joins the global plan.
+        // (Anything that reaches the mix backward is voice domain already, and
+        // an unconnected node reaches nothing, so it is still rejected below.)
+        {
+            std::vector<juce::String> stack (globalDomain.begin(), globalDomain.end());
+            std::unordered_set<juce::String> visited (globalDomain.begin(), globalDomain.end());
+
+            while (! stack.empty())
+            {
+                const auto current = stack.back();
+                stack.pop_back();
+
+                const auto it = predecessorsOf.find (current);
+                if (it == predecessorsOf.end())
+                    continue;
+
+                for (const auto& previous : it->second)
+                {
+                    if (voiceDomain.count (previous) > 0)
+                        continue; // a voice node feeding the global domain: checked below, not a mono source
+                    if (visited.insert (previous).second)
+                    {
+                        globalDomain.insert (previous);
+                        stack.push_back (previous);
+                    }
+                }
+            }
+        }
+
+        // DOMAINS.md §2/§7: poly -> mono needs a Voice Mix, "no implicit
+        // summing anywhere, ever". Before M21 such an edge was silently
+        // dropped when the global graph was built, leaving its target reading
+        // silence with no indication why; say so instead. The one legitimate
+        // edge from the voice domain into the global one is into the mix.
+        for (const auto& connection : connections)
+        {
+            if (voiceDomain.count (connection.fromNodeId) == 0 || globalDomain.count (connection.toNodeId) == 0)
+                continue;
+            if (connection.toNodeId == instanceMixId && connection.toPortId == instanceMixInputPortId)
+                continue;
+
+            result.errorMessage = "Node '" + connection.fromNodeId + "' (voice domain) feeds node '" + connection.toNodeId
+                                   + "' (global domain) directly: a voice-domain signal reaches the global domain only through"
+                                   + " instance.mix. If '" + connection.fromNodeId + "' is a mono source (audio in, MIDI control,"
+                                   + " transport) that feeds both, use a separate one for each domain.";
+            return result;
+        }
 
         for (const auto& node : nodes)
         {

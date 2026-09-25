@@ -18,6 +18,8 @@
 #include <memory>
 #include <vector>
 
+namespace bazalt::engine::nodes { class IoNoteInNode; }
+
 namespace bazalt
 {
     /** M3: real bus layout (main stereo in/out + 4 aux stereo sidechains),
@@ -103,6 +105,13 @@ namespace bazalt
         bazalt::engine::PlanSwapper& getGlobalPlanSwapper() noexcept { return globalPlanSwapper; }
         void setHasGlobalDomain (bool hasIt) noexcept { hasGlobalDomain.store (hasIt, std::memory_order_release); }
 
+        /** M21: true while the graph has no instance.allocator (DomainSplitter.h's
+            monoOnly) — the one compiled plan lives in the GLOBAL swapper and
+            runs every block, voices are never allocated. Set by
+            GraphEditController::recompileAndPublish(). Message-thread only.
+        */
+        void setMonoOnly (bool isMono) noexcept { monoOnlyGraph.store (isMono, std::memory_order_release); }
+
         /** M20 — subscribes a visualization tap for a real node's output
             port, resolving whether it lives in the global domain (one
             plan, tapped once, never re-pointed) or the voice domain (8
@@ -124,9 +133,24 @@ namespace bazalt
         using VoicePlanPtrs = std::array<bazalt::engine::ExecutionPlan*, numVoices>;
 
         void handleMidiEvent (const juce::MidiMessage& message, const VoicePlanPtrs& voicePlans);
+
+        // M21 host boundary (engine/graph/HostInputs.h): what io.audioIn, io.control
+        // and io.transport read. All audio-thread only, allocation-free.
+        void captureHostInput (juce::AudioBuffer<float>& buffer, int numSamples) noexcept;
+        void beginTransportForBlock (int numSamples) noexcept;
+        void prepareHostInputsForRange (int startSample) noexcept;
+        void processPlanRange (bazalt::engine::ExecutionPlan* plan, int startSample, int numSamples) noexcept;
+        void renderMonoRange (bazalt::engine::ExecutionPlan* plan, int startSample, int numSamples) noexcept;
         void repointVoiceDomainTaps (int newVoiceIndex, const VoicePlanPtrs& voicePlans) noexcept;
         void renderVoiceRange (int startSample, int numSamples, const VoicePlanPtrs& voicePlans) noexcept;
         void triggerVoiceNote (bazalt::engine::ExecutionPlan* plan, float pitch, float velocity) noexcept;
+
+        /** The voice's io.noteIn node, or nullptr. Audio-thread safe: it looks
+            the node up with a String built once at construction. Passing a
+            literal to ExecutionPlan::getNodeById instead builds a heap-
+            allocated juce::String on every call (an M18 bug the RT trap caught
+            in M21). */
+        bazalt::engine::nodes::IoNoteInNode* findNoteIn (bazalt::engine::ExecutionPlan* plan) const noexcept;
         void finalizeInstanceMixIntoOutput (juce::AudioBuffer<float>& output, int numSamples) noexcept;
         void updateAuxLevelsAndPassthrough (juce::AudioBuffer<float>& mainOutput, int numSamples);
         void setDefaultMacroMappings();
@@ -153,6 +177,8 @@ namespace bazalt
         std::array<bazalt::engine::PlanSwapper, numVoices> voicePlanSwappers;
         bazalt::engine::PlanSwapper globalPlanSwapper;
         std::atomic<bool> hasGlobalDomain { false };
+        std::atomic<bool> monoOnlyGraph { false };
+        const juce::String noteInNodeId { "noteIn" }; // see findNoteIn
 
         bazalt::engine::VoiceManager voiceManager;
         MacroParameters macroParameters;
@@ -177,6 +203,38 @@ namespace bazalt
         // exists, this is what gets handed to it via setExternalBlock()
         // before the global plan runs (DOMAINS.md §2).
         juce::AudioBuffer<float> instanceMixScratchBuffer;
+
+        // M21: the host's input, copied out before anything can overwrite it (the
+        // main input and output share the host buffer's first two channels), one
+        // row per (bus, channel) — sized once in prepareToPlay, so the audio
+        // thread never allocates. hostBusPresent[bus][channel] is false for a bus
+        // the host didn't enable, which the nodes read as silence.
+        juce::AudioBuffer<float> hostInputScratch;
+        std::array<std::array<bool, bazalt::engine::HostInputs::channelsPerBus>, bazalt::engine::HostInputs::numAudioBuses> hostBusPresent {};
+
+        // Persistent controller/pressure/pitch-bend state (updated from MIDI) plus
+        // the per-range audio pointers and transport, rebuilt by
+        // prepareHostInputsForRange() before every process() call.
+        bazalt::engine::HostInputs hostInputs;
+
+        // The transport as of the START of the current block (from the host's
+        // playhead, or the internal transport when there is none — Standalone),
+        // advanced per sub-range in prepareHostInputsForRange().
+        struct BlockTransport
+        {
+            bool playing = false;
+            double bpm = 120.0;
+            double ppq = 0.0;
+            double seconds = 0.0;
+        };
+        BlockTransport blockTransport;
+
+        // Whether THIS block ran a mono graph. finalizeInstanceMixIntoOutput must
+        // not also fetch the global plan then: PlanSwapper allows one fetch per
+        // process() call, and a graph-mode switch can land between the two
+        // reads of monoOnlyGraph/hasGlobalDomain.
+        bool monoRenderedThisBlock = false;
+        long long internalTransportSamples = 0;
         int activeVoiceCountThisBlock = 0; // for instance.mix's "average" mode
 
         // Declared after everything it depends on (nodeFactory, the

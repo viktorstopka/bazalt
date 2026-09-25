@@ -30,6 +30,7 @@ target_sources(PluginTests
         BusLayoutTests.cpp
         ConnectWithAutoAdaptTests.cpp
         GraphEditControllerTests.cpp
+        HostInputTests.cpp
         MacroParametersTests.cpp
         NodeDescriptorJsonTests.cpp
         PatchStateTests.cpp

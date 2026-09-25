@@ -89,6 +89,12 @@ namespace bazalt
 
         instanceMixScratchBuffer.setSize (1, samplesPerBlock);
 
+        // M21: room to snapshot every host input channel (main + 4 aux, stereo)
+        // once per block, allocated here so processBlock never allocates.
+        hostInputScratch.setSize (bazalt::engine::HostInputs::numAudioBuses * bazalt::engine::HostInputs::channelsPerBus, samplesPerBlock);
+        hostInputs = {};
+        internalTransportSamples = 0;
+
         // M17: 200ms hold time, converted from samples-worth-of-silence at
         // this sample rate — matches InstanceMixNode's own parameter
         // default (see PluginProcessor.h's comment on why this is a fixed
@@ -161,8 +167,13 @@ namespace bazalt
         // M18 (ADR-0024): the one remaining direct C++ poke — everything
         // downstream (instance.allocator's outputs into osc's "pitch" and
         // env's "gate") is now real graph wiring, not further pokes.
-        if (auto* noteIn = dynamic_cast<bazalt::engine::nodes::IoNoteInNode*> (plan->getNodeById ("noteIn")))
+        if (auto* noteIn = findNoteIn (plan))
             noteIn->injectNoteOn (pitch, velocity);
+    }
+
+    bazalt::engine::nodes::IoNoteInNode* BazaltAudioProcessor::findNoteIn (bazalt::engine::ExecutionPlan* plan) const noexcept
+    {
+        return plan == nullptr ? nullptr : dynamic_cast<bazalt::engine::nodes::IoNoteInNode*> (plan->getNodeById (noteInNodeId));
     }
 
     void BazaltAudioProcessor::repointVoiceDomainTaps (int newVoiceIndex, const VoicePlanPtrs& voicePlans) noexcept
@@ -188,6 +199,29 @@ namespace bazalt
 
     void BazaltAudioProcessor::handleMidiEvent (const juce::MidiMessage& message, const VoicePlanPtrs& voicePlans)
     {
+        // M21: MIDI controller state for io.control - tracked in every mode,
+        // omni (the latest value on any channel), so a node placed later still
+        // reads the current position of a wheel or pedal the moment it appears.
+        if (message.isController())
+        {
+            const auto controller = message.getControllerNumber();
+            if (controller >= 0 && controller < bazalt::engine::HostInputs::numControllers)
+                hostInputs.controllers[(size_t) controller] = (float) message.getControllerValue() / 127.0f;
+        }
+        else if (message.isChannelPressure())
+        {
+            hostInputs.channelPressure = (float) message.getChannelPressureValue() / 127.0f;
+        }
+        else if (message.isPitchWheel())
+        {
+            hostInputs.pitchBend = juce::jlimit (-1.0f, 1.0f, ((float) message.getPitchWheelValue() - 8192.0f) / 8192.0f);
+        }
+
+        // A mono graph (no instance.allocator) has no voices: nothing below -
+        // allocating one, poking its note-in - applies.
+        if (monoOnlyGraph.load (std::memory_order_acquire))
+            return;
+
         if (message.isNoteOn())
         {
             const auto noteId = (bazalt::engine::VoiceManager::NoteId) ((message.getChannel() << 8) | message.getNoteNumber());
@@ -218,8 +252,8 @@ namespace bazalt
             const auto noteId = (bazalt::engine::VoiceManager::NoteId) ((message.getChannel() << 8) | message.getNoteNumber());
             const auto voiceIndex = voiceManager.noteOff (noteId);
 
-            if (voiceIndex >= 0 && voicePlans[(size_t) voiceIndex] != nullptr)
-                if (auto* noteIn = dynamic_cast<bazalt::engine::nodes::IoNoteInNode*> (voicePlans[(size_t) voiceIndex]->getNodeById ("noteIn")))
+            if (voiceIndex >= 0)
+                if (auto* noteIn = findNoteIn (voicePlans[(size_t) voiceIndex]))
                     noteIn->injectNoteOff();
         }
         else if (message.isPitchWheel())
@@ -235,9 +269,8 @@ namespace bazalt
             const auto bendSemitones = normalized * pitchBendRangeSemitones;
 
             for (auto* plan : voicePlans)
-                if (plan != nullptr)
-                    if (auto* noteIn = dynamic_cast<bazalt::engine::nodes::IoNoteInNode*> (plan->getNodeById ("noteIn")))
-                        noteIn->injectPitchBend (bendSemitones);
+                if (auto* noteIn = findNoteIn (plan))
+                    noteIn->injectPitchBend (bendSemitones);
         }
     }
 
@@ -268,7 +301,7 @@ namespace bazalt
         // Global domain checked first: a node only ever lives in one domain
         // (DomainSplitter's own invariant), and the global plan — when one
         // exists — is the simpler case (exactly one plan, never re-pointed).
-        if (hasGlobalDomain.load (std::memory_order_acquire))
+        if (hasGlobalDomain.load (std::memory_order_acquire) || monoOnlyGraph.load (std::memory_order_acquire))
         {
             if (auto* plan = globalPlanSwapper.peekCurrentPlan())
             {
@@ -388,7 +421,7 @@ namespace bazalt
                 const auto fadeSamplesRemainingBefore = voiceManager.getStealFadeSamplesRemaining (voiceIndex);
                 const auto fadingSamples = juce::jmin (numSamples, fadeSamplesRemainingBefore);
 
-                plan->process (numSamples);
+                processPlanRange (plan, startSample, numSamples);
                 const auto* voiceOut = plan->blockBuffers[(size_t) plan->finalOutputBufferIndex].getBlock().getChannelPointer (0);
 
                 const auto startGain = voiceManager.getStealFadeGain (voiceIndex);
@@ -418,7 +451,7 @@ namespace bazalt
                     const auto remainingSamples = numSamples - fadingSamples;
                     if (remainingSamples > 0)
                     {
-                        plan->process (remainingSamples);
+                        processPlanRange (plan, startSample + fadingSamples, remainingSamples);
                         const auto* newVoiceOut = plan->blockBuffers[(size_t) plan->finalOutputBufferIndex].getBlock().getChannelPointer (0);
                         for (int i = 0; i < remainingSamples; ++i)
                             sum[fadingSamples + i] += newVoiceOut[i];
@@ -429,7 +462,7 @@ namespace bazalt
             }
 
             // Active or Releasing.
-            plan->process (numSamples);
+            processPlanRange (plan, startSample, numSamples);
             const auto* voiceOut = plan->blockBuffers[(size_t) plan->finalOutputBufferIndex].getBlock().getChannelPointer (0);
 
             for (int i = 0; i < numSamples; ++i)
@@ -457,6 +490,126 @@ namespace bazalt
         activeVoiceCountThisBlock = activeCount;
     }
 
+    // ---- M21 host boundary ------------------------------------------------
+    // What io.audioIn / io.control / io.transport read (engine/graph/
+    // HostInputs.h). Everything below is audio-thread code: no allocation,
+    // no locking, no logging.
+
+    // The main input shares the host buffer's first two channels with the
+    // main OUTPUT, so it has to be copied out before anything writes output -
+    // and every bus is snapshotted here, once, into the preallocated scratch
+    // so the ranges a block is split into can each hand nodes a stable,
+    // offset pointer.
+    void BazaltAudioProcessor::captureHostInput (juce::AudioBuffer<float>& buffer, int numSamples) noexcept
+    {
+        constexpr auto channelsPerBus = bazalt::engine::HostInputs::channelsPerBus;
+
+        for (auto& bus : hostBusPresent)
+            bus.fill (false);
+
+        if (numSamples > hostInputScratch.getNumSamples())
+            return; // a host block bigger than it promised in prepareToPlay: no input beats undefined behaviour
+
+        for (int bus = 0; bus < bazalt::engine::HostInputs::numAudioBuses; ++bus)
+        {
+            const auto busBuffer = getBusBuffer (buffer, true, bus);
+            const auto channels = juce::jmin (channelsPerBus, busBuffer.getNumChannels());
+
+            for (int ch = 0; ch < channels; ++ch)
+            {
+                hostInputScratch.copyFrom (bus * channelsPerBus + ch, 0, busBuffer, ch, 0, numSamples);
+                hostBusPresent[(size_t) bus][(size_t) ch] = true;
+            }
+        }
+    }
+
+    // The transport at the start of this block: the host's playhead when it
+    // reports a tempo and beat position, otherwise an internal transport
+    // (120 BPM, running) so io.transport still moves in the Standalone app,
+    // which has no host timeline.
+    void BazaltAudioProcessor::beginTransportForBlock (int numSamples) noexcept
+    {
+        blockTransport = {};
+        auto haveHostTransport = false;
+
+        if (auto* hostPlayHead = getPlayHead())
+        {
+            if (const auto position = hostPlayHead->getPosition())
+            {
+                const auto bpm = position->getBpm();
+                const auto ppq = position->getPpqPosition();
+
+                if (bpm.hasValue() && ppq.hasValue())
+                {
+                    blockTransport.playing = position->getIsPlaying();
+                    blockTransport.bpm = *bpm;
+                    blockTransport.ppq = *ppq;
+                    blockTransport.seconds = position->getTimeInSeconds().orFallback (*bpm > 0.0 ? *ppq * 60.0 / *bpm : 0.0);
+                    haveHostTransport = true;
+                }
+            }
+        }
+
+        if (! haveHostTransport)
+        {
+            blockTransport.playing = true;
+            blockTransport.bpm = 120.0;
+            blockTransport.seconds = (double) internalTransportSamples / currentSampleRate;
+            blockTransport.ppq = blockTransport.seconds * blockTransport.bpm / 60.0;
+        }
+
+        internalTransportSamples += numSamples;
+    }
+
+    // Points hostInputs at the range of samples about to be processed: audio
+    // pointers offset to its first sample, transport advanced by the same
+    // amount (a stopped transport doesn't move).
+    void BazaltAudioProcessor::prepareHostInputsForRange (int startSample) noexcept
+    {
+        constexpr auto channelsPerBus = bazalt::engine::HostInputs::channelsPerBus;
+
+        for (int bus = 0; bus < bazalt::engine::HostInputs::numAudioBuses; ++bus)
+            for (int ch = 0; ch < channelsPerBus; ++ch)
+                hostInputs.audio[(size_t) bus][(size_t) ch] = hostBusPresent[(size_t) bus][(size_t) ch]
+                                                                 ? hostInputScratch.getReadPointer (bus * channelsPerBus + ch) + startSample
+                                                                 : nullptr;
+
+        const auto elapsedSeconds = currentSampleRate > 0.0 ? (double) startSample / currentSampleRate : 0.0;
+
+        hostInputs.transportPlaying = blockTransport.playing;
+        hostInputs.tempoBpm = blockTransport.bpm;
+        hostInputs.sampleRate = currentSampleRate;
+        hostInputs.timeSeconds = blockTransport.seconds + (blockTransport.playing ? elapsedSeconds : 0.0);
+        hostInputs.ppqPosition = blockTransport.ppq + (blockTransport.playing ? elapsedSeconds * blockTransport.bpm / 60.0 : 0.0);
+    }
+
+    void BazaltAudioProcessor::processPlanRange (bazalt::engine::ExecutionPlan* plan, int startSample, int numSamples) noexcept
+    {
+        prepareHostInputsForRange (startSample);
+        plan->applyHostInputs (hostInputs);
+        plan->process (numSamples);
+    }
+
+    // A graph with no instance.allocator (DomainSplitter's monoOnly) is one
+    // plan, run over every range of the block whether or not any note is
+    // held. Its output lands in the same scratch buffer the voice sum uses,
+    // so finalizeInstanceMixIntoOutput needs no special case.
+    void BazaltAudioProcessor::renderMonoRange (bazalt::engine::ExecutionPlan* plan, int startSample, int numSamples) noexcept
+    {
+        if (plan == nullptr || numSamples <= 0)
+            return;
+
+        processPlanRange (plan, startSample, numSamples);
+
+        const auto* out = plan->blockBuffers[(size_t) plan->finalOutputBufferIndex].getBlock().getChannelPointer (0);
+        auto* scratch = instanceMixScratchBuffer.getWritePointer (0) + startSample;
+
+        for (int i = 0; i < numSamples; ++i)
+            scratch[i] = out[i];
+
+        activeVoiceCountThisBlock = 0;
+    }
+
     // ARCHITECTURE.md/DOMAINS.md §2: with no instance.mix node in the
     // graph (every M2-M6 patch, and the common case even after M7), the
     // voice sum IS the final output — copied straight to both channels,
@@ -468,7 +621,7 @@ namespace bazalt
     {
         const float* finalMono = instanceMixScratchBuffer.getReadPointer (0);
 
-        if (hasGlobalDomain.load (std::memory_order_acquire))
+        if (! monoRenderedThisBlock && hasGlobalDomain.load (std::memory_order_acquire))
         {
             if (auto* globalPlan = globalPlanSwapper.getCurrentPlanForAudioThread())
             {
@@ -489,7 +642,7 @@ namespace bazalt
                         }
 
                         instanceMixNode->setExternalBlock (finalMono, numSamples);
-                        globalPlan->process (numSamples);
+                        processPlanRange (globalPlan, 0, numSamples); // the global plan runs once over the whole block
                         finalMono = globalPlan->blockBuffers[(size_t) globalPlan->finalOutputBufferIndex]
                                         .getBlock()
                                         .getChannelPointer (0);
@@ -547,7 +700,16 @@ namespace bazalt
 
         const auto numSamples = buffer.getNumSamples();
 
-        for (int ch = 0; ch < buffer.getNumChannels(); ++ch)
+        // M21: snapshot the host's input BEFORE clearing anything. This used to
+        // clear every channel first, which wiped the main input (shared with the
+        // output) and the sidechain aux inputs before anything could read them -
+        // the sidechain meters and passthrough never saw a sample of real audio.
+        captureHostInput (buffer, numSamples);
+        beginTransportForBlock (numSamples);
+
+        // Clear only the OUTPUT channels. The aux inputs live beyond them in the
+        // host buffer and updateAuxLevelsAndPassthrough reads them at the end.
+        for (int ch = 0; ch < getTotalNumOutputChannels() && ch < buffer.getNumChannels(); ++ch)
             buffer.clear (ch, 0, numSamples);
 
         instanceMixScratchBuffer.clear (0, numSamples);
@@ -556,11 +718,36 @@ namespace bazalt
         // contract (PlanSwapper.h) — handleMidiEvent/renderVoiceRange below
         // both read from this same cached array rather than re-querying
         // the swappers mid-block.
-        VoicePlanPtrs voicePlanPtrs {};
-        for (int i = 0; i < numVoices; ++i)
-            voicePlanPtrs[(size_t) i] = voicePlanSwappers[(size_t) i].getCurrentPlanForAudioThread();
+        // M21: a graph with no instance.allocator is ONE plan in the global
+        // swapper, run every block (see renderMonoRange). Fetched once, like the
+        // voice plans, per PlanSwapper's contract.
+        const auto monoOnly = monoOnlyGraph.load (std::memory_order_acquire);
+        monoRenderedThisBlock = monoOnly;
 
-        macroParameters.applyToPlans (voicePlanPtrs.data(), numVoices, numSamples);
+        VoicePlanPtrs voicePlanPtrs {};
+        bazalt::engine::ExecutionPlan* monoPlan = nullptr;
+
+        if (monoOnly)
+        {
+            monoPlan = globalPlanSwapper.getCurrentPlanForAudioThread();
+            bazalt::engine::ExecutionPlan* monoPlans[1] = { monoPlan };
+            macroParameters.applyToPlans (monoPlans, 1, numSamples);
+        }
+        else
+        {
+            for (int i = 0; i < numVoices; ++i)
+                voicePlanPtrs[(size_t) i] = voicePlanSwappers[(size_t) i].getCurrentPlanForAudioThread();
+
+            macroParameters.applyToPlans (voicePlanPtrs.data(), numVoices, numSamples);
+        }
+
+        auto renderRange = [&] (int start, int count)
+        {
+            if (monoOnly)
+                renderMonoRange (monoPlan, start, count);
+            else
+                renderVoiceRange (start, count, voicePlanPtrs);
+        };
 
         int previousSample = 0;
 
@@ -569,14 +756,14 @@ namespace bazalt
             const auto eventSample = metadata.samplePosition;
 
             if (eventSample > previousSample)
-                renderVoiceRange (previousSample, eventSample - previousSample, voicePlanPtrs);
+                renderRange (previousSample, eventSample - previousSample);
 
             handleMidiEvent (metadata.getMessage(), voicePlanPtrs);
             previousSample = eventSample;
         }
 
         if (previousSample < numSamples)
-            renderVoiceRange (previousSample, numSamples - previousSample, voicePlanPtrs);
+            renderRange (previousSample, numSamples - previousSample);
 
         finalizeInstanceMixIntoOutput (buffer, numSamples);
 

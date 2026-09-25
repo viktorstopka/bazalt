@@ -170,8 +170,21 @@ ctest --test-dir build -C Debug -R PluginTests --output-on-failure
   mixes each active aux bus into the main output at a fixed -30dB and tracks
   its peak level — a deliberately simple, measurable proof that audio
   reaches the engine from all 4 aux buses (ARCHITECTURE.md §4.1), not real
-  sidechain-driven DSP. Ducking/modulation-style sidechain use needs
-  aux-typed node ports, which don't exist yet.
+  sidechain-driven DSP. Until M21 `processBlock` cleared every host-buffer
+  channel, aux inputs included, before this read them; it now clears only the
+  output channels. Real sidechain use goes through `io.audioIn`'s `bus` setting
+  (Aux 1-4 as ordinary Audio signals, ADR-0028) — there are still no aux-typed
+  node ports, and no ducking-style node built on it yet.
+- **Host boundary (M21, ADR-0028).** `io.audioIn`/`io.control`/`io.transport`
+  read a plain `HostInputs` struct the plugin fills per `process()` range
+  (`ExecutionPlan::applyHostInputs`), never JUCE types. `io.noteIn` is NOT on
+  that mechanism — it's still poked by the hardcoded id `"noteIn"`
+  (`BazaltAudioProcessor::findNoteIn`), so a note-in placed under another id is
+  silently ignored. A graph with no `instance.allocator` (`DomainSplitter::
+  monoOnly`) is one plan run every block, so audio effects work but it plays no
+  notes. **Never call `ExecutionPlan::getNodeById ("literal")` on the audio
+  thread** — the literal becomes a heap-allocated `juce::String`; pass one built
+  beforehand. That exact mistake was in the M18 note path until M21.
 - The patch format (`engine/patch/PatchDocument.h`) has no `ui` (view state)
   section — there's no node-graph editor to have pan/zoom/layout state for
   yet. Add that field in the same change as the editor, not before.

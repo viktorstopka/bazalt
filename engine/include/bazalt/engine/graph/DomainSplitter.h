@@ -17,6 +17,23 @@ namespace bazalt::engine
         */
         bool hasGlobalDomain = false;
 
+        /** M21 — DOMAINS.md §7: the compiler marks the allocator's outputs
+            poly and propagates forward, so a graph with NO instance.allocator
+            has no poly region at all and is entirely mono. True exactly then
+            (no instance.allocator, and no instance.mix wired in either). The
+            driver compiles the whole `voiceGraph` once, as the one global
+            plan, and runs it every block — with or without a held note —
+            instead of once per voice while voices are active. That is what
+            an audio effect (io.audioIn -> ... -> out) needs. `voiceGraph` is
+            still the unchanged input graph, as for every graph with no
+            boundary, so nothing keyed on it changes; only what the driver
+            does with it does. Every graph the editor produces before the user
+            adds an allocator is one of these, and none of them ever played a
+            note: without an allocator no gate or pitch reaches an envelope or
+            oscillator.
+        */
+        bool monoOnly = false;
+
         /** The "instance.mix" node's own (user-chosen) id — set only when
             hasGlobalDomain is true. The compiled global ExecutionPlan's
             getNodeById(instanceMixNodeId) is how the driver (PluginProcessor)

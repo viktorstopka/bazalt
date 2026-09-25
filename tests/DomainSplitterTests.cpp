@@ -243,3 +243,134 @@ TEST_CASE ("DomainSplitter rejects a graph output node left in the voice domain"
     CHECK_FALSE (result.success);
     CHECK (result.errorMessage.contains ("global domain"));
 }
+
+// ---- M21: mono graphs, mono sources, and the voice->global bypass ----------
+
+namespace
+{
+    // The split-test graph plus a global-domain mix.sum that sums the voice
+    // output (in.0, via instance.mix) with an io.audioIn (in.1), and a
+    // designated output after it:
+    //   osc -> svf -> instancemix -> sum.in.0
+    //   audioIn.channel.0 -----------> sum.in.1 -> masterout
+    NodeGraph buildMonoSourceGraph()
+    {
+        NodeGraph graph;
+        graph.addNode ({ "osc", "osc.analog", {}, {}, {} });
+        graph.addNode ({ "svf", "filter.svf", {}, {}, {} });
+        graph.addNode ({ "instancemix", "instance.mix", {}, {}, {} });
+        graph.addNode ({ "sum", "mix.sum", {}, {}, {} });
+        graph.addNode ({ "audioin", "io.audioIn", {}, {}, {} });
+        graph.addNode ({ "masterout", "io.output", {}, {}, {} });
+
+        graph.addConnection ({ "osc", "out", "svf", "in" });
+        graph.addConnection ({ "svf", "out", "instancemix", "in" });
+        graph.addConnection ({ "instancemix", "out", "sum", "in.0" });
+        graph.addConnection ({ "audioin", "channel.0", "sum", "in.1" });
+        graph.addConnection ({ "sum", "out", "masterout", "in" });
+
+        graph.setOutput ("masterout", "out");
+        return graph;
+    }
+
+    bool containsNode (const NodeGraph& graph, const juce::String& id)
+    {
+        return graph.findNode (id) != nullptr;
+    }
+}
+
+TEST_CASE ("A graph with no instance.allocator and no instance.mix is a mono graph; one with an allocator is not",
+           "[engine][DomainSplitter][M21]")
+{
+    // DOMAINS.md §7: the allocator's outputs are what make a region poly, so
+    // without one nothing is per-instance — the whole graph is mono and runs
+    // once, every block, rather than once per active voice.
+    NodeGraph effect;
+    effect.addNode ({ "in", "io.audioIn", {}, {}, {} });
+    effect.addNode ({ "out", "io.output", {}, {}, {} });
+    effect.addConnection ({ "in", "channel.0", "out", "in" });
+    effect.setOutput ("out", "out");
+
+    auto result = DomainSplitter::split (effect);
+    REQUIRE (result.success);
+    CHECK (result.monoOnly);
+    CHECK_FALSE (result.hasGlobalDomain);
+    CHECK (result.voiceGraph.getNodes().size() == 2); // still the unchanged graph, for anything keyed on it
+
+    NodeGraph synth = effect;
+    synth.addNode ({ "alloc", "instance.allocator", {}, {}, {} });
+    result = DomainSplitter::split (synth);
+    REQUIRE (result.success);
+    CHECK_FALSE (result.monoOnly);
+}
+
+TEST_CASE ("A mono source that feeds only the global domain joins the global plan instead of being rejected",
+           "[engine][DomainSplitter][M21]")
+{
+    // Before M21 io.audioIn here was "connected to neither domain": not
+    // upstream of the mix (so not voice) and not downstream of it (so not
+    // global). It is a mono source, and mono is free everywhere (DOMAINS.md §2).
+    const auto result = DomainSplitter::split (buildMonoSourceGraph());
+    REQUIRE (result.success);
+    REQUIRE (result.hasGlobalDomain);
+    CHECK_FALSE (result.monoOnly);
+
+    CHECK (containsNode (result.globalGraph, "audioin"));
+    CHECK (containsNode (result.globalGraph, "sum"));
+    CHECK (containsNode (result.globalGraph, "masterout"));
+    CHECK_FALSE (containsNode (result.voiceGraph, "audioin"));
+    CHECK (containsNode (result.voiceGraph, "osc"));
+
+    // The mono source's own wire into the global chain is kept.
+    bool sawAudioInWire = false;
+    for (const auto& connection : result.globalGraph.getConnections())
+        if (connection.fromNodeId == "audioin" && connection.toNodeId == "sum")
+            sawAudioInWire = true;
+    CHECK (sawAudioInWire);
+
+    // Both halves compile, and the global plan knows it has a host-input node.
+    const auto factory = buildDefaultNodeFactory();
+    CHECK (GraphCompiler::compile (result.voiceGraph, factory, { 44100.0, 64 }, 1).success);
+    auto global = GraphCompiler::compile (result.globalGraph, factory, { 44100.0, 64 }, 1);
+    REQUIRE (global.success);
+    CHECK (global.plan.hostInputNodes.size() == 1);
+}
+
+TEST_CASE ("A voice-domain node feeding the global domain around instance.mix is an error, not a silently dropped cable",
+           "[engine][DomainSplitter][M21]")
+{
+    // DOMAINS.md §2: "poly -> mono requires Voice Mix. There is no implicit
+    // summing anywhere, ever." This edge used to be discarded when the global
+    // graph was built, leaving in.1 reading silence with no explanation.
+    auto graph = buildMonoSourceGraph();
+    graph.removeConnection ("audioin", "channel.0", "sum", "in.1");
+    graph.addConnection ({ "svf", "out", "sum", "in.1" }); // a voice node straight into the global chain
+
+    const auto result = DomainSplitter::split (graph);
+    CHECK_FALSE (result.success);
+    CHECK (result.errorMessage.contains ("svf"));
+    CHECK (result.errorMessage.contains ("instance.mix"));
+}
+
+TEST_CASE ("A mono source that feeds BOTH domains gets a clear error asking for one per domain",
+           "[engine][DomainSplitter][M21]")
+{
+    auto graph = buildMonoSourceGraph();
+    graph.addConnection ({ "audioin", "channel.1", "svf", "in" }); // now also upstream of the mix, i.e. voice domain
+
+    const auto result = DomainSplitter::split (graph);
+    CHECK_FALSE (result.success);
+    CHECK (result.errorMessage.contains ("audioin"));
+    CHECK (result.errorMessage.contains ("mono source"));
+}
+
+TEST_CASE ("An unconnected node is still rejected even when a mono source is accepted",
+           "[engine][DomainSplitter][M21]")
+{
+    auto graph = buildMonoSourceGraph();
+    graph.addNode ({ "orphan", "io.transport", {}, {}, {} }); // feeds nothing
+
+    const auto result = DomainSplitter::split (graph);
+    CHECK_FALSE (result.success);
+    CHECK (result.errorMessage.contains ("orphan"));
+}

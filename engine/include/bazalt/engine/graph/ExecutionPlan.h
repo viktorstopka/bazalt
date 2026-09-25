@@ -52,6 +52,22 @@ namespace bazalt::engine
 
         uint64_t generation = 0;
 
+        /** M21: the nodes that asked for host data (Node::wantsHostInputs()),
+            recorded once at compile time so the audio thread never scans or
+            RTTI-casts every node per block. Raw pointers into `nodes`, valid
+            for exactly as long as this plan (which owns them) is.
+        */
+        std::vector<Node*> hostInputNodes;
+
+        /** Hands `inputs` to every host-input node; call immediately before
+            process(). Audio-thread safe (no allocation, no locking).
+        */
+        void applyHostInputs (const HostInputs& inputs) noexcept
+        {
+            for (auto* node : hostInputNodes)
+                node->setHostInputs (inputs);
+        }
+
         /** Where a node input port reads its sample(s) from. */
         struct InputRef
         {
@@ -247,8 +263,11 @@ namespace bazalt::engine
             std::fill (regionScalars.begin(), regionScalars.end(), 0.0f);
         }
 
-        /** Message-thread/driver convenience — not for the audio thread.
-            Returns nullptr if no node with this id was compiled into the plan.
+        /** Returns nullptr if no node with this id was compiled into the plan.
+            The lookup itself never allocates, but a string LITERAL converts to
+            a heap-allocated juce::String, so the audio thread must pass a
+            String built beforehand (see BazaltAudioProcessor::findNoteIn) -
+            never `getNodeById ("literal")` inside processBlock.
         */
         Node* getNodeById (const juce::String& nodeId) const
         {

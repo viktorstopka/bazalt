@@ -515,11 +515,20 @@ hook first written for `util.reroute` (`resolveIncomingPort(toPortId, source)`, 
 completed CLEANUP P1 #2 properly — the Reroute fix had only worked inside `GraphCompiler`, and the
 command layer and the UI still rejected a Control cable into it.
 
-**Remaining: 6 new nodes and `util.macro` — and why it is not "just more nodes":**
-- **Host boundary** (`io.audioIn/control/transport`): `engine/` cannot depend on plugin libraries, so
-  these need the same plain-data injection `io.noteIn` uses; `io.transport` needs the host playhead.
+**Wave 4 — done: the host boundary (32 of the 36 exist).** `io.audioIn` (Main or Aux 1–4, two stereo
+outputs), `io.control` (CC / mod wheel / pressure / pitch bend / sustain, smoothed) and `io.transport`
+(`beat` Event, `tempo`, `playing`, `position`; an internal 120 BPM transport when the host gives no
+playhead). Built on a plain-data `HostInputs` struct the plugin pushes and opting-in nodes read, so `engine/`
+still knows nothing about JUCE's processor (CLAUDE.md rule 4). Also: a graph with no `instance.allocator` is
+now compiled once and run every block, so an audio effect (`io.audioIn → … → out`) actually processes, and
+`processBlock` now snapshots the host input *before* clearing the output — it used to clear inputs first.
+Design: **ADR-0028**. The RT-allocation trap test written for this path found a real M18 bug (a `juce::String`
+built from a literal on every note-on/off/pitch-bend); fixed and regression-tested. 258/258 tests, pluginval
+strictness 10 SUCCESS. `io.noteIn` is deliberately not migrated onto `HostInputs` (ADR-0028).
+
+**Remaining: 3 `view.*` nodes and `util.macro` — and why it is not "just more nodes":**
 - **`view.scope/spectrum/meter`**: their `timeWindow`/`mode` settings are per-instance, but
-  `getPreviews()` is declared once per node type.
+  `getPreviews()` is declared once per node type. Needs a design before it is built.
 - **`util.macro`: deferred past M21** (decision 2026-09-20). ADR-0015 is still Proposed; it commits to
   the fixed 32-slot host-automation pool plus a slot-addressed node and deserves its own decision.
 

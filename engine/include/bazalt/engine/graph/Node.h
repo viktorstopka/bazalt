@@ -1,5 +1,6 @@
 #pragma once
 
+#include "bazalt/engine/graph/HostInputs.h"
 #include "bazalt/engine/graph/PortDescriptor.h"
 #include "bazalt/engine/graph/PreviewDescriptor.h"
 #include "bazalt/engine/graph/NoteEvent.h"
@@ -111,6 +112,18 @@ namespace bazalt::engine
         {
             juce::ignoreUnused (toPortId, source);
         }
+
+        /** M21 — the plugin-boundary nodes (io.audioIn, io.control,
+            io.transport) override wantsHostInputs() to return true, and
+            GraphCompiler records them in ExecutionPlan::hostInputNodes so the
+            plugin can hand them each block's HostInputs (HostInputs.h)
+            without knowing their ids or types. setHostInputs() runs on the
+            audio thread, once per process() call, before it: it must not
+            allocate, lock or block, and `inputs` is valid only for that
+            call — copy what you need.
+        */
+        virtual bool wantsHostInputs() const noexcept { return false; }
+        virtual void setHostInputs (const HostInputs& inputs) noexcept { juce::ignoreUnused (inputs); }
 
         /** M20 — a node's own default visualization(s), declared once here
             rather than hardcoded anywhere in the UI (NodeCard.tsx needs no

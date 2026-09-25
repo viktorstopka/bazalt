@@ -414,6 +414,34 @@ namespace bazalt
         const bazalt::engine::NodePrepareInfo prepareInfo { sampleRate, blockSize };
         auto& factory = processor.getNodeFactory();
 
+        // M21 (DOMAINS.md §7): a graph with no instance.allocator has no poly
+        // region, so the whole graph compiles ONCE and is published as the one
+        // global plan, which the processor runs every block. No voice plans are
+        // touched: they are never run while the mono flag is set, and the next
+        // non-mono edit recompiles and republishes every one of them.
+        if (split.monoOnly)
+        {
+            const auto* previousPlan = processor.getGlobalPlanSwapper().peekCurrentPlan();
+
+            auto monoCompile = bazalt::engine::GraphCompiler::compile (
+                split.voiceGraph, factory, prepareInfo, nextGeneration(), previousPlan);
+
+            if (! monoCompile.success)
+                return { false, monoCompile.errorMessage };
+
+            auto& swapper = processor.getGlobalPlanSwapper();
+            swapper.reclaim();
+            const auto published = swapper.publish (std::make_unique<bazalt::engine::ExecutionPlan> (std::move (monoCompile.plan)));
+            jassert (published);
+            juce::ignoreUnused (published);
+
+            hasGlobalDomain = false;
+            processor.setHasGlobalDomain (false);
+            processor.setMonoOnly (true); // after the plan is live, so the audio thread never sees the flag first
+
+            return { true, {} };
+        }
+
         std::vector<std::unique_ptr<bazalt::engine::ExecutionPlan>> newVoicePlans;
         newVoicePlans.reserve ((size_t) BazaltAudioProcessor::numVoices);
 
@@ -479,6 +507,7 @@ namespace bazalt
 
         hasGlobalDomain = split.hasGlobalDomain;
         processor.setHasGlobalDomain (hasGlobalDomain);
+        processor.setMonoOnly (false); // after the voice (and global) plans are live
 
         return { true, {} };
     }

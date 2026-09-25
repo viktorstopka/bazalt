@@ -40,6 +40,9 @@
 #include "bazalt/engine/nodes/LogicSelectNode.h"
 #include "bazalt/engine/nodes/LogicCompareNode.h"
 #include "bazalt/engine/nodes/SampleHoldNode.h"
+#include "bazalt/engine/nodes/IoAudioInNode.h"
+#include "bazalt/engine/nodes/IoControlNode.h"
+#include "bazalt/engine/nodes/IoTransportNode.h"
 
 namespace bazalt::engine
 {
@@ -91,6 +94,9 @@ namespace bazalt::engine
         factory.registerType ("logic.select", [] { return std::make_unique<nodes::LogicSelectNode>(); });
         factory.registerType ("logic.compare", [] { return std::make_unique<nodes::LogicCompareNode>(); });
         factory.registerType ("adapt.sampleHold", [] { return std::make_unique<nodes::SampleHoldNode>(); });
+        factory.registerType ("io.audioIn", [] { return std::make_unique<nodes::IoAudioInNode>(); });
+        factory.registerType ("io.control", [] { return std::make_unique<nodes::IoControlNode>(); });
+        factory.registerType ("io.transport", [] { return std::make_unique<nodes::IoTransportNode>(); });
         return factory;
     }
 
