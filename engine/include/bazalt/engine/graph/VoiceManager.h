@@ -1,5 +1,6 @@
 #pragma once
 
+#include <atomic>
 #include <cstdint>
 #include <vector>
 
@@ -80,7 +81,7 @@ namespace bazalt::engine
                 voice.noteId = noteId;
                 voice.age = nextAge++;
                 voice.silentSamplesAccumulated = 0;
-                mostRecentlyTriggeredVoice = index;
+                mostRecentlyTriggeredVoice.store (index, std::memory_order_relaxed);
                 return index;
             }
 
@@ -89,7 +90,7 @@ namespace bazalt::engine
             voice.stage = VoiceStage::Stealing;
             voice.stealFadeSamplesRemaining = stealFadeSamples;
             voice.stealFadeGainAtStart = 1.0f;
-            mostRecentlyTriggeredVoice = index;
+            mostRecentlyTriggeredVoice.store (index, std::memory_order_relaxed);
             return index;
         }
 
@@ -102,7 +103,7 @@ namespace bazalt::engine
             over always-voice-0 or an 8-voice aggregate). -1 before the
             first note is ever triggered.
         */
-        int getMostRecentlyTriggeredVoice() const noexcept { return mostRecentlyTriggeredVoice; }
+        int getMostRecentlyTriggeredVoice() const noexcept { return mostRecentlyTriggeredVoice.load (std::memory_order_relaxed); }
 
         void setPendingNoteOn (int voiceIndex, PendingNoteOn pending) noexcept
         {
@@ -271,6 +272,8 @@ namespace bazalt::engine
 
         std::vector<Voice> voices;
         uint64_t nextAge = 0;
-        int mostRecentlyTriggeredVoice = -1;
+        // Written by the audio thread (noteOn), read by the message thread when
+        // it attaches preview taps (ADR-0029) - atomic so that is not a data race.
+        std::atomic<int> mostRecentlyTriggeredVoice { -1 };
     };
 }

@@ -88,7 +88,7 @@ unit-confusion bug the whole `adapt.remap` fix was built to prevent for
 *different* quantities meeting each other, but it slips through here because
 one side is untyped. Fix: declare `Quantity::Unipolar` on Map's "in" port.
 
-### 5. A subscribed preview tap is lost on every recompile — found 2026-09-25 (M21), NOT yet fixed
+### 5. A subscribed preview tap is lost on every recompile — found 2026-09-25 (M21) — ✅ FIXED (ADR-0029 step 1)
 `ExecutionPlan::tapForBufferIndex` is per plan, and `GraphCompiler` creates it all-null for every new plan
 (`GraphCompiler.cpp:830`). `PluginProcessor::subscribeVisualizationTap` sets the pointer on the plans that are
 live *at subscribe time*, and nothing re-applies it after `GraphEditController::recompileAndPublish()`.
@@ -99,6 +99,10 @@ accident, when a note lands on a different voice (`repointVoiceDomainTaps`). Aff
 waveform and `mix.gain` meter previews; it is a hard blocker for `view.scope/spectrum/meter`. Fix: a
 message-thread registry of live subscriptions, re-resolved against the fresh plans at the end of every
 publish — see ADR-0029.
+Fixed: `PluginProcessor` keeps a registry of live subscriptions and `GraphEditController::recompileAndPublish()`
+re-attaches them to the new plans just before publishing them (`applyPreviewSubscriptions`). Tests:
+"A global-domain preview tap keeps receiving after a graph edit" and the voice-domain, unsubscribe and
+deleted-node companions in `VisualizationTapTests.cpp` (mutation-checked: they fail with the re-attach off).
 
 ---
 

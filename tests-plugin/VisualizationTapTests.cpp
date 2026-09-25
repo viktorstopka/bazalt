@@ -127,3 +127,155 @@ TEST_CASE ("unsubscribeVisualizationTap stops a voice-domain tap from receiving 
     REQUIRE (available > 0);
     CHECK (readBack[available - 1] == 84.0f);
 }
+
+// ---- ADR-0029 / CLEANUP.md P1 #5: a subscription survives a graph edit ----
+//
+// A tap pointer lives on an ExecutionPlan and every edit compiles new plans, so
+// before ADR-0029 the first edit after subscribing silently detached the
+// preview. These compare Tap::getTotalPushed() before and after, which (unlike
+// readLatest) cannot be satisfied by stale data left in the ring.
+
+namespace
+{
+    void runBlocks (BazaltAudioProcessor& processor, int numBlocks, float inputLevel = 0.0f)
+    {
+        for (int i = 0; i < numBlocks; ++i)
+        {
+            juce::AudioBuffer<float> buffer (2, 512);
+            for (int ch = 0; ch < 2; ++ch)
+                juce::FloatVectorOperations::fill (buffer.getWritePointer (ch), inputLevel, 512);
+
+            juce::MidiBuffer none;
+            processor.processBlock (buffer, none);
+        }
+    }
+
+    bazalt::engine::NodeGraph audioInToOutputGraph()
+    {
+        bazalt::engine::NodeGraph graph;
+        graph.addNode ({ "in", "io.audioIn", {}, {}, {} });
+        graph.addNode ({ "out", "io.output", {}, {}, {} });
+        graph.addConnection ({ "in", "channel.0", "out", "in" });
+        graph.setOutput ("out", "out");
+        return graph;
+    }
+}
+
+TEST_CASE ("A global-domain preview tap keeps receiving after a graph edit", "[plugin][telemetry][M20][ADR-0029]")
+{
+    BazaltAudioProcessor processor;
+    processor.prepareToPlay (44100.0, 512);
+    REQUIRE (processor.getGraphEditController().setGraph (audioInToOutputGraph()).success);
+
+    REQUIRE (processor.subscribeVisualizationTap ("in", "channel.0", bazalt::engine::PreviewKind::Waveform));
+    auto* tap = processor.getTelemetryHub().subscribeTap ("node:in:channel.0");
+    REQUIRE (tap != nullptr);
+
+    runBlocks (processor, 3, 0.25f);
+    const auto beforeEdit = tap->getTotalPushed();
+    REQUIRE (beforeEdit > 0);
+
+    // A structural parameter change recompiles and republishes every plan.
+    REQUIRE (processor.getGraphEditController().setParameterValue ("in", "io.audioIn.bus", 1.0f).success);
+
+    runBlocks (processor, 3, 0.25f);
+    CHECK (tap->getTotalPushed() == beforeEdit + 3 * 512);
+}
+
+TEST_CASE ("A voice-domain preview tap keeps receiving after a graph edit, with no new note",
+           "[plugin][telemetry][M20][ADR-0029]")
+{
+    BazaltAudioProcessor processor;
+    processor.prepareToPlay (44100.0, 512);
+
+    REQUIRE (processor.subscribeVisualizationTap ("osc", "out", bazalt::engine::PreviewKind::Waveform));
+    auto* tap = processor.getTelemetryHub().subscribeTap ("node:osc:out");
+    REQUIRE (tap != nullptr);
+
+    playNote (processor, 60);
+    runBlocks (processor, 2);
+    const auto beforeEdit = tap->getTotalPushed();
+    REQUIRE (beforeEdit > 0);
+
+    REQUIRE (processor.getGraphEditController().setParameterValue ("osc", "osc.analog.shape", 1.0f).success);
+
+    // The same voice is still held and no note-on arrives, so nothing here can
+    // re-point the tap by luck: only the re-attach can keep it alive.
+    runBlocks (processor, 3);
+    CHECK (tap->getTotalPushed() > beforeEdit);
+}
+
+TEST_CASE ("A voice-domain preview tap is fed by exactly one voice at a time", "[plugin][telemetry][M20][ADR-0029]")
+{
+    BazaltAudioProcessor processor;
+    processor.prepareToPlay (44100.0, 512);
+
+    REQUIRE (processor.subscribeVisualizationTap ("osc", "out", bazalt::engine::PreviewKind::Waveform));
+    auto* tap = processor.getTelemetryHub().subscribeTap ("node:osc:out");
+    REQUIRE (tap != nullptr);
+
+    // Two held notes = two sounding voices, each running the same plan topology
+    // with the same tap attached. Only the most recent one may push.
+    playNote (processor, 60);
+    playNote (processor, 64);
+
+    const auto before = tap->getTotalPushed();
+    runBlocks (processor, 1);
+    CHECK (tap->getTotalPushed() == before + 512);
+}
+
+TEST_CASE ("Unsubscribing after an edit stops the tap for good, and later edits don't revive it",
+           "[plugin][telemetry][M20][ADR-0029]")
+{
+    BazaltAudioProcessor processor;
+    processor.prepareToPlay (44100.0, 512);
+    REQUIRE (processor.getGraphEditController().setGraph (audioInToOutputGraph()).success);
+
+    REQUIRE (processor.subscribeVisualizationTap ("in", "channel.0", bazalt::engine::PreviewKind::Waveform));
+    auto* tap = processor.getTelemetryHub().subscribeTap ("node:in:channel.0");
+    REQUIRE (tap != nullptr);
+
+    REQUIRE (processor.getGraphEditController().setParameterValue ("in", "io.audioIn.bus", 1.0f).success);
+    runBlocks (processor, 2);
+
+    processor.unsubscribeVisualizationTap ("in", "channel.0");
+    const auto atUnsubscribe = tap->getTotalPushed();
+
+    runBlocks (processor, 2);
+    REQUIRE (processor.getGraphEditController().setParameterValue ("in", "io.audioIn.bus", 0.0f).success);
+    runBlocks (processor, 2);
+
+    CHECK (tap->getTotalPushed() == atUnsubscribe);
+}
+
+TEST_CASE ("A subscription whose node is deleted is harmless, and re-attaches if the node returns",
+           "[plugin][telemetry][M20][ADR-0029]")
+{
+    BazaltAudioProcessor processor;
+    processor.prepareToPlay (44100.0, 512);
+    auto& controller = processor.getGraphEditController();
+    REQUIRE (controller.setGraph (audioInToOutputGraph()).success);
+
+    REQUIRE (processor.subscribeVisualizationTap ("in", "channel.0", bazalt::engine::PreviewKind::Waveform));
+    auto* tap = processor.getTelemetryHub().subscribeTap ("node:in:channel.0");
+    REQUIRE (tap != nullptr);
+
+    // Replace the graph with one that has no "in" node at all: the subscription
+    // stays registered but attaches to nothing, and processing must be fine.
+    bazalt::engine::NodeGraph other;
+    other.addNode ({ "other", "io.audioIn", {}, {}, {} });
+    other.addNode ({ "out", "io.output", {}, {}, {} });
+    other.addConnection ({ "other", "channel.0", "out", "in" });
+    other.setOutput ("out", "out");
+    REQUIRE (controller.setGraph (other).success);
+    runBlocks (processor, 2);
+
+    const auto whileAbsent = tap->getTotalPushed();
+    runBlocks (processor, 2);
+    CHECK (tap->getTotalPushed() == whileAbsent);
+
+    // The node comes back under the same id: the preview comes back with it.
+    REQUIRE (controller.setGraph (audioInToOutputGraph()).success);
+    runBlocks (processor, 2);
+    CHECK (tap->getTotalPushed() == whileAbsent + 2 * 512);
+}

@@ -114,18 +114,35 @@ namespace bazalt
 
         /** M20 — subscribes a visualization tap for a real node's output
             port, resolving whether it lives in the global domain (one
-            plan, tapped once, never re-pointed) or the voice domain (8
-            independent plans — tapped on whichever one
-            VoiceManager::getMostRecentlyTriggeredVoice() currently names,
-            re-pointed live as new notes trigger, see handleMidiEvent()).
+            plan) or the voice domain (8 independent plans that all carry
+            the tap, of which only the most recently triggered voice's is
+            switched on — ExecutionPlan::previewTapsEnabled).
             Returns false if no currently-compiled plan resolves this
             (nodeId, portId) to a real output buffer (it doesn't exist, or
             is per-sample-region-internal with no external copy — see
             ExecutionPlan::outputBufferIndexByNodeAndPort's own comment).
             Message-thread only.
+
+            ADR-0029: the subscription is remembered, and
+            applyPreviewSubscriptions() re-attaches it to every freshly
+            compiled plan, so it survives graph edits (a tap pointer lives on
+            a plan, and every edit builds new plans).
         */
         bool subscribeVisualizationTap (const juce::String& nodeId, const juce::String& portId, bazalt::engine::PreviewKind kind);
         void unsubscribeVisualizationTap (const juce::String& nodeId, const juce::String& portId);
+
+        /** ADR-0029: called by GraphEditController just BEFORE it publishes
+            freshly compiled plans (message thread). Re-attaches every live
+            subscription to them and points the voice taps at the current
+            voice. The plans aren't visible to the audio thread yet, so there
+            is nothing to race with. `voicePlans` holds numVoices plans, or is
+            empty for a mono graph; `globalPlan` may be null. A subscription
+            that no longer resolves (its node was deleted, say) is kept and
+            simply doesn't attach - the UI unsubscribes when its preview
+            unmounts.
+        */
+        void applyPreviewSubscriptions (const std::vector<bazalt::engine::ExecutionPlan*>& voicePlans,
+                                        bazalt::engine::ExecutionPlan* globalPlan);
 
     private:
         static BusesProperties makeBusLayout();
@@ -141,7 +158,11 @@ namespace bazalt
         void prepareHostInputsForRange (int startSample) noexcept;
         void processPlanRange (bazalt::engine::ExecutionPlan* plan, int startSample, int numSamples) noexcept;
         void renderMonoRange (bazalt::engine::ExecutionPlan* plan, int startSample, int numSamples) noexcept;
-        void repointVoiceDomainTaps (int newVoiceIndex, const VoicePlanPtrs& voicePlans) noexcept;
+        /** Switches preview taps on for exactly one voice plan (the one most
+            recently triggered, or voice 0 before any note) and off for the
+            rest. Cheap enough to run every block and on every note-on, which
+            also heals the rare mismatch a note-on can cause mid-publish. */
+        void pointVoiceTapsAtCurrentVoice (const VoicePlanPtrs& voicePlans) noexcept;
         void renderVoiceRange (int startSample, int numSamples, const VoicePlanPtrs& voicePlans) noexcept;
         void triggerVoiceNote (bazalt::engine::ExecutionPlan* plan, float pitch, float velocity) noexcept;
 
@@ -252,30 +273,23 @@ namespace bazalt
         bazalt::engine::AnalysisThread analysisThread { telemetryHub };
         std::array<bazalt::engine::Tap*, (size_t) (1 + numAuxBuses)> tapPointers {}; // [0]=main, [1..4]=aux1..4 — cached once in prepareToPlay so processBlock never does a map lookup
 
-        // M20 — voice-domain visualization taps needing re-pointing as the
-        // most-recently-triggered voice changes. Mirrors TelemetryHub::Slot's
-        // own message-thread-claims/audio-thread-reads pattern exactly
-        // (fully configure a slot, THEN set active=true last with release
-        // ordering, so a reader who observes active=true via acquire is
-        // guaranteed to also see a fully-configured bufferIndex/tap) —
-        // scoped here rather than in engine/ since it's specifically about
-        // redirecting between this processor's own 8 per-voice
-        // ExecutionPlans, not a generic engine mechanism. nodeId/portId are
-        // message-thread-owned (unsubscribe lookup only); bufferIndex/tap
-        // are write-once-before-activation, read-only after.
-        struct VoiceDomainTapSlot
+        // M20/ADR-0029 — every live preview subscription. Message-thread only
+        // (subscribe/unsubscribe and GraphEditController's publish all run
+        // there); the audio thread never sees this, only the per-plan tap
+        // pointers and enable flags it leads to.
+        struct PreviewSubscription
         {
-            std::atomic<bool> active { false };
             juce::String nodeId, portId;
-            int bufferIndex = -1;
-            bazalt::engine::Tap* tap = nullptr;
+            bazalt::engine::PreviewKind kind = bazalt::engine::PreviewKind::Waveform;
         };
-        static constexpr int maxVoiceDomainTaps = (int) bazalt::engine::TelemetryHub::maxTaps;
-        std::array<VoiceDomainTapSlot, (size_t) maxVoiceDomainTaps> voiceDomainTapSlots;
-        // Audio-thread-owned only (handleMidiEvent is the only reader/writer,
-        // and it always runs on the audio thread via processBlock) — not
-        // atomic, matches every other audio-thread-only piece of state here.
-        int lastPointedVoiceForTaps = -1;
+        std::vector<PreviewSubscription> previewSubscriptions;
+
+        /** Attaches one subscription's tap to whichever of the given plans
+            resolve it: the global plan first (a node lives in exactly one
+            domain), else every voice plan. Returns whether it resolved. */
+        bool attachPreviewSubscription (const PreviewSubscription& subscription,
+                                        bazalt::engine::ExecutionPlan* globalPlan,
+                                        const std::vector<bazalt::engine::ExecutionPlan*>& voicePlans);
 
         double currentSampleRate = 44100.0;
         int currentBlockSize = 512;

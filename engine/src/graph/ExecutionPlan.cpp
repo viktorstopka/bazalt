@@ -104,7 +104,7 @@ namespace bazalt::engine
         // buffer. Lock-free, no allocation: Tap::push() is itself RT-safe
         // (SPSC ring buffer, overwrite-oldest), and tapForBufferIndex's
         // element loads are plain atomic reads.
-        if (tapForBufferIndex)
+        if (tapForBufferIndex && arePreviewTapsEnabled())
         {
             const auto numBuffers = (int) blockBuffers.size();
             for (int i = 0; i < numBuffers; ++i)

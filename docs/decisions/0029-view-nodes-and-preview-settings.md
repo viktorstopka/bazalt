@@ -1,7 +1,8 @@
 # 0029 — `view.scope/spectrum/meter`: per-instance preview settings, input-port taps, taps that survive a recompile
 
 ## Status
-Proposed (M21). Not implemented — awaiting sign-off on the three open questions at the end.
+Accepted (M21), 2026-09-25 — the three open questions below were answered as recommended. Step 1 (the
+subscription registry) is implemented; steps 2–4 are not yet.
 
 ## Context
 `view.scope`, `view.spectrum` and `view.meter` (NODE_CATALOG.md) are placeable nodes whose whole job is to show
@@ -25,7 +26,7 @@ to see what that means turned up four facts, all verified against the current tr
    after, for a global-domain tap). This already affects `osc.analog`'s and `mix.gain`'s previews, and it is
    fatal for a scope node, whose settings are edited by recompiling.
 
-## Decision (proposed)
+## Decision
 **1. The node instance is the single source of truth for its settings.** `view.scope` etc. hold their
 parameters and override `getPreviews()` to return a `PreviewDescriptor` built from the *current* values. The
 engine reads it from the live node whenever it attaches a tap. The UI needs no settings plumbing: `NodePreview`
@@ -41,9 +42,18 @@ makes `subscribe` return `false`, and the card shows its empty state.
 
 **3. Live subscriptions are a registry, re-applied after every publish.** The processor records each active
 `(nodeId, portId, kind)` on the message thread; `GraphEditController::recompileAndPublish()` ends by
-re-resolving every entry against the fresh plans (both domains, and the voice-domain slots) and re-reading
+re-resolving every entry against the fresh plans (both domains) and, from step 3 on, re-reading
 `getPreviews()`. That fixes fact 4 for every existing preview, and it is also what makes a *parameter edit* of
 a view node take effect: the edit recompiles, the re-attach picks up the new settings.
+
+**3a. Built as a per-plan enable flag, not per-voice slots.** The M20 voice-domain protocol (a slot holding a
+buffer index the audio thread read back) can't survive a recompile - the index changes with the layout - and
+updating it in place races the audio thread. Instead every voice plan carries the tap and
+`ExecutionPlan::previewTapsEnabled` decides which one pushes; `pointVoiceTapsAtCurrentVoice()` sets it to the
+most recently triggered voice on every note-on and at every block start (8 relaxed loads), so a mismatch caused
+by a note-on landing mid-publish heals within a block. The audio thread no longer needs a buffer index at all,
+and `VoiceDomainTapSlot` is gone. `Tap::getTotalPushed()` was added so tests (and later the analysis side) can
+tell a live tap from stale ring contents.
 
 **4. Per-tap settings are a small block of relaxed atomics in the hub's slot**, written on the message thread
 at attach time and read by `AnalysisThread` once per drain. Nothing on the audio thread changes.
@@ -72,16 +82,12 @@ Each step builds, tests and commits on its own, so the first is worth doing what
 3. The settings, one consumer at a time in `AnalysisThread`, each with a test that the frame really changes.
 4. UI: render `enumOptions` as a dropdown (see Q3), verify all three in the running Standalone app.
 
-## Open questions
-- **Q1 — how long may a scope window be?** `view.scope` on an LFO (the headline use of the *Control* input) wants
-  seconds; the tap ring holds ~186 ms at 44.1 kHz. *Recommend:* cap at the ring in this milestone and state the
-  limit on the node; a per-slot rolling min/max history is the follow-up that lifts it.
-- **Q2 — defer `PerNote` trigger and the `Histogram` meter mode?** Both are in the catalog, both need something
-  new (a note marker from the engine; a new frame type). *Recommend:* keep them in the enums, don't expose them
-  yet, and say so.
-- **Q3 — fix the enum-dropdown UI gap alongside?** The UI never reads `enumOptions`, so `triggerMode` and
-  `mode` would render as integer sliders (already reported, and listed in MILESTONES.md as not M21's to fix).
-  Two of the three view nodes are enum-driven. *Recommend:* yes, as step 4.
+## Decisions on the open questions (2026-09-25)
+- **Q1 - scope window length:** capped at the tap ring (8192 samples, ~186 ms at 44.1 kHz) for now, and the
+  node says so. A per-slot rolling min/max history is the follow-up that lifts it.
+- **Q2 - `PerNote` trigger, `Histogram` meter mode:** stay in the enums, are not exposed, and the nodes say so.
+- **Q3 - enum dropdowns:** yes, fixed as part of this work (step 4), since two of the three view nodes are
+  enum-driven.
 
 ## Consequences
 - Every existing preview gains the recompile fix as a side effect.

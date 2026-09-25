@@ -233,6 +233,47 @@ namespace bazalt::engine
                 tapForBufferIndex[(size_t) bufferIndex].store (tap, std::memory_order_release);
         }
 
+        /** The blockBuffers index of an OUTPUT port, or -1 if this plan has no
+            such buffer (no such node/port, or a per-sample-region-internal
+            output — see outputBufferIndexByNodeAndPort). Message thread.
+        */
+        int findOutputBufferIndex (const juce::String& nodeId, const juce::String& portId) const
+        {
+            const auto nodeIt = outputBufferIndexByNodeAndPort.find (nodeId);
+            if (nodeIt == outputBufferIndexByNodeAndPort.end())
+                return -1;
+
+            const auto portIt = nodeIt->second.find (portId);
+            return portIt == nodeIt->second.end() ? -1 : portIt->second;
+        }
+
+        /** ADR-0029: whether process() pushes into this plan's taps at all.
+            Every voice plan of a poly graph carries the same taps, but only
+            the plan of the most recently triggered voice has this on, so a
+            preview follows the note you just played (M20's design choice)
+            without the audio thread ever needing to know a tap's buffer
+            index - which changes on every recompile. On by default, so a
+            plan used on its own (the global plan, tests) behaves as before.
+            A std::atomic member would make ExecutionPlan immovable, and
+            CompileResult returns one by value, hence the tiny movable wrapper.
+        */
+        struct MovableAtomicBool
+        {
+            std::atomic<bool> value { true };
+
+            MovableAtomicBool() = default;
+            MovableAtomicBool (MovableAtomicBool&& other) noexcept : value (other.value.load (std::memory_order_relaxed)) {}
+            MovableAtomicBool& operator= (MovableAtomicBool&& other) noexcept
+            {
+                value.store (other.value.load (std::memory_order_relaxed), std::memory_order_relaxed);
+                return *this;
+            }
+        };
+        MovableAtomicBool previewTapsEnabled;
+
+        void setPreviewTapsEnabled (bool enabled) noexcept { previewTapsEnabled.value.store (enabled, std::memory_order_relaxed); }
+        bool arePreviewTapsEnabled() const noexcept { return previewTapsEnabled.value.load (std::memory_order_relaxed); }
+
         // M18 (ADR-0024): one entry per connected Note-typed output port,
         // each `maxBlockSize` long — BlockStep's noteInputBufferIndex/
         // noteOutputBufferIndex index into this. Per-sample-region (Note

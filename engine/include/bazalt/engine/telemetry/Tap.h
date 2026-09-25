@@ -27,6 +27,13 @@ namespace bazalt::engine
 
         size_t getCapacity() const noexcept { return buffer.size(); }
 
+        /** Total samples ever pushed since prepare() (not clamped to the
+            capacity). A reader that remembers the last value it saw knows
+            exactly how many samples are new - and a test can tell "the
+            audio thread is still pushing" from "there is stale data here".
+        */
+        uint64_t getTotalPushed() const noexcept { return writeIndex.load (std::memory_order_acquire); }
+
         /** Audio thread. Never allocates, never blocks. */
         void push (const float* samples, int numSamples) noexcept
         {

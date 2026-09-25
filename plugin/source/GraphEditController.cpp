@@ -429,9 +429,15 @@ namespace bazalt
             if (! monoCompile.success)
                 return { false, monoCompile.errorMessage };
 
+            auto monoPlan = std::make_unique<bazalt::engine::ExecutionPlan> (std::move (monoCompile.plan));
+
+            // ADR-0029: re-attach live preview taps to the new plan while
+            // nothing else can see it (a tap pointer lives on a plan).
+            processor.applyPreviewSubscriptions ({}, monoPlan.get());
+
             auto& swapper = processor.getGlobalPlanSwapper();
             swapper.reclaim();
-            const auto published = swapper.publish (std::make_unique<bazalt::engine::ExecutionPlan> (std::move (monoCompile.plan)));
+            const auto published = swapper.publish (std::move (monoPlan));
             jassert (published);
             juce::ignoreUnused (published);
 
@@ -475,6 +481,19 @@ namespace bazalt
 
             newGlobalPlan = std::make_unique<bazalt::engine::ExecutionPlan> (std::move (globalCompileResult.plan));
             newGlobalPlan->externalInputNodeId = split.instanceMixNodeId;
+        }
+
+        // ADR-0029: re-attach live preview taps to the new plans before any of
+        // them is published - until then the audio thread cannot see them, so
+        // this cannot race. Without it every edit silently detached every
+        // preview (a tap pointer lives on a plan, and every edit builds new ones).
+        {
+            std::vector<bazalt::engine::ExecutionPlan*> voicePlanPointers;
+            voicePlanPointers.reserve (newVoicePlans.size());
+            for (auto& plan : newVoicePlans)
+                voicePlanPointers.push_back (plan.get());
+
+            processor.applyPreviewSubscriptions (voicePlanPointers, newGlobalPlan.get());
         }
 
         // Every compile succeeded — publish. Never partially publish on a

@@ -5,6 +5,7 @@
 #include "bazalt/engine/patch/PatchSerializer.h"
 #include "bazalt/engine/nodes/InstanceMixNode.h"
 #include "bazalt/engine/nodes/IoNoteInNode.h"
+#include <algorithm>
 #include <array>
 #include <cstring>
 
@@ -176,24 +177,18 @@ namespace bazalt
         return plan == nullptr ? nullptr : dynamic_cast<bazalt::engine::nodes::IoNoteInNode*> (plan->getNodeById (noteInNodeId));
     }
 
-    void BazaltAudioProcessor::repointVoiceDomainTaps (int newVoiceIndex, const VoicePlanPtrs& voicePlans) noexcept
+    void BazaltAudioProcessor::pointVoiceTapsAtCurrentVoice (const VoicePlanPtrs& voicePlans) noexcept
     {
-        if (newVoiceIndex == lastPointedVoiceForTaps)
-            return;
+        const auto mostRecent = voiceManager.getMostRecentlyTriggeredVoice();
+        const auto target = mostRecent >= 0 ? mostRecent : 0;
 
-        const auto oldVoiceIndex = lastPointedVoiceForTaps;
-        lastPointedVoiceForTaps = newVoiceIndex;
-
-        for (auto& slot : voiceDomainTapSlots)
+        for (int i = 0; i < numVoices; ++i)
         {
-            if (! slot.active.load (std::memory_order_acquire))
-                continue;
+            auto* plan = voicePlans[(size_t) i];
+            const auto shouldBeOn = i == target;
 
-            if (oldVoiceIndex >= 0 && voicePlans[(size_t) oldVoiceIndex] != nullptr)
-                voicePlans[(size_t) oldVoiceIndex]->setTapForBufferIndex (slot.bufferIndex, nullptr);
-
-            if (voicePlans[(size_t) newVoiceIndex] != nullptr)
-                voicePlans[(size_t) newVoiceIndex]->setTapForBufferIndex (slot.bufferIndex, slot.tap);
+            if (plan != nullptr && plan->arePreviewTapsEnabled() != shouldBeOn)
+                plan->setPreviewTapsEnabled (shouldBeOn);
         }
     }
 
@@ -233,7 +228,7 @@ namespace bazalt
             // whether it went straight to Active or is still fading out its
             // stolen predecessor — same "most recently triggered" value
             // VoiceManager itself now tracks.
-            repointVoiceDomainTaps (voiceIndex, voicePlans);
+            pointVoiceTapsAtCurrentVoice (voicePlans);
 
             // M17: a stolen voice defers its actual retrigger until its
             // fade-out completes (renderVoiceRange) — DOMAINS.md §5's
@@ -296,100 +291,128 @@ namespace bazalt
         }
     }
 
+    bool BazaltAudioProcessor::attachPreviewSubscription (const PreviewSubscription& subscription,
+                                                         bazalt::engine::ExecutionPlan* globalPlan,
+                                                         const std::vector<bazalt::engine::ExecutionPlan*>& voicePlans)
+    {
+        const auto tapName = "node:" + subscription.nodeId + ":" + subscription.portId;
+        const auto needed = frameTypesNeededFor (subscription.kind);
+
+        // A node lives in exactly one domain (DomainSplitter's own
+        // invariant), so the global plan - when there is one - is checked
+        // first and is the simpler case: one plan, one tap.
+        if (globalPlan != nullptr)
+        {
+            const auto bufferIndex = globalPlan->findOutputBufferIndex (subscription.nodeId, subscription.portId);
+            if (bufferIndex >= 0)
+            {
+                // subscribeTap is idempotent for a name already held and, if the
+                // slot was LRU-evicted in the meantime, claims a fresh one - so
+                // asking again on every attach always yields the live Tap*.
+                globalPlan->setTapForBufferIndex (bufferIndex, telemetryHub.subscribeTap (tapName, needed));
+                return true;
+            }
+        }
+
+        // Voice domain: every voice plan shares one topology, and every one
+        // carries the tap; pointVoiceTapsAtCurrentVoice() decides which one
+        // actually pushes.
+        bazalt::engine::Tap* tap = nullptr;
+        for (auto* plan : voicePlans)
+        {
+            if (plan == nullptr)
+                continue;
+
+            const auto bufferIndex = plan->findOutputBufferIndex (subscription.nodeId, subscription.portId);
+            if (bufferIndex < 0)
+                continue;
+
+            if (tap == nullptr)
+                tap = telemetryHub.subscribeTap (tapName, needed);
+
+            plan->setTapForBufferIndex (bufferIndex, tap);
+        }
+
+        return tap != nullptr;
+    }
+
+    namespace
+    {
+        // The plans currently live in a swapper, as raw pointers, in the shape
+        // attachPreviewSubscription() wants.
+        std::vector<bazalt::engine::ExecutionPlan*> peekVoicePlans (
+            std::array<bazalt::engine::PlanSwapper, BazaltAudioProcessor::numVoices>& swappers)
+        {
+            std::vector<bazalt::engine::ExecutionPlan*> plans;
+            plans.reserve (swappers.size());
+            for (auto& swapper : swappers)
+                plans.push_back (swapper.peekCurrentPlan());
+            return plans;
+        }
+    }
+
     bool BazaltAudioProcessor::subscribeVisualizationTap (const juce::String& nodeId, const juce::String& portId, bazalt::engine::PreviewKind kind)
     {
-        // Global domain checked first: a node only ever lives in one domain
-        // (DomainSplitter's own invariant), and the global plan — when one
-        // exists — is the simpler case (exactly one plan, never re-pointed).
-        if (hasGlobalDomain.load (std::memory_order_acquire) || monoOnlyGraph.load (std::memory_order_acquire))
+        // The global swapper can still hold a plan from an earlier graph
+        // shape, so it only counts while the graph actually has one.
+        const auto hasGlobal = hasGlobalDomain.load (std::memory_order_acquire) || monoOnlyGraph.load (std::memory_order_acquire);
+        auto* globalPlan = hasGlobal ? globalPlanSwapper.peekCurrentPlan() : nullptr;
+
+        PreviewSubscription subscription { nodeId, portId, kind };
+        if (! attachPreviewSubscription (subscription, globalPlan, peekVoicePlans (voicePlanSwappers)))
+            return false;
+
+        // Remember it (replacing any earlier entry for the same port, which is
+        // how a kind change takes effect) so a recompile can re-attach it.
+        for (auto& existing : previewSubscriptions)
         {
-            if (auto* plan = globalPlanSwapper.peekCurrentPlan())
+            if (existing.nodeId == nodeId && existing.portId == portId)
             {
-                const auto nodeIt = plan->outputBufferIndexByNodeAndPort.find (nodeId);
-                if (nodeIt != plan->outputBufferIndexByNodeAndPort.end())
-                {
-                    const auto portIt = nodeIt->second.find (portId);
-                    if (portIt != nodeIt->second.end())
-                    {
-                        auto* tap = telemetryHub.subscribeTap ("node:" + nodeId + ":" + portId, frameTypesNeededFor (kind));
-                        plan->setTapForBufferIndex (portIt->second, tap);
-                        return true;
-                    }
-                }
+                existing = std::move (subscription);
+                return true;
             }
         }
 
-        // Voice domain: every voice's plan shares the same topology (all
-        // compiled from the same NodeGraph), so voice 0's plan is only ever
-        // used here to resolve the buffer index — the actual tap gets
-        // pointed at whichever voice is currently most-recently-triggered
-        // (or voice 0 if no note has ever been played yet).
-        auto* representativePlan = voicePlanSwappers[0].peekCurrentPlan();
-        if (representativePlan == nullptr)
-            return false;
-
-        const auto nodeIt = representativePlan->outputBufferIndexByNodeAndPort.find (nodeId);
-        if (nodeIt == representativePlan->outputBufferIndexByNodeAndPort.end())
-            return false;
-        const auto portIt = nodeIt->second.find (portId);
-        if (portIt == nodeIt->second.end())
-            return false;
-
-        auto* freeSlot = static_cast<VoiceDomainTapSlot*> (nullptr);
-        for (auto& slot : voiceDomainTapSlots)
-        {
-            if (! slot.active.load (std::memory_order_acquire))
-            {
-                freeSlot = &slot;
-                break;
-            }
-        }
-        if (freeSlot == nullptr)
-            return false; // all maxVoiceDomainTaps slots in use — bounded, matches TelemetryHub's own cap
-
-        auto* tap = telemetryHub.subscribeTap ("node:" + nodeId + ":" + portId, frameTypesNeededFor (kind));
-        freeSlot->nodeId = nodeId;
-        freeSlot->portId = portId;
-        freeSlot->bufferIndex = portIt->second;
-        freeSlot->tap = tap;
-        freeSlot->active.store (true, std::memory_order_release);
-
-        const auto currentVoice = voiceManager.getMostRecentlyTriggeredVoice();
-        const auto voiceToPoint = currentVoice >= 0 ? currentVoice : 0;
-        if (auto* plan = voicePlanSwappers[(size_t) voiceToPoint].peekCurrentPlan())
-            plan->setTapForBufferIndex (portIt->second, tap);
-
+        previewSubscriptions.push_back (std::move (subscription));
         return true;
     }
 
     void BazaltAudioProcessor::unsubscribeVisualizationTap (const juce::String& nodeId, const juce::String& portId)
     {
-        if (auto* plan = globalPlanSwapper.peekCurrentPlan())
+        previewSubscriptions.erase (std::remove_if (previewSubscriptions.begin(), previewSubscriptions.end(),
+                                                    [&] (const PreviewSubscription& s) { return s.nodeId == nodeId && s.portId == portId; }),
+                                    previewSubscriptions.end());
+
+        // Detach from every plan a swapper still holds - including a global
+        // plan left over from an earlier graph shape, which is harmless to
+        // clear and would otherwise keep a pointer to a released tap slot.
+        auto detach = [&] (bazalt::engine::ExecutionPlan* plan)
         {
-            const auto nodeIt = plan->outputBufferIndexByNodeAndPort.find (nodeId);
-            if (nodeIt != plan->outputBufferIndexByNodeAndPort.end())
-            {
-                const auto portIt = nodeIt->second.find (portId);
-                if (portIt != nodeIt->second.end())
-                    plan->setTapForBufferIndex (portIt->second, nullptr);
-            }
-        }
+            if (plan != nullptr)
+                plan->setTapForBufferIndex (plan->findOutputBufferIndex (nodeId, portId), nullptr);
+        };
 
-        for (auto& slot : voiceDomainTapSlots)
-        {
-            if (! slot.active.load (std::memory_order_acquire) || slot.nodeId != nodeId || slot.portId != portId)
-                continue;
-
-            const auto currentVoice = voiceManager.getMostRecentlyTriggeredVoice();
-            const auto voiceToPoint = currentVoice >= 0 ? currentVoice : 0;
-            if (auto* plan = voicePlanSwappers[(size_t) voiceToPoint].peekCurrentPlan())
-                plan->setTapForBufferIndex (slot.bufferIndex, nullptr);
-
-            slot.active.store (false, std::memory_order_release);
-            break;
-        }
+        detach (globalPlanSwapper.peekCurrentPlan());
+        for (auto* plan : peekVoicePlans (voicePlanSwappers))
+            detach (plan);
 
         telemetryHub.unsubscribeTap ("node:" + nodeId + ":" + portId);
+    }
+
+    void BazaltAudioProcessor::applyPreviewSubscriptions (const std::vector<bazalt::engine::ExecutionPlan*>& voicePlans,
+                                                          bazalt::engine::ExecutionPlan* globalPlan)
+    {
+        for (const auto& subscription : previewSubscriptions)
+            attachPreviewSubscription (subscription, globalPlan, voicePlans);
+
+        // Point the voice taps at the current voice before the plans go live.
+        // A default-on plan would otherwise push from every voice until the
+        // audio thread's next block start corrects it.
+        VoicePlanPtrs pointers {};
+        for (size_t i = 0; i < pointers.size() && i < voicePlans.size(); ++i)
+            pointers[i] = voicePlans[i];
+
+        pointVoiceTapsAtCurrentVoice (pointers);
     }
 
     void BazaltAudioProcessor::renderVoiceRange (int startSample, int numSamples, const VoicePlanPtrs& voicePlans) noexcept
@@ -739,6 +762,11 @@ namespace bazalt
                 voicePlanPtrs[(size_t) i] = voicePlanSwappers[(size_t) i].getCurrentPlanForAudioThread();
 
             macroParameters.applyToPlans (voicePlanPtrs.data(), numVoices, numSamples);
+
+            // ADR-0029: switch the preview taps on for exactly one voice plan. Cheap
+            // (8 relaxed loads), and it also corrects the fresh plans a publish just
+            // made live, so it is not enough to rely on the note-on path alone.
+            pointVoiceTapsAtCurrentVoice (voicePlanPtrs);
         }
 
         auto renderRange = [&] (int start, int count)
