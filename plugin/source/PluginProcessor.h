@@ -117,16 +117,20 @@ namespace bazalt
             plan) or the voice domain (8 independent plans that all carry
             the tap, of which only the most recently triggered voice's is
             switched on — ExecutionPlan::previewTapsEnabled).
-            Returns false if no currently-compiled plan resolves this
-            (nodeId, portId) to a real output buffer (it doesn't exist, or
-            is per-sample-region-internal with no external copy — see
-            ExecutionPlan::outputBufferIndexByNodeAndPort's own comment).
+            Returns false only if no currently-compiled plan has a node with
+            this port (input or output) at all. A port that exists but has
+            nothing to tap yet - an unwired input on a view node, or an
+            output buried inside a per-sample region (see
+            ExecutionPlan::outputBufferIndexByNodeAndPort's comment) - is
+            accepted as PENDING: the hub tap is claimed, nothing is pushed
+            into it, and it starts the moment a recompile resolves the port.
             Message-thread only.
 
             ADR-0029: the subscription is remembered, and
             applyPreviewSubscriptions() re-attaches it to every freshly
             compiled plan, so it survives graph edits (a tap pointer lives on
-            a plan, and every edit builds new plans).
+            a plan, and every edit builds new plans). A port on a view node
+            resolves to the buffer wired into it.
         */
         bool subscribeVisualizationTap (const juce::String& nodeId, const juce::String& portId, bazalt::engine::PreviewKind kind);
         void unsubscribeVisualizationTap (const juce::String& nodeId, const juce::String& portId);
@@ -281,13 +285,14 @@ namespace bazalt
         {
             juce::String nodeId, portId;
             bazalt::engine::PreviewKind kind = bazalt::engine::PreviewKind::Waveform;
+            bazalt::engine::Tap* tap = nullptr; // as of the last attach; how unsubscribe finds it on every plan
         };
         std::vector<PreviewSubscription> previewSubscriptions;
 
         /** Attaches one subscription's tap to whichever of the given plans
             resolve it: the global plan first (a node lives in exactly one
             domain), else every voice plan. Returns whether it resolved. */
-        bool attachPreviewSubscription (const PreviewSubscription& subscription,
+        bool attachPreviewSubscription (PreviewSubscription& subscription,
                                         bazalt::engine::ExecutionPlan* globalPlan,
                                         const std::vector<bazalt::engine::ExecutionPlan*>& voicePlans);
 

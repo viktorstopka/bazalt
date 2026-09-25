@@ -109,8 +109,9 @@ namespace bazalt::engine
             const auto numBuffers = (int) blockBuffers.size();
             for (int i = 0; i < numBuffers; ++i)
             {
-                if (auto* tap = tapForBufferIndex[(size_t) i].load (std::memory_order_acquire))
-                    tap->push (blockBuffers[(size_t) i].getBlock().getChannelPointer (0), numSamples);
+                for (int n = 0; n < maxTapsPerBuffer; ++n)
+                    if (auto* tap = tapForBufferIndex[(size_t) (i * maxTapsPerBuffer + n)].load (std::memory_order_acquire))
+                        tap->push (blockBuffers[(size_t) i].getBlock().getChannelPointer (0), numSamples);
             }
         }
     }

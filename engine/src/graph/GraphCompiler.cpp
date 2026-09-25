@@ -827,7 +827,21 @@ namespace bazalt::engine
             plan.outputBufferIndexByNodeAndPort[nodeId][portId] = location.index;
         }
 
-        plan.tapForBufferIndex = std::make_unique<std::atomic<Tap*>[]> (plan.blockBuffers.size());
+        // ADR-0029: the same for input ports - what is wired INTO (node, port).
+        // An input fed from a per-sample region's internal scalar has no block
+        // buffer to point at, exactly like the output case above.
+        for (const auto& [toKey, fromKey] : incomingSource)
+        {
+            const auto locationIt = outputLocation.find (fromKey);
+            if (locationIt == outputLocation.end() || locationIt->second.kind != ExecutionPlan::InputRef::Kind::BlockBuffer)
+                continue;
+
+            const auto& nodeId = graphNodes[(size_t) toKey.slot].id;
+            const auto& portId = inputPortsBySlot[(size_t) toKey.slot][(size_t) toKey.port].id;
+            plan.inputSourceBufferIndexByNodeAndPort[nodeId][portId] = locationIt->second.index;
+        }
+
+        plan.tapForBufferIndex = std::make_unique<std::atomic<Tap*>[]> (plan.blockBuffers.size() * (size_t) ExecutionPlan::maxTapsPerBuffer);
 
         result.success = true;
         return result;

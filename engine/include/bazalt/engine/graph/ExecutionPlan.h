@@ -210,27 +210,69 @@ namespace bazalt::engine
         // read on the audio thread.
         std::unordered_map<juce::String, std::unordered_map<juce::String, int>> outputBufferIndexByNodeAndPort;
 
-        // M20: one slot per blockBuffers entry (same size, same index),
-        // holding the Tap* currently subscribed to that output — or
-        // nullptr. A unique_ptr<atomic<Tap*>[]> rather than
-        // vector<atomic<Tap*>> specifically so ExecutionPlan stays movable
-        // (CompileResult returns a plan by value; std::atomic is neither
-        // copyable nor movable, but the pointer to this array is) — only
-        // the array's OWN elements need to be individually atomic, not the
-        // plan's ownership of the array itself. Allocated once at compile
-        // time (GraphCompiler::compile(), message thread — same cost class
-        // as allocating blockBuffers itself), every element value-
-        // initialized to nullptr. setTapForBufferIndex() is the only way
-        // to mutate an element afterward: a single atomic pointer store,
-        // lock-free, safe to call from the message thread while the audio
-        // thread concurrently calls process() on this same plan — no
-        // recompile needed to add or remove a tap.
+        // ADR-0029: the same, for INPUT ports: (nodeId, inputPortId) -> the
+        // blockBuffers index of whatever is wired into that input. A view
+        // node has no outputs, so this is how its preview finds the signal it
+        // is showing. An unconnected input, or one fed from inside a
+        // per-sample region, has no entry.
+        std::unordered_map<juce::String, std::unordered_map<juce::String, int>> inputSourceBufferIndexByNodeAndPort;
+
+        // M20/ADR-0029: up to maxTapsPerBuffer taps per blockBuffers entry,
+        // stored flat (bufferIndex * maxTapsPerBuffer + n), each holding a Tap*
+        // currently subscribed to that buffer - or nullptr. Several are needed
+        // because one buffer is often watched twice: a node's own preview on its
+        // output, plus a view.scope/spectrum/meter wired to that same cable.
+        // A unique_ptr<atomic<Tap*>[]> rather than vector<atomic<Tap*>>
+        // specifically so ExecutionPlan stays movable (CompileResult returns a
+        // plan by value; std::atomic is neither copyable nor movable, but the
+        // pointer to this array is). Allocated once at compile time
+        // (GraphCompiler::compile(), message thread), every element
+        // value-initialised to nullptr. addTapForBufferIndex()/removeTap() are
+        // the only ways to mutate an element afterward: single atomic pointer
+        // stores from the ONE message thread, lock-free, safe while the audio
+        // thread concurrently calls process() on this same plan - no recompile
+        // needed to add or remove a tap.
+        static constexpr int maxTapsPerBuffer = 4;
         std::unique_ptr<std::atomic<Tap*>[]> tapForBufferIndex;
 
-        void setTapForBufferIndex (int bufferIndex, Tap* tap) noexcept
+        /** Message thread. Adds `tap` to a buffer's set; false if the index
+            is out of range or all maxTapsPerBuffer places are taken. Adding a
+            tap already present is a successful no-op.
+        */
+        bool addTapForBufferIndex (int bufferIndex, Tap* tap) noexcept
         {
-            if (tapForBufferIndex && bufferIndex >= 0 && bufferIndex < (int) blockBuffers.size())
-                tapForBufferIndex[(size_t) bufferIndex].store (tap, std::memory_order_release);
+            if (! tapForBufferIndex || tap == nullptr || bufferIndex < 0 || bufferIndex >= (int) blockBuffers.size())
+                return false;
+
+            auto* firstFree = static_cast<std::atomic<Tap*>*> (nullptr);
+            for (int n = 0; n < maxTapsPerBuffer; ++n)
+            {
+                auto& slot = tapForBufferIndex[(size_t) (bufferIndex * maxTapsPerBuffer + n)];
+                const auto current = slot.load (std::memory_order_relaxed);
+
+                if (current == tap)
+                    return true;
+                if (current == nullptr && firstFree == nullptr)
+                    firstFree = &slot;
+            }
+
+            if (firstFree == nullptr)
+                return false;
+
+            firstFree->store (tap, std::memory_order_release);
+            return true;
+        }
+
+        /** Message thread. Removes `tap` from every buffer of this plan. */
+        void removeTap (Tap* tap) noexcept
+        {
+            if (! tapForBufferIndex || tap == nullptr)
+                return;
+
+            const auto numSlots = blockBuffers.size() * (size_t) maxTapsPerBuffer;
+            for (size_t i = 0; i < numSlots; ++i)
+                if (tapForBufferIndex[i].load (std::memory_order_relaxed) == tap)
+                    tapForBufferIndex[i].store (nullptr, std::memory_order_release);
         }
 
         /** The blockBuffers index of an OUTPUT port, or -1 if this plan has no
@@ -241,6 +283,25 @@ namespace bazalt::engine
         {
             const auto nodeIt = outputBufferIndexByNodeAndPort.find (nodeId);
             if (nodeIt == outputBufferIndexByNodeAndPort.end())
+                return -1;
+
+            const auto portIt = nodeIt->second.find (portId);
+            return portIt == nodeIt->second.end() ? -1 : portIt->second;
+        }
+
+        /** The buffer a preview on (nodeId, portId) should tap: the port's own
+            output buffer if it is an output, else the buffer feeding it if it
+            is an input, else -1. Ids are unique across a node's inputs and
+            outputs (asserted by a test over every registered node type), so
+            the order only matters for a node that broke that rule.
+        */
+        int findTappableBufferIndex (const juce::String& nodeId, const juce::String& portId) const
+        {
+            if (const auto outputIndex = findOutputBufferIndex (nodeId, portId); outputIndex >= 0)
+                return outputIndex;
+
+            const auto nodeIt = inputSourceBufferIndexByNodeAndPort.find (nodeId);
+            if (nodeIt == inputSourceBufferIndexByNodeAndPort.end())
                 return -1;
 
             const auto portIt = nodeIt->second.find (portId);

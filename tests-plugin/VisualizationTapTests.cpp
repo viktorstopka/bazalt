@@ -279,3 +279,160 @@ TEST_CASE ("A subscription whose node is deleted is harmless, and re-attaches if
     runBlocks (processor, 2);
     CHECK (tap->getTotalPushed() == whileAbsent + 2 * 512);
 }
+
+// ---- ADR-0029: view.scope / view.spectrum / view.meter ----
+//
+// A viewer has one input and no outputs; its preview taps the buffer wired into
+// that input.
+
+namespace
+{
+    // audioIn -> output, plus the given viewers; none wired yet.
+    bazalt::engine::NodeGraph graphWithViewers (std::initializer_list<std::pair<const char*, const char*>> viewers)
+    {
+        auto graph = audioInToOutputGraph();
+        for (const auto& [id, type] : viewers)
+            graph.addNode ({ id, type, {}, {}, {} });
+        return graph;
+    }
+
+    void wire (BazaltAudioProcessor& processor, const char* viewerId)
+    {
+        const auto result = processor.getGraphEditController().connect ("in", "channel.0", viewerId, "in");
+        INFO (result.errorMessage);
+        REQUIRE (result.success);
+    }
+
+    bazalt::engine::Tap* tapFor (BazaltAudioProcessor& processor, const juce::String& nodeId, const juce::String& portId)
+    {
+        return processor.getTelemetryHub().subscribeTap ("node:" + nodeId + ":" + portId);
+    }
+}
+
+TEST_CASE ("A view.scope's preview taps the signal wired into its input", "[plugin][telemetry][view][ADR-0029]")
+{
+    BazaltAudioProcessor processor;
+    processor.prepareToPlay (44100.0, 512);
+    REQUIRE (processor.getGraphEditController().setGraph (graphWithViewers ({ { "scope", "view.scope" } })).success);
+    wire (processor, "scope");
+
+    REQUIRE (processor.subscribeVisualizationTap ("scope", "in", bazalt::engine::PreviewKind::Waveform));
+    auto* tap = tapFor (processor, "scope", "in");
+    REQUIRE (tap != nullptr);
+
+    runBlocks (processor, 2, 0.25f);
+    CHECK (tap->getTotalPushed() == 2 * 512);
+
+    float readBack[512] {};
+    REQUIRE (tap->readLatest (readBack, 512) == 512);
+    for (auto sample : readBack)
+        CHECK (sample == 0.25f); // exactly what was wired in, unmodified
+}
+
+TEST_CASE ("A viewer placed before it is wired is pending, and comes alive when a cable arrives",
+           "[plugin][telemetry][view][ADR-0029]")
+{
+    BazaltAudioProcessor processor;
+    processor.prepareToPlay (44100.0, 512);
+    REQUIRE (processor.getGraphEditController().setGraph (graphWithViewers ({ { "scope", "view.scope" } })).success);
+
+    // The port exists, nothing is wired to it: accepted, but silent.
+    REQUIRE (processor.subscribeVisualizationTap ("scope", "in", bazalt::engine::PreviewKind::Waveform));
+    auto* tap = tapFor (processor, "scope", "in");
+    REQUIRE (tap != nullptr);
+
+    runBlocks (processor, 2, 0.25f);
+    CHECK (tap->getTotalPushed() == 0);
+
+    wire (processor, "scope"); // a graph edit, so a recompile: the re-attach binds it
+
+    runBlocks (processor, 2, 0.25f);
+    CHECK (tap->getTotalPushed() == 2 * 512);
+
+    // ... and unplugging it stops the flow again without breaking anything.
+    REQUIRE (processor.getGraphEditController().disconnect ("in", "channel.0", "scope", "in").success);
+    const auto atDisconnect = tap->getTotalPushed();
+    runBlocks (processor, 2, 0.25f);
+    CHECK (tap->getTotalPushed() == atDisconnect);
+}
+
+TEST_CASE ("A subscription to a port the node does not have is still refused",
+           "[plugin][telemetry][view][ADR-0029]")
+{
+    BazaltAudioProcessor processor;
+    processor.prepareToPlay (44100.0, 512);
+    REQUIRE (processor.getGraphEditController().setGraph (graphWithViewers ({ { "scope", "view.scope" } })).success);
+
+    CHECK_FALSE (processor.subscribeVisualizationTap ("scope", "out", bazalt::engine::PreviewKind::Waveform)); // a viewer has no output
+    CHECK_FALSE (processor.subscribeVisualizationTap ("no-such-viewer", "in", bazalt::engine::PreviewKind::Waveform));
+}
+
+TEST_CASE ("A source's own preview and two viewers on the same cable all receive it",
+           "[plugin][telemetry][view][ADR-0029]")
+{
+    BazaltAudioProcessor processor;
+    processor.prepareToPlay (44100.0, 512);
+    REQUIRE (processor.getGraphEditController().setGraph (
+                 graphWithViewers ({ { "scope", "view.scope" }, { "meter", "view.meter" } })).success);
+    wire (processor, "scope");
+    wire (processor, "meter");
+
+    // The source node's own preview on its output, and the two viewers on its cable:
+    // three subscriptions, one buffer.
+    REQUIRE (processor.subscribeVisualizationTap ("in", "channel.0", bazalt::engine::PreviewKind::Waveform));
+    REQUIRE (processor.subscribeVisualizationTap ("scope", "in", bazalt::engine::PreviewKind::Waveform));
+    REQUIRE (processor.subscribeVisualizationTap ("meter", "in", bazalt::engine::PreviewKind::Meter));
+
+    auto* own = tapFor (processor, "in", "channel.0");
+    auto* scope = tapFor (processor, "scope", "in");
+    auto* meter = tapFor (processor, "meter", "in");
+    REQUIRE ((own != nullptr && scope != nullptr && meter != nullptr));
+    CHECK (own != scope);
+    CHECK (scope != meter);
+
+    runBlocks (processor, 2, 0.5f);
+    CHECK (own->getTotalPushed() == 2 * 512);
+    CHECK (scope->getTotalPushed() == 2 * 512);
+    CHECK (meter->getTotalPushed() == 2 * 512);
+
+    // They survive an edit together, too.
+    REQUIRE (processor.getGraphEditController().setParameterValue ("in", "io.audioIn.bus", 1.0f).success);
+    runBlocks (processor, 1);
+    CHECK (own->getTotalPushed() == 3 * 512);
+    CHECK (scope->getTotalPushed() == 3 * 512);
+    CHECK (meter->getTotalPushed() == 3 * 512);
+}
+
+TEST_CASE ("view.scope and view.meter take Audio and Control; view.spectrum takes Audio only; none takes a Note",
+           "[plugin][view][ADR-0029]")
+{
+    BazaltAudioProcessor processor;
+    processor.prepareToPlay (44100.0, 512);
+    auto& controller = processor.getGraphEditController();
+
+    bazalt::engine::NodeGraph graph;
+    graph.addNode ({ "audio", "io.audioIn", {}, {}, {} });
+    graph.addNode ({ "control", "util.constant", {}, { { "util.constant.value", 0.5f } }, {} });
+    graph.addNode ({ "notes", "io.noteIn", {}, {}, {} });
+    graph.addNode ({ "scope", "view.scope", {}, {}, {} });
+    graph.addNode ({ "spectrum", "view.spectrum", {}, {}, {} });
+    graph.addNode ({ "meter", "view.meter", {}, {}, {} });
+    graph.addNode ({ "out", "io.output", {}, {}, {} });
+    graph.addConnection ({ "audio", "channel.0", "out", "in" });
+    graph.setOutput ("out", "out");
+    REQUIRE (controller.setGraph (graph).success);
+
+    CHECK (controller.connect ("audio", "channel.0", "scope", "in").success);
+    CHECK (controller.connect ("audio", "channel.0", "spectrum", "in").success);
+    CHECK (controller.connect ("audio", "channel.0", "meter", "in").success);
+
+    REQUIRE (controller.disconnect ("audio", "channel.0", "scope", "in").success);
+    REQUIRE (controller.disconnect ("audio", "channel.0", "meter", "in").success);
+
+    CHECK (controller.connect ("control", "out", "scope", "in").success);
+    CHECK (controller.connect ("control", "out", "meter", "in").success);
+    CHECK_FALSE (controller.connect ("control", "out", "spectrum", "in").success); // no Control->Audio without an adapter
+
+    REQUIRE (controller.disconnect ("control", "out", "scope", "in").success);
+    CHECK_FALSE (controller.connect ("notes", "notes", "scope", "in").success);
+}

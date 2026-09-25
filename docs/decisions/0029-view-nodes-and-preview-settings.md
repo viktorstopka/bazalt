@@ -2,7 +2,8 @@
 
 ## Status
 Accepted (M21), 2026-09-25 — the three open questions below were answered as recommended. Step 1 (the
-subscription registry) is implemented; steps 2–4 are not yet.
+subscription registry) and step 2 (input-port taps and the three nodes, with the fixed analysis) are implemented;
+steps 3–4 are not yet.
 
 ## Context
 `view.scope`, `view.spectrum` and `view.meter` (NODE_CATALOG.md) are placeable nodes whose whole job is to show
@@ -54,6 +55,21 @@ most recently triggered voice on every note-on and at every block start (8 relax
 by a note-on landing mid-publish heals within a block. The audio thread no longer needs a buffer index at all,
 and `VoiceDomainTapSlot` is gone. `Tap::getTotalPushed()` was added so tests (and later the analysis side) can
 tell a live tap from stale ring contents.
+
+**3b. Found while building step 2 — three consequences of "a viewer taps the buffer wired into its input".**
+- *A buffer needs several taps.* A source's own preview (`osc.analog`'s waveform on `out`) and a `view.scope` on
+  that cable resolve to the same buffer, and the plan held one tap pointer per buffer, so the second attach
+  silently displaced the first. `ExecutionPlan` now holds `maxTapsPerBuffer` (4) per buffer, with
+  `addTapForBufferIndex()`/`removeTap()`; a fifth is refused rather than displacing anyone.
+- *A viewer is placed before it is wired.* Its first subscribe therefore finds an input with nothing behind it,
+  and refusing it would leave the scope blank for good after the user connects a cable. A subscription to a port
+  that exists but doesn't resolve is accepted as **pending**: the hub tap is claimed, nothing is pushed, and the
+  next recompile's re-attach binds it. `subscribeVisualizationTap` returns `false` only for a port the node
+  doesn't have. (The same applies to an output buried in a per-sample region: pending forever, not refused.)
+- *Port ids must be unique across a node's inputs and outputs*, because `findTappableBufferIndex()` and the tap
+  name `node:<id>:<port>` identify a port by id alone. A test now asserts it for every registered type.
+- Known limit: unplugging a viewer leaves its last captured frame on screen (the ring keeps its contents and the
+  analysis republishes them), the same as a scope in a stopped host.
 
 **4. Per-tap settings are a small block of relaxed atomics in the hub's slot**, written on the message thread
 at attach time and read by `AnalysisThread` once per drain. Nothing on the audio thread changes.

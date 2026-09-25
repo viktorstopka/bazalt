@@ -291,53 +291,73 @@ namespace bazalt
         }
     }
 
-    bool BazaltAudioProcessor::attachPreviewSubscription (const PreviewSubscription& subscription,
+    bool BazaltAudioProcessor::attachPreviewSubscription (PreviewSubscription& subscription,
                                                          bazalt::engine::ExecutionPlan* globalPlan,
                                                          const std::vector<bazalt::engine::ExecutionPlan*>& voicePlans)
     {
-        const auto tapName = "node:" + subscription.nodeId + ":" + subscription.portId;
-        const auto needed = frameTypesNeededFor (subscription.kind);
+        // Claim (or re-claim) the hub slot first, whether or not the port
+        // resolves yet: subscribeTap is idempotent for a name already held and,
+        // if the slot was LRU-evicted in the meantime, claims a fresh one - so
+        // asking again on every attach always yields the live Tap*. Holding it
+        // while the port is unresolved is what lets the UI's polling find the
+        // tap the moment a cable is wired.
+        subscription.tap = telemetryHub.subscribeTap ("node:" + subscription.nodeId + ":" + subscription.portId,
+                                                      frameTypesNeededFor (subscription.kind));
 
         // A node lives in exactly one domain (DomainSplitter's own
         // invariant), so the global plan - when there is one - is checked
         // first and is the simpler case: one plan, one tap.
         if (globalPlan != nullptr)
         {
-            const auto bufferIndex = globalPlan->findOutputBufferIndex (subscription.nodeId, subscription.portId);
+            // findTappableBufferIndex: an output port's own buffer, or - for a
+            // node with no outputs, like view.scope - the buffer wired into
+            // its input (ADR-0029).
+            const auto bufferIndex = globalPlan->findTappableBufferIndex (subscription.nodeId, subscription.portId);
             if (bufferIndex >= 0)
-            {
-                // subscribeTap is idempotent for a name already held and, if the
-                // slot was LRU-evicted in the meantime, claims a fresh one - so
-                // asking again on every attach always yields the live Tap*.
-                globalPlan->setTapForBufferIndex (bufferIndex, telemetryHub.subscribeTap (tapName, needed));
-                return true;
-            }
+                return globalPlan->addTapForBufferIndex (bufferIndex, subscription.tap);
         }
 
         // Voice domain: every voice plan shares one topology, and every one
         // carries the tap; pointVoiceTapsAtCurrentVoice() decides which one
         // actually pushes.
-        bazalt::engine::Tap* tap = nullptr;
+        auto attached = false;
         for (auto* plan : voicePlans)
         {
             if (plan == nullptr)
                 continue;
 
-            const auto bufferIndex = plan->findOutputBufferIndex (subscription.nodeId, subscription.portId);
-            if (bufferIndex < 0)
-                continue;
-
-            if (tap == nullptr)
-                tap = telemetryHub.subscribeTap (tapName, needed);
-
-            plan->setTapForBufferIndex (bufferIndex, tap);
+            const auto bufferIndex = plan->findTappableBufferIndex (subscription.nodeId, subscription.portId);
+            if (bufferIndex >= 0)
+                attached = plan->addTapForBufferIndex (bufferIndex, subscription.tap) || attached;
         }
 
-        return tap != nullptr;
+        return attached;
     }
 
     namespace
     {
+        // Whether a plan's node has a port (input or output) with this id.
+        // Message thread only: getInputPorts()/getOutputPorts() allocate.
+        bool planHasPort (bazalt::engine::ExecutionPlan* plan, const juce::String& nodeId, const juce::String& portId)
+        {
+            if (plan == nullptr)
+                return false;
+
+            auto* node = plan->getNodeById (nodeId);
+            if (node == nullptr)
+                return false;
+
+            for (const auto& port : node->getInputPorts())
+                if (port.id == portId)
+                    return true;
+
+            for (const auto& port : node->getOutputPorts())
+                if (port.id == portId)
+                    return true;
+
+            return false;
+        }
+
         // The plans currently live in a swapper, as raw pointers, in the shape
         // attachPreviewSubscription() wants.
         std::vector<bazalt::engine::ExecutionPlan*> peekVoicePlans (
@@ -357,10 +377,20 @@ namespace bazalt
         // shape, so it only counts while the graph actually has one.
         const auto hasGlobal = hasGlobalDomain.load (std::memory_order_acquire) || monoOnlyGraph.load (std::memory_order_acquire);
         auto* globalPlan = hasGlobal ? globalPlanSwapper.peekCurrentPlan() : nullptr;
+        const auto voicePlans = peekVoicePlans (voicePlanSwappers);
+
+        // The port has to exist on the node. Whether anything is wired to it
+        // yet is a separate question (below): a viewer is placed before it is
+        // connected, and must come alive when it is.
+        auto portExists = planHasPort (globalPlan, nodeId, portId);
+        for (auto* plan : voicePlans)
+            portExists = portExists || planHasPort (plan, nodeId, portId);
+
+        if (! portExists)
+            return false;
 
         PreviewSubscription subscription { nodeId, portId, kind };
-        if (! attachPreviewSubscription (subscription, globalPlan, peekVoicePlans (voicePlanSwappers)))
-            return false;
+        attachPreviewSubscription (subscription, globalPlan, voicePlans); // unresolved is fine: pending
 
         // Remember it (replacing any earlier entry for the same port, which is
         // how a kind change takes effect) so a recompile can re-attach it.
@@ -379,6 +409,11 @@ namespace bazalt
 
     void BazaltAudioProcessor::unsubscribeVisualizationTap (const juce::String& nodeId, const juce::String& portId)
     {
+        bazalt::engine::Tap* removedTap = nullptr;
+        for (const auto& existing : previewSubscriptions)
+            if (existing.nodeId == nodeId && existing.portId == portId)
+                removedTap = existing.tap;
+
         previewSubscriptions.erase (std::remove_if (previewSubscriptions.begin(), previewSubscriptions.end(),
                                                     [&] (const PreviewSubscription& s) { return s.nodeId == nodeId && s.portId == portId; }),
                                     previewSubscriptions.end());
@@ -386,15 +421,18 @@ namespace bazalt
         // Detach from every plan a swapper still holds - including a global
         // plan left over from an earlier graph shape, which is harmless to
         // clear and would otherwise keep a pointer to a released tap slot.
-        auto detach = [&] (bazalt::engine::ExecutionPlan* plan)
+        // Removal is by Tap identity, so it doesn't depend on the port still
+        // resolving in the current graph (a view node's input may since have
+        // been disconnected).
+        if (removedTap != nullptr)
         {
-            if (plan != nullptr)
-                plan->setTapForBufferIndex (plan->findOutputBufferIndex (nodeId, portId), nullptr);
-        };
+            if (auto* plan = globalPlanSwapper.peekCurrentPlan())
+                plan->removeTap (removedTap);
 
-        detach (globalPlanSwapper.peekCurrentPlan());
-        for (auto* plan : peekVoicePlans (voicePlanSwappers))
-            detach (plan);
+            for (auto* plan : peekVoicePlans (voicePlanSwappers))
+                if (plan != nullptr)
+                    plan->removeTap (removedTap);
+        }
 
         telemetryHub.unsubscribeTap ("node:" + nodeId + ":" + portId);
     }
@@ -402,7 +440,7 @@ namespace bazalt
     void BazaltAudioProcessor::applyPreviewSubscriptions (const std::vector<bazalt::engine::ExecutionPlan*>& voicePlans,
                                                           bazalt::engine::ExecutionPlan* globalPlan)
     {
-        for (const auto& subscription : previewSubscriptions)
+        for (auto& subscription : previewSubscriptions)
             attachPreviewSubscription (subscription, globalPlan, voicePlans);
 
         // Point the voice taps at the current voice before the plans go live.

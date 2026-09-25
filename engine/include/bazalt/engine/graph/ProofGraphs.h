@@ -19,6 +19,7 @@
 #include "bazalt/engine/nodes/ClampNode.h"
 #include "bazalt/engine/nodes/RemapNode.h"
 #include "bazalt/engine/nodes/ListenNode.h"
+#include "bazalt/engine/nodes/ViewNodes.h"
 #include "bazalt/engine/nodes/OutputNode.h"
 #include "bazalt/engine/nodes/NormaliseNode.h"
 #include "bazalt/engine/nodes/ThresholdNode.h"
@@ -72,6 +73,9 @@ namespace bazalt::engine
         factory.registerType ("math.clamp", [] { return std::make_unique<nodes::ClampNode>(); });
         factory.registerType ("adapt.remap", [] { return std::make_unique<nodes::RemapNode>(); });
         factory.registerType ("view.listen", [] { return std::make_unique<nodes::ListenNode>(); });
+        factory.registerType ("view.scope", [] { return std::make_unique<nodes::ViewScopeNode>(); });
+        factory.registerType ("view.spectrum", [] { return std::make_unique<nodes::ViewSpectrumNode>(); });
+        factory.registerType ("view.meter", [] { return std::make_unique<nodes::ViewMeterNode>(); });
         factory.registerType ("io.output", [] { return std::make_unique<nodes::OutputNode>(); });
         factory.registerType ("adapt.normalise", [] { return std::make_unique<nodes::NormaliseNode>(); });
         factory.registerType ("adapt.threshold", [] { return std::make_unique<nodes::ThresholdNode>(); });
