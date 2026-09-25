@@ -88,6 +88,18 @@ unit-confusion bug the whole `adapt.remap` fix was built to prevent for
 *different* quantities meeting each other, but it slips through here because
 one side is untyped. Fix: declare `Quantity::Unipolar` on Map's "in" port.
 
+### 5. A subscribed preview tap is lost on every recompile — found 2026-09-25 (M21), NOT yet fixed
+`ExecutionPlan::tapForBufferIndex` is per plan, and `GraphCompiler` creates it all-null for every new plan
+(`GraphCompiler.cpp:830`). `PluginProcessor::subscribeVisualizationTap` sets the pointer on the plans that are
+live *at subscribe time*, and nothing re-applies it after `GraphEditController::recompileAndPublish()`.
+`NodePreview.tsx` only re-subscribes when its own `visible`/`nodeId`/`portId`/`kind` change — none of which an
+edit changes — so the preview goes dark after the next graph edit. Verified with a throwaway plugin test: a
+global-domain tap received 512 samples before a parameter edit and 0 after. Voice-domain taps only come back by
+accident, when a note lands on a different voice (`repointVoiceDomainTaps`). Affects today's `osc.analog`
+waveform and `mix.gain` meter previews; it is a hard blocker for `view.scope/spectrum/meter`. Fix: a
+message-thread registry of live subscriptions, re-resolved against the fresh plans at the end of every
+publish — see ADR-0029.
+
 ---
 
 ## Priority 2 — stale comments (low risk, easy, but actively misleading)
