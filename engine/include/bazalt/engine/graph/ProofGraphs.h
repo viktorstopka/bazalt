@@ -47,6 +47,9 @@
 #include "bazalt/engine/nodes/SineOscillatorNode.h"
 #include "bazalt/engine/nodes/DcBlockNode.h"
 #include "bazalt/engine/nodes/EnvelopeFollowerNode.h"
+#include "bazalt/engine/nodes/PeakFilterNode.h"
+#include "bazalt/engine/nodes/ShelfFilterNode.h"
+#include "bazalt/engine/nodes/AllpassFilterNode.h"
 
 namespace bazalt::engine
 {
@@ -108,6 +111,10 @@ namespace bazalt::engine
         factory.registerType ("osc.sine", [] { return std::make_unique<nodes::SineOscillatorNode>(); });
         factory.registerType ("filter.dcBlock", [] { return std::make_unique<nodes::DcBlockNode>(); });
         factory.registerType ("env.follower", [] { return std::make_unique<nodes::EnvelopeFollowerNode>(); });
+        // M22 wave 2 — the Biquad family.
+        factory.registerType ("filter.peak", [] { return std::make_unique<nodes::PeakFilterNode>(); });
+        factory.registerType ("filter.shelf", [] { return std::make_unique<nodes::ShelfFilterNode>(); });
+        factory.registerType ("filter.allpass", [] { return std::make_unique<nodes::AllpassFilterNode>(); });
         return factory;
     }
 

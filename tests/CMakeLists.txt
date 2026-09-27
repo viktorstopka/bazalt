@@ -7,6 +7,8 @@ add_executable(EngineTests
     AlignedBufferTests.cpp
     AnalysisThreadBudgetTests.cpp
     AnalysisThreadTests.cpp
+    BiquadFilterNodesTests.cpp
+    BiquadTests.cpp
     BlockSizeInvarianceTests.cpp
     CanConnectTests.cpp
     DataTests.cpp
