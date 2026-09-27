@@ -18,7 +18,7 @@ import { useMemo, useRef, useState, type RefObject } from 'react'
 import { createPortal } from 'react-dom'
 import { NodeCard, type NodeCardState } from '../nodes/NodeCard'
 import { NodeContextMenu } from './NodeContextMenu'
-import { renameNode, toggleBypass, toggleBypassMany, deleteNodes, setSelection, setParameterValue, resolveNodeDescriptor, type GraphNode, type GraphWire } from './graphStore'
+import { renameNode, toggleBypass, toggleBypassMany, setAsOutput, deleteNodes, setSelection, setParameterValue, resolveNodeDescriptor, type GraphNode, type GraphWire } from './graphStore'
 import type { NodeDescriptor } from './descriptorTypes'
 import type { GhostPlacement } from '../canvas/interactionStore'
 import { getTitleGeometry } from './titleGeometry'
@@ -167,6 +167,13 @@ function NodeWrapper({ node, descriptor, selected, selection, connectedPortIds, 
               setMenuPos(null)
               if (selection.has(node.id) && selection.size > 1) toggleBypassMany([...selection])
               else toggleBypass(node.id)
+            }}
+            onSetAsOutput={() => {
+              // Always targets the single node right-clicked, same as
+              // Rename above — "set several nodes as the output" has no
+              // sensible meaning (there is exactly one graph output).
+              setMenuPos(null)
+              setAsOutput(node.id)
             }}
             onDelete={() => {
               setMenuPos(null)

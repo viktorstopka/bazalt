@@ -58,6 +58,45 @@ TEST_CASE ("addNode + connect + setParameterValue commands produce the expected 
             REQUIRE (std::isfinite (buffer.getSample (ch, i)));
 }
 
+TEST_CASE ("Connecting into an already-wired input replaces the old connection instead of being rejected",
+           "[plugin][GraphEditController][NODE_EDITOR]")
+{
+    BazaltAudioProcessor processor;
+    processor.prepareToPlay (44100.0, 512);
+
+    auto& controller = processor.getGraphEditController();
+    REQUIRE (controller.setGraph (bazalt::engine::buildVoiceProofGraph()).success);
+
+    // The proof graph already wires svf.out -> amp.audio. Wiring a second
+    // source (osc.out) into that same already-occupied input used to be
+    // rejected outright by GraphCompiler's "Input port already connected"
+    // check, rolling the whole command back (wiki/NODES_Gaps.md's
+    // `occupied-port-rejects` finding) — it should now succeed and REPLACE
+    // the old connection instead, exactly like dropping a new cable onto an
+    // occupied jack on a real patchbay.
+    const auto result = controller.connectWithAutoAdapt ("osc", "out", "amp", "audio");
+    REQUIRE (result.success);
+
+    const auto& connections = controller.getGraph().getConnections();
+
+    auto targetingAmpAudio = 0;
+    auto sourcedFromSvf = 0;
+    auto sourcedFromOsc = 0;
+    for (const auto& c : connections)
+    {
+        if (c.toNodeId == "amp" && c.toPortId == "audio")
+        {
+            ++targetingAmpAudio;
+            if (c.fromNodeId == "svf") ++sourcedFromSvf;
+            if (c.fromNodeId == "osc") ++sourcedFromOsc;
+        }
+    }
+
+    CHECK (targetingAmpAudio == 1); // never two sources feeding one input
+    CHECK (sourcedFromOsc == 1);    // the new connection is really there
+    CHECK (sourcedFromSvf == 0);    // the old one was really replaced, not left dangling
+}
+
 TEST_CASE ("deleteNode and disconnect commands are reflected in the live graph and in compiled audio",
            "[plugin][GraphEditController][NODE_EDITOR]")
 {

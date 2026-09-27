@@ -14,11 +14,12 @@ interface NodeContextMenuProps {
   bypassed: boolean
   onRename: () => void
   onToggleBypass: () => void
+  onSetAsOutput: () => void
   onDelete: () => void
   onClose: () => void
 }
 
-export function NodeContextMenu({ x, y, bypassed, onRename, onToggleBypass, onDelete, onClose }: NodeContextMenuProps) {
+export function NodeContextMenu({ x, y, bypassed, onRename, onToggleBypass, onSetAsOutput, onDelete, onClose }: NodeContextMenuProps) {
   const rootRef = useRef<HTMLDivElement | null>(null)
   const pos = useAutoFlipPosition(x, y, rootRef)
 
@@ -41,6 +42,7 @@ export function NodeContextMenu({ x, y, bypassed, onRename, onToggleBypass, onDe
     <div ref={rootRef} className="node-context-menu" style={{ left: pos.left, top: pos.top }} onContextMenu={(e) => e.preventDefault()}>
       <button onClick={onRename}>Rename</button>
       <button onClick={onToggleBypass}>{bypassed ? 'Un-bypass' : 'Toggle Bypass'}</button>
+      <button onClick={onSetAsOutput}>Set as Output</button>
       <button className="node-context-menu-delete" onClick={onDelete}>
         Delete
       </button>

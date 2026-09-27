@@ -65,6 +65,7 @@ import {
   graphGetSnapshot,
   graphMoveNode,
   graphRestoreSnapshot,
+  graphSetOutput,
   graphSetParameterValue,
   graphSetProperty,
   type CommandResult,
@@ -495,6 +496,50 @@ export function deleteNodes(ids: readonly string[]): void {
   )
 }
 
+/** The node's own declared primary output port, or its first output if none
+    is marked primary — same fallback `splicePrimaryPorts` already uses.
+    `undefined` for a pure sink (view.listen/scope/spectrum/meter have no
+    outputs at all) or an unloaded descriptor.
+*/
+function primaryOutputPortId(typeId: string): string | undefined {
+  const descriptor = getDescriptor(typeId)
+  if (!descriptor) return undefined
+  return (descriptor.outputs.find((o) => o.isPrimaryOutput) ?? descriptor.outputs[0])?.id
+}
+
+/** wiki/NODES_Gaps.md's `missing-ui-command` finding: `io.output` ("Master
+    Out") is an ordinary passthrough node, not a compiler special case —
+    wiring a cable into its input does nothing to what the compiled graph
+    actually outputs until something calls `graphSetOutput`. Every gesture
+    that can land a new connection on a node's input calls this afterward
+    (with that node's id) so the obvious gesture — "plug into Master Out" —
+    is what actually becomes audible, without the user needing to know a
+    separate designation step exists. A no-op for any node that isn't
+    `io.output`, so it's safe to call unconditionally after every connect.
+*/
+async function designateOutputIfMasterOut(toNodeId: string): Promise<void> {
+  const node = nodes.get(toNodeId)
+  if (!node || node.typeId !== 'io.output') return
+  const outputPortId = primaryOutputPortId(node.typeId)
+  if (!outputPortId) return
+  await fireCommand(() => graphSetOutput(toNodeId, outputPortId))
+}
+
+/** The general case `designateOutputIfMasterOut` doesn't cover: explicitly
+    designating any node's own output as the graph's audible output, from
+    the right-click "Set as Output" menu action — not gated on the node
+    being `io.output`, since a patch may want its output cable to visibly
+    terminate somewhere other than a literal Master Out node (or none at
+    all placed yet). No-ops for a node with no output port.
+*/
+export function setAsOutput(nodeId: string): void {
+  const node = nodes.get(nodeId)
+  if (!node) return
+  const outputPortId = primaryOutputPortId(node.typeId)
+  if (!outputPortId) return
+  void withHistory(() => fireCommand(() => graphSetOutput(nodeId, outputPortId)).then(() => undefined))
+}
+
 export function renameNode(id: string, title: string | undefined): void {
   const trimmed = title && title.trim().length > 0 ? title.trim() : ''
   void withHistory(
@@ -586,7 +631,11 @@ export function commitNodeMoves(updates: ReadonlyArray<{ id: string; x: number; 
 
 export function addWire(fromNodeId: string, fromPortId: string, toNodeId: string, toPortId: string): void {
   void withHistory(
-    () => fireCommand(() => graphConnectWithAutoAdapt(fromNodeId, fromPortId, toNodeId, toPortId)).then(() => undefined),
+    async () => {
+      if (await fireCommand(() => graphConnectWithAutoAdapt(fromNodeId, fromPortId, toNodeId, toPortId))) {
+        await designateOutputIfMasterOut(toNodeId)
+      }
+    },
     () => {
       const id = wireId(toNodeId, toPortId)
       wires.set(id, { id, fromNodeId, fromPortId, toNodeId, toPortId })
@@ -624,7 +673,9 @@ export function commitWireDrag(fromNodeId: string, fromPortId: string, target: {
   void withHistory(
     async () => {
       if (detachedWire) await fireCommand(() => graphDisconnect(detachedWire.fromNodeId, detachedWire.fromPortId, detachedWire.toNodeId, detachedWire.toPortId))
-      if (target) await fireCommand(() => graphConnectWithAutoAdapt(fromNodeId, fromPortId, target.nodeId, target.portId))
+      if (target && (await fireCommand(() => graphConnectWithAutoAdapt(fromNodeId, fromPortId, target.nodeId, target.portId)))) {
+        await designateOutputIfMasterOut(target.nodeId)
+      }
     },
     () => {
       if (detachedWireId) wires.delete(detachedWireId)
@@ -690,6 +741,7 @@ export function spliceInsert(wireIdToSplice: string, typeId: string, x: number, 
       if (!(await fireCommand(() => graphAddNode(typeId, newNodeId, x, y)))) return
       if (!(await fireCommand(() => graphConnectWithAutoAdapt(wire.fromNodeId, wire.fromPortId, newNodeId, primary.inputId)))) return
       if (!(await fireCommand(() => graphConnectWithAutoAdapt(newNodeId, primary.outputId, wire.toNodeId, wire.toPortId)))) return
+      await designateOutputIfMasterOut(wire.toNodeId)
     },
     () => {
       wires.delete(wireIdToSplice)

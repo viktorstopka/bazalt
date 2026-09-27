@@ -67,6 +67,34 @@ namespace bazalt
                     return candidate;
             }
         }
+
+        // wiki/NODES_Gaps.md's `occupied-port-rejects` (0.4): dropping a new
+        // cable onto an input that already has one now REPLACES the old
+        // connection instead of the whole command failing outright with
+        // GraphCompiler's "Input port already connected" — an input port
+        // accepts exactly one source by design (that compiler check still
+        // exists and still protects against this ever slipping through, e.g.
+        // a malformed graphRestoreSnapshot), so there is at most one existing
+        // connection to remove. Copies the matched connection's own fields
+        // out to locals before calling removeConnection(): passing
+        // `existing.fromNodeId`/`fromPortId` straight through would bind
+        // removeConnection()'s parameters to a live reference INTO the same
+        // vector its own std::remove_if is about to shuffle — reading that
+        // reference mid-erase would be comparing against whatever value got
+        // moved into that slot, not the original one being removed.
+        void replaceExistingInputConnection (bazalt::engine::NodeGraph& g, const juce::String& toNodeId, const juce::String& toPortId)
+        {
+            for (const auto& existing : g.getConnections())
+            {
+                if (existing.toNodeId == toNodeId && existing.toPortId == toPortId)
+                {
+                    const auto fromNodeId = existing.fromNodeId;
+                    const auto fromPortId = existing.fromPortId;
+                    g.removeConnection (fromNodeId, fromPortId, toNodeId, toPortId);
+                    return;
+                }
+            }
+        }
     }
 
     GraphEditController::GraphEditController (BazaltAudioProcessor& processorToUse)
@@ -151,6 +179,7 @@ namespace bazalt
             return { false, "No such node: " + toNodeId };
 
         const auto previousGraph = graph;
+        replaceExistingInputConnection (graph, toNodeId, toPortId);
         graph.addConnection ({ fromNodeId, fromPortId, toNodeId, toPortId });
 
         auto result = recompileAndPublish();
@@ -296,6 +325,7 @@ namespace bazalt
                 currentFromPortId = step.outputPortId;
             }
 
+            replaceExistingInputConnection (g, toNodeId, toPortId);
             g.addConnection ({ currentFromNodeId, currentFromPortId, toNodeId, toPortId });
         });
     }

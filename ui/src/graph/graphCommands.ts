@@ -51,6 +51,19 @@ export function graphMoveNode(nodeId: string, x: number, y: number): Promise<Com
   return callCommand('graphMoveNode', nodeId, x, y)
 }
 
+/** Designates which node's output port is the compiled graph's actual
+    audible output — real and tested on the native side
+    (`GraphEditController::setOutput`) since M7/M8, but never called from
+    `ui/src` until wiki/NODES_Gaps.md's `missing-ui-command` finding: wiring
+    a cable into `io.output`'s input alone does nothing to this designation,
+    since `io.output` ("Master Out") is an ordinary passthrough node, not a
+    compiler special case. See graphStore.ts's `designateOutputIfMasterOut`/
+    `setAsOutput` for the two real call sites this now has.
+*/
+export function graphSetOutput(nodeId: string, portId: string): Promise<CommandResult> {
+  return callCommand('graphSetOutput', nodeId, portId)
+}
+
 /** Backs both rename ("title") and bypass ("bypassed") — see
     GraphEditController::setProperty's own doc comment. Neither has a real
     DSP-level effect yet (no bypass audio behaviour exists in the engine) —

@@ -35,6 +35,42 @@ are the actual Audio-biased gap). Root-caused the Master Out bug precisely
 rather than treated as broken. Three items still need live repro before a fix is
 designed: dropdown clicks, Note-port connectivity, Reroute connectivity.
 
+## 0.3 — Master Out / output designation, fixed — done
+
+`graphSetOutput` was already real and tested on the native side, just uncalled from
+`ui/src`. Added the JS wrapper (`ui/src/graph/graphCommands.ts`), then wired it into
+every gesture that can land a connection on a node's input
+(`addWire`/`commitWireDrag`/splice-insert in `ui/src/graph/graphStore.ts`): if the
+destination node's `typeId` is `io.output`, the graph's output designation is
+auto-set to that node's primary output port right after the connect succeeds — no
+new engine mechanism, no separate step the user has to know about. Also added a
+general "Set as Output" right-click action (`NodeContextMenu.tsx`/`GraphSurface.tsx`)
+for designating any node's output explicitly, not just Master Out's.
+
+## 0.4 — Connection-replace UX — done
+
+Fixed at the source rather than in the UI: `GraphEditController::connect()` and
+`connectWithAutoAdapt()`'s final connection now call a new
+`replaceExistingInputConnection()` helper that removes any existing connection
+already targeting that `(toNodeId, toPortId)` pair before adding the new one —
+`GraphCompiler`'s "Input port already connected" check still exists as a safety net,
+it just never fires on an ordinary user gesture anymore. Covers direct connects, the
+adapter-chain path, and the polymorphic-endpoint (Reroute) path, since all three
+funnel through `connect()`. New regression test
+(`tests-plugin/GraphEditControllerTests.cpp`, "Connecting into an already-wired input
+replaces the old connection instead of being rejected") — mutation-checked: reverted
+the fix, confirmed the test fails with the old rejection, restored it.
+
+**Verified:** 354/354 tests green (353 + the new one), `pluginval --strictness-level
+10` SUCCESS, `npm run build`/`npm run lint` clean, Standalone app launches with no
+regressions (screenshot-checked). Interactive wire-drag re-verification of the exact
+UI gesture is still worth doing by hand when convenient — not attempted here given
+this environment's documented unreliability with synthetic mouse input into WebView2
+content (see the project memory's M10 note); the engine-side fix is proven by a real,
+mutation-checked test, and the UI-side wiring reuses the same `callCommand`/
+`getNativeFunction` path every other already-working graph command uses, with the
+exact native-function name confirmed to match on both sides by direct source reading.
+
 ## 0.2 — Stereo, decided for real
 
 Write the full trade-off (current `left`/`right` mono-pair convention vs. a true
