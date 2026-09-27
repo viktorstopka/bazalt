@@ -1,11 +1,19 @@
 # Bazalt — project rules
 
 Node-based modular synth, VST3 (JUCE + C++20) with a TypeScript/Vite/React
-WebView UI. Full design: `docs/ARCHITECTURE.md`. Node editor design (M7+):
-`docs/NODE_EDITOR.md`. Milestone plan: `docs/MILESTONES.md`. Decisions:
-`docs/decisions/`. Read `ARCHITECTURE.md` and `NODE_EDITOR.md` before
-touching anything cross-cutting — this file is the condensed day-to-day
-ruleset, not a replacement for either.
+WebView UI. **Current, active node/architecture reference:** `wiki/NODES.md`
+(the node catalog) and `wiki/NODES.System.md` (architecture rules — signal
+types, the value contract, the full connection/adapter matrix with real-vs-
+aspirational columns, domains, naming philosophy, factories). Current gap
+tracking: `wiki/NODES_Gaps.md`. Current milestone plan: `wiki/MILESTONES.md`
+(a `0.x`-numbered arc, separate from the `archive_docs/MILESTONES.md` M-arc
+below). **Historical design docs (M0–M22 era, superseded, not maintained —
+don't read for current specs/plan):** `archive_docs/ARCHITECTURE.md`,
+`archive_docs/NODE_EDITOR.md`, `archive_docs/MILESTONES.md`,
+`archive_docs/decisions/`. Still the right place to look for *why* something
+from that era was built the way it was. Read `wiki/NODES.System.md` before
+touching anything cross-cutting in the node system — this file is the
+condensed day-to-day ruleset, not a replacement for it.
 
 **Milestones through M20 have landed** (M0–M6 = the MVP; M7–M10 = the node
 editor's model, telemetry, descriptors and canvas; M14–M18 = the
@@ -25,6 +33,15 @@ playing the Init Patch** (`GraphEditController`'s constructor default,
 default anymore; don't assume test code that constructs a bare
 `BazaltAudioProcessor` is exercising the simple 6-node chain without
 checking whether it calls `setGraph()` explicitly.
+
+**A parallel `wiki/` gap-fixing arc (milestones `0.x`) started after M22** —
+hands-on testing of the running app surfaced real node-design and UI/
+architecture gaps M0–M22 didn't catch (redundant/jargon/unsafe node ports,
+a Master Out that silently didn't work, stereo-cable design, etc.).
+`wiki/MILESTONES.md` is the active plan going forward; `wiki/NODES_Gaps.md`
+has the current, reviewed list of what's actually wrong and why — nothing
+in it is fixed yet, it's identification pending your review. The `docs/`
+folder was renamed `archive_docs/` and is historical reference only.
 
 ## The non-negotiable rules
 
@@ -121,7 +138,12 @@ ctest --test-dir build -C Debug -R PluginTests --output-on-failure
   `PascalCase.tsx`. High-rate rendering (canvas/WebGL scopes, spectra,
   meters) must run outside React's render cycle — see ARCHITECTURE.md §7.
 - One ADR per significant architectural choice, added under
-  `docs/decisions/` **as the choice is made**, not retrofitted later.
+  `archive_docs/decisions/` **as the choice is made**, not retrofitted later
+  — the numbered ADR sequence continues in place there; the wiki/archive_docs
+  split didn't renumber or relocate it. The current `wiki/` gap-fixing arc
+  writes its own architectural decisions straight into `wiki/NODES.System.md`
+  instead, per how that specific arc was scoped — don't treat that as a
+  general replacement for ADRs elsewhere.
 
 ## Known interim simplifications (not bugs, don't "fix" without checking)
 
