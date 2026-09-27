@@ -1,5 +1,6 @@
 #include <catch2/catch_test_macros.hpp>
 #include "PluginProcessor.h"
+#include "bazalt/engine/graph/ProofGraphs.h"
 #include "bazalt/engine/patch/PatchSerializer.h"
 #include <atomic>
 #include <cmath>
@@ -26,6 +27,7 @@ TEST_CASE ("addNode + connect + setParameterValue commands produce the expected 
     processor.prepareToPlay (44100.0, 512);
 
     auto& controller = processor.getGraphEditController();
+    REQUIRE (controller.setGraph (bazalt::engine::buildVoiceProofGraph()).success);
 
     // Reroute svf's output through a new one-pole damping node instead of
     // straight into amp — proves add/connect/setParameter together produce
@@ -63,6 +65,7 @@ TEST_CASE ("deleteNode and disconnect commands are reflected in the live graph a
     processor.prepareToPlay (44100.0, 512);
 
     auto& controller = processor.getGraphEditController();
+    REQUIRE (controller.setGraph (bazalt::engine::buildVoiceProofGraph()).success);
 
     // Disconnecting the envelope leaves amp's gain input silent (0), so
     // amp's audio*gain output is silent regardless of the oscillator —
@@ -260,6 +263,7 @@ TEST_CASE ("A live-edited graph round-trips exactly through getStateAsJson/loadS
     processor.prepareToPlay (44100.0, 512);
 
     auto& controller = processor.getGraphEditController();
+    REQUIRE (controller.setGraph (bazalt::engine::buildVoiceProofGraph()).success);
     REQUIRE (controller.addNode ("util.constant", "extra", 42.0f, -17.0f).success);
     REQUIRE (controller.setParameterValue ("extra", "util.constant.value", 0.75f).success);
 
@@ -288,6 +292,7 @@ TEST_CASE ("A graph snapshot round-trips through PatchDocument/PatchSerializer a
     processor.prepareToPlay (44100.0, 512);
 
     auto& controller = processor.getGraphEditController();
+    REQUIRE (controller.setGraph (bazalt::engine::buildVoiceProofGraph()).success);
 
     REQUIRE (controller.addNode ("math.add", "extra", 10.0f, 20.0f).success);
     REQUIRE (controller.setParameterValue ("svf", "filter.svf.cutoff", 1234.0f).success);
@@ -317,6 +322,7 @@ TEST_CASE ("moveNode updates position without disturbing the node's DSP object i
     processor.prepareToPlay (44100.0, 512);
 
     auto& controller = processor.getGraphEditController();
+    REQUIRE (controller.setGraph (bazalt::engine::buildVoiceProofGraph()).success);
 
     auto* before = processor.getVoicePlanSwapper (0).peekCurrentPlan()->getNodeById ("osc");
     REQUIRE (before != nullptr);
@@ -341,6 +347,7 @@ TEST_CASE ("setProperty writes into NodeInstance::properties and round-trips thr
     processor.prepareToPlay (44100.0, 512);
 
     auto& controller = processor.getGraphEditController();
+    REQUIRE (controller.setGraph (bazalt::engine::buildVoiceProofGraph()).success);
 
     REQUIRE (controller.setProperty ("osc", "title", juce::var ("My Oscillator")).success);
     REQUIRE (controller.setProperty ("osc", "bypassed", juce::var (true)).success);
@@ -374,6 +381,7 @@ TEST_CASE ("Wiring a growable group's spare port through the controller grows it
     processor.prepareToPlay (44100.0, 512);
 
     auto& controller = processor.getGraphEditController();
+    REQUIRE (controller.setGraph (bazalt::engine::buildVoiceProofGraph()).success);
 
     REQUIRE (controller.addNode ("math.add", "sum", 0.0f, 0.0f).success);
     for (const auto* id : { "k0", "k1", "k2" })
@@ -412,6 +420,7 @@ TEST_CASE ("Wiring past a growable group's maximum is rejected and leaves the gr
     processor.prepareToPlay (44100.0, 512);
 
     auto& controller = processor.getGraphEditController();
+    REQUIRE (controller.setGraph (bazalt::engine::buildVoiceProofGraph()).success);
 
     REQUIRE (controller.addNode ("math.add", "sum", 0.0f, 0.0f).success);
     REQUIRE (controller.addNode ("util.constant", "k", 0.0f, 0.0f).success);
@@ -436,6 +445,7 @@ TEST_CASE ("A Reroute accepts a non-Audio cable through the controller, and forw
     processor.prepareToPlay (44100.0, 512);
 
     auto& controller = processor.getGraphEditController();
+    REQUIRE (controller.setGraph (bazalt::engine::buildVoiceProofGraph()).success);
 
     REQUIRE (controller.addNode ("util.constant", "k", 0.0f, 0.0f).success);
     REQUIRE (controller.addNode ("util.reroute", "rr", 0.0f, 0.0f).success);
@@ -460,6 +470,7 @@ TEST_CASE ("A Reroute still rejects, through the controller, a downstream port i
     processor.prepareToPlay (44100.0, 512);
 
     auto& controller = processor.getGraphEditController();
+    REQUIRE (controller.setGraph (bazalt::engine::buildVoiceProofGraph()).success);
 
     REQUIRE (controller.addNode ("io.noteIn", "notes", 0.0f, 0.0f).success);
     REQUIRE (controller.addNode ("util.reroute", "rr", 0.0f, 0.0f).success);
@@ -481,6 +492,7 @@ TEST_CASE ("logic.select through the controller: data cables of any plain type, 
     processor.prepareToPlay (44100.0, 512);
 
     auto& controller = processor.getGraphEditController();
+    REQUIRE (controller.setGraph (bazalt::engine::buildVoiceProofGraph()).success);
 
     REQUIRE (controller.addNode ("logic.select", "sel", 0.0f, 0.0f).success);
     REQUIRE (controller.addNode ("logic.not", "cond", 0.0f, 0.0f).success);

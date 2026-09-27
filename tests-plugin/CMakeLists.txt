@@ -31,6 +31,7 @@ target_sources(PluginTests
         ConnectWithAutoAdaptTests.cpp
         GraphEditControllerTests.cpp
         HostInputTests.cpp
+        InitPatchTests.cpp
         MacroParametersTests.cpp
         NodeDescriptorJsonTests.cpp
         PatchStateTests.cpp

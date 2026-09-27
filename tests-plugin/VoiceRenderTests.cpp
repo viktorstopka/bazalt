@@ -1,5 +1,6 @@
 #include <catch2/catch_test_macros.hpp>
 #include "PluginProcessor.h"
+#include "bazalt/engine/graph/ProofGraphs.h"
 #include <algorithm>
 #include <cmath>
 #include <vector>
@@ -175,6 +176,9 @@ TEST_CASE ("A per-voice delay tail keeps the voice alive past its envelope's own
     {
         BazaltAudioProcessor processor;
         processor.prepareToPlay (44100.0, 512);
+        // buildInitPatchGraph() (M22's own default) has no "amp" node - this
+        // test's own splice point is buildVoiceProofGraph()'s, needed explicitly.
+        REQUIRE (processor.getGraphEditController().setGraph (bazalt::engine::buildVoiceProofGraph()).success);
 
         if (withDelayTail)
         {

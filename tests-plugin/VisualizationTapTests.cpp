@@ -7,6 +7,7 @@
 #include <catch2/catch_test_macros.hpp>
 #include "PluginProcessor.h"
 #include "bazalt/engine/telemetry/Tap.h"
+#include "bazalt/engine/graph/ProofGraphs.h"
 
 using namespace bazalt;
 
@@ -36,6 +37,7 @@ TEST_CASE ("subscribeVisualizationTap on a real voice-domain port receives real 
 {
     BazaltAudioProcessor processor;
     processor.prepareToPlay (44100.0, 512);
+    REQUIRE (processor.getGraphEditController().setGraph (bazalt::engine::buildVoiceProofGraph()).success);
 
     REQUIRE (processor.subscribeVisualizationTap ("osc", "out", bazalt::engine::PreviewKind::Waveform));
     auto* tap = processor.getTelemetryHub().subscribeTap ("node:osc:out");
@@ -188,6 +190,7 @@ TEST_CASE ("A voice-domain preview tap keeps receiving after a graph edit, with 
 {
     BazaltAudioProcessor processor;
     processor.prepareToPlay (44100.0, 512);
+    REQUIRE (processor.getGraphEditController().setGraph (bazalt::engine::buildVoiceProofGraph()).success);
 
     REQUIRE (processor.subscribeVisualizationTap ("osc", "out", bazalt::engine::PreviewKind::Waveform));
     auto* tap = processor.getTelemetryHub().subscribeTap ("node:osc:out");
@@ -210,6 +213,7 @@ TEST_CASE ("A voice-domain preview tap is fed by exactly one voice at a time", "
 {
     BazaltAudioProcessor processor;
     processor.prepareToPlay (44100.0, 512);
+    REQUIRE (processor.getGraphEditController().setGraph (bazalt::engine::buildVoiceProofGraph()).success);
 
     REQUIRE (processor.subscribeVisualizationTap ("osc", "out", bazalt::engine::PreviewKind::Waveform));
     auto* tap = processor.getTelemetryHub().subscribeTap ("node:osc:out");
@@ -537,6 +541,7 @@ TEST_CASE ("A viewer placed with saved parameters starts with them, and a previe
     // before ADR-0029 that number was descriptive only.
     BazaltAudioProcessor voiceProcessor;
     voiceProcessor.prepareToPlay (44100.0, 512);
+    REQUIRE (voiceProcessor.getGraphEditController().setGraph (bazalt::engine::buildVoiceProofGraph()).success);
     REQUIRE (voiceProcessor.subscribeVisualizationTap ("osc", "out", bazalt::engine::PreviewKind::Waveform));
     CHECK (settingsOf (voiceProcessor, tapFor (voiceProcessor, "osc", "out")).scopeWindowSeconds == Catch::Approx (0.05f));
 }

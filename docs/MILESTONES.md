@@ -481,7 +481,7 @@ what you'd actually patch to try it, usually a `REFERENCE_PATCHES.md`/`NODE_CATA
 | # | Batch | Nodes (107 total, none dropped) | Testable target |
 |---|---|---|---|
 | M21 | Core plumbing, math, logic, adapters | `math.*` (11), `logic.*` (5), `adapt.map/normalise/threshold/sampleHold` (4), `util.*` (3), `mix.gain/sum/crossfade/downmix` (4), `io.*` (5, `io.audioIn` built with its full N-channel port-group behavior from the start, not deferred), `view.*` (4) — 36 nodes, zero DSP risk | Validates the whole pipeline (schema, `canConnect`, command bridge, generic previews) end to end on trivial nodes before anything harder depends on it working. Build a scope+meter+gain-staging test patch by hand in the app. |
-| M22 | Basic synthesis | `osc.analog/sine` (2), `filter.svf/onepole/ladder/allpass/shelf/peak/dcBlock` (7), `env.adsr/follower` (2), `random.stepped/drift` (2), `space.pan/width` (2), `delay.line` (1), `instance.allocator` (Voice, wired for real) + `instance.mix` (2) — 18 nodes | The full **Init Patch** factory group — an ordinary subtractive synth, playable via keyboard in the Standalone app. First milestone that's genuinely "does this feel good to play," not just "does it compile." |
+| M22 | Basic synthesis — done | `osc.analog/sine` (2), `filter.svf/onepole/ladder/allpass/shelf/peak/dcBlock` (7), `env.adsr/follower` (2), `random.stepped/drift` (2), `space.pan/width` (2), `delay.line` (1), `instance.allocator` (Voice, wired for real) + `instance.mix` (2) — 18 nodes | The full **Init Patch** factory group — an ordinary subtractive synth, playable via keyboard in the Standalone app. First milestone that's genuinely "does this feel good to play," not just "does it compile." |
 | M23 | Shaping + non-cyclic physical modeling | `shape.*` (5), `noise.colored/dust` (2), `excite.impulse/burst/pluck/contact` (4, the four *without* a `feedback` port), `resonator.modal/comb` (2), `data.material/analyseModes` (2) — 15 nodes | **Struck Body** and **Crackle**/**Scrape** factory groups — proves `Data(modal-set)` end to end without yet touching cyclic feedback. |
 | M24 | Data authoring & shared curves | `data.table/scale/lookup`, `adapt.remap` (4), `note.quantize` (1), `lfo.shape` (1, full shape/morph), `env.curve` (1), `seq.steps/euclid` (2), `clock.*` (3) — 12 nodes | **Scale Quantize** group + a hand-drawn LFO/envelope shape audibly working — proves the "curves are shared data" idea for real, not just on paper. |
 | M25 | Note-stream family + analysis | `note.gate/value/transpose/chord/hold/select/humanize/filter/assemble` (9), `analysis.*` (4) — 13 nodes | **Arpeggiator**, **Chord** groups, and a single-channel audio-to-note test (`analysis.onset`+`pitch`→`note.assemble`) — the hexaphonic-guitar reference patch's hard part, one string at a time before all six. |
@@ -548,9 +548,72 @@ its own. See ADR-0029's step 4 for both. 283/283 tests, `npm run build`/`lint` c
 ADR-0015 is still Proposed; it commits to the fixed 32-slot host-automation pool plus a slot-addressed node
 and deserves its own decision before M22.
 
-**Known UI gap, not M21's to fix:** the UI never reads the engine's `enumOptions`, so every real enum
-parameter (`math.round`/`math.minmax` mode, `mix.downmix` mode, `mix.crossfade` law, `osc.analog` shape)
-renders as an integer slider instead of a labelled dropdown.
+**Known UI gap flagged here, not M21 wave 5's own job to fix — fixed anyway as part of it, see wave 5's own
+entry above:** the UI never read the engine's `enumOptions` at the time this note was written; it does now
+(`NodeCard.tsx`'s `parameterOptions()`, ADR-0029 step 4).
+
+## M22 — Basic synthesis — done
+
+18 nodes (7 already existed and registered: `osc.analog`, `filter.svf/onepole`, `env.adsr`, `delay.line`,
+`instance.allocator/mix`; 11 new), built in 6 dependency-ordered waves, each built+tested+committed on its
+own:
+
+1. **Cheap wins, established the primitive-vs-inline pattern for the rest.** `osc.sine` (inline phase
+   accumulator), `filter.dcBlock` (tunable one-pole DC blocker), `env.follower` (Peak/RMS, the same
+   ballistics math `MeterBallistics.h` already applies to the meter preview), and a free addition to the
+   already-shipped `filter.onepole`: a `highpass` output (`in - lowpass`), closing its own gap against
+   NODE_CATALOG.md without touching the existing `"out"` id (CLAUDE.md rule 3).
+2. **The Biquad family.** A new shared primitive, `Biquad.h` (Direct-Form-II-transposed, RBJ Audio EQ
+   Cookbook coefficients — the same formulas `SvfFilterTests.cpp` already verifies `filter.svf` against),
+   then `filter.peak`/`filter.shelf`/`filter.allpass` on top of it. Caught and fixed a real bug before it
+   shipped: RBJ's gain factor `A` is `sqrt(desired linear gain)`, not the gain itself — an early version
+   used the gain directly, which would have doubled every setting in dB terms.
+3. **`filter.ladder`** — the one node NODE_CATALOG.md itself flags "numerically delicate," its own wave.
+   A closed-form (non-iterative — CLAUDE.md rule 2) 4-pole ZDF Moog-style ladder, derived from scratch in
+   `LadderFilter.h`'s own header comment. Resonance is kept purely linear and clamped just under the
+   literal self-oscillation boundary rather than putting a saturating nonlinearity inside the feedback
+   loop (which has no closed form); `drive` is a real, separate `tanh` nonlinearity on the output. Verified
+   both analytically (gain at cutoff matches `(1/√2)⁴` exactly at zero resonance) and empirically (a
+   throwaway probe swept resonance/frequency/mode before the real tests were written).
+4. **`random.stepped`, `random.drift`.** Seeded `juce::Random` (matching `NoiseBurstNode`'s existing
+   convention), deterministic by default. `random.stepped.trigger` is the first Event port in this codebase
+   to use `hasFallbackWhenUnconnected` — needed to tell "truly unconnected" (free-runs at `rate`) apart
+   from "connected, not firing this sample," which no Event port had ever needed to distinguish before.
+5. **`space.pan`, `space.width`** — the first two real stereo-capable nodes, which forced the
+   left/right-vs-`Channels::Stereo` decision ADR-0023 had left open (its own Consequences section expected
+   M28 to force it; these two got there six milestones early). Amendment appended to ADR-0023: `left`/
+   `right` named ports, matching every stereo entry the catalogue itself already wrote that way. Caught a
+   real NaN bug before it shipped: `pow()` of a fractional exponent (the `-4.5dB` pan law) on `cos`/`sin`
+   evaluated at hard pan, where float rounding lands the base a hair below 0.
+6. **The Init Patch.** `ProofGraphs.h::buildInitPatchGraph()` — two detuned saw oscillators through the
+   new ladder filter (its own envelope, key-tracked) into a VCA (its own envelope), into `instance.mix` —
+   the first time that node is exercised by a real, non-synthetic graph. Made
+   `GraphEditController`'s constructor default, replacing `buildVoiceProofGraph()` there (which stays
+   registered and tested, just no longer what a fresh instance opens with) — a fresh instance now opens
+   already playing a real subtractive synth, since no preset system exists yet to reach it any other way
+   (ADR-0021/M29). Fixing the 22 existing plugin-level tests that had implicitly relied on the old default
+   graph's exact shape — none of them broke by accident; `DomainSplitter` gained a real, previously-
+   unexercised validation path once the default graph had a genuine global domain ("every node must be
+   reachable from the voice or global domain," never hit before since the old default was `monoOnly`) —
+   turned out to be the single largest chunk of this wave's work, all fixed by having each test build the
+   old default explicitly via `setGraph()` rather than relying on the constructor's default, preserving
+   every test's original coverage exactly.
+
+**No `space.reverb` tail** (Part B's own one-liner asks for one) — it's M28's node, doesn't exist yet, a
+forced and expected scope boundary. **No `space.pan` tail either**, despite building it this same
+milestone — a real, unplanned finding: `PluginProcessor`'s whole render path is mono end to end today (one
+final buffer, duplicated to both physical channels), so there's nowhere for a real stereo signal to go yet.
+Logged as `docs/CLEANUP.md` Priority 1 #6 rather than silently worked around (forcing `space.pan` into the
+chain and immediately downmixing it back would add nodes with no audible effect). `space.pan`/`space.width`
+are still fully real, tested, independently usable nodes — just not wired into the Init Patch's own final
+stage.
+
+**`util.macro` is the only thing left of Batch A (M21) plus M22 together**, still deliberately deferred
+behind ADR-0015 (Proposed).
+
+353/353 tests, pluginval strictness 10 SUCCESS, `npm run build`/`lint` clean. Verified live in the
+Standalone app: a truly fresh instance (settings file backed up and cleared, restored after) opens
+already showing the full Init Patch graph, correctly wired, every parameter's live value visible.
 
 ## M29 — Groups
 

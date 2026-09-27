@@ -14,10 +14,17 @@ standardized inline visualization). `docs/MILESTONES.md` is the per-milestone
 record and `git log` is the source of truth for what's committed — some
 headers there carry no "— done" marker even when the work landed (M20 did),
 and M12/M13 (interaction polish, assist menu) are still open UI milestones.
-**M21 (Node Batch A: math/logic/adapters/io/view) is done except `util.macro`**
-(deliberately deferred past M21, ADR-0015 still Proposed) — see its section
-in MILESTONES.md. Each milestone must build, pass its tests, and be
-committed before the next one starts.
+**M22 (Basic synthesis: 18 nodes, the Init Patch) is done.** `util.macro`
+(from M21, deliberately deferred, ADR-0015 still Proposed) is the only
+thing still open in the whole M21+M22 node-batch arc — see MILESTONES.md's
+M21/M22 sections. Each milestone must build, pass its tests, and be
+committed before the next one starts. **A fresh plugin instance now opens
+playing the Init Patch** (`GraphEditController`'s constructor default,
+`ProofGraphs.h::buildInitPatchGraph()`) — the old M2 proof graph
+(`buildVoiceProofGraph()`) stays registered and tested, just isn't the
+default anymore; don't assume test code that constructs a bare
+`BazaltAudioProcessor` is exercising the simple 6-node chain without
+checking whether it calls `setGraph()` explicitly.
 
 ## The non-negotiable rules
 

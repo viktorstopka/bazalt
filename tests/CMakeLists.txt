@@ -22,6 +22,7 @@ add_executable(EngineTests
     HostInputNodeTests.cpp
     TapSettingsTests.cpp
     InheritingPortsTests.cpp
+    InitPatchTests.cpp
     LadderFilterNodeTests.cpp
     LadderFilterTests.cpp
     LogicNodeTests.cpp

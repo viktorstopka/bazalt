@@ -71,7 +71,12 @@ namespace bazalt
 
     GraphEditController::GraphEditController (BazaltAudioProcessor& processorToUse)
         : processor (processorToUse),
-          graph (bazalt::engine::buildVoiceProofGraph())
+          // M22: the Init Patch, not the M2 proof graph - a fresh instance
+          // (no saved state) now opens already playing a real subtractive
+          // synth, since there's no other reachable way to play it yet (no
+          // preset system exists, ADR-0021/M29). buildVoiceProofGraph()
+          // stays registered and its own tests still build it explicitly.
+          graph (bazalt::engine::buildInitPatchGraph())
     {
     }
 

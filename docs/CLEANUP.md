@@ -104,6 +104,21 @@ re-attaches them to the new plans just before publishing them (`applyPreviewSubs
 "A global-domain preview tap keeps receiving after a graph edit" and the voice-domain, unsubscribe and
 deleted-node companions in `VisualizationTapTests.cpp` (mutation-checked: they fail with the re-attach off).
 
+### 6. Real stereo output doesn't exist anywhere in the engine — found 2026-09-27 (M22), not fixed
+`NodeGraph::setOutput()` designates exactly one final `(nodeId, portId)` pair, and `PluginProcessor`'s whole
+render path (`finalizeInstanceMixIntoOutput`) tracks exactly one final mono buffer per block, duplicated to
+BOTH physical output channels — confirmed while building the Init Patch, which wanted to end
+`instance.mix → space.pan → io.output.left/right` and couldn't: `io.output` (`OutputNode.h`) has one `"in"`
+port, not `left`/`right`, and even if it did, nothing downstream of `ExecutionPlan`/`PluginProcessor` could
+carry two independent final signals to the two physical channels. `space.pan`/`space.width` (M22) are real,
+correct, independently tested nodes with no way to reach the actual output stereo — a patch can use them
+freely mid-chain (feeding, say, a downstream node with two ordinary inputs), just not as the graph's own
+final stage. Fix, scoped but not attempted here: give `OutputNode` real `left`/`right` inputs, and change
+`PluginProcessor`'s final-output bookkeeping (today's single `instanceMixScratchBuffer`-style final-mono
+path) to track two buffers instead of one — real, cross-cutting engine work, not a node-level fix. Logged
+here rather than silently worked around (Init Patch's own output stage stays mono, exactly like the M2 proof
+graph's always was — see `ProofGraphs.h::buildInitPatchGraph()`'s own doc comment).
+
 ---
 
 ## Priority 2 — stale comments (low risk, easy, but actively misleading)

@@ -134,6 +134,108 @@ namespace bazalt::engine
         return factory;
     }
 
+    /** M22 — the Init Patch (NODE_CATALOG.md's Part B one-liner: `io.noteIn`
+        `-> instance.allocator -> osc.analog x2 -> filter.ladder -> env.adsr
+        -> instance.mix -> space.reverb`), built for real and made
+        `GraphEditController`'s constructor default (replacing
+        `buildVoiceProofGraph()` there — that graph stays registered and
+        tested, just no longer what a fresh instance opens with). Two
+        detuned saw oscillators through a resonant ladder filter with its
+        OWN envelope (so the tone brightens and settles independently of the
+        amp envelope — what actually makes a subtractive synth feel alive,
+        not just "does it compile"), key-tracked so higher notes stay
+        proportionally bright, into a VCA, into `instance.mix` — the first
+        time this node is exercised by a real, non-synthetic graph rather
+        than a test-only one built just to exercise `hasGlobalDomain`.
+
+        No `space.reverb` tail: it's M28's node, doesn't exist yet — a
+        forced, expected scope boundary (M22 can't build M28's node), not an
+        oversight. No `space.pan` tail either, despite M22 building it this
+        same milestone: `NodeGraph::setOutput()` designates exactly one
+        final port, and `PluginProcessor`'s whole render path
+        (`finalizeInstanceMixIntoOutput`) tracks exactly one final mono
+        buffer, duplicated to both physical output channels — genuinely
+        mono end to end today, a real architectural fact discovered while
+        building this graph, not a small gap. Building a real stereo output
+        path (an `io.output` with `left`/`right` inputs, `PluginProcessor`
+        tracking two final buffers) is real, cross-cutting engine work
+        outside this wave's scope; `space.pan`/`space.width` stay fully
+        real, tested, independently usable nodes — just not wired into
+        THIS patch's own output stage. Logged as a known gap, not silently
+        worked around by forcing a pan node into the chain and immediately
+        downmixing it back to mono, which would add nodes with no audible
+        effect.
+
+        `detuneOffset`/`baseCutoff` are `util.constant` feeding `math.add`,
+        not initial parameter values on `osc2`/`filter.ladder` directly —
+        `osc.analog`'s "pitch" port has no `setParameter` case at all (it's
+        wire-only, see `OscillatorNode.h`), and `filter.ladder.cutoff`,
+        once wired to the modulation sum below, ignores whatever its own
+        stored/initial parameter says (a wired port's live value always
+        wins) — so injecting the "base" amount has to happen INSIDE the
+        modulation chain, not on the destination node itself.
+    */
+    inline NodeGraph buildInitPatchGraph()
+    {
+        NodeGraph graph;
+
+        graph.addNode ({ "noteIn", "io.noteIn", { 40.0f, 260.0f }, {}, {} });
+        graph.addNode ({ "allocator", "instance.allocator", { 340.0f, 260.0f }, {}, {} });
+
+        graph.addNode ({ "osc1", "osc.analog", { 640.0f, 40.0f }, { { "osc.analog.shape", 1.0f } }, {} }); // saw
+        graph.addNode ({ "detuneConst", "util.constant", { 340.0f, 460.0f }, { { "util.constant.value", 0.07f } }, {} });
+        graph.addNode ({ "detuneSum", "math.add", { 640.0f, 460.0f }, {}, {} });
+        graph.addNode ({ "osc2", "osc.analog", { 940.0f, 460.0f }, { { "osc.analog.shape", 1.0f } }, {} }); // saw, detuned
+        graph.addNode ({ "oscMix", "mix.sum", { 1240.0f, 250.0f }, {}, {} });
+
+        graph.addNode ({ "filterEnv", "env.adsr", { 640.0f, 640.0f },
+                          { { "env.adsr.attack", 0.005f }, { "env.adsr.decay", 0.3f },
+                            { "env.adsr.sustain", 0.3f }, { "env.adsr.release", 0.3f } }, {} });
+        graph.addNode ({ "baseCutoff", "util.constant", { 940.0f, 720.0f }, { { "util.constant.value", 300.0f } }, {} });
+        graph.addNode ({ "cutoffMap", "adapt.map", { 940.0f, 850.0f },
+                          { { "adapt.map.min", 0.0f }, { "adapt.map.max", 5000.0f } }, {} });
+        graph.addNode ({ "cutoffSum", "math.add", { 1240.0f, 780.0f }, {}, {} });
+
+        graph.addNode ({ "ladder", "filter.ladder", { 1540.0f, 250.0f },
+                          { { "filter.ladder.resonance", 0.25f }, { "filter.ladder.keyTrack", 0.3f } }, {} });
+
+        graph.addNode ({ "ampEnv", "env.adsr", { 1540.0f, 640.0f },
+                          { { "env.adsr.attack", 0.005f }, { "env.adsr.decay", 0.15f },
+                            { "env.adsr.sustain", 0.8f }, { "env.adsr.release", 0.3f } }, {} });
+        graph.addNode ({ "ampVCA", "mix.gain", { 1840.0f, 250.0f }, {}, {} });
+
+        graph.addNode ({ "voiceMix", "instance.mix", { 2140.0f, 250.0f }, {}, {} });
+        graph.addNode ({ "masterOut", "io.output", { 2440.0f, 250.0f }, {}, {} });
+
+        graph.addConnection ({ "noteIn", "notes", "allocator", "spawn" });
+
+        graph.addConnection ({ "allocator", "pitch", "osc1", "pitch" });
+        graph.addConnection ({ "allocator", "pitch", "detuneSum", "in.0" });
+        graph.addConnection ({ "detuneConst", "out", "detuneSum", "in.1" });
+        graph.addConnection ({ "detuneSum", "out", "osc2", "pitch" });
+        graph.addConnection ({ "osc1", "out", "oscMix", "in.0" });
+        graph.addConnection ({ "osc2", "out", "oscMix", "in.1" });
+        graph.addConnection ({ "oscMix", "out", "ladder", "in" });
+
+        graph.addConnection ({ "allocator", "gate", "filterEnv", "gate" });
+        graph.addConnection ({ "filterEnv", "out", "cutoffMap", "in" });
+        graph.addConnection ({ "baseCutoff", "out", "cutoffSum", "in.0" });
+        graph.addConnection ({ "cutoffMap", "out", "cutoffSum", "in.1" });
+        graph.addConnection ({ "cutoffSum", "out", "ladder", "filter.ladder.cutoff" });
+        graph.addConnection ({ "allocator", "pitch", "ladder", "filter.ladder.keyPitch" });
+
+        graph.addConnection ({ "ladder", "out", "ampVCA", "audio" });
+        graph.addConnection ({ "allocator", "gate", "ampEnv", "gate" });
+        graph.addConnection ({ "ampEnv", "out", "ampVCA", "gain" });
+
+        graph.addConnection ({ "ampVCA", "out", "voiceMix", "in" });
+        graph.addConnection ({ "voiceMix", "out", "masterOut", "in" });
+
+        graph.setOutput ("masterOut", "out");
+
+        return graph;
+    }
+
     /** ARCHITECTURE.md §3.4's example voice path, M18-rewired (ADR-0024):
         MIDI -> io.noteIn -> instance.allocator -> PolyBLEP osc (pitch) ->
         SVF -> ADSR-gated amp (gate) -> out. Purely acyclic — every node

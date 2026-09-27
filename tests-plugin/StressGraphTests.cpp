@@ -1,6 +1,7 @@
 #include <catch2/catch_test_macros.hpp>
 #include "PluginProcessor.h"
 #include "StressGraphGenerator.h"
+#include "bazalt/engine/graph/ProofGraphs.h"
 #include <chrono>
 #include <cmath>
 
@@ -27,6 +28,12 @@ TEST_CASE ("A 250-source (500-node) stress graph compiles and runs entirely thro
     processor.prepareToPlay (44100.0, 512);
 
     auto& controller = processor.getGraphEditController();
+
+    // deleteDefaultGraphNodes() below deletes exactly buildVoiceProofGraph()'s
+    // six node ids - M22's own default (buildInitPatchGraph()) has many more
+    // nodes under different ids, so this test needs the old, smaller default
+    // explicitly rather than relying on the constructor's current default.
+    REQUIRE (controller.setGraph (bazalt::engine::buildVoiceProofGraph()).success);
 
     constexpr int numSources = 250; // -> 499 nodes, 498 connections (StressGraphGenerator.h)
     const auto stats = buildStressReductionGraph (controller, numSources);

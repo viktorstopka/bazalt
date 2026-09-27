@@ -1,5 +1,6 @@
 #include <catch2/catch_test_macros.hpp>
 #include "PluginProcessor.h"
+#include "bazalt/engine/graph/ProofGraphs.h"
 #include "bazalt/engine/graph/Node.h"
 #include <cmath>
 
@@ -36,6 +37,7 @@ TEST_CASE ("connectWithAutoAdapt connects directly when canConnect already says 
     BazaltAudioProcessor processor;
     processor.prepareToPlay (44100.0, 512);
     auto& controller = processor.getGraphEditController();
+    REQUIRE (controller.setGraph (bazalt::engine::buildVoiceProofGraph()).success);
 
     REQUIRE (controller.disconnect ("svf", "out", "amp", "audio").success);
     const auto result = controller.connectWithAutoAdapt ("svf", "out", "amp", "audio");
@@ -54,6 +56,7 @@ TEST_CASE ("connectWithAutoAdapt inserts and seeds a real adapt.map node for Uni
     BazaltAudioProcessor processor;
     processor.prepareToPlay (44100.0, 512);
     auto& controller = processor.getGraphEditController();
+    REQUIRE (controller.setGraph (bazalt::engine::buildVoiceProofGraph()).success);
 
     REQUIRE (controller.addNode ("adapt.normalise", "norm", 0.0f, 0.0f).success);
     REQUIRE (controller.addNode ("delay.line", "dly", 100.0f, 0.0f).success);
@@ -94,6 +97,7 @@ TEST_CASE ("connectWithAutoAdapt rejects a connection to an unknown port with no
     BazaltAudioProcessor processor;
     processor.prepareToPlay (44100.0, 512);
     auto& controller = processor.getGraphEditController();
+    REQUIRE (controller.setGraph (bazalt::engine::buildVoiceProofGraph()).success);
 
     REQUIRE (controller.addNode ("delay.line", "dly", 0.0f, 0.0f).success);
 
@@ -118,6 +122,7 @@ TEST_CASE ("connectWithAutoAdapt inserts adapt.remap for two different real quan
     BazaltAudioProcessor processor;
     processor.prepareToPlay (44100.0, 512);
     auto& controller = processor.getGraphEditController();
+    REQUIRE (controller.setGraph (bazalt::engine::buildVoiceProofGraph()).success);
 
     REQUIRE (controller.addNode ("instance.allocator", "alloc", 0.0f, 0.0f).success);
 
@@ -161,6 +166,7 @@ TEST_CASE ("connectWithAutoAdapt does not attempt to auto-insert mix.downmix (2-
     BazaltAudioProcessor processor;
     processor.prepareToPlay (44100.0, 512);
     auto& controller = processor.getGraphEditController();
+    REQUIRE (controller.setGraph (bazalt::engine::buildVoiceProofGraph()).success);
 
     processor.getNodeFactory().registerType ("test.stereoSource", [] { return std::make_unique<StereoTestSourceNode>(); });
 
