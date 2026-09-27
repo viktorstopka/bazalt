@@ -6,7 +6,7 @@
 // deferred; see ADR-0008's Amendment (M10) for why DOM stays the layout
 // source of truth.
 import { useMemo } from 'react'
-import type { NodeDescriptor, PortDescriptor } from '../graph/descriptorTypes'
+import type { NodeDescriptor, ParameterDescriptor, PortDescriptor } from '../graph/descriptorTypes'
 import { classifyPortUiKind, portUiStyle, parameterUiColor } from '../graph/portUiKind'
 import { tokens } from '../theme/tokens'
 import { ValueSlider } from './ValueSlider'
@@ -427,6 +427,19 @@ function TitleBar({ descriptor, state }: { descriptor: NodeDescriptor; state: No
     back to the descriptor's own default; wrap onParameterCommit for this
     one id" pattern only lives in one place.
 */
+/** The labels a discrete parameter offers, or undefined for a continuous one.
+    `options` is the mock descriptors' own list; a REAL engine enum parameter
+    (osc shape, meter mode, FFT size, ...) declares `enumOptions` instead, and
+    the UI used to ignore that and draw an integer slider. An enum parameter's
+    value IS the index into its options - every real one starts at 0 - which is
+    exactly what TriggerSelect reads and commits.
+*/
+function parameterOptions(p: ParameterDescriptor): string[] | undefined {
+  if (p.options && p.options.length > 0) return p.options
+  if (p.kind === 'enum' && p.enumOptions && p.enumOptions.length > 0) return p.enumOptions.map((o) => o.label)
+  return undefined
+}
+
 function paramValue(state: NodeCardState, id: string, fallback: number): number {
   return state.parameterValues?.[id] ?? fallback
 }
@@ -467,7 +480,7 @@ function StandardBody({ descriptor, state, instanceId }: { descriptor: NodeDescr
           defaultValue={p.defaultValue}
           isInteger={p.isInteger}
           unit={p.unit}
-          options={p.options}
+          options={parameterOptions(p)}
           onCommit={paramCommit(state, p.id)}
         />
       ))}
@@ -544,23 +557,23 @@ function HorizontalBody({ descriptor, state, instanceId }: { descriptor: NodeDes
             defaultValue={p.defaultValue}
             isInteger={p.isInteger}
             unit={p.unit}
-            options={p.options}
+            options={parameterOptions(p)}
             onCommit={paramCommit(state, p.id)}
           />
         ))}
       </div>
-      <div className="node-horizontal-preview">
-        {instanceId && descriptor.previews?.[0] && frameTypeForPreviewKind(descriptor.previews[0].kind) ? (
+      <div className={`node-horizontal-preview`}>
+        {instanceId && descriptor.previews?.[0] && frameTypeForPreviewKind(descriptor.previews[0].kind) !== undefined ? (
           <NodePreview nodeId={instanceId} preview={descriptor.previews[0]} />
         ) : (
           <PlaceholderPreview />
         )}
       </div>
-      <div className="node-horizontal-column node-horizontal-column-output">
-        {primaryOutput && (
+      {primaryOutput && (
+        <div className="node-horizontal-column node-horizontal-column-output">
           <PortRow direction="output" port={primaryOutput} connected={connected.has(primaryOutput.id)} instanceId={instanceId} />
-        )}
-      </div>
+        </div>
+      )}
     </div>
   )
 }

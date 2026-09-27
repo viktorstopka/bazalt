@@ -1,9 +1,10 @@
 # 0029 — `view.scope/spectrum/meter`: per-instance preview settings, input-port taps, taps that survive a recompile
 
 ## Status
-Accepted (M21), 2026-09-25 — the three open questions below were answered as recommended. Steps 1 (the
-subscription registry), 2 (input-port taps and the three nodes) and 3 (the settings, applied by `AnalysisThread`)
-are implemented; step 4 (the UI) is not yet.
+Accepted and fully implemented (M21), 2026-09-25/27 — the three open questions below were answered as
+recommended, and all four steps are done. Verified live in the Standalone app: an `osc.analog` with nothing
+wired to its allocator, feeding a Scope, a Spectrum and a Meter, showed a real saw waveform, a real rolled-off
+spectrum and a lit true-peak reading — the whole subscribe → attach → analyse → draw path, end to end.
 
 ## Context
 `view.scope`, `view.spectrum` and `view.meter` (NODE_CATALOG.md) are placeable nodes whose whole job is to show
@@ -106,13 +107,35 @@ ADR-0027 `InheritingPortsNode` mechanism, exactly as `util.reroute`. `view.spect
 output. They use the existing Horizontal card layout, which already mounts one large centred preview, so
 `NodeCard.tsx` needs no per-node code.
 
-## Order of work
-Each step builds, tests and commits on its own, so the first is worth doing whatever is decided below.
-1. Subscription registry and re-attach after publish, with a regression test — fixes CLEANUP P1 #5.
-2. Input-port taps, then the three nodes with the *current* fixed analysis — a working scope/spectrum/meter
-   end to end before any setting has an effect.
+## Order of work — all four steps done
+1. Subscription registry and re-attach after publish, with a regression test — fixes CLEANUP P1 #5. (`b317a30`)
+2. Input-port taps, then the three nodes with the *current* fixed analysis. (`20908ba`)
 3. The settings, one consumer at a time in `AnalysisThread`, each with a test that the frame really changes.
-4. UI: render `enumOptions` as a dropdown (see Q3), verify all three in the running Standalone app.
+   (`c1db739`)
+4. UI + two real bugs found verifying it live, below.
+
+**Step 4.** `parameterOptions()` in `NodeCard.tsx` renders a real enum parameter's `enumOptions` (label list)
+as a `TriggerSelect` dropdown exactly like a mock descriptor's `options`, keyed on `kind === 'enum'` — every
+real enum parameter's value already IS its option index (checked across every registered node type), so no
+new mapping was needed. A Horizontal-layout node with no output (every viewer) gets a taller preview
+(`.node-horizontal-preview-viewer`, keyed off "no output" so any future viewer gets it for free) instead of
+the 32px thumbnail meant for a node whose preview is secondary to its value.
+
+Verifying step 4 live (craft a saved patch via a throwaway test that calls `getStateAsJson()`, swap it into
+`%APPDATA%\Bazalt\Bazalt.settings`, launch the Standalone app, screenshot, restore the real settings file —
+see `bazalt_project_status.md`'s UPDATE for the recipe) found two real bugs, both fixed here, neither
+specific to this feature:
+
+- **`frameTypeForPreviewKind(kind) ? …` treated `TelemetryFrameType.Oscilloscope` (0) as falsy.** Every
+  Waveform preview — `osc.analog`'s own, and now Scope's — silently rendered nothing, since M20. Fixed to
+  `!== undefined` at all four call sites (`NodePreview.tsx`, `NodeCard.tsx`).
+- **An oscillator with nothing wired to its pitch was silent DC**, even though its card displays "Frequency
+  440 Hz": `PolyBlepOscillator` starts at 0 Hz and only a connected pitch/frequency port, or a saved
+  parameter, ever calls `setFrequency()`. Invisible through M0–M20, where every `osc.analog` sits in a voice
+  graph and the allocator always drives pitch; real as soon as M21's mono-graph path lets one play on its
+  own. Fixed: `OscillatorNode::prepare()` now calls `setFrequency(440.0f)` — the same constant the port's own
+  descriptor default already names — before the compiler applies any saved parameter, so a saved frequency
+  still wins. Regression test: "An oscillator with nothing wired to its pitch sounds at its displayed 440 Hz".
 
 ## Decisions on the open questions (2026-09-25)
 - **Q1 - scope window length:** capped at the tap ring (8192 samples, ~186 ms at 44.1 kHz) for now, and the

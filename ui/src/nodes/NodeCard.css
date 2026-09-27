@@ -281,6 +281,16 @@
   padding: 0 var(--space-sm);
 }
 
+/* A node with a preview and NO output (view.scope/spectrum/meter) exists to be
+   looked at, so its preview is the point of the card, not a 32px thumbnail
+   beside a value. Keyed off "no output" rather than a node type, so any
+   future viewer gets it for free. */
+.node-horizontal-preview-viewer .node-preview-canvas,
+.node-horizontal-preview-viewer .node-preview-placeholder {
+  height: 96px;
+  min-width: 160px;
+}
+
 .node-preview-placeholder {
   display: block;
   width: 100%;

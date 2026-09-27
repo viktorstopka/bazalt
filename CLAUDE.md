@@ -14,9 +14,10 @@ standardized inline visualization). `docs/MILESTONES.md` is the per-milestone
 record and `git log` is the source of truth for what's committed — some
 headers there carry no "— done" marker even when the work landed (M20 did),
 and M12/M13 (interaction polish, assist menu) are still open UI milestones.
-**M21 (Node Batch A: math/logic/adapters/io/view) is in progress** — see its
-section in MILESTONES.md for what's built and what remains. Each milestone
-must build, pass its tests, and be committed before the next one starts.
+**M21 (Node Batch A: math/logic/adapters/io/view) is done except `util.macro`**
+(deliberately deferred past M21, ADR-0015 still Proposed) — see its section
+in MILESTONES.md. Each milestone must build, pass its tests, and be
+committed before the next one starts.
 
 ## The non-negotiable rules
 

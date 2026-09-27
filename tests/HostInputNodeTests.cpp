@@ -5,6 +5,7 @@
 #include "bazalt/engine/nodes/IoAudioInNode.h"
 #include "bazalt/engine/nodes/IoControlNode.h"
 #include "bazalt/engine/nodes/IoTransportNode.h"
+#include <algorithm>
 #include <cmath>
 #include <numeric>
 #include <vector>
@@ -362,4 +363,56 @@ TEST_CASE ("io.transport is safe at a zero or negative tempo", "[engine][nodes][
         for (const auto value : run.position)
             CHECK (std::isfinite (value));
     }
+}
+
+// A displayed default has to be the node's real default. osc.analog's card shows
+// "Frequency 440 Hz", but PolyBlepOscillator starts at 0 Hz, so with nothing wired
+// to its pitch the oscillator was silent DC. Invisible while every oscillator sat
+// in a voice graph (the allocator always drives pitch); found by wiring a scope to
+// one in an allocator-free graph in the running app.
+TEST_CASE ("An oscillator with nothing wired to its pitch sounds at its displayed 440 Hz",
+           "[engine][osc][M21]")
+{
+    auto factory = buildDefaultNodeFactory();
+
+    NodeGraph graph;
+    graph.addNode ({ "osc", "osc.analog", {}, {}, {} });
+    graph.setOutput ("osc", "out");
+
+    constexpr double sampleRate = 44100.0;
+    auto compiled = GraphCompiler::compile (graph, factory, { sampleRate, 4410 }, 1);
+    REQUIRE (compiled.success);
+
+    compiled.plan.process (4410); // 0.1 s
+    const auto* out = compiled.plan.blockBuffers[(size_t) compiled.plan.finalOutputBufferIndex].getBlock().getChannelPointer (0);
+
+    // A saw at 440 Hz: loud, and crossing zero about 2 * 44 times in 0.1 s.
+    float peak = 0.0f;
+    int crossings = 0;
+    for (int i = 0; i < 4410; ++i)
+    {
+        peak = std::max (peak, std::abs (out[i]));
+        if (i > 0 && (out[i - 1] < 0.0f) != (out[i] < 0.0f))
+            ++crossings;
+    }
+
+    CHECK (peak > 0.5f);
+    CHECK (crossings >= 80);
+    CHECK (crossings <= 96);
+
+    // A saved frequency still wins over that starting point.
+    NodeGraph saved;
+    saved.addNode ({ "osc", "osc.analog", {}, { { "osc.analog.frequency", 220.0f } }, {} });
+    saved.setOutput ("osc", "out");
+    auto savedCompiled = GraphCompiler::compile (saved, factory, { sampleRate, 4410 }, 1);
+    REQUIRE (savedCompiled.success);
+    savedCompiled.plan.process (4410);
+    const auto* savedOut = savedCompiled.plan.blockBuffers[(size_t) savedCompiled.plan.finalOutputBufferIndex].getBlock().getChannelPointer (0);
+
+    int savedCrossings = 0;
+    for (int i = 1; i < 4410; ++i)
+        if ((savedOut[i - 1] < 0.0f) != (savedOut[i] < 0.0f))
+            ++savedCrossings;
+    CHECK (savedCrossings >= 38);
+    CHECK (savedCrossings <= 50);
 }

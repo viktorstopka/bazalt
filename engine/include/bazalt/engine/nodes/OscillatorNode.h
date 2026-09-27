@@ -40,10 +40,24 @@ namespace bazalt::engine::nodes
     class OscillatorNode : public Node
     {
     public:
+        static constexpr float defaultFrequencyHz = 440.0f; // also osc.analog.frequency's descriptor default
         static constexpr int numInputs = 2; // pitch, frequency
         static constexpr int numOutputs = 1;
 
-        void prepare (const NodePrepareInfo& info) override { oscillator.prepare (info.sampleRate); }
+        void prepare (const NodePrepareInfo& info) override
+        {
+            oscillator.prepare (info.sampleRate);
+
+            // Start at the frequency the card DISPLAYS (the port's own default,
+            // 440 Hz). PolyBlepOscillator starts at 0 Hz - silent DC - so an
+            // oscillator with nothing wired to its pitch used to be silent while
+            // showing "Frequency 440 Hz". It never mattered while every
+            // oscillator sat in a voice graph (the allocator always drives pitch);
+            // it matters now that a graph with no allocator plays (M21). Runs
+            // before the compiler applies the instance's saved parameters, so a
+            // saved frequency still wins.
+            oscillator.setFrequency (defaultFrequencyHz);
+        }
         void reset() override { oscillator.reset(); }
 
         int getNumInputPorts() const noexcept override { return numInputs; }
@@ -58,7 +72,7 @@ namespace bazalt::engine::nodes
                 PortDescriptor { .id = "pitch", .type = SignalType::Control, .unit = "st",
                                   .minValue = 0.0f, .maxValue = 127.0f, .defaultValue = 60.0f,
                                   .hasFallbackWhenUnconnected = true, .quantity = Quantity::Pitch },
-                ValueTypes::frequencyPort ("osc.analog.frequency", "Frequency", 440.0f),
+                ValueTypes::frequencyPort ("osc.analog.frequency", "Frequency", defaultFrequencyHz),
             };
         }
         std::vector<PortDescriptor> getOutputPorts() const override

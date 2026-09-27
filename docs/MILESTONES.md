@@ -489,7 +489,7 @@ what you'd actually patch to try it, usually a `REFERENCE_PATCHES.md`/`NODE_CATA
 | M27 | Samplers, wavetable, file loading | `osc.wavetable` (1), `sampler.player/granular` (2), `data.load` (1) — 4 nodes | Load a real sample, play it pitched and granulated. |
 | M28 | Space effects + swarm/trigger configs | `space.reverb/diffuser` (2), `instance.allocator`'s Swarm-population/Swarm-transient/Trigger configurations (same typeId, new behavior, generalizing M17's Voice-only scope) | **Water**, **Crackle** (as a real swarm, not the single-instance stand-in from M23), **Cicada**, **Cicada Field** groups — the transient/persistent swarm reference patch, for real. |
 
-### M21 progress (Batch A) — in progress
+### M21 progress (Batch A) — done except `util.macro` (deliberately deferred)
 
 **Wave 1 — done, 10 new nodes (25 of the 36 now exist; 15 already did):** `math.subtract/divide/abs/minmax/power/modulo/slew`, `mix.crossfade`,
 `logic.not/toggle`. Fixed-arity nodes needing no new infrastructure; each header records its own design
@@ -526,11 +526,27 @@ Design: **ADR-0028**. The RT-allocation trap test written for this path found a 
 built from a literal on every note-on/off/pitch-bend); fixed and regression-tested. 258/258 tests, pluginval
 strictness 10 SUCCESS. `io.noteIn` is deliberately not migrated onto `HostInputs` (ADR-0028).
 
-**Remaining: 3 `view.*` nodes and `util.macro` — and why it is not "just more nodes":**
-- **`view.scope/spectrum/meter`**: their `timeWindow`/`mode` settings are per-instance, but
-  `getPreviews()` is declared once per node type. Needs a design before it is built.
-- **`util.macro`: deferred past M21** (decision 2026-09-20). ADR-0015 is still Proposed; it commits to
-  the fixed 32-slot host-automation pool plus a slot-addressed node and deserves its own decision.
+**Wave 5 — done: `view.scope`/`view.spectrum`/`view.meter`, and their settings are real (36 of the 36 exist).**
+Each has one input and no outputs; its preview is declared on that input, and the engine resolves it to the
+buffer wired in (`ExecutionPlan::inputSourceBufferIndexByNodeAndPort`/`findTappableBufferIndex`). `scope` and
+`meter` take any plain signal via the ADR-0027 inherited-port mechanism; `spectrum` is Audio-only.
+`AnalysisThread` was rebuilt around a `TapSettings` block per hub slot, filled from the live node's
+`getPreviews()` on every attach — so a viewer's parameters (`scope`'s time window and free/rising-edge
+trigger, `spectrum`'s FFT size 512–8192/tilt/averaging, `meter`'s Peak/RMS/True-Peak) are what
+`AnalysisThread` actually applies, and every real enum parameter (not just these three nodes') now renders
+as a dropdown instead of an integer slider — the UI never read `enumOptions` before this. Design and the
+full build log: **ADR-0029**.
+
+Two real bugs surfaced only by verifying the finished feature live in the Standalone app, both fixed as part
+of this wave, neither specific to it: a falsy-zero check (`!frameType`) silently disabled every Waveform
+preview since M20, including `osc.analog`'s own; and `osc.analog` was silent DC with nothing wired to its
+pitch, because `PolyBlepOscillator` starts at 0 Hz and only a voice-graph allocator (which always drives
+pitch) ever called `setFrequency()` before — invisible until M21's mono-graph path let an oscillator run on
+its own. See ADR-0029's step 4 for both. 283/283 tests, `npm run build`/`lint` clean.
+
+**`util.macro` is the only thing left of Batch A, deferred past M21 on purpose** (decision 2026-09-20).
+ADR-0015 is still Proposed; it commits to the fixed 32-slot host-automation pool plus a slot-addressed node
+and deserves its own decision before M22.
 
 **Known UI gap, not M21's to fix:** the UI never reads the engine's `enumOptions`, so every real enum
 parameter (`math.round`/`math.minmax` mode, `mix.downmix` mode, `mix.crossfade` law, `osc.analog` shape)

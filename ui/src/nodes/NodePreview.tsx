@@ -42,12 +42,15 @@ const VISIBILITY_ROOT_MARGIN = '200px'
 export function NodePreview({ nodeId, preview }: NodePreviewProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
   const id = useId()
+  // Compared against undefined, NEVER tested for truthiness: TelemetryFrameType.Oscilloscope
+  // is 0, so `!frameType` silently disabled every Waveform preview (osc.analog's, and
+  // view.scope's) since M20 - they rendered nothing at all.
   const frameType = frameTypeForPreviewKind(preview.kind)
   const [visible, setVisible] = useState(false)
 
   useEffect(() => {
     const canvas = canvasRef.current
-    if (!canvas || !frameType) return
+    if (!canvas || frameType === undefined) return
     const observer = new IntersectionObserver(([entry]) => setVisible(entry.isIntersecting), {
       rootMargin: VISIBILITY_ROOT_MARGIN,
     })
@@ -56,14 +59,14 @@ export function NodePreview({ nodeId, preview }: NodePreviewProps) {
   }, [frameType])
 
   useEffect(() => {
-    if (!visible || !frameType) return
+    if (!visible || frameType === undefined) return
     void subscribeNodePreview(nodeId, preview.portId, preview.kind)
     return () => unsubscribeNodePreview(nodeId, preview.portId, preview.kind)
   }, [visible, nodeId, preview.portId, preview.kind, frameType])
 
   useEffect(() => {
     const canvas = canvasRef.current
-    if (!visible || !canvas || !frameType) return
+    if (!visible || !canvas || frameType === undefined) return
     const ctx = canvas.getContext('2d')
     if (!ctx) return
 
@@ -95,7 +98,7 @@ export function NodePreview({ nodeId, preview }: NodePreviewProps) {
     return () => unregisterPreviewRenderer(id)
   }, [visible, nodeId, preview.portId, preview.kind, frameType, id])
 
-  if (!frameType) return null
+  if (frameType === undefined) return null
 
   return <canvas className="node-preview-canvas" ref={canvasRef} />
 }
