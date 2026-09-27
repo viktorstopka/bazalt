@@ -119,6 +119,115 @@ TEST_CASE ("A mono audio-effect graph passes the host main input through with no
     CHECK (right.getSample (0, 100) == Catch::Approx (0.7f).margin (1.0e-6f));
 }
 
+TEST_CASE ("A genuinely stereo graph (space.pan into io.output's stereo pair) sends different signals to each host channel",
+           "[plugin][host-input][stereo][M0.2]")
+{
+    // Milestone 0.2 (wiki/NODES.System.md §9): io.output's real second
+    // channel actually reaching the host's two physical output channels,
+    // proven with a hard pan so left and right are provably different
+    // values, not the old mono-duplicate fallback wearing a new port name.
+    // Deliberately voice + global-domain shaped (allocator -> osc ->
+    // instance.mix -> pan -> out), the same shape Init Patch itself now
+    // uses — the mono-only (no-allocator) render path is a known,
+    // documented scope boundary this milestone didn't extend (see
+    // wiki/NODES.System.md §9's own notes); a plain io.audioIn-only graph
+    // still duplicates mono to both channels, covered by the next test.
+    NodeGraph graph;
+    graph.addNode ({ "noteIn", "io.noteIn", {}, {}, {} });
+    graph.addNode ({ "allocator", "instance.allocator", {}, {}, {} });
+    graph.addNode ({ "osc", "osc.analog", {}, {}, {} });
+    graph.addNode ({ "voiceMix", "instance.mix", {}, {}, {} });
+    graph.addNode ({ "pan", "space.pan", {}, { { "space.pan.pan", -1.0f } }, {} }); // hard left
+    graph.addNode ({ "out", "io.output", {}, {}, {} });
+    graph.addConnection ({ "noteIn", "notes", "allocator", "spawn" });
+    graph.addConnection ({ "allocator", "pitch", "osc", "pitch" });
+    graph.addConnection ({ "osc", "out", "voiceMix", "in" });
+    graph.addConnection ({ "voiceMix", "out", "pan", "in" });
+    graph.addConnection ({ "pan", "left", "out", "in" });
+    graph.addConnection ({ "pan", "right", "out", "right" });
+    graph.setOutput ("out", "out");
+
+    BazaltAudioProcessor processor;
+    processor.prepareToPlay (44100.0, 512);
+    REQUIRE (processor.getGraphEditController().setGraph (graph).success);
+
+    juce::MidiBuffer noteOn;
+    noteOn.addEvent (juce::MidiMessage::noteOn (1, 60, 1.0f), 0);
+    processWithMainInput (processor, 0.0f, 0.0f, 512, noteOn);
+    juce::AudioBuffer<float> out;
+    for (int block = 0; block < 4; ++block) // let the oscillator settle into steady output
+        out = processWithMainInput (processor, 0.0f, 0.0f, 512);
+
+    double leftSumSquares = 0.0, rightSumSquares = 0.0;
+    for (int i = 0; i < 512; ++i)
+    {
+        leftSumSquares += (double) out.getSample (0, i) * out.getSample (0, i);
+        rightSumSquares += (double) out.getSample (1, i) * out.getSample (1, i);
+    }
+    const auto leftRms = std::sqrt (leftSumSquares / 512.0);
+    const auto rightRms = std::sqrt (rightSumSquares / 512.0);
+
+    CHECK (leftRms > 0.1);    // hard left: a real signal on the left channel
+    CHECK (rightRms < 0.01);  // ...and (nearly) none on the right - genuinely different, not duplicated
+}
+
+TEST_CASE ("io.output's right channel is only used when actually wired - an unwired right still duplicates left, matching every graph before Milestone 0.2",
+           "[plugin][host-input][stereo][M0.2]")
+{
+    // The exact regression this guard exists for. NOTE: this must be a
+    // voice + global-domain graph (allocator -> ... -> instance.mix -> out),
+    // NOT monoEffectGraph() - a no-allocator graph takes PluginProcessor's
+    // separate renderMonoRange/monoRenderedThisBlock path, which never
+    // consults finalOutputBufferIndexRight at all (mono or not), so it can't
+    // actually exercise the rightInputIsWired guard either way. Confirmed by
+    // a real mutation check: forcing the guard to unconditionally `true`
+    // left this test passing when it used monoEffectGraph() - it wasn't
+    // touching the code path being guarded. This shape (matching the
+    // "genuinely stereo" test above, minus the "right" connection) does
+    // reach GraphCompiler's Stereo-pair resolution, and DOES catch the
+    // mutation: an io.output-terminated graph that only ever wires "in"
+    // (every graph that existed before this milestone) must still duplicate
+    // left to both physical channels - NOT go silent on the right just
+    // because the node type now happens to declare a second port nothing
+    // connects to.
+    NodeGraph graph;
+    graph.addNode ({ "noteIn", "io.noteIn", {}, {}, {} });
+    graph.addNode ({ "allocator", "instance.allocator", {}, {}, {} });
+    graph.addNode ({ "osc", "osc.analog", {}, {}, {} });
+    graph.addNode ({ "voiceMix", "instance.mix", {}, {}, {} });
+    graph.addNode ({ "out", "io.output", {}, {}, {} });
+    graph.addConnection ({ "noteIn", "notes", "allocator", "spawn" });
+    graph.addConnection ({ "allocator", "pitch", "osc", "pitch" });
+    graph.addConnection ({ "osc", "out", "voiceMix", "in" });
+    graph.addConnection ({ "voiceMix", "out", "out", "in" }); // "right" deliberately left unwired
+    graph.setOutput ("out", "out");
+
+    BazaltAudioProcessor processor;
+    processor.prepareToPlay (44100.0, 512);
+    REQUIRE (processor.getGraphEditController().setGraph (graph).success);
+
+    juce::MidiBuffer noteOn;
+    noteOn.addEvent (juce::MidiMessage::noteOn (1, 60, 1.0f), 0);
+    processWithMainInput (processor, 0.0f, 0.0f, 512, noteOn);
+    juce::AudioBuffer<float> out;
+    for (int block = 0; block < 4; ++block) // let the oscillator settle into steady output
+        out = processWithMainInput (processor, 0.0f, 0.0f, 512);
+
+    double leftSumSquares = 0.0, rightSumSquares = 0.0;
+    for (int i = 0; i < 512; ++i)
+    {
+        leftSumSquares += (double) out.getSample (0, i) * out.getSample (0, i);
+        rightSumSquares += (double) out.getSample (1, i) * out.getSample (1, i);
+    }
+
+    // Both channels carry the same real (non-silent) signal - duplicated,
+    // not silenced, exactly matching a plain mono-out node.
+    CHECK (leftSumSquares > 0.0);
+    CHECK (rightSumSquares == Catch::Approx (leftSumSquares).margin (1.0e-9));
+    for (int i = 0; i < 512; ++i)
+        REQUIRE (out.getSample (0, i) == Catch::Approx (out.getSample (1, i)).margin (1.0e-7f));
+}
+
 TEST_CASE ("io.audioIn bus setting selects a sidechain aux bus", "[plugin][host-input][mono]")
 {
     BazaltAudioProcessor processor;

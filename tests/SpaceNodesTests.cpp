@@ -7,6 +7,8 @@
 #include <catch2/catch_approx.hpp>
 #include "bazalt/engine/nodes/PanNode.h"
 #include "bazalt/engine/nodes/WidthNode.h"
+#include "bazalt/engine/nodes/StereoSplitNode.h"
+#include "bazalt/engine/nodes/StereoCombineNode.h"
 #include <cmath>
 #include <limits>
 
@@ -291,5 +293,33 @@ TEST_CASE ("WidthNode's ports fall back to setParameter's value exactly when unc
         viaNaN.processSample (inputsB, b);
         CHECK (a[0] == b[0]);
         CHECK (a[1] == b[1]);
+    }
+}
+
+TEST_CASE ("StereoSplitNode and StereoCombineNode are exact, unmodified passthroughs",
+           "[engine][nodes][space][M0.2]")
+{
+    // Milestone 0.2 (wiki/NODES.System.md §9.4): the independent-per-channel
+    // bridge - both are trivial by design, so the only thing worth proving
+    // is that they really are transparent (no gain, no swap, no drift).
+    bazalt::engine::nodes::StereoSplitNode split;
+    bazalt::engine::nodes::StereoCombineNode combine;
+
+    for (int i = 0; i < 100; ++i)
+    {
+        const auto l = (float) std::sin (0.05 * i);
+        const auto r = (float) std::sin (0.05 * i + 0.7);
+
+        float splitIn[2] = { l, r };
+        float splitOut[2] = {};
+        split.processSample (splitIn, splitOut);
+        CHECK (splitOut[0] == l);
+        CHECK (splitOut[1] == r);
+
+        float combineIn[2] = { l, r };
+        float combineOut[2] = {};
+        combine.processSample (combineIn, combineOut);
+        CHECK (combineOut[0] == l);
+        CHECK (combineOut[1] == r);
     }
 }

@@ -708,6 +708,13 @@ namespace bazalt
     void BazaltAudioProcessor::finalizeInstanceMixIntoOutput (juce::AudioBuffer<float>& output, int numSamples) noexcept
     {
         const float* finalMono = instanceMixScratchBuffer.getReadPointer (0);
+        // Milestone 0.2 (wiki/NODES.System.md §9): set below only when the
+        // plan that actually reaches the speakers resolved a real second
+        // (right) channel for its designated output — every graph that
+        // doesn't (every graph that existed before this milestone) leaves
+        // this null, and the mono-duplicate path at the bottom is
+        // unchanged, byte for byte.
+        const float* finalRight = nullptr;
 
         if (! monoRenderedThisBlock && hasGlobalDomain.load (std::memory_order_acquire))
         {
@@ -734,6 +741,11 @@ namespace bazalt
                         finalMono = globalPlan->blockBuffers[(size_t) globalPlan->finalOutputBufferIndex]
                                         .getBlock()
                                         .getChannelPointer (0);
+
+                        if (globalPlan->finalOutputBufferIndexRight >= 0)
+                            finalRight = globalPlan->blockBuffers[(size_t) globalPlan->finalOutputBufferIndexRight]
+                                             .getBlock()
+                                             .getChannelPointer (0);
                     }
                 }
             }
@@ -742,10 +754,21 @@ namespace bazalt
         auto* left = output.getWritePointer (0);
         auto* right = output.getNumChannels() > 1 ? output.getWritePointer (1) : left;
 
-        for (int i = 0; i < numSamples; ++i)
+        if (finalRight != nullptr && right != left)
         {
-            left[i] += finalMono[i];
-            right[i] += finalMono[i];
+            for (int i = 0; i < numSamples; ++i)
+            {
+                left[i] += finalMono[i];
+                right[i] += finalRight[i];
+            }
+        }
+        else
+        {
+            for (int i = 0; i < numSamples; ++i)
+            {
+                left[i] += finalMono[i];
+                right[i] += finalMono[i];
+            }
         }
     }
 

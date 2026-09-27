@@ -107,20 +107,47 @@ changes fully reverted, confirmed environmental/scheduling, not a regression; pa
 cleanly on retry with the changes back in place). Standalone app sanity-checked,
 no regressions.
 
-## 0.2 — Stereo, scoped (not built)
+## 0.2 — Stereo — done
 
-Full engineering design written into `wiki/NODES.System.md` §9: the chosen
-representation (a stereo port occupies two consecutive flat buffer slots — no change
-to `Node::processSample`/`processBlock`'s signatures, no change to 53 of the 55
-existing node files, no change to the patch format's connection shape), the exact
-`GraphCompiler.cpp`/`PluginProcessor.cpp`/telemetry change surface, the real cost
-(independent per-channel wiring needs two new `stereo.split`/`stereo.combine` bridge
-nodes that aren't needed today), why `mix.downmix` auto-insertion stops being a rare
-edge case and starts mattering, the schema v5 migration plan (including the
-asymmetric-old-patch case), and a 5-wave implementation order.
+Scoped as one design (twin flat slots, `left`/`right` reopened into one true stereo
+cable everywhere), **built as a smaller, safer one** once implementation started and
+reading `GraphCompiler.cpp` in full showed the full reopening would touch every
+port-indexed loop in the compiler for a much bigger blast radius than the actual goal
+needed. What shipped instead (`wiki/NODES.System.md` §9.1–§9.4; the original scoping
+is preserved as §9-old for the record):
 
-**Not implemented yet** — this milestone was explicitly "scope it out," not "build
-it." Waves 1–5 in §9.7 are the next 0.2.x-style work once building starts.
+- `io.output` ("Master Out") gained a real second channel — `right` input, `outRight`
+  output, both `Channels::Stereo`-marked, alongside the unchanged `in`/`out`.
+- `GraphCompiler.cpp`'s "Final output" resolution gained one small, additive lookup
+  (`ExecutionPlan::finalOutputBufferIndexRight`) for a designated output node's
+  second Stereo-paired channel — gated by a `rightInputIsWired` guard confirmed real
+  and load-bearing by a mutation-testing pass (an unwired `right` input must keep
+  duplicating left exactly as every graph did before this milestone, not go silent).
+- `PluginProcessor::finalizeInstanceMixIntoOutput` writes the real second channel to
+  the host when the compiler resolved one; unchanged otherwise.
+- Two new bridge nodes, `stereo.split`/`stereo.combine`, for independent-per-channel
+  wiring (proven byte-for-byte transparent passthroughs).
+- The Init Patch is rewired (`ProofGraphs.h::buildInitPatchGraph()`) so `space.pan`'s
+  `left`/`right` outputs feed `io.output`'s `in`/`right` directly — a fresh plugin
+  instance now opens playing genuinely panned stereo, not mono duplicated to both
+  speakers.
+
+**Deliberately out of scope** (§9.2 has the full list): `space.pan`/`space.width`
+keep their own `left`/`right` port-pair shape, not collapsed into one cable;
+`mix.downmix` unchanged; the mono-only no-allocator render path
+(`PluginProcessor::renderMonoRange`) not extended — an `io.audioIn`-only graph still
+duplicates mono to both channels; no patch schema migration needed, since nothing
+shipped renames or removes an existing port (only adds new ones) — a real, verified
+difference from the original scoping, which would have needed a v4→v5 migration.
+
+**Verified:** 361/361 tests green, including two new `[M0.2]`-tagged
+`tests-plugin/HostInputTests.cpp` cases (a voice+global-domain graph proving left and
+right genuinely differ via RMS; the mirror case proving an unwired right still
+duplicates left) and a `tests/SpaceNodesTests.cpp` transparency test for the two new
+bridge nodes. `tests/NodeDescriptorTests.cpp` bumped 56→58 registered types. UI
+`npm run build`/`npm run lint` clean with zero `ui/src` changes needed (both new node
+types are picked up by the existing descriptor-driven Add menu/gallery). Standalone
+app built and sanity-checked.
 
 ## 0.3 — Master Out / output designation, fixed
 

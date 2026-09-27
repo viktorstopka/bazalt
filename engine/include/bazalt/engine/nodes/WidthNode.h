@@ -56,9 +56,14 @@ namespace bazalt::engine::nodes
 
         std::vector<PortDescriptor> getInputPorts() const override
         {
+            // Milestone 0.2 (wiki/NODES.System.md §9): `channels = Stereo` on
+            // both audio inputs, in this declared order — a metadata-only
+            // addition (see PanNode.h's own comment for the full reasoning);
+            // the ids/behaviour are exactly what shipped before this
+            // milestone.
             return {
-                { "in.left", SignalType::Audio },
-                { "in.right", SignalType::Audio },
+                PortDescriptor { .id = "in.left", .type = SignalType::Audio, .channels = Channels::Stereo },
+                PortDescriptor { .id = "in.right", .type = SignalType::Audio, .channels = Channels::Stereo },
                 PortDescriptor { .id = "space.width.width", .type = SignalType::Control, .label = "Width",
                                   .minValue = 0.0f, .maxValue = 2.0f, .defaultValue = 1.0f,
                                   .hasFallbackWhenUnconnected = true, .quantity = Quantity::Unipolar },
@@ -71,9 +76,10 @@ namespace bazalt::engine::nodes
 
         std::vector<PortDescriptor> getOutputPorts() const override
         {
+            // Milestone 0.2: same Stereo-channel marking as the inputs above.
             return {
-                PortDescriptor { .id = "left", .type = SignalType::Audio, .label = "Left", .isPrimaryOutput = true },
-                PortDescriptor { .id = "right", .type = SignalType::Audio, .label = "Right" },
+                PortDescriptor { .id = "left", .type = SignalType::Audio, .label = "Left", .isPrimaryOutput = true, .channels = Channels::Stereo },
+                PortDescriptor { .id = "right", .type = SignalType::Audio, .label = "Right", .channels = Channels::Stereo },
             };
         }
 

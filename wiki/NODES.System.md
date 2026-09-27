@@ -466,16 +466,142 @@ their milestone comes up.
 
 ---
 
-## 9. Stereo audio: the single-cable redesign (Milestone 0.2)
+## 9. Stereo audio: Master Out gets a real second channel (Milestone 0.2)
 
-**Status: scoped, not built.** This section is the engineering design for turning a
-stereo signal into one real Audio cable instead of two `left`/`right` mono ports —
-your stated preference, reopening a decision the project already made deliberately,
-twice (`archive_docs/decisions/0023-audio-port-channels.md` and its M22 Amendment).
-Read those first if you want the original reasoning in full; this section doesn't
-repeat it, it builds on it and says exactly what changes.
+**Status: done, built.** This section originally scoped a much bigger reopening — one
+real "stereo" cable replacing every `left`/`right` mono port pair everywhere in the
+catalog (§9.1–§9.7 below, preserved as **§9-old** at the end of this section for the
+record). Reading `GraphCompiler.cpp` in full during actual implementation changed the
+plan: that "twin flat slots" design would have made every port-indexed loop in the
+compiler channel-aware, touching machinery far outside what the actual, immediate goal
+needed. Given the priority at the time — get to a stable, testable build — the design
+that actually shipped is dramatically smaller, additive-only, and zero-risk to the
+existing 55-node catalog. It solves the concrete symptom (Master Out only ever
+produces mono; there is no way to get a real stereo signal to the host's two physical
+output channels) without reopening `left`/`right` as the per-node stereo idiom.
 
-### 9.1 Why this is a reopening, not a bug fix
+### 9.1 What actually shipped
+
+- **`PortDescriptor::channels = Channels::Stereo`** (already existed, unused by any
+  real node before this) is now used as **declaration-order pairing metadata**,
+  exactly where `space.pan`/`space.width` already proved the `left`/`right`-pair
+  convention works. No new port-addressing mechanism, no flat-slot allocation, no
+  change to `Node::processSample`/`processBlock`'s signatures, and **zero changes** to
+  53 of the 55 existing node files.
+- **`io.output` ("Master Out") gained a real second channel.** `"in"`/`"out"` keep
+  their exact shipped ids (CLAUDE.md rule 3) and now mean the left channel; a new
+  `"right"` input and `"outRight"` output (not `"right"` — a port id must be unique
+  across a node's own inputs *and* outputs, `ExecutionPlanTapTests.cpp`'s tap-naming
+  invariant) sit beside them, all four marked `Channels::Stereo`. `processSample` is
+  still a trivial per-channel passthrough.
+- **`GraphCompiler.cpp`'s "Final output" resolution** (the very end of `compile()`)
+  gained one small, additive lookup: if the graph's designated output node declares
+  two consecutive `Stereo`-marked output ports, the compiler resolves a second buffer
+  index (`ExecutionPlan::finalOutputBufferIndexRight`, a plain sibling field to the
+  pre-existing `finalOutputBufferIndex`) — **but only if the matching second
+  (right-channel) *input* is actually wired to something** (`incomingSource.find(...)`
+  on that input's `PortKey`). This guard is load-bearing, not a nicety: every declared
+  output port allocates a real buffer unconditionally, so an unwired `"right"` input
+  still produces a resolvable, silent output buffer — without the guard, *every*
+  pre-existing `io.output`-terminated graph (every proof/test graph, every patch
+  before this milestone) would have silently started sending **silence** on the right
+  channel instead of the old, correct duplicate-left-to-both-channels behavior. A real
+  mutation-testing pass (force the guard to ignore `incomingSource` and always report
+  "wired") confirmed the guard is exercised and load-bearing — it fails the
+  "unwired right still duplicates left" regression test exactly as expected. (A first
+  attempt at that same mutation check mutated the wrong variable — the guard's
+  *default* value, which a real stereo-input pair always overwrites regardless — and
+  passed trivially; that was a test-methodology bug, not evidence the guard was
+  unnecessary, and is why the actual check lives on the `incomingSource.find(...)`
+  call itself.)
+- **`PluginProcessor::finalizeInstanceMixIntoOutput`** now reads that second buffer
+  (`finalRight`, non-null only when the compiler resolved one) and, only then, writes
+  `right[i] += finalRight[i]` instead of duplicating `finalMono` into both channels.
+  Every other call shape is unchanged, byte for byte.
+- **Two new bridge nodes for independent-per-channel wiring**, `stereo.split` and
+  `stereo.combine` (§9.4's own concern, below), built now rather than deferred:
+  `stereo.split` (`in.left`/`in.right` → `left`, `right`) and `stereo.combine`
+  (`in.left`/`in.right` → `left`, `right`, the input side renamed to avoid the same
+  own-node id collision `io.output` hit). Both are trivial, exact passthroughs —
+  proven byte-for-byte transparent by a dedicated sine-sweep test
+  (`tests/SpaceNodesTests.cpp`).
+- **The Init Patch is rewired** (`ProofGraphs.h::buildInitPatchGraph()`) to actually
+  use the new second channel: `space.pan`'s `left`/`right` outputs feed `io.output`'s
+  `"in"`/`"right"` inputs directly. A fresh plugin instance now opens playing a
+  genuinely panned stereo signal, not a mono chain duplicated to both speakers.
+
+### 9.2 What was deliberately left out of scope
+
+- **No patch schema migration.** Unlike §9-old's plan (which proposed dropping and
+  replacing `space.pan`/`space.width`'s shipped port ids, needing a v4→v5 migration),
+  nothing shipped here renames or removes any existing port. `io.output` only gained
+  new ports; every old patch that only ever wired `"in"`→`"out"` keeps behaving
+  exactly as before, automatically, with no migration step needed. Confirmed by a
+  dedicated regression test, not just argued.
+- **`space.pan` and `space.width`'s own port shapes are unchanged** — they still
+  expose `left`/`right` (or `in.left`/`in.right`) as separate mono ports, marked
+  `Channels::Stereo` now (metadata only), not collapsed into one stereo cable. The
+  general "wire one stereo cable between any two stereo-shaped nodes in the middle of
+  a graph" ergonomics goal from §9-old was **not** built — what's built specifically
+  closes the "Master Out can't produce real stereo" gap, nothing more.
+- **The mono-only render path was not extended.** A graph with no `instance.allocator`
+  (`DomainSplitter::monoOnly`, `PluginProcessor::renderMonoRange`) still only ever
+  produces one mono buffer and duplicates it to both channels — `io.audioIn → out`
+  with nothing else in the graph, for instance, is unaffected by this milestone and
+  stays exactly as before. Only the `hasGlobalDomain` path (a graph with an
+  `instance.mix`, which is what every voice-based patch — including the Init Patch —
+  actually uses) can produce a real second channel today.
+- **`mix.downmix` is unchanged** — still two separate mono `left`/`right` inputs, not
+  rewritten onto the new metadata convention. §9-old's auto-insertion proposal (§9.5)
+  was not built.
+- **No UI changes were needed or made** — `stereo.split`/`stereo.combine` are ordinary
+  registered node types; the Add menu and descriptor catalog pick them up the same way
+  every other real node is picked up, with zero `ui/src` code changes. Confirmed by a
+  clean `npm run build`/`npm run lint` after the engine-side change.
+
+### 9.3 Verification
+
+`tests-plugin/HostInputTests.cpp` gained two dedicated `[M0.2]`-tagged tests: a
+voice+global-domain graph (`instance.allocator → osc.analog → instance.mix →
+space.pan (hard left) → io.output`) proving the host's left and right channels
+genuinely differ (RMS-checked, not just "not bit-identical"), and the mirror case —
+the same graph shape with `io.output`'s `"right"` input deliberately left unwired —
+proving both channels still carry the identical, duplicated signal (not silence). The
+second test is the one that actually exercises the `rightInputIsWired` guard; an
+earlier version of it used the simpler no-allocator `monoEffectGraph()` helper, which
+turned out to take the separate mono-only render path (§9.2) and never reach the
+guarded code at all — corrected once traced, not before. `tests/SpaceNodesTests.cpp`
+covers `stereo.split`/`stereo.combine`'s transparency; `tests/NodeDescriptorTests.cpp`
+covers both new types being registered (58 total types, up from 56).
+
+### 9.4 Independent per-channel wiring — the bridge nodes' actual job
+
+Even with `left`/`right` staying the per-node convention (§9.2), `stereo.split`/
+`stereo.combine` are still genuinely useful and are real, registered, tested node
+types today: `stereo.split` takes a stereo-marked input pair and re-exposes each side
+as an ordinary independently-wireable mono output (feed one side into a different
+filter than the other); `stereo.combine` is the inverse, letting two genuinely
+unrelated mono sources feed one stereo-marked destination pair (e.g. `io.output`'s
+`"in"`/`"right"`) as a labeled pair rather than two separately-drawn cables. Both are
+Pattern-B inline DSP (trivial passthrough), Adapters category.
+
+---
+
+### §9-old — the original "twin flat slots" scoping (superseded, kept for the record)
+
+The subsections below are the Milestone 0.2 *scoping* pass's original design for a
+much larger reopening (one true stereo cable replacing `left`/`right` everywhere).
+**None of it was built.** It's kept here rather than deleted because the trade-off
+analysis in §9.1(old)/§9.4(old) — why `left`/`right` was chosen originally, and what a
+full reopening would actually cost — is still accurate background if this ever gets
+revisited for real; just don't confuse it with what §9.1–§9.4 above describe as
+shipped.
+
+Read `archive_docs/decisions/0023-audio-port-channels.md` and its M22 Amendment first
+if you want the original per-node design's full reasoning; the subsections below
+build on it.
+
+### 9-old.1 Why this is a reopening, not a bug fix
 
 ADR-0023's Amendment chose `left`/`right` port pairs **specifically because** it was
 "the cheaper, zero-new-infrastructure path" — genuine multi-channel-per-port buffer
@@ -492,7 +618,7 @@ that doesn't read as "one thing" on the canvas the way it does in every DAW you'
 ever used. That's a real cost worth fixing on its own; this section doesn't pretend
 it's fixing a bug.
 
-### 9.2 What's already true today (confirmed by reading the actual code, not assumed)
+### 9-old.2 What's already true today (confirmed by reading the actual code, not assumed)
 
 - **`AlignedBuffer::resize(numChannels, numSamples)`** already takes a channel count
   — it wraps a `juce::dsp::AudioBlock<float>`, a real structure-of-arrays multi-channel
@@ -516,7 +642,7 @@ it's fixing a bug.
 - **`mix.downmix`** (`left`, `right` → `out`) is real today, and stays exactly as-is —
   useful in both worlds. It is **not** auto-insertable by `connectWithAutoAdapt` (a
   2-in-1-out shape doesn't fit the 1-in-1-out `AdapterStep` splice mechanism) — a real,
-  already-known gap that gets more important under this redesign (see §9.5).
+  already-known gap that gets more important under this redesign (see §9-old.5).
   There is no converse `mix.upmix` node and none is needed — mono→stereo is a free
   broadcast per the existing `canConnect` rule.
 - **`io.output`/Master Out** has one mono `in`/`out` port; `PluginProcessor` tracks
@@ -532,7 +658,7 @@ it's fixing a bug.
   still catalog-only or, for `io.audioIn`, a pre-existing two-separate-mono-ports
   design that predates the `left`/`right` convention entirely.
 
-### 9.3 The chosen design: twin flat slots, not a multi-channel buffer
+### 9-old.3 The chosen design: twin flat slots, not a multi-channel buffer
 
 Two candidate representations exist. This section picks one and says why.
 
@@ -567,7 +693,7 @@ port-to-slot resolution:
   wires the *same* mono source buffer index into *both* of the stereo input's two
   slots. No new node, no new mechanism — just two `InputRef`s pointing at one buffer.
 - **Stereo → mono**: still needs `mix.downmix`, exactly as today's rule says — see
-  §9.5 for why auto-insertion now actually matters.
+  §9-old.5 for why auto-insertion now actually matters.
 - **Telemetry/taps** (`outputBufferIndexByNodeAndPort`,
   `inputSourceBufferIndexByNodeAndPort`, `findTappableBufferIndex`): each currently
   maps a `(nodeId, portId)` to **one** buffer index. For a stereo port this becomes
@@ -577,7 +703,7 @@ port-to-slot resolution:
   meter, or — the honest MVP — channel 0 only with the gap logged, matching how this
   project has shipped partial coverage before rather than blocking on full fidelity).
 
-### 9.4 The real cost: independent per-channel wiring gets harder, not easier
+### 9-old.4 The real cost: independent per-channel wiring gets harder, not easier
 
 This is the trade-off worth being explicit about, not just the engineering mechanics.
 `left`/`right` as two separate ports let a patch wire **genuinely different sources**
@@ -599,7 +725,7 @@ new pair of primitives, small (each is a trivial passthrough/pairing node, Patte
 inline DSP, no new math), but real scope this section is naming rather than
 discovering mid-implementation.
 
-### 9.5 `mix.downmix` auto-insertion becomes worth building
+### 9-old.5 `mix.downmix` auto-insertion becomes worth building
 
 Today, stereo→mono needing manual `mix.downmix` insertion is a rare edge case (almost
 nothing is stereo yet). Once Audio is stereo-by-default, **any** stereo signal
@@ -616,11 +742,11 @@ mechanism with no compiler changes at all. **Recommended**: do the latter — re
 building new adapter-chain machinery for a 2-in-1-out shape that would otherwise stay
 a one-off special case forever.
 
-### 9.6 Patch migration (schema v5)
+### 9-old.6 Patch migration (schema v5)
 
 Two real nodes need their shipped ports changed: `space.pan` (drop `left`/`right`
 outputs, add one stereo `out`) and `space.width` (drop `in.left`/`in.right` inputs and
-`left`/`right` outputs, add one stereo `in`/`out`) — plus `mix.downmix` if §9.5's
+`left`/`right` outputs, add one stereo `in`/`out`) — plus `mix.downmix` if §9-old.5's
 recommendation is taken (drop `left`/`right`, add one stereo `in`). Per CLAUDE.md rule
 3, none of these port IDs get silently renamed — a v4→v5 migration, following the
 same pattern the v3→v4 `mix.sum` migration already established:
@@ -629,7 +755,7 @@ same pattern the v3→v4 `mix.sum` migration already established:
   a matching, natural pair (the common case — e.g. `space.pan`'s own `left`/`right`
   outputs feeding straight into another stereo-shaped node's inputs), merge them into
   one stereo connection directly.
-- If they come from genuinely different, unrelated sources (the asymmetric case §9.4
+- If they come from genuinely different, unrelated sources (the asymmetric case §9-old.4
   exists for), insert a `stereo.combine` node wired from both old sources instead,
   feeding the new stereo input — preserves the old patch's actual behavior exactly,
   never silently collapsing two different signals into one.
@@ -638,7 +764,7 @@ same pattern the v3→v4 `mix.sum` migration already established:
   output, feeding whatever those two old connections fed — same "never silently
   change what an old patch does" discipline as every migration so far.
 
-### 9.7 Implementation waves, once this scoping is approved to build
+### 9-old.7 Implementation waves, once this scoping is approved to build
 
 Not started. Proposed order, each buildable and testable independently:
 
@@ -652,14 +778,14 @@ Not started. Proposed order, each buildable and testable independently:
    `io.output`/`io.audioIn` gain real stereo ports; `PluginProcessor`'s 4
    mono-duplicate call sites become real 2-channel reads/writes — this is what
    actually closes `archive_docs/CLEANUP.md` P1 #6.
-4. **Schema v5 migration** (§9.6), tested the same way v3→v4 was: hand-written legacy
+4. **Schema v5 migration** (§9-old.6), tested the same way v3→v4 was: hand-written legacy
    JSON fixtures covering the matching-pair case, the asymmetric case, and the
    already-fine (nothing stereo-shaped touched) case, each confirmed to still compile
    and sound the same.
 5. **UI**: `canConnect.ts` mirrors the new engine rules; a stereo port gets a visually
    distinct socket (exact treatment — thicker cable, doubled glyph, a small
    indicator — is a design decision for whoever builds this wave, not specified here);
-   `NodePreview.tsx`/telemetry taps handle a two-index port (§9.3's "channel 0 only for
+   `NodePreview.tsx`/telemetry taps handle a two-index port (§9-old.3's "channel 0 only for
    now, gap logged" MVP is an acceptable starting point, matching how this project has
    shipped honest partial coverage elsewhere).
 

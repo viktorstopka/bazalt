@@ -809,6 +809,49 @@ namespace bazalt::engine
 
         plan.finalOutputBufferIndex = outLocIt->second.index;
 
+        // Milestone 0.2 (wiki/NODES.System.md §9): if the designated output
+        // port is the first of a stereo pair — itself Stereo-channeled, and
+        // immediately followed in the node's own declared port list by a
+        // second Stereo-channeled output — resolve that second channel's
+        // buffer too, but ONLY if the same node's corresponding right-
+        // channel INPUT is actually wired to something. This second check
+        // is load-bearing, not a nicety: every declared output allocates a
+        // real buffer unconditionally (see the per-node output loop above),
+        // so an unwired "right" input still produces a resolvable (silent)
+        // output buffer — treating that as "genuinely stereo" would silently
+        // send silence to the host's right channel for any graph (several
+        // already-shipped proof/test graphs included) that only ever wired
+        // the left/primary side, replacing the old, correct "duplicate left
+        // to both channels" fallback with a real regression. The rule is
+        // generic either way (declaration order + PortDescriptor::channels,
+        // nothing hardcoded to a literal port name), so it works for
+        // io.output exactly the same way it would for any future
+        // stereo-output node.
+        auto rightInputIsWired = false;
+        {
+            const auto& finalNodeInputs = inputPortsBySlot[(size_t) outSlotIt->second];
+            for (int i = 0; i + 1 < (int) finalNodeInputs.size(); ++i)
+            {
+                if (finalNodeInputs[(size_t) i].channels == Channels::Stereo && finalNodeInputs[(size_t) (i + 1)].channels == Channels::Stereo)
+                {
+                    rightInputIsWired = incomingSource.find ({ outSlotIt->second, i + 1 }) != incomingSource.end();
+                    break;
+                }
+            }
+        }
+
+        const auto& finalOutputPorts = outputPortsBySlot[(size_t) outSlotIt->second];
+        if (rightInputIsWired
+            && outPortIt->second < (int) finalOutputPorts.size()
+            && finalOutputPorts[(size_t) outPortIt->second].channels == Channels::Stereo
+            && outPortIt->second + 1 < (int) finalOutputPorts.size()
+            && finalOutputPorts[(size_t) (outPortIt->second + 1)].channels == Channels::Stereo)
+        {
+            const auto rightLocIt = outputLocation.find ({ outSlotIt->second, outPortIt->second + 1 });
+            if (rightLocIt != outputLocation.end() && rightLocIt->second.kind == ExecutionPlan::InputRef::Kind::BlockBuffer)
+                plan.finalOutputBufferIndexRight = rightLocIt->second.index;
+        }
+
         plan.silenceBuffer.assign ((size_t) prepareInfo.maxBlockSize, 0.0f);
 
         // M20: (nodeId, portId) -> blockBuffers index for every output that

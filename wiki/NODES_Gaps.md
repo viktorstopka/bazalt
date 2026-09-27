@@ -225,17 +225,24 @@ per-input check"). Dropping a second cable onto an already-wired input is reject
 rather than replacing the old one. Not yet located to the exact UI drop-handler call
 site that would need to change to auto-disconnect first.
 
-### Stereo: `left`/`right` port pairs, not one stereo cable — SCOPED (Milestone 0.2)
-Confirmed deliberate (`ADR-0023` Amendment, M22) — `space.pan`'s outputs and
-`space.width`'s `in.left`/`in.right` inputs are genuinely two separate mono Audio
-ports today, not a true stereo cable. `PortDescriptor::channels = Channels::Stereo`
-exists in the type system but no real node uses it. Your ask (stereo-by-default, one
-cable) is a real architecture reopening — full engineering design now written up in
-`wiki/NODES.System.md` §9 (the chosen representation, the exact `GraphCompiler.cpp`/
-`PluginProcessor.cpp` change surface, the real trade-off — independent per-channel
-wiring needs two new `stereo.split`/`stereo.combine` bridge nodes it doesn't need
-today — the schema v5 migration, and a 5-wave implementation order). Scoped, not
-built yet.
+### Stereo: Master Out was mono-only, no way to get a real stereo signal to the host — FIXED (Milestone 0.2)
+The concrete, user-visible half of this gap — `io.output` could only ever produce one
+mono buffer, duplicated to both physical output channels, with no way for a patch to
+send genuinely different signal to each — is fixed. `io.output` gained a real second
+channel (`right` input, `outRight` output, both `Channels::Stereo`-marked); the Init
+Patch now wires `space.pan`'s `left`/`right` outputs straight into it, so a fresh
+plugin instance opens playing real, audibly panned stereo, not a mono chain duplicated
+to both speakers. An unwired `right` input still duplicates left exactly as before —
+regression-tested, including a mutation-testing pass on the correctness-critical guard
+that prevents every pre-existing mono-only graph from silently losing its right
+channel. Two new bridge nodes, `stereo.split`/`stereo.combine`, cover independent
+per-channel wiring. Full detail and what was deliberately left out of scope (no
+`left`/`right`→one-cable reopening for `space.pan`/`space.width` themselves, no patch
+migration needed, the mono-only no-allocator render path unaffected) is in
+`wiki/NODES.System.md` §9 — the original 5-wave "twin flat slots, one cable
+everywhere" scoping from the initial pass is preserved there as §9-old for the record,
+superseded by this smaller, additive design once actual implementation showed the
+full reopening wasn't needed to close the real gap.
 
 ### Reroute "not connectable"
 `util.reroute` (`RerouteNode.h`) reads correctly in isolation — real polymorphic

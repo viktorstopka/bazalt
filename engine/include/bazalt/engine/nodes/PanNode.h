@@ -68,9 +68,15 @@ namespace bazalt::engine::nodes
 
         std::vector<PortDescriptor> getOutputPorts() const override
         {
+            // Milestone 0.2 (wiki/NODES.System.md §9): `channels = Stereo`
+            // on both, in this declared order, is what GraphCompiler.cpp's
+            // "Final output" resolution and the UI's stereo-pair grouping
+            // read to treat "left" immediately followed by "right" as one
+            // paired signal — a metadata-only addition, the ids/behaviour
+            // are exactly what shipped before this milestone.
             return {
-                PortDescriptor { .id = "left", .type = SignalType::Audio, .label = "Left", .isPrimaryOutput = true },
-                PortDescriptor { .id = "right", .type = SignalType::Audio, .label = "Right" },
+                PortDescriptor { .id = "left", .type = SignalType::Audio, .label = "Left", .isPrimaryOutput = true, .channels = Channels::Stereo },
+                PortDescriptor { .id = "right", .type = SignalType::Audio, .label = "Right", .channels = Channels::Stereo },
             };
         }
 

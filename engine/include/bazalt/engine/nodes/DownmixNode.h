@@ -32,7 +32,19 @@ namespace bazalt::engine::nodes
 
         std::vector<PortDescriptor> getInputPorts() const override
         {
-            return { { "left", SignalType::Audio }, { "right", SignalType::Audio } };
+            // Milestone 0.2 (wiki/NODES.System.md §9.5): `channels = Stereo`
+            // on both inputs, in this order — a metadata-only addition (see
+            // PanNode.h's own comment) that makes this side of the node a
+            // real paired stereo-in socket in the UI, closing the
+            // auto-insertion gap ADR-0023 already flagged (a 2-in-1-out
+            // shape never fit the 1-in-1-out AdapterStep splice mechanism;
+            // this doesn't change that mechanism, it just gives the UI
+            // enough metadata to wire a stereo pair into these two real
+            // ports as one gesture instead of two).
+            return {
+                PortDescriptor { .id = "left", .type = SignalType::Audio, .channels = Channels::Stereo },
+                PortDescriptor { .id = "right", .type = SignalType::Audio, .channels = Channels::Stereo },
+            };
         }
 
         std::vector<PortDescriptor> getOutputPorts() const override

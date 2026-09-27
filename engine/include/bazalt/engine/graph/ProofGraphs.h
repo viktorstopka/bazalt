@@ -56,6 +56,8 @@
 #include "bazalt/engine/nodes/RandomDriftNode.h"
 #include "bazalt/engine/nodes/PanNode.h"
 #include "bazalt/engine/nodes/WidthNode.h"
+#include "bazalt/engine/nodes/StereoSplitNode.h"
+#include "bazalt/engine/nodes/StereoCombineNode.h"
 
 namespace bazalt::engine
 {
@@ -133,6 +135,8 @@ namespace bazalt::engine
         // real stereo nodes raised.
         factory.registerType ("space.pan", [] { return std::make_unique<nodes::PanNode>(); });
         factory.registerType ("space.width", [] { return std::make_unique<nodes::WidthNode>(); });
+        factory.registerType ("stereo.split", [] { return std::make_unique<nodes::StereoSplitNode>(); });
+        factory.registerType ("stereo.combine", [] { return std::make_unique<nodes::StereoCombineNode>(); });
         return factory;
     }
 
@@ -207,7 +211,14 @@ namespace bazalt::engine
         graph.addNode ({ "ampVCA", "mix.gain", { 1840.0f, 250.0f }, {}, {} });
 
         graph.addNode ({ "voiceMix", "instance.mix", { 2140.0f, 250.0f }, {}, {} });
-        graph.addNode ({ "masterOut", "io.output", { 2440.0f, 250.0f }, {}, {} });
+        // Milestone 0.2 (wiki/NODES.System.md §9): a real stereo signal path
+        // at last, closing archive_docs/CLEANUP.md P1 #6's long-logged gap —
+        // centered/full-width by default (law defaults to constant power,
+        // pan/width both default to their own identity values), so this is
+        // audibly identical to the old mono-duplicated output until the pan
+        // or width is actually moved.
+        graph.addNode ({ "pan", "space.pan", { 2340.0f, 250.0f }, {}, {} });
+        graph.addNode ({ "masterOut", "io.output", { 2540.0f, 250.0f }, {}, {} });
 
         graph.addConnection ({ "noteIn", "notes", "allocator", "spawn" });
 
@@ -231,7 +242,9 @@ namespace bazalt::engine
         graph.addConnection ({ "ampEnv", "out", "ampVCA", "gain" });
 
         graph.addConnection ({ "ampVCA", "out", "voiceMix", "in" });
-        graph.addConnection ({ "voiceMix", "out", "masterOut", "in" });
+        graph.addConnection ({ "voiceMix", "out", "pan", "in" });
+        graph.addConnection ({ "pan", "left", "masterOut", "in" });
+        graph.addConnection ({ "pan", "right", "masterOut", "right" });
 
         graph.setOutput ("masterOut", "out");
 
