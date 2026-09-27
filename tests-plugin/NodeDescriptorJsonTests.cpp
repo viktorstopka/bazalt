@@ -6,6 +6,7 @@
 #include "bazalt/engine/nodes/OscillatorNode.h"
 #include "bazalt/engine/nodes/RerouteNode.h"
 #include "bazalt/engine/nodes/InstanceMixNode.h"
+#include "bazalt/engine/nodes/ViewGlanceNode.h"
 
 using namespace bazalt;
 using namespace bazalt::engine;
@@ -78,6 +79,19 @@ TEST_CASE ("nodeDescriptorToVar reports the Decoration layout variant",
     const auto descriptor = describeNode ("util.reroute", nodes::RerouteNode {});
     const auto var = nodeDescriptorToVar (descriptor);
     CHECK (var["layoutVariant"].toString() == "decoration");
+}
+
+TEST_CASE ("nodeDescriptorToVar reports the Glance layout variant and its declared preview",
+           "[plugin][NodeDescriptorJson][M0.6]")
+{
+    const auto descriptor = describeNode ("view.glance", nodes::ViewGlanceNode {});
+    const auto var = nodeDescriptorToVar (descriptor);
+    CHECK (var["layoutVariant"].toString() == "glance");
+
+    const auto* previews = var["previews"].getArray();
+    REQUIRE (previews != nullptr);
+    REQUIRE (previews->size() == 1);
+    CHECK ((*previews)[0]["portId"].toString() == "out");
 }
 
 TEST_CASE ("nodeDescriptorToVar serializes InstanceMixNode's port metadata intact",

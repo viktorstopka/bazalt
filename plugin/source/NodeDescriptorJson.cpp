@@ -178,6 +178,7 @@ namespace bazalt
                 case NodeLayoutVariant::Horizontal:  return "horizontal";
                 case NodeLayoutVariant::Singleton:   return "singleton";
                 case NodeLayoutVariant::Decoration:  return "decoration";
+                case NodeLayoutVariant::Glance:      return "glance";
             }
             jassertfalse;
             return "standard";

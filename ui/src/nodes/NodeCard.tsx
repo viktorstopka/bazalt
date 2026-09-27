@@ -638,6 +638,34 @@ function EarIcon({ title }: { title: string }) {
   )
 }
 
+/** Milestone 0.6 (wiki/NODES_Gaps.md's `single-type-preview-coverage`
+    finding): the minimal inline preview layout — no title, no parameter
+    list, just an input glyph, a compact live preview, and an output glyph.
+    Reuses `SingletonGlyph` (it was already generic, not singleton-specific
+    in what it actually renders) and the same `NodePreview`/`PlaceholderPreview`
+    pairing `HorizontalBody` uses, just laid out smaller and without the
+    title/parameter column either of those carries.
+*/
+function GlanceBody({ descriptor, state, instanceId }: { descriptor: NodeDescriptor; state: NodeCardState; instanceId?: string }) {
+  const connected = state.connectedPortIds ?? new Set<string>()
+  const input = descriptor.inputs[0]
+  const output = descriptor.outputs[0]
+  const preview = descriptor.previews?.[0]
+  return (
+    <div className="node-glance-body">
+      {input && <SingletonGlyph port={input} direction="input" instanceId={instanceId} connected={connected.has(input.id)} />}
+      <div className="node-glance-preview">
+        {instanceId && preview && frameTypeForPreviewKind(preview.kind) !== undefined ? (
+          <NodePreview nodeId={instanceId} preview={preview} />
+        ) : (
+          <PlaceholderPreview />
+        )}
+      </div>
+      {output && <SingletonGlyph port={output} direction="output" instanceId={instanceId} connected={connected.has(output.id)} />}
+    </div>
+  )
+}
+
 function DecorationBody({ descriptor }: { descriptor: NodeDescriptor }) {
   if (descriptor.typeId === 'util.reroute') return <div className="node-knob" title="Reroute" />
   if (descriptor.icon === 'header') return <span className="node-header-label node-title">{descriptor.title}</span>
@@ -666,6 +694,7 @@ export function NodeCard({ descriptor: declaredDescriptor, state = {}, instanceI
   if (descriptor.icon === 'ear') return <EarIcon title={descriptor.title} />
   if (descriptor.layoutVariant === 'decoration') return <DecorationBody descriptor={descriptor} />
   if (descriptor.layoutVariant === 'singleton') return <SingletonBody descriptor={descriptor} state={state} instanceId={instanceId} />
+  if (descriptor.layoutVariant === 'glance') return <GlanceBody descriptor={descriptor} state={state} instanceId={instanceId} />
 
   const classNames = [
     'node-card',

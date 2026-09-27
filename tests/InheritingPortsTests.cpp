@@ -5,6 +5,7 @@
 #include "bazalt/engine/nodes/LogicCompareNode.h"
 #include "bazalt/engine/nodes/LogicSelectNode.h"
 #include "bazalt/engine/nodes/SampleHoldNode.h"
+#include "bazalt/engine/nodes/ViewGlanceNode.h"
 #include <cmath>
 #include <limits>
 
@@ -390,4 +391,42 @@ TEST_CASE ("adapt.sampleHold's in and out share the source's quantity; trigger a
     CHECK (portNamed (node.getInputPorts(), "in").quantity == Quantity::Frequency);
     CHECK (portNamed (node.getOutputPorts(), "out").quantity == Quantity::Frequency);
     CHECK (portNamed (node.getInputPorts(), "trigger").type == SignalType::Event);
+}
+
+TEST_CASE ("view.glance adopts the wired type and quantity on both in and out, and passes the value through unchanged",
+           "[engine][nodes][view][M0.6][inheriting]")
+{
+    ViewGlanceNode node;
+    REQUIRE (node.hasPolymorphicPorts());
+
+    // Unconnected default.
+    CHECK (portNamed (node.getInputPorts(), "in").type == SignalType::Audio);
+    CHECK (portNamed (node.getOutputPorts(), "out").type == SignalType::Audio);
+
+    node.resolveIncomingPort ("in", sourcePort (SignalType::Control, Quantity::Pitch));
+    CHECK (portNamed (node.getInputPorts(), "in").type == SignalType::Control);
+    CHECK (portNamed (node.getInputPorts(), "in").quantity == Quantity::Pitch);
+    CHECK (portNamed (node.getOutputPorts(), "out").type == SignalType::Control);
+    CHECK (portNamed (node.getOutputPorts(), "out").quantity == Quantity::Pitch);
+
+    float in = 0.42f;
+    float out = 0.0f;
+    node.processSample (&in, &out);
+    CHECK (out == in);
+}
+
+TEST_CASE ("view.glance through the real compiler: splices into a Control cable, passing the live value through unchanged",
+           "[engine][nodes][view][M0.6][inheriting][GraphCompiler]")
+{
+    auto factory = makeFactory();
+
+    NodeGraph graph;
+    graph.addNode ({ "src", "test.frequency", {}, { { "value", 220.0f } }, {} });
+    graph.addNode ({ "glance", "view.glance", {}, {}, {} });
+    graph.addConnection ({ "src", "out", "glance", "in" });
+    graph.setOutput ("glance", "out");
+
+    auto result = GraphCompiler::compile (graph, factory, { 44100.0, 64 }, 1);
+    REQUIRE (result.success);
+    CHECK (finalOutput (result) == Catch::Approx (220.0f));
 }

@@ -12,7 +12,7 @@ export type SignalType = 'audio' | 'control' | 'event' | 'note' | 'spectral' | '
     requirement; there is no wildcard match. */
 export type DataTag = 'unknown' | 'curve' | 'scale' | 'wavetable' | 'modal-set' | 'sample' | 'ir'
 
-export type NodeLayoutVariant = 'standard' | 'horizontal' | 'singleton' | 'decoration'
+export type NodeLayoutVariant = 'standard' | 'horizontal' | 'singleton' | 'decoration' | 'glance'
 
 // ---- Value contract (M14, mirrors engine's PortDescriptor.h) --------------
 // VALUE_MODEL.md §2/§3: one canonical description of a value, used

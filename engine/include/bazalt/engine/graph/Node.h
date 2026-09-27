@@ -18,13 +18,18 @@ namespace bazalt::engine
     /** NODE_EDITOR.md §3 — how a node's ports/controls are arranged.
         Decoration nodes (Frame/Header/Image, the Reroute utility) carry no
         signal through the ordinary schedule; GraphCompiler skips them.
+        `Glance` (Milestone 0.6, wiki/NODES.md): the minimal inline preview
+        variant — no title, no parameter list, just an input glyph, a
+        compact live preview, and an output glyph (NodeCard.tsx's
+        `GlanceBody`) — see `ViewGlanceNode.h`.
     */
     enum class NodeLayoutVariant
     {
         Standard,
         Horizontal,
         Singleton,
-        Decoration
+        Decoration,
+        Glance
     };
 
     /** Base class every DSP node implements (ARCHITECTURE.md §3.6):

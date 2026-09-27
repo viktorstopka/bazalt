@@ -60,7 +60,7 @@ are telemetry outputs for live visualization, not ports.
 | `analysis.*` | onset, pitch, level, centroid | 📋 all 4 |
 | `instance.*` | allocator (Voice only), mix | 🚧 allocator (Voice ✅, Swarm/Trigger 📋 — M28) — ✅ mix |
 | `util.*` | constant, macro, reroute | ✅ constant, reroute — 📋 macro (ADR-0015, deliberately deferred) |
-| `view.*` | listen, scope, spectrum, meter | ✅ all 4 |
+| `view.*` | listen, scope, spectrum, meter, **glance** (new, 0.6) | ✅ all 5 |
 | `factory.*` | eq, curve, wave, sample, notes, material (Correction 2) | 📋 all 6 |
 
 ---
@@ -460,6 +460,9 @@ region per graph today.
 
 #### `view.meter` — Meter
 **In:** `in` — `Audio` or `Control`. **Structural:** `mode` (enum: peak, RMS, true peak, histogram).
+
+#### `view.glance` — Glance ✅ *(new, Milestone 0.6 — wiki/NODES_Gaps.md's `single-type-preview-coverage`)*
+**In:** `in` — `Audio`, `Control`, `Boolean` or `Event` (polymorphic — adopts whatever's wired, same mechanism `util.reroute`/`view.scope`/`view.meter` use). **Out:** `out` — same type/quantity as `in`, unchanged value. **Behavior:** splices into any existing cable like `util.reroute` does, and shows a live trace of whatever passes through — unlike the three viewers above, it has a real output and doesn't need a separate branch off the wire. `NodeLayoutVariant::Glance`: no title, no parameter list — just an input glyph, a compact live preview, an output glyph. Doesn't support `Note` or `Data`, same scope `view.scope`/`view.meter` already have.
 
 ## factory — content-owning nodes 📋 (all — Correction 2, none built)
 

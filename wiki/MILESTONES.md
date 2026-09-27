@@ -140,11 +140,33 @@ shape: `mix.gain` title fix, `mix.gain.gain` gets a real unconnected default,
 `mix.sum`'s `level.N` removed in favor of auto-inserted `mix.gain`, `excite.burst`
 gets a real `trigger : Event` port. Exact scope finalized after your review.
 
-## 0.6 — Minimal preview nodes for non-Audio types
+## 0.6 — Minimal preview nodes for non-Audio types — done
 
-The type-less, single-in/single-out minimal preview node you described, scoped once
-0.1's nuance (view.scope/meter already poly-typed; the real gap is automatic
-per-node previews) is factored into the design.
+Built exactly the shape you described: `view.glance`, a new node
+(`ViewGlanceNode.h`) using a new `NodeLayoutVariant::Glance` — no title, no
+parameter list, just an input glyph, a compact live preview, and an output glyph.
+Polymorphic (Audio/Control/Boolean/Event, same mechanism `util.reroute`/`view.scope`
+already use) and a real passthrough (unlike `view.scope`/`meter`/`spectrum`, which
+only tap a wire from the side, this one has a real output and splices directly into
+an existing cable). New UI layer end to end: `descriptorTypes.ts`'s
+`NodeLayoutVariant` union, `NodeDescriptorJson.cpp`'s serializer, `NodeCard.tsx`'s
+`GlanceBody` (reusing `SingletonGlyph`, which turned out to already be generic
+enough to reuse rather than singleton-specific), and matching CSS.
+
+**Left open, deliberately** (see `wiki/NODES_Gaps.md`): whether specific nodes
+(`env.adsr`, `random.stepped`, ...) should gain an *automatic* built-in preview the
+way `osc.analog`/`mix.gain` already do — a separate, smaller question this milestone
+didn't try to answer; `view.glance` closes the "no minimal way to look at a non-Audio
+signal at all" gap on its own.
+
+**Verified:** 358/358 tests green (3 new: a polymorphic type/quantity-adoption +
+passthrough test, a through-the-real-compiler splice test, and a JSON
+layout-variant/preview round-trip test — `tests/InheritingPortsTests.cpp`,
+`tests-plugin/NodeDescriptorJsonTests.cpp`). `pluginval --strictness-level 10`
+SUCCESS (one transient "Parameter thread safety" timeout on the first run, passed
+clean on retry — the same known-environmental symptom isolated during 0.5, not
+re-investigated from scratch given the prior isolation already covers it). UI
+build/lint clean. Standalone app sanity-checked.
 
 ## 0.7 — Live UI bug fixes
 

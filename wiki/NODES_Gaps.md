@@ -141,7 +141,7 @@ Event path rather than being a second one. `tone`/`shape` (the catalog's remaini
 ports) are still not built — this node stays 🚧 partial catalog compliance, not full,
 in `wiki/NODES.md`.
 
-### `single-type-preview-coverage`
+### `single-type-preview-coverage` — the requested minimal node is FIXED (Milestone 0.6)
 *Visual feedback is Audio-shaped by default; other signal types have no automatic
 preview.*
 
@@ -161,9 +161,21 @@ gap (an envelope or a random generator is exactly the kind of thing you want to 
 working without extra wiring), but it's a "which nodes get a free built-in preview"
 question, not a "Control signals can't be visualized" one.
 
-Your own proposed direction — a minimal, title-less, single-in/single-out preview
-node — is recorded as the target shape for closing this, separate from whichever
-nodes should get one automatically.
+**Fix applied:** your own proposed direction — a minimal, title-less, single-in/
+single-out preview node — is now real: `view.glance` (`ViewGlanceNode.h`,
+`NodeLayoutVariant::Glance`). Splices into any Audio/Control/Boolean/Event cable like
+`util.reroute` does (same polymorphic mechanism) and shows a live trace of whatever
+passes through, with no title bar and no parameter list — just an input glyph, a
+compact preview, an output glyph.
+
+**Left open, deliberately** — a separate, smaller question this milestone didn't
+try to answer: *which* nodes should get an **automatic**, built-in preview
+(`getPreviews()` declared on the node itself, no placing/wiring needed) beyond the
+three that already do (`osc.analog`, `osc.sine`, `mix.gain`). `view.glance` closes
+the "there's no minimal way to look at a Control/Boolean/Event signal at all" gap;
+it doesn't by itself decide that e.g. `env.adsr` or `random.stepped` should show
+themselves without the user placing a `view.glance` next to them — a real, separate,
+smaller follow-up if wanted, not assumed here.
 
 ---
 

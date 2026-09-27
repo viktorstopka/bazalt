@@ -343,6 +343,29 @@
   background: currentColor;
 }
 
+/* Glance layout variant (Milestone 0.6): no title at all - an input glyph,
+   a compact live preview, an output glyph. Splices into a cable like
+   Reroute, but shows what's actually flowing through it. */
+.node-glance-body {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  background: var(--color-nodeFill);
+  border: var(--stroke-thin) solid var(--color-nodeBorder);
+  border-radius: 0;
+}
+
+.node-glance-preview {
+  width: 100px;
+}
+
+.node-glance-preview .node-preview-canvas,
+.node-glance-preview .node-preview-placeholder {
+  height: 28px;
+  min-width: 90px;
+}
+
 .node-ear-icon {
   color: var(--color-textPrimary);
   overflow: visible;
