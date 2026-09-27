@@ -212,33 +212,37 @@ TEST_CASE ("The last valid group index is accepted and one past the maximum is r
     CHECK_FALSE (compileWithPort ("in.01").success); // non-canonical ids name no port
 }
 
-TEST_CASE ("mix.sum sums a growable group with per-input levels, holes and all",
-           "[engine][PortGroups][GraphCompiler]")
+TEST_CASE ("mix.sum sums a growable group, holes and all", "[engine][PortGroups][GraphCompiler]")
 {
+    // Since Schema v4 (wiki/NODES_Gaps.md's `redundant-composable-param`
+    // finding), mix.sum no longer carries a per-input level.N gain — that's
+    // a real mix.gain node's job now, spliced in by hand or, for an old
+    // patch, by PatchSerializer's v3->v4 migration (see
+    // PatchSerializerMigrationTests.cpp). This node's own job shrinks back
+    // to a plain sum.
     const auto factory = makeFactory();
 
-    auto mixWith = [&] (const std::unordered_map<juce::String, float>& parameters, int highestInput)
+    auto mixWith = [&] (int highestInput)
     {
         NodeGraph graph;
         graph.addNode ({ "a", "test.audioConstant", {}, { { "value", 0.5f } }, {} });
         graph.addNode ({ "b", "test.audioConstant", {}, { { "value", 0.25f } }, {} });
-        graph.addNode ({ "mix", "mix.sum", {}, parameters, {} });
+        graph.addNode ({ "mix", "mix.sum", {}, {}, {} });
         graph.addConnection ({ "a", "out", "mix", "in.0" });
         graph.addConnection ({ "b", "out", "mix", "in." + juce::String (highestInput) });
         graph.setOutput ("mix", "out");
 
         auto result = GraphCompiler::compile (graph, factory, { 44100.0, 64 }, 1);
         REQUIRE (result.success);
-        REQUIRE (nodeOf (result, "mix").getNumInputPorts() == 2 * (highestInput + 1)); // in.N + level.N per member
+        REQUIRE (nodeOf (result, "mix").getNumInputPorts() == highestInput + 1); // in.N per member, no level.N any more
         return finalOutput (result);
     };
 
-    // The original a + b, bit for bit: an unwired level is 1.
-    CHECK (mixWith ({}, 1) == 0.75f);
+    // The original a + b, bit for bit.
+    CHECK (mixWith (1) == 0.75f);
 
-    // in.2 with a hole at in.1, and a level of 2 on the far input only.
-    CHECK (mixWith ({ { "level.2", 2.0f } }, 2) == Catch::Approx (1.0f)); // 0.5 + 0 + 0.25*2
-    CHECK (mixWith ({ { "level.0", 0.0f } }, 1) == Catch::Approx (0.25f)); // first input muted
+    // in.2 with a hole at in.1: the hole reads silence, the identity for a sum.
+    CHECK (mixWith (2) == Catch::Approx (0.75f)); // 0.5 + 0 + 0.25
 }
 
 TEST_CASE ("Recompiling reuses a growable node while its size is unchanged and replaces it once it grows",
@@ -367,7 +371,7 @@ TEST_CASE ("A schema v1 patch migrates through v2 to v3, landing mix.sum's index
     REQUIRE (result.document.connections.size() == 2);
     CHECK (result.document.connections[0].toPortId == "in.0");
     CHECK (result.document.connections[1].toPortId == "in.1");
-    CHECK (result.document.schemaVersion == 3);
+    CHECK (result.document.schemaVersion == PatchDocument::currentSchemaVersion);
 
     // ...and the migrated document really compiles against the current node.
     const auto factory = makeFactory();
@@ -378,4 +382,105 @@ TEST_CASE ("A schema v1 patch migrates through v2 to v3, landing mix.sum's index
         graph.addConnection (connection);
     graph.setOutput (result.document.outputNodeId, result.document.outputPortId);
     CHECK (GraphCompiler::compile (graph, factory, { 44100.0, 64 }, 1).success);
+}
+
+TEST_CASE ("Schema v3 -> v4 preserves mix.sum's level.N as a spliced mix.gain node, or drops it if it was a no-op",
+           "[engine][patch][migration][PortGroups]")
+{
+    // mix.sum here has three inputs: in.0/level.0 left at the default (1.0,
+    // unconnected — nothing to preserve), in.1/level.1 with a non-default
+    // CONSTANT level, and in.2/level.2 with level.2 fed by a CONNECTION
+    // (a modulated gain) — the three real cases the v3->v4 migration has
+    // to tell apart.
+    const juce::String v3Json = R"json({
+        "schemaVersion": 3,
+        "nodes": [
+            { "id": "a", "type": "test.audioConstant", "position": { "x": 0, "y": 0 }, "parameters": { "value": 1.0 }, "properties": {} },
+            { "id": "b", "type": "test.audioConstant", "position": { "x": 0, "y": 0 }, "parameters": { "value": 1.0 }, "properties": {} },
+            { "id": "c", "type": "test.audioConstant", "position": { "x": 0, "y": 0 }, "parameters": { "value": 1.0 }, "properties": {} },
+            { "id": "lfo", "type": "util.constant", "position": { "x": 0, "y": 0 }, "parameters": { "util.constant.value": 0.5 }, "properties": {} },
+            { "id": "mix", "type": "mix.sum", "position": { "x": 500, "y": 100 }, "parameters": { "level.0": 1.0, "level.1": 2.0 }, "properties": {} }
+        ],
+        "connections": [
+            { "fromNodeId": "a", "fromPortId": "out", "toNodeId": "mix", "toPortId": "in.0" },
+            { "fromNodeId": "b", "fromPortId": "out", "toNodeId": "mix", "toPortId": "in.1" },
+            { "fromNodeId": "c", "fromPortId": "out", "toNodeId": "mix", "toPortId": "in.2" },
+            { "fromNodeId": "lfo", "fromPortId": "out", "toNodeId": "mix", "toPortId": "level.2" }
+        ],
+        "outputNodeId": "mix",
+        "outputPortId": "out",
+        "macroMappings": [],
+        "macroValues": [],
+        "view": { "panX": 0, "panY": 0, "zoom": 1 },
+        "meta": { "name": "Legacy v3 mix.sum", "author": "", "createdAtMs": 0, "modifiedAtMs": 0 }
+    })json";
+
+    const auto result = parsePatchFromJson (v3Json);
+    REQUIRE (result.success);
+    CHECK (result.document.schemaVersion == PatchDocument::currentSchemaVersion);
+
+    auto findConnection = [&] (const juce::String& fromNodeId, const juce::String& fromPortId,
+                                const juce::String& toNodeId, const juce::String& toPortId)
+    {
+        for (const auto& c : result.document.connections)
+            if (c.fromNodeId == fromNodeId && c.fromPortId == fromPortId && c.toNodeId == toNodeId && c.toPortId == toPortId)
+                return true;
+        return false;
+    };
+
+    // level.0 was already the identity, unconnected: no gain node, in.0
+    // stays wired straight to mix, and no stray "level.0" survives anywhere.
+    CHECK (findConnection ("a", "out", "mix", "in.0"));
+    for (const auto& node : result.document.nodes)
+        if (node.id == "mix")
+        {
+            CHECK (node.parameters.find ("level.0") == node.parameters.end());
+            CHECK (node.parameters.find ("level.1") == node.parameters.end());
+        }
+
+    // level.1 = 2.0, a plain constant: a real mix.gain node now sits between
+    // b and mix, holding that value as its own "gain" parameter — and the
+    // old direct b -> mix.in.1 connection is gone (replaced, not duplicated).
+    juce::String gain1Id;
+    for (const auto& node : result.document.nodes)
+        if (node.type == "mix.gain" && findConnection ("b", "out", node.id, "audio"))
+            gain1Id = node.id;
+    REQUIRE (gain1Id.isNotEmpty());
+    CHECK (findConnection (gain1Id, "out", "mix", "in.1"));
+    CHECK_FALSE (findConnection ("b", "out", "mix", "in.1"));
+    for (const auto& node : result.document.nodes)
+        if (node.id == gain1Id)
+            CHECK (node.parameters.at ("gain") == Catch::Approx (2.0f));
+
+    // level.2 was itself fed by a connection (lfo), not a constant: the
+    // spliced mix.gain node's own "gain" INPUT is wired from lfo instead of
+    // holding a stored value, and the old lfo -> mix.level.2 connection
+    // is gone (its port doesn't exist any more).
+    juce::String gain2Id;
+    for (const auto& node : result.document.nodes)
+        if (node.type == "mix.gain" && findConnection ("c", "out", node.id, "audio"))
+            gain2Id = node.id;
+    REQUIRE (gain2Id.isNotEmpty());
+    CHECK (findConnection (gain2Id, "out", "mix", "in.2"));
+    CHECK (findConnection ("lfo", "out", gain2Id, "gain"));
+    CHECK_FALSE (findConnection ("lfo", "out", "mix", "level.2"));
+    CHECK_FALSE (findConnection ("c", "out", "mix", "in.2")); // replaced, not left dangling alongside the new one
+
+    // ...and the migrated document really compiles and sums correctly:
+    // 1 (a, no gain) + 1*2 (b through gain1) + 0.5*1 (c through gain2,
+    // itself gained by lfo's constant 0.5 value) = 3.5.
+    const auto factory = makeFactory(); // registers test.audioConstant, same as the sibling test above
+    NodeGraph graph;
+    for (const auto& node : result.document.nodes)
+        graph.addNode (node);
+    for (const auto& connection : result.document.connections)
+        graph.addConnection (connection);
+    graph.setOutput (result.document.outputNodeId, result.document.outputPortId);
+
+    auto compiled = GraphCompiler::compile (graph, factory, { 44100.0, 64 }, 1);
+    INFO (compiled.errorMessage);
+    REQUIRE (compiled.success);
+    compiled.plan.process (8);
+    const auto out = compiled.plan.blockBuffers[(size_t) compiled.plan.finalOutputBufferIndex].getBlock().getChannelPointer (0)[7];
+    CHECK (out == Catch::Approx (3.5f));
 }

@@ -71,6 +71,42 @@ mutation-checked test, and the UI-side wiring reuses the same `callCommand`/
 `getNativeFunction` path every other already-working graph command uses, with the
 exact native-function name confirmed to match on both sides by direct source reading.
 
+## 0.5 — Node-level fixes from the confirmed `NODES_Gaps.md` entries — done (the four confirmed ones)
+
+Done at the user's explicit go-ahead ("go ahead with 0.5, I'll review the gaps doc
+after") — the review is still pending and still meaningful; these were the four
+findings already at high confidence, not a reason the review no longer matters.
+
+- **`mix.gain`** (`GainNode.h`): title "VCA" → "Gain" (`jargon-naming`); `gain` input
+  gained a real unconnected default, unity/1.0 (`modulation-only-port`) — unpatched is
+  now genuinely "just as loud as before" instead of multiplying by NaN.
+- **`mix.sum`** (`MixNode.h`): `level.N` removed (`redundant-composable-param`) — now a
+  plain sum; use a real `mix.gain` node for per-input level. **Patch schema v4** +
+  a real v3→v4 migration (`PatchDocument.h`/`PatchSerializer.cpp`) splices a `level.N`
+  that was ever touched (non-default constant, or itself connected to a modulator)
+  into a real, visible `mix.gain` node at load time — never silently dropped. A
+  `level.N` left at its default needs no migration at all.
+- **`excite.burst`** (`NoiseBurstNode.h`): real `trigger : Event` + `duration` input
+  ports (`hardcoded-trigger`) — any Event source can start it now, not just a direct
+  C++ poke (which still exists, for tests/tools, and now shares one implementation
+  with the real path).
+
+**Left untouched, deliberately** — the lower-confidence items `NODES_Gaps.md` itself
+flagged as needing your judgment, not blindly fixed alongside the confirmed ones:
+`filter.svf`'s "SVF Filter" title, the `math.*`/`adapt.*` no-fallback pattern
+(`subtract`/`abs`/`minmax`/etc.), and `instance.allocator`'s `random1`/`random2`
+(reads as intentional design, not a mistake).
+
+**Verified:** 355/355 tests green (one new regression test for the migration, with a
+real bug in the migration itself caught and fixed along the way — it originally only
+discovered `level.N` values that had a stored parameter, missing ones that existed
+only as a connection target; the test caught this before it shipped). `pluginval
+--strictness-level 10` SUCCESS (one transient "Parameter thread safety" timeout
+investigated via a stash-based isolation check — reproduced identically with these
+changes fully reverted, confirmed environmental/scheduling, not a regression; passed
+cleanly on retry with the changes back in place). Standalone app sanity-checked,
+no regressions.
+
 ## 0.2 — Stereo, decided for real
 
 Write the full trade-off (current `left`/`right` mono-pair convention vs. a true

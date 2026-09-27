@@ -2,6 +2,8 @@
 #include <functional>
 #include <unordered_map>
 #include <unordered_set>
+#include <utility>
+#include <vector>
 
 namespace bazalt::engine
 {
@@ -330,6 +332,172 @@ namespace bazalt::engine
             return root;
         }
 
+        // v3 -> v4 (wiki/NODES_Gaps.md's `redundant-composable-param`
+        // finding): mix.sum's level.N port is removed — it duplicated what
+        // a mix.gain node placed in front of an input already does. Every
+        // level.N a v3 document ever touched (a non-default stored
+        // parameter, or a real connection feeding it) becomes a real,
+        // visible mix.gain node spliced between that in.N's original
+        // source and mix.sum's own in.N, so an old patch keeps sounding
+        // the same — never silently dropped. A level.N left at its default
+        // (1.0, unconnected) needs nothing: a plain in.N connection with no
+        // gain node in front of it already behaves identically.
+        juce::var migrateV3ToV4 (juce::var v3Root)
+        {
+            auto root = v3Root.clone(); // deep copy — the caller's document is left untouched
+
+            auto* nodesArray = root["nodes"].getArray();
+            auto* connectionsArray = root["connections"].getArray();
+
+            if (nodesArray != nullptr && connectionsArray != nullptr)
+            {
+                std::unordered_set<juce::String> existingNodeIds;
+                for (const auto& node : *nodesArray)
+                    existingNodeIds.insert (node["id"].toString());
+
+                auto uniqueGainNodeId = [&existingNodeIds] (const juce::String& base)
+                {
+                    auto candidate = base;
+                    for (int i = 2; existingNodeIds.find (candidate) != existingNodeIds.end(); ++i)
+                        candidate = base + juce::String (i);
+                    existingNodeIds.insert (candidate);
+                    return candidate;
+                };
+
+                // Index-based, over a count captured up front: the loop body
+                // below appends new mix.gain nodes to *nodesArray* itself,
+                // which can reallocate its backing storage — a live
+                // reference into the array is never held across one of
+                // those appends. Everything this loop needs from a mix.sum
+                // node is copied into a local (or, for `parameters`, a
+                // DynamicObject* — heap-stable independent of where the
+                // array's own backing buffer lives) before any mutation.
+                const auto originalNodeCount = nodesArray->size();
+                for (int nodeIndex = 0; nodeIndex < originalNodeCount; ++nodeIndex)
+                {
+                    const auto& node = nodesArray->getReference (nodeIndex);
+                    if (node["type"].toString() != "mix.sum")
+                        continue;
+
+                    const juce::String mixSumId = node["id"].toString();
+                    auto* paramsObj = node["parameters"].getDynamicObject();
+                    const auto posX = (float) node["position"]["x"];
+                    const auto posY = (float) node["position"]["y"];
+                    if (paramsObj == nullptr)
+                        continue;
+
+                    // Every level.N this node ever touched — a level.N can
+                    // exist ONLY as a connection target, with no stored
+                    // parameter at all (a user who wired a modulator onto it
+                    // without ever first dragging its slider), so this has
+                    // to look at both sources, not parameters alone; a
+                    // level.N seen in both is deduplicated via the set.
+                    std::vector<juce::String> levelPortIds;
+                    {
+                        std::unordered_set<juce::String> seen;
+                        for (const auto& prop : paramsObj->getProperties())
+                            if (const auto key = prop.name.toString(); key.startsWith ("level.") && seen.insert (key).second)
+                                levelPortIds.push_back (key);
+                        for (const auto& c : *connectionsArray)
+                            if (c["toNodeId"].toString() == mixSumId)
+                                if (const auto key = c["toPortId"].toString(); key.startsWith ("level.") && seen.insert (key).second)
+                                    levelPortIds.push_back (key);
+                    }
+
+                    for (const auto& levelPortId : levelPortIds)
+                    {
+                        // A stored parameter value if this level.N ever had
+                        // one; the port's own declared default (1.0,
+                        // GainNode.h) otherwise — a level.N that only ever
+                        // existed as a connection target has no parameter to
+                        // read here.
+                        const auto levelValue = paramsObj->hasProperty (juce::Identifier (levelPortId))
+                                                   ? (float) paramsObj->getProperty (juce::Identifier (levelPortId))
+                                                   : 1.0f;
+                        paramsObj->removeProperty (juce::Identifier (levelPortId));
+
+                        const auto index = levelPortId.fromFirstOccurrenceOf ("level.", false, false);
+                        const auto inPortId = "in." + index;
+
+                        // Was level.N itself fed by a connection (modulated),
+                        // rather than only a constant slider value? Find and
+                        // remove it — its port is gone, there's nowhere left
+                        // for that connection to target.
+                        juce::var levelFromNodeId, levelFromPortId;
+                        auto hasLevelConnection = false;
+                        for (int i = connectionsArray->size(); --i >= 0;)
+                        {
+                            const auto& c = connectionsArray->getReference (i);
+                            if (c["toNodeId"].toString() == mixSumId && c["toPortId"].toString() == levelPortId)
+                            {
+                                levelFromNodeId = c["fromNodeId"];
+                                levelFromPortId = c["fromPortId"];
+                                hasLevelConnection = true;
+                                connectionsArray->remove (i);
+                                break; // one source per input — the invariant this whole codebase enforces
+                            }
+                        }
+
+                        if (! hasLevelConnection && levelValue == 1.0f)
+                            continue; // default, unconnected: nothing to preserve
+
+                        const auto gainNodeId = uniqueGainNodeId (mixSumId + "_gain" + index);
+
+                        auto* gainNode = new juce::DynamicObject();
+                        gainNode->setProperty ("id", gainNodeId);
+                        gainNode->setProperty ("type", "mix.gain");
+                        auto* positionObj = new juce::DynamicObject();
+                        positionObj->setProperty ("x", posX - 160.0f);
+                        positionObj->setProperty ("y", posY + 60.0f * (float) index.getIntValue());
+                        gainNode->setProperty ("position", juce::var (positionObj));
+                        auto* gainParams = new juce::DynamicObject();
+                        if (! hasLevelConnection)
+                            gainParams->setProperty ("gain", levelValue); // the constant the slider held
+                        gainNode->setProperty ("parameters", juce::var (gainParams));
+                        gainNode->setProperty ("properties", juce::var (new juce::DynamicObject()));
+                        nodesArray->add (juce::var (gainNode));
+
+                        // Retarget in.N's original source (if any) into the
+                        // new gain node's "audio" input instead of mix.sum
+                        // directly — a plain in-place property edit, safe to
+                        // do with a range-based loop since nothing is added
+                        // to or removed from connectionsArray in this pass.
+                        for (auto& connection : *connectionsArray)
+                        {
+                            if (connection["toNodeId"].toString() == mixSumId && connection["toPortId"].toString() == inPortId)
+                            {
+                                connection.getDynamicObject()->setProperty ("toNodeId", gainNodeId);
+                                connection.getDynamicObject()->setProperty ("toPortId", "audio");
+                                break;
+                            }
+                        }
+                        // (no match: in.N simply had nothing feeding it yet — the
+                        // new gain node inherits that same silence, correctly)
+
+                        if (hasLevelConnection)
+                        {
+                            auto* modConnection = new juce::DynamicObject();
+                            modConnection->setProperty ("fromNodeId", levelFromNodeId);
+                            modConnection->setProperty ("fromPortId", levelFromPortId);
+                            modConnection->setProperty ("toNodeId", gainNodeId);
+                            modConnection->setProperty ("toPortId", "gain");
+                            connectionsArray->add (juce::var (modConnection));
+                        }
+
+                        auto* outConnection = new juce::DynamicObject();
+                        outConnection->setProperty ("fromNodeId", gainNodeId);
+                        outConnection->setProperty ("fromPortId", "out");
+                        outConnection->setProperty ("toNodeId", mixSumId);
+                        outConnection->setProperty ("toPortId", inPortId);
+                        connectionsArray->add (juce::var (outConnection));
+                    }
+                }
+            }
+
+            root.getDynamicObject()->setProperty ("schemaVersion", 4);
+            return root;
+        }
+
         // vN -> vN+1 migrations, keyed by the version they migrate FROM.
         using Migration = std::function<juce::var (juce::var)>;
 
@@ -338,6 +506,7 @@ namespace bazalt::engine
             static const std::unordered_map<int, Migration> migrations {
                 { 1, migrateV1ToV2 },
                 { 2, migrateV2ToV3 },
+                { 3, migrateV3ToV4 },
             };
             return migrations;
         }

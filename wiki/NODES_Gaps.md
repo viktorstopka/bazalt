@@ -1,6 +1,14 @@
-# Node & architecture gaps — identified, not fixed
+# Node & architecture gaps — identified, most now fixed
 
-Milestone 0.1's deliverable. Process: every specific mistake you named gets
+Milestone 0.1's deliverable — **updated after Milestone 0.5**, which fixed the four
+confirmed, mechanical findings below (marked **FIXED** inline) at the user's
+go-ahead, before the user's own review pass happened. The review is still worth
+doing — it's what confirms these were the right fixes, not a reason they were
+blocked on it. The lower-confidence items (SVF naming, the `math.*`/`adapt.*`
+no-fallback pattern, `instance.allocator`'s randoms) are untouched, exactly as
+originally scoped, pending that review.
+
+Process: every specific mistake you named gets
 generalized into a named category, then checked against **every one of the 55 real,
 registered node headers** in `engine/include/bazalt/engine/nodes/` (the full list is
 at the bottom, so this scan is checkable, not just asserted) — flagged only where I'm
@@ -16,28 +24,37 @@ review it, correct anything I got wrong, and fixes become their own later milest
 
 ## Part 1 — Node-level mistakes (generalized categories, checked against all 55 nodes)
 
-### `redundant-composable-param`
+### `redundant-composable-param` — FIXED (Milestone 0.5)
 *A node bakes in a control that duplicates what composing a separate node already
 does, instead of relying on the graph itself.*
 
 **Confirmed:** `mix.sum` (`MixNode.h`) — its `level.N` companion on every input
-duplicates `mix.gain`. **Checked against all 55 and found nowhere else** —
+duplicated `mix.gain`. **Checked against all 55 and found nowhere else** —
 `mix.crossfade`'s `position` is the crossfade's own defining parameter (not a
 duplicate of anything), `mix.downmix`'s `mode` is a structural algorithm choice, and
 no other growable-group or multi-input node bakes in a per-input gain stage.
 
-**Fix direction (not applied):** drop `level.N`; auto-insert a `mix.gain` node when a
-cable is dropped onto `mix.sum`'s input — mirrors the existing Map/Normalise
-auto-insertion precedent (`wiki/NODES.System.md` §4) and the "unwrap" idea's own logic
-(compose, don't bake in).
+**Fix applied:** `level.N` removed from `MixNode.h` — `mix.sum` is now a plain
+`out = sum(in.i)`. Went further than "auto-insert on connect" (not built — the
+Map/Normalise auto-insertion precedent triggers on a type/quantity *mismatch*, not on
+every ordinary connection, so it wasn't actually the right mechanism here): instead, a
+real patch-schema migration (v3→v4, `PatchDocument.h`/`PatchSerializer.cpp`) preserves
+an old patch's non-default or connected `level.N` by splicing in a real, visible
+`mix.gain` node at load time — a constant `level.N` becomes that node's own `gain`
+parameter; a `level.N` that was itself wired to a modulator gets that same modulator
+rewired into the new node's `gain` *input*. A `level.N` left at its default (1.0,
+unconnected) needs nothing — dropped with no trace, since a plain `in.N` connection
+already behaves identically. New regression test (`tests/GrowablePortsTests.cpp`,
+"Schema v3 -> v4 preserves mix.sum's level.N...") covers all three cases end to end,
+including a real recompile proving the migrated patch sounds the same.
 
-### `jargon-naming`
+### `jargon-naming` — FIXED (Milestone 0.5)
 *A node's display name uses inaccessible technical jargon where a plain name is
 equally accurate.*
 
-**Confirmed:** `mix.gain`'s running `getTitle()` returns **"VCA"** — note this is a
-**code bug, not a catalog problem**: `wiki/NODES.md`'s own entry already calls it
-"Gain." The fix is a one-line change to `GainNode.h`, once approved.
+**Confirmed and fixed:** `mix.gain`'s running `getTitle()` returned **"VCA"** — a
+**code bug, not a catalog problem** (`wiki/NODES.md`'s own entry already called it
+"Gain"). `GainNode.h` now returns "Gain", matching the catalog.
 
 **Possible, lower confidence — your call:** `filter.svf`'s title is "SVF Filter."
 Unlike VCA, there's no simpler everyday word being avoided here — "SVF" names a
@@ -56,17 +73,21 @@ Peak Filter, Shelf Filter, Allpass Filter, Ladder Filter, Drift, Random, Instanc
 Allocator, Reroute, Master Out, Note In, Noise Burst, Mix, Pan, Width — all plain or
 already-established terms (ADSR/LFO-class), none read as unnecessary jargon.
 
-### `modulation-only-port` — no safe default when left unpatched
+### `modulation-only-port` — no safe default when left unpatched — the confirmed instance is FIXED (Milestone 0.5)
 *A Control-typed input has neither `hasFallbackWhenUnconnected`+`defaultValue` on its
 `PortDescriptor` nor NaN-safe handling in `processSample()`, so leaving it unpatched
 produces NaN/undefined output instead of a sane default — directly contradicts
 `VALUE_MODEL.md`'s own rule (`wiki/NODES.System.md` §3): "node DSP code should see
 exactly one shape: a connected input."*
 
-**Confirmed, high-confidence:** `mix.gain`'s `gain` input (`GainNode.h`) — no
-fallback declared, `outputs[0] = inputs[0] * inputs[1]` directly, so an unpatched VCA
-multiplies by NaN. This is the node you're most likely to touch first (every basic
-patch needs a gain stage), so it's the highest-value single fix here.
+**Confirmed, high-confidence, fixed:** `mix.gain`'s `gain` input (`GainNode.h`) — had
+no fallback declared, `outputs[0] = inputs[0] * inputs[1]` directly, so an unpatched
+Gain node multiplied by NaN. Now declares `hasFallbackWhenUnconnected` +
+`defaultValue = 1.0` (unity) and falls back to a stored value in `processSample()`,
+matching the pattern every other knob-style port in this codebase already follows.
+The lower-confidence secondary instances below (`math.subtract`/`abs`/`minmax`/etc.)
+were **left untouched** — deliberately, pending your review, since they're a
+genuinely different, lower-severity/debatable case (see below).
 
 **Confirmed, lower confidence/severity — a real inconsistency, but debatable
 whether it matters:** `math.subtract` (`a`,`b`), `math.abs` (`in`), `math.minmax`
@@ -91,28 +112,34 @@ declares `hasFallbackWhenUnconnected` + a sensible `defaultValue`. This is the n
 the codebase follows almost everywhere — `mix.gain` and the math/adapter groups above
 are the exceptions, not the pattern.
 
-### `hardcoded-trigger`
+### `hardcoded-trigger` — FIXED (Milestone 0.5)
 *A source node has no Event-typed port to trigger it from the graph at all — only a
 direct C++ poke from whoever compiled it in.*
 
-**Confirmed, one instance:** `excite.burst` (`NoiseBurstNode.h`) — **zero** input
-ports (`getInputPorts()` returns `{}`); only startable via `trigger(int
-durationSamples)`, a method nothing in the graph can call. Whoever wired it into a
-proof graph pokes it directly, the same pre-Note-era pattern everything else (MIDI,
+**Confirmed, one instance:** `excite.burst` (`NoiseBurstNode.h`) — had **zero** input
+ports (`getInputPorts()` returned `{}`); only startable via `trigger(int
+durationSamples)`, a method nothing in the graph could call. Whoever wired it into a
+proof graph poked it directly, the same pre-Note-era pattern everything else (MIDI,
 the allocator) has since moved off of.
 
 **Checked against all 55 and found nowhere else**: every other zero-input node is
 either a genuine constant/held value (`util.constant` — meant to hold a static
 number, not fire) or a host-driven I/O boundary node that's deliberately not
 graph-triggerable (`io.audioIn`, `io.transport`, `io.control` all read from
-`HostInputs`, by design). `excite.burst` is the only "fires an event" node with
+`HostInputs`, by design). `excite.burst` was the only "fires an event" node with
 nothing to wire an event into.
 
-**Fix direction (not applied):** a real `trigger : Event` input port, as the catalog
-already specifies — your ask ("this trigger should then allow for other ways of
-triggering — a clock based triggering for instance") is exactly what an Event port
-gets you for free once it exists (wire `clock.pulse`'s `tick` into it, once
-`clock.pulse` is built).
+**Fix applied:** a real `trigger : Event` input port, as the catalog specifies, plus a
+real `duration` port (catalog: 0.1–2000ms) so a graph-driven trigger produces a
+sensible, configurable burst rather than a hardcoded length. Your ask ("this trigger
+should then allow for other ways of triggering — a clock based triggering for
+instance") now genuinely works: wire any Event source into it (a `clock.pulse` once
+that's built, an `adapt.threshold`, etc.). The old `trigger(int)` C++ poke still
+exists too — tests/tools that want exact sample-accurate control (render-cli's
+Karplus-Strong path) still use it, and it now shares one implementation with the real
+Event path rather than being a second one. `tone`/`shape` (the catalog's remaining two
+ports) are still not built — this node stays 🚧 partial catalog compliance, not full,
+in `wiki/NODES.md`.
 
 ### `single-type-preview-coverage`
 *Visual feedback is Audio-shaped by default; other signal types have no automatic

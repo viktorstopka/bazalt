@@ -62,10 +62,22 @@ namespace bazalt::engine
         port IDs on every connection into a node of those types — the
         CLAUDE.md rule-3 way of changing a shipped port ID (never a bare
         rename): an old patch keeps loading and wiring exactly as before.
+
+        Schema v4 (wiki/NODES_Gaps.md's `redundant-composable-param`
+        finding): `mix.sum` lost its baked-in `level.N` companion port —
+        it duplicated what a `mix.gain` node placed in front of an input
+        already does. `PatchSerializer`'s v3→v4 migration doesn't just
+        rename a port id this time (there's nothing to rename to — the port
+        is gone); a `level.N` that was ever touched (a non-default stored
+        value, or a real connection feeding it) becomes a real, visible
+        `mix.gain` node spliced between that input's original source and
+        `mix.sum` itself, so the old patch keeps sounding the same. A
+        `level.N` left at its default (1.0, unconnected) needs nothing — a
+        plain `in.N` connection already behaves identically.
     */
     struct PatchDocument
     {
-        static constexpr int currentSchemaVersion = 3;
+        static constexpr int currentSchemaVersion = 4;
 
         int schemaVersion = currentSchemaVersion;
         std::vector<NodeInstance> nodes;

@@ -122,8 +122,8 @@ path).
 #### `excite.impulse` — Impulse 📋
 **In:** `trigger : Event`; `amplitude`; `width` (0 = a true single-sample delta). **Out:** `out` — `Audio`.
 
-#### `excite.burst` — Noise Burst 🚧
-**In (spec):** `trigger : Event`; `duration`; `tone`; `shape`. **In (real today):** **none** — zero input ports; only startable via a direct C++ `trigger(int durationSamples)` poke from whoever compiled it into the graph. This is the `hardcoded-trigger` entry in `NODES_Gaps.md` — a real, confirmed gap, not a spec difference. **Out:** `out` — `Audio` (real: white-noise burst, linear decay envelope over the poked duration).
+#### `excite.burst` — Noise Burst 🚧 *(partially fixed — wiki/NODES_Gaps.md's `hardcoded-trigger`)*
+**In (spec):** `trigger : Event`; `duration`; `tone`; `shape`. **In (real today):** `trigger : Event` and `duration [audio]·0.1–2000ms·log·30ms` — a clock, a threshold detector, or anything else that produces Events can now start it; the direct C++ `trigger(int durationSamples)` poke still exists too (tests/tools), calling the same internal logic. `tone`/`shape` aren't built yet — still 🚧, not full catalog compliance. **Out:** `out` — `Audio` (white-noise burst, linear decay envelope over the triggered duration).
 
 #### `excite.pluck` — Pluck 📋
 **In:** `trigger : Event`; `position`; `hardness`; `amplitude`. **Out:** `out` — `Audio`. **Native:** comb-notch shaping, awkward to hand-wire per patch.
@@ -230,14 +230,14 @@ A multi-section waveguide whose cross-section profile is read from a curve, so f
 
 ## mix
 
-#### `mix.sum` — Mix 🚧
-**In:** port group `in.0…in.N` — `Audio` (growable, min 2, max 16), each with a `level : float·Gain·0–2·log·1` companion **(flagged as `redundant-composable-param` in `NODES_Gaps.md` — this duplicates what a separate Gain node already does; not fixed yet, just named)**. **Out:** `out` — `Audio`. **Behavior:** `out = sum(in.i * level.i)`.
+#### `mix.sum` — Mix ✅ *(fixed — wiki/NODES_Gaps.md's `redundant-composable-param`)*
+**In:** port group `in.0…in.N` — `Audio` (growable, min 2, max 16). **Out:** `out` — `Audio`. **Behavior:** a plain `out = sum(in.i)` — the per-input `level.N` this used to bake in is gone; place a real `mix.gain` node in front of an input for that instead. Patch schema v4 + `PatchSerializer`'s v3→v4 migration preserve an old patch's non-default/connected `level.N` values as a real, spliced-in `mix.gain` node — never silently dropped.
 
 #### `mix.crossfade` — Crossfade ✅
 **In:** `a`, `b` — `Audio`; `position [audio]`. **Out:** `out`. **Structural:** `law` (enum: linear, equal power).
 
-#### `mix.gain` — Gain 🚧 *(catalog name is already "Gain" — the running engine's node title says "VCA"; see `jargon-naming` in `NODES_Gaps.md`)*
-**In:** `in` — `Audio`; `gain [audio]` (displayed in dB) **— real today: no unconnected default (`hasFallbackWhenUnconnected` missing), flagged as `modulation-only-port` in `NODES_Gaps.md`; leaving it unpatched is not "just as loud as before" the way the spec implies**. **Out:** `out` — `Audio`. **Behavior:** audio-rate `gain` makes it a ring modulator too.
+#### `mix.gain` — Gain ✅ *(fixed — wiki/NODES_Gaps.md's `jargon-naming` + `modulation-only-port`)*
+**In:** `audio` — `Audio`; `gain [audio]·0–4×·log·1` (displayed in dB). **Out:** `out` — `Audio`. **Behavior:** audio-rate `gain` makes it a ring modulator too. Now titled "Gain" in the running engine (was "VCA"), and `gain` has a real unconnected default (unity, 1.0) — leaving it unpatched is genuinely "just as loud as before."
 
 #### `mix.downmix` — Downmix ✅
 **In:** `left`, `right`. **Out:** `out` — `Audio`. **Structural:** `mode` (enum: sum, left, right, mid, side).

@@ -106,10 +106,16 @@ TEST_CASE ("deleteNode and disconnect commands are reflected in the live graph a
     auto& controller = processor.getGraphEditController();
     REQUIRE (controller.setGraph (bazalt::engine::buildVoiceProofGraph()).success);
 
-    // Disconnecting the envelope leaves amp's gain input silent (0), so
-    // amp's audio*gain output is silent regardless of the oscillator —
-    // directly, audibly verifiable, not just a graph-shape assertion.
-    REQUIRE (controller.disconnect ("env", "out", "amp", "gain").success);
+    // Disconnecting svf's output from amp's audio input leaves it silent
+    // (0 — an unconnected Audio port carries no fallback to fall back to,
+    // unlike a Control port), so amp's audio*gain output is silent
+    // regardless of gain — directly, audibly verifiable, not just a
+    // graph-shape assertion. (Not disconnecting env from amp's own "gain"
+    // input for this: since wiki/NODES_Gaps.md's `modulation-only-port` fix,
+    // an unpatched gain now correctly falls back to unity — "just as loud
+    // as before" — rather than silence, so that disconnect alone no longer
+    // silences the voice; it isn't meant to any more.)
+    REQUIRE (controller.disconnect ("svf", "out", "amp", "audio").success);
 
     juce::MidiBuffer noteOn;
     noteOn.addEvent (juce::MidiMessage::noteOn (1, 60, (juce::uint8) 100), 0);
@@ -124,7 +130,7 @@ TEST_CASE ("deleteNode and disconnect commands are reflected in the live graph a
         processor.processBlock (buffer, empty);
     }
 
-    CHECK (rms (buffer, 0) < 0.0001f); // amp.gain is silent -> whole voice is silent
+    CHECK (rms (buffer, 0) < 0.0001f); // amp.audio is silent -> whole voice is silent
 
     // deleteNode removes the node AND every connection touching it —
     // verified directly against the live graph.

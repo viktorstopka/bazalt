@@ -7,20 +7,25 @@
 namespace bazalt::engine::nodes
 {
     /** Stable type id: "mix.sum" (renamed M14, was "mix.add2"). Sums 2..16
-        Audio inputs, each with its own `level` gain companion, into one
-        Audio output: `out = sum(in.i * level.i)`. Generic primitive — the
-        Karplus-Strong proof graph uses it to sum the excitation with the
-        feedback loop's return path (ARCHITECTURE.md §3.4).
+        Audio inputs into one Audio output: `out = sum(in.i)`. Generic
+        primitive — the Karplus-Strong proof graph uses it to sum the
+        excitation with the feedback loop's return path (ARCHITECTURE.md
+        §3.4).
 
-        M21: a real growable port group with a companion (NODE_CATALOG.md:
-        "each with a `level : float·Gain·0–2·log·1` companion in the same
-        group"). `in.N` and `level.N` share ONE index range and grow
-        together, and the ports are declared interleaved (`in.0`,
-        `level.0`, `in.1`, ...) so each source sits beside its own gain.
-        Ports were `a`/`b` before M21 — patch schema v3 migrates them to
-        `in.0`/`in.1`; an unwired `level` reads its stored value (default 1)
-        so `a + b` is bit-for-bit unchanged (x * 1.0f == x exactly), which is
-        what keeps the proof graph's output identical.
+        wiki/NODES_Gaps.md's `redundant-composable-param` finding
+        (confirmed, fixed): each input used to carry its own baked-in
+        `level.N` gain — a second, node-internal way to do exactly what a
+        `mix.gain` node placed in front of that input already does, with no
+        way to see or modulate it as a real graph element (only host
+        automation or a direct in-node slider drag could ever touch it).
+        Schema v4 (`PatchDocument.h`, `PatchSerializer.cpp`'s v3→v4
+        migration) removes it: an old patch's non-default/connected
+        `level.N` values are migrated into a real, visible, spliced-in
+        `mix.gain` node instead of being silently dropped — see that
+        migration's own comment for the exact preservation rule. A patch
+        that never touched `level.N` (left every one at its default 1.0,
+        unconnected) needs no migration at all; this node's summing
+        behaviour for that case is bit-for-bit unchanged.
 
         An unwired audio input reads silence — the identity for a sum, so
         the spare port and any hole cost nothing.
@@ -32,11 +37,9 @@ namespace bazalt::engine::nodes
         static constexpr int maxInputs = 16;
         static constexpr int numOutputs = 1;
 
-        MixNode() noexcept : GrowableGroupNode (minInputs, maxInputs) { storedLevels.fill (1.0f); }
+        MixNode() noexcept : GrowableGroupNode (minInputs, maxInputs) {}
 
-        // Two ports per group member (the audio input and its level), which is
-        // why ExecutionPlan::maxPortsPerNode is 32, not 16.
-        int getNumInputPorts() const noexcept override { return groupCount * 2; }
+        int getNumInputPorts() const noexcept override { return groupCount; }
         int getNumOutputPorts() const noexcept override { return numOutputs; }
 
         juce::String getTitle() const override { return "Mix"; }
@@ -45,10 +48,9 @@ namespace bazalt::engine::nodes
         std::vector<PortDescriptor> getInputPorts() const override
         {
             std::vector<PortDescriptor> ports;
-            ports.reserve ((size_t) groupCount * 2);
+            ports.reserve ((size_t) groupCount);
 
             const auto inGroup = groupFor ("in.");
-            const auto levelGroup = groupFor ("level.");
 
             for (int i = 0; i < groupCount; ++i)
             {
@@ -56,17 +58,6 @@ namespace bazalt::engine::nodes
                                                    .type = SignalType::Audio,
                                                    .label = "In " + juce::String (i + 1),
                                                    .group = inGroup });
-                ports.push_back (PortDescriptor { .id = "level." + juce::String (i),
-                                                   .type = SignalType::Control,
-                                                   .label = "Level " + juce::String (i + 1),
-                                                   .minValue = 0.0f,
-                                                   .maxValue = 2.0f,
-                                                   .defaultValue = 1.0f,
-                                                   .isLogScale = true,
-                                                   .hasFallbackWhenUnconnected = true,
-                                                   .quantity = Quantity::Gain,
-                                                   .curve = Curve::Logarithmic,
-                                                   .group = levelGroup });
             }
 
             return ports;
@@ -77,24 +68,12 @@ namespace bazalt::engine::nodes
             return { PortDescriptor { .id = "out", .type = SignalType::Audio, .isPrimaryOutput = true } };
         }
 
-        void setParameter (const juce::String& parameterId, float value) override
-        {
-            if (const auto index = parsePortGroupIndex (parameterId, "level."); index >= 0 && index < maxInputs)
-                storedLevels[(size_t) index] = value;
-        }
-
         void processSample (const float* inputs, float* outputs) noexcept override
         {
             auto sum = 0.0f;
             for (int i = 0; i < groupCount; ++i)
-            {
-                const auto levelInput = inputs[i * 2 + 1];
-                sum += inputs[i * 2] * (std::isnan (levelInput) ? storedLevels[(size_t) i] : levelInput);
-            }
+                sum += inputs[i];
             outputs[0] = sum;
         }
-
-    private:
-        std::array<float, maxInputs> storedLevels {};
     };
 }

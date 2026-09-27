@@ -43,7 +43,7 @@ TEST_CASE ("NodeFactory::describeAll() returns a descriptor for every registered
 
     const auto* amp = findByTypeId ("mix.gain");
     REQUIRE (amp != nullptr);
-    CHECK (amp->title == "VCA");
+    CHECK (amp->title == "Gain"); // wiki/NODES_Gaps.md's jargon-naming finding: was "VCA"
     REQUIRE (amp->inputs.size() == 2);
     CHECK (amp->inputs[0].id == "audio");
     CHECK (amp->inputs[1].id == "gain");
