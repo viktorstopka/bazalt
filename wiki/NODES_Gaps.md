@@ -247,27 +247,62 @@ positions via `data-node-id`/`data-port-id` attributes on the DOM — worth chec
 whether the Decoration layout variant emits those correctly). **Needs live repro**,
 not confirmed as an engine bug.
 
-### Note-port "same color won't connect"
-`canConnect`'s real rule allows `Note → Note` unconditionally. Today there are only
-two real Note ports in the whole engine (`io.noteIn.notes` output,
-`instance.allocator.spawn` input) plus polymorphic `util.reroute`. Working theory:
-what looks like a color-matching failure is actually the **Note-buffer fan-out
-limitation** (a connected Note port uses a dedicated single-producer buffer, not the
-ordinary block-buffer mechanism that supports fan-out to several destinations) —
-surfacing as a misleading symptom, not a real type/color bug. Also worth noting per
-`wiki/NODES.System.md` §6: `Note` has **no color assigned at all** yet in the visual
-language table, so "same color won't connect" may be describing two default/fallback
-colors that happen to look similar, not a genuine same-color case. **Needs live
-repro** against the exact graph you tried, before deciding which of these it is.
+### Note-port "same color won't connect" — ROOT-CAUSED AND FIXED (Milestone 0.7)
+My earlier working theory (a Note-buffer fan-out limitation) was **wrong** — checked
+and ruled out by reading `GraphCompiler.cpp`'s actual Note-connection logic directly:
+`noteInputsUsed` guards one thing only, the same "one source per input" rule every
+ordinary connection already has, keyed by the *destination*. A Note **output** fanning
+out to several inputs (`io.noteIn.notes` → both `instance.allocator.spawn` and a
+`util.reroute`, say) is never rejected — there's no fan-out limitation at all.
 
-### Dropdowns not opening
-`TriggerSelect.tsx` (the enum-picker control `ParameterRow` renders for every
-structural enum parameter) reads correctly in isolation: click toggles an `open`
-state, an outside-click/Escape handler closes it, `stopPropagation()` is called on
-its own click handler. **Likely cause, not confirmed:** a pointer-capture or
-propagation conflict with the node-drag gesture on the canvas — a `pointerdown`
-handler higher up the tree (node drag start) swallowing the event before
-`TriggerSelect`'s `onClick` fires. **Needs live repro/debugging**, not a docs fix.
+**The real cause, confirmed by reading `ui/src/graph/portUiKind.ts` directly:**
+`classifyPortUiKind()` had no case for `SignalType::Note` at all — it fell through
+the generic `type !== 'control'` branch straight into `'value'`, **the exact same
+white a real-quantity Control port (Pitch, Frequency, Time, ...) renders as.** Wiring
+`io.noteIn`'s white "notes" output into some other white-looking-but-actually-
+Control-typed input was always a genuine, correctly-rejected type mismatch —
+`canConnect` was right every time — it just *looked* like "same color won't connect"
+because Note had no color of its own to tell it apart. Confirmed live: screenshotted
+`instance.allocator`'s own `spawn` input in the running Standalone app and it now
+renders in the new distinct teal (`tokens.color.portNote`, `#3ecfc0`), visibly
+different from the white ports around it.
+
+**Fix applied:** `portUiKind.ts` gained a real `'note'` kind (a distinct teal, and a
+"♪" glyph instead of the shared arrow), so a Note-typed port now looks like what it
+is — genuinely different from a same-looking Control port — everywhere: node cards,
+the component gallery legend, and the WebGL cable layer (all three already read this
+one shared classifier, so no separate fix was needed for any of them). `Data`'s color
+stays open (still no real node produces one to observe against), noted as such rather
+than guessed at.
+
+### Dropdowns not opening — ROOT-CAUSED AND FIXED (Milestone 0.7)
+My earlier working theory (a pointer-capture/propagation conflict with the canvas's
+node-drag gesture) was **wrong** — checked and ruled out by reading
+`InfiniteCanvas.tsx`'s actual mousedown/click handling directly: `isOwnGestureTarget()`
+already excludes `.trigger-select` by name (a real, deliberate, already-documented fix
+for exactly this class of problem, originally built for `.value-slider`), and the
+canvas's raw `click` listener no-ops whenever no node-placement ghost is active — the
+ordinary "open a dropdown" case. Neither one touches this at all.
+
+**The real cause, confirmed by reading `TriggerSelect.css` directly:** `.trigger-select`
+copied its shell wholesale from `.value-slider` (same pill visual language, per
+`TriggerSelect.tsx`'s own header comment) — including `.value-slider`'s `overflow:
+hidden`, which is genuinely load-bearing *there* (it clips `.value-slider-fill`'s
+absolutely-positioned value bar to the pill's rounded corners). `TriggerSelect` has no
+fill bar; it has a dropdown menu instead — a DOM *child* of that same clipped 20px-tall
+box, positioned below it (`top: calc(100% + 2px)`). The click handler and the `open`
+state toggle were **never broken** — the menu opened correctly every time, it was just
+clipped to zero visible height by its own parent. Confirmed live: temporarily forced
+`open` to `true` (no synthetic clicks involved — this environment's WebView2 content
+doesn't reliably accept synthetic mouse input or expose a UI Automation tree, per prior
+session notes, so a code-level force-open + screenshot was the only reliable way to see
+it), screenshotted the Standalone app, saw both `instance.allocator`'s "Configuration"
+and `osc.analog`'s "Shape" dropdowns render their full option lists correctly, reverted
+the hack, rebuilt clean.
+
+**Fix applied:** removed `overflow: hidden` from `.trigger-select` — safe, since the
+label/value text already truncates itself independently via its own `overflow: hidden;
+text-overflow: ellipsis` on the child spans.
 
 ### Scope preview quality
 Two different things share this complaint, worth telling apart:

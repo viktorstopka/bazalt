@@ -168,9 +168,37 @@ clean on retry — the same known-environmental symptom isolated during 0.5, not
 re-investigated from scratch given the prior isolation already covers it). UI
 build/lint clean. Standalone app sanity-checked.
 
-## 0.7 — Live UI bug fixes
+## 0.7 — Live UI bug fixes — done
 
-Dropdown-click and Note-port-connectivity root causes, once reproduced live.
+Both original working theories in `wiki/NODES_Gaps.md` turned out wrong once actually
+checked against the real code — neither bug was where it looked like it would be.
+
+- **Dropdowns not opening**: not a pointer-capture/canvas-drag conflict
+  (`InfiniteCanvas.tsx`'s `isOwnGestureTarget()` already excludes `.trigger-select`
+  correctly, and its raw `click` listener no-ops with no placement ghost active). The
+  real cause: `.trigger-select`'s CSS copied `.value-slider`'s `overflow: hidden`
+  wholesale — load-bearing there (clips the slider's fill bar), but it silently
+  clipped `.trigger-select-menu` (a DOM child, positioned below the 20px pill) to zero
+  visible height instead. The click handler and `open` state were never broken.
+  Fixed by dropping that one property.
+- **Note-port "same color won't connect"**: not a Note-buffer fan-out limitation
+  (`GraphCompiler.cpp`'s `noteInputsUsed` guard is a plain "one source per input" rule,
+  identical to every ordinary connection — Note fan-*out* was never restricted). The
+  real cause: `portUiKind.ts`'s classifier had no case for `SignalType::Note` at all,
+  so it silently rendered the exact same white a real-quantity Control port uses —
+  every rejection the user saw was a genuinely correct type mismatch, just wearing a
+  borrowed color. Fixed with a new, distinct `'note'` kind (teal, `♪` glyph) in the one
+  shared classifier every consumer (node cards, the gallery legend, the WebGL cable
+  layer) already reads from.
+
+**Verified live**, without synthetic mouse input (this environment doesn't reliably
+deliver it to WebView2 content, and UI Automation doesn't reliably expose that content's
+tree either — both documented in earlier sessions): temporarily forced
+`TriggerSelect`'s `open` state to `true` in code, screenshotted the Standalone app, saw
+both dropdowns render their full option lists unclipped, reverted immediately. Same
+screenshot also showed `instance.allocator`'s `spawn` port in the new teal, visibly
+distinct from the white ports beside it. UI build/lint clean both before and after the
+revert.
 
 ## Verification, every wave from 0.2 on
 

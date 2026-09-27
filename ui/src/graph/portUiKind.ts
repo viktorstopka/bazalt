@@ -4,7 +4,7 @@
 import type { PortDescriptor, SignalType } from './descriptorTypes'
 import { tokens } from '../theme/tokens'
 
-export type PortUiKind = 'audio' | 'modulation' | 'value' | 'integer' | 'trigger' | 'boolean'
+export type PortUiKind = 'audio' | 'modulation' | 'value' | 'integer' | 'trigger' | 'boolean' | 'note'
 
 /** SignalType::Control ports with no unit and a 0-1 range render as
     Modulation (orange); anything else numeric renders as Value (white),
@@ -16,7 +16,14 @@ export function classifyPortUiKind(port: Pick<PortDescriptor, 'type' | 'unit' | 
   if (type === 'audio') return 'audio'
   if (type === 'event') return 'trigger'
   if (type === 'boolean') return 'boolean'
-  if (type !== 'control') return 'value' // Note/Spectral: no UI rendering defined yet (§5); fall back rather than crash
+  // wiki/NODES_Gaps.md's Note-port-connectivity finding: Note used to fall
+  // through the generic "unknown type" branch below into 'value' — the
+  // exact same white a real-quantity Control port renders as, so wiring
+  // Note In's output into an incompatible-but-same-coloured Control input
+  // looked like "same colour won't connect" when the real story was a
+  // genuine, correctly-rejected type mismatch wearing a borrowed colour.
+  if (type === 'note') return 'note'
+  if (type !== 'control') return 'value' // Data/Spectral: no UI rendering defined yet (§5); fall back rather than crash
 
   if (port.isInteger) return 'integer'
 
@@ -52,6 +59,7 @@ export const PORT_UI_STYLE: Record<PortUiKind, PortUiStyle> = {
   integer: { color: tokens.color.portInteger, glyph: '→' },
   trigger: { color: tokens.color.portTrigger, glyph: '!' },
   boolean: { color: tokens.color.portBoolean, glyph: '?' },
+  note: { color: tokens.color.portNote, glyph: '♪' }, // eighth note (♪) — distinct from every arrow/!/? glyph above
 }
 
 export function portUiStyle(port: Pick<PortDescriptor, 'type' | 'unit' | 'minValue' | 'maxValue' | 'isInteger'>): PortUiStyle {

@@ -14,7 +14,7 @@ import type { NodeDescriptor, PortDescriptor } from '../graph/descriptorTypes'
 import { tokens } from '../theme/tokens'
 import './ComponentGallery.css'
 
-const PORT_KIND_ORDER: PortUiKind[] = ['audio', 'modulation', 'value', 'integer', 'trigger', 'boolean']
+const PORT_KIND_ORDER: PortUiKind[] = ['audio', 'modulation', 'value', 'integer', 'trigger', 'boolean', 'note']
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (

@@ -1,5 +1,16 @@
 /* Same shell as .value-slider (ValueSlider.css) — one pill visual language
-   for every in-node fallback control, numeric or discrete. */
+   for every in-node fallback control, numeric or discrete — MINUS
+   .value-slider's own `overflow: hidden`. There it's load-bearing (it
+   clips .value-slider-fill's absolutely-positioned bar to the pill's own
+   rounded bounds); copied wholesale here it silently clipped
+   .trigger-select-menu instead, since that's a DOM child of this same
+   element, positioned below the pill's own 20px-tall box
+   (wiki/NODES_Gaps.md's "dropdowns don't work" finding — confirmed root
+   cause: the click handler and the `open` state toggle both already
+   worked correctly, the menu was just clipped to zero visible height, not
+   failing to open at all). The label/value spans already truncate
+   themselves independently (their own overflow: hidden + text-overflow:
+   ellipsis, below), so dropping it here costs nothing. */
 .trigger-select {
   position: relative;
   flex: 1;
@@ -13,7 +24,6 @@
   border: var(--stroke-thin) solid;
   border-radius: var(--radius-sm);
   background: var(--color-panel);
-  overflow: hidden;
   cursor: pointer;
   user-select: none;
 }

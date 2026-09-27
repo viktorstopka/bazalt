@@ -42,6 +42,12 @@ export const tokens = {
     portTrigger: '#8c7fff',
     portBoolean: '#7cc6f7',
     portPoly: '#4ade80',
+    // wiki/NODES_Gaps.md's Note-port-connectivity finding: SignalType::Note
+    // had no colour of its own (portUiKind.ts's classifier fell through to
+    // portValue, the exact colour a real-quantity Control port uses) — a
+    // genuine same-colour-but-incompatible collision, not a connection bug.
+    // A distinct teal/cyan, unused anywhere else in this palette.
+    portNote: '#3ecfc0',
 
     // Node-body surface (M9 component gallery; NODE_EDITOR.md §10 — DOM
     // node bodies until the hybrid WebGL-background sync is proven in M10,

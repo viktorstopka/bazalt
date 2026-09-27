@@ -348,7 +348,8 @@ is derived from the value contract:
 | yellow | `Control`, `kind = int` |
 | blue, `?` glyph | `Control`, `kind = bool` |
 | violet, `!` glyph | `Event` |
-| *(open)* | `Note`, `Data` — no colour assigned yet; the "same colour won't connect" bug report against Note ports (`NODES_Gaps.md`) is not actually a colour problem, since Note has no distinct colour to begin with — the real cause is under investigation there |
+| teal, `♪` glyph | `Note` (Milestone 0.7 — this was the actual cause of the "same colour won't connect" report in `NODES_Gaps.md`: Note fell through to white, colliding with real-quantity Control) |
+| *(open)* | `Data` — no colour assigned yet; no real node produces one, so there's nothing to observe against |
 | line style | domain (mono vs. poly, §5) |
 
 ---
