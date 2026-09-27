@@ -50,6 +50,7 @@
 #include "bazalt/engine/nodes/PeakFilterNode.h"
 #include "bazalt/engine/nodes/ShelfFilterNode.h"
 #include "bazalt/engine/nodes/AllpassFilterNode.h"
+#include "bazalt/engine/nodes/LadderFilterNode.h"
 
 namespace bazalt::engine
 {
@@ -115,6 +116,9 @@ namespace bazalt::engine
         factory.registerType ("filter.peak", [] { return std::make_unique<nodes::PeakFilterNode>(); });
         factory.registerType ("filter.shelf", [] { return std::make_unique<nodes::ShelfFilterNode>(); });
         factory.registerType ("filter.allpass", [] { return std::make_unique<nodes::AllpassFilterNode>(); });
+        // M22 wave 3 — filter.ladder, the one node NODE_CATALOG.md itself
+        // flags numerically delicate.
+        factory.registerType ("filter.ladder", [] { return std::make_unique<nodes::LadderFilterNode>(); });
         return factory;
     }
 
