@@ -11,6 +11,7 @@
 // measurably different result than the statically-configured one — proof
 // the port is a real modulation path, not just descriptor metadata.
 #include <catch2/catch_test_macros.hpp>
+#include <catch2/catch_approx.hpp>
 #include "bazalt/engine/nodes/AdsrNode.h"
 #include "bazalt/engine/nodes/OscillatorNode.h"
 #include "bazalt/engine/nodes/SvfFilterNode.h"
@@ -158,13 +159,29 @@ TEST_CASE ("OnePoleFilterNode's coefficient port live-modulates instead of only 
 {
     OnePoleFilterNode fastDamp;
     float fastInputs[2] = { 1.0f, 0.9f }; // near-1 coefficient — output should track the input almost fully
-    float fastOut = 0.0f;
-    fastDamp.processSample (fastInputs, &fastOut);
+    float fastOut[2] = { 0.0f, 0.0f }; // [0]=lowpass, [1]=highpass (M22)
+    fastDamp.processSample (fastInputs, fastOut);
 
     OnePoleFilterNode slowDamp;
     float slowInputs[2] = { 1.0f, 0.05f }; // near-0 coefficient — output should barely move off zero
-    float slowOut = 0.0f;
-    slowDamp.processSample (slowInputs, &slowOut);
+    float slowOut[2] = { 0.0f, 0.0f };
+    slowDamp.processSample (slowInputs, slowOut);
 
-    CHECK (fastOut > slowOut);
+    CHECK (fastOut[0] > slowOut[0]);
+}
+
+TEST_CASE ("OnePoleFilterNode's highpass output is the complement of its lowpass output",
+           "[engine][nodes][OnePoleFilterNode][M22]")
+{
+    OnePoleFilterNode filter;
+    filter.setParameter ("filter.onepole.coefficient", 0.3f);
+
+    for (float in : { 1.0f, 0.4f, -0.7f, 0.0f, 1.0f, 1.0f })
+    {
+        float inputs[2] = { in, kNaN };
+        float outputs[2] = { 0.0f, 0.0f };
+        filter.processSample (inputs, outputs);
+
+        CHECK (outputs[1] == Catch::Approx (in - outputs[0]));
+    }
 }

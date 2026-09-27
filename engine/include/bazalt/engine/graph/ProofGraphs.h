@@ -44,6 +44,9 @@
 #include "bazalt/engine/nodes/IoAudioInNode.h"
 #include "bazalt/engine/nodes/IoControlNode.h"
 #include "bazalt/engine/nodes/IoTransportNode.h"
+#include "bazalt/engine/nodes/SineOscillatorNode.h"
+#include "bazalt/engine/nodes/DcBlockNode.h"
+#include "bazalt/engine/nodes/EnvelopeFollowerNode.h"
 
 namespace bazalt::engine
 {
@@ -101,6 +104,10 @@ namespace bazalt::engine
         factory.registerType ("io.audioIn", [] { return std::make_unique<nodes::IoAudioInNode>(); });
         factory.registerType ("io.control", [] { return std::make_unique<nodes::IoControlNode>(); });
         factory.registerType ("io.transport", [] { return std::make_unique<nodes::IoTransportNode>(); });
+        // M22 (Basic synthesis), wave 1 — cheap wins needing no new DSP primitive.
+        factory.registerType ("osc.sine", [] { return std::make_unique<nodes::SineOscillatorNode>(); });
+        factory.registerType ("filter.dcBlock", [] { return std::make_unique<nodes::DcBlockNode>(); });
+        factory.registerType ("env.follower", [] { return std::make_unique<nodes::EnvelopeFollowerNode>(); });
         return factory;
     }
 

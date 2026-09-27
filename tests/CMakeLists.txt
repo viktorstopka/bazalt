@@ -10,7 +10,9 @@ add_executable(EngineTests
     BlockSizeInvarianceTests.cpp
     CanConnectTests.cpp
     DataTests.cpp
+    DcBlockNodeTests.cpp
     DomainSplitterTests.cpp
+    EnvelopeFollowerNodeTests.cpp
     EngineVersionTests.cpp
     ExecutionPlanTapTests.cpp
     GraphCompilerTests.cpp
@@ -32,6 +34,7 @@ add_executable(EngineTests
     ProofGraphRenderTests.cpp
     RtAllocationTrapTests.cpp
     SampleRateCoverageTests.cpp
+    SineOscillatorNodeTests.cpp
     SmoothedParameterTests.cpp
     SvfFilterTests.cpp
     TapTests.cpp

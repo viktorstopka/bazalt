@@ -16,12 +16,24 @@ namespace bazalt::engine::nodes
         pattern as elsewhere) rather than a plain parameter — it's used
         directly inline per sample already, so modulating it costs nothing
         beyond the NaN check itself.
+
+        M22: a second output, `highpass` = `in - lowpass` — the complement
+        of the one-pole's existing output, which is exactly what a
+        one-pole low/high split already provides algebraically (their gains
+        sum to unity by construction). Free: no new state, no new work
+        beyond the subtraction, and it closes the gap between this node and
+        NODE_CATALOG.md's own `filter.onepole` spec (`lowpass`, `highpass`
+        outputs) without touching the existing `"out"` id — renaming it
+        would break every saved patch already wired to it (CLAUDE.md rule
+        3). `"out"`'s label moves from empty (falls back to the id in the
+        UI) to "Lowpass" for clarity; a label isn't persisted, only the id
+        is, so this is free to change.
     */
     class OnePoleFilterNode : public Node
     {
     public:
         static constexpr int numInputs = 2; // in, coefficient
-        static constexpr int numOutputs = 1;
+        static constexpr int numOutputs = 2; // out (lowpass), highpass
 
         void reset() override { state = 0.0f; }
 
@@ -43,7 +55,10 @@ namespace bazalt::engine::nodes
 
         std::vector<PortDescriptor> getOutputPorts() const override
         {
-            return { { "out", SignalType::Audio } };
+            return {
+                PortDescriptor { .id = "out", .type = SignalType::Audio, .label = "Lowpass", .isPrimaryOutput = true },
+                PortDescriptor { .id = "highpass", .type = SignalType::Audio, .label = "Highpass" },
+            };
         }
 
         std::vector<ParameterDescriptor> getParameters() const override { return {}; }
@@ -59,6 +74,7 @@ namespace bazalt::engine::nodes
             const auto c = std::isnan (inputs[1]) ? coefficient : juce::jlimit (0.0f, 1.0f, inputs[1]);
             state = c * inputs[0] + (1.0f - c) * state;
             outputs[0] = state;
+            outputs[1] = inputs[0] - state;
         }
 
     private:
