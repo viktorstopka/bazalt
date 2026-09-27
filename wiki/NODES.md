@@ -223,7 +223,7 @@ A multi-section waveguide whose cross-section profile is read from a curve, so f
 **In:** `in`; `size`; `amount`. **Out:** `out`. **Structural:** `stages` (2–8). **Behavior:** an allpass chain — early reflections, transient smearing. **M28.**
 
 #### `space.pan` — Pan ✅
-**In:** `in` — `Audio`; `pan [audio]`; `width`. **Out:** `left`, `right` — `Audio` **(named-port pair, not a true stereo cable — see `NODES.System.md` §4/`NODES_Gaps.md`'s stereo-by-default item)**. **Structural:** `law` (enum: linear, −3dB, −4.5dB, constant power — default constant power). **Behavior:** `width` is an equal-power mid/side cross-mix of the already-panned pair; `width=1` is a true no-op.
+**In:** `in` — `Audio`; `pan [audio]`; `width`. **Out:** `left`, `right` — `Audio` **(named-port pair, not a true stereo cable — the redesign is scoped in `NODES.System.md` §9, not built yet)**. **Structural:** `law` (enum: linear, −3dB, −4.5dB, constant power — default constant power). **Behavior:** `width` is an equal-power mid/side cross-mix of the already-panned pair; `width=1` is a true no-op.
 
 #### `space.width` — Width ✅
 **In:** `in.left`, `in.right` — `Audio` **(two separate mono ports, not one stereo cable — same open item)**; `width`; `bassMonoBelow`. **Out:** `left`, `right` — `Audio`. **Behavior:** the same mid/side cross-mix `space.pan` uses, plus a one-pole crossover so `width` only touches the band above `bassMonoBelow` (keeps bass phase-coherent, an ordinary mastering-chain technique).

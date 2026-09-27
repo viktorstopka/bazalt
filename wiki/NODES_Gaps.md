@@ -213,13 +213,17 @@ per-input check"). Dropping a second cable onto an already-wired input is reject
 rather than replacing the old one. Not yet located to the exact UI drop-handler call
 site that would need to change to auto-disconnect first.
 
-### Stereo: `left`/`right` port pairs, not one stereo cable
+### Stereo: `left`/`right` port pairs, not one stereo cable — SCOPED (Milestone 0.2)
 Confirmed deliberate (`ADR-0023` Amendment, M22) — `space.pan`'s outputs and
 `space.width`'s `in.left`/`in.right` inputs are genuinely two separate mono Audio
 ports today, not a true stereo cable. `PortDescriptor::channels = Channels::Stereo`
 exists in the type system but no real node uses it. Your ask (stereo-by-default, one
-cable) is a real architecture reopening — full writeup in `wiki/NODES.System.md` §4,
-scoped as Milestone 0.2.
+cable) is a real architecture reopening — full engineering design now written up in
+`wiki/NODES.System.md` §9 (the chosen representation, the exact `GraphCompiler.cpp`/
+`PluginProcessor.cpp` change surface, the real trade-off — independent per-channel
+wiring needs two new `stereo.split`/`stereo.combine` bridge nodes it doesn't need
+today — the schema v5 migration, and a 5-wave implementation order). Scoped, not
+built yet.
 
 ### Reroute "not connectable"
 `util.reroute` (`RerouteNode.h`) reads correctly in isolation — real polymorphic

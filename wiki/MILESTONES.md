@@ -107,13 +107,20 @@ changes fully reverted, confirmed environmental/scheduling, not a regression; pa
 cleanly on retry with the changes back in place). Standalone app sanity-checked,
 no regressions.
 
-## 0.2 — Stereo, decided for real
+## 0.2 — Stereo, scoped (not built)
 
-Write the full trade-off (current `left`/`right` mono-pair convention vs. a true
-single-cable stereo `Audio` port) into `wiki/NODES.System.md`, scope the actual
-engine-level change (`ExecutionPlan` buffer layout, `PortDescriptor::channels`, every
-mono node's implicit broadcast behavior, `mix.downmix`'s role), land on the
-stereo-by-default single-cable design per your stated preference.
+Full engineering design written into `wiki/NODES.System.md` §9: the chosen
+representation (a stereo port occupies two consecutive flat buffer slots — no change
+to `Node::processSample`/`processBlock`'s signatures, no change to 53 of the 55
+existing node files, no change to the patch format's connection shape), the exact
+`GraphCompiler.cpp`/`PluginProcessor.cpp`/telemetry change surface, the real cost
+(independent per-channel wiring needs two new `stereo.split`/`stereo.combine` bridge
+nodes that aren't needed today), why `mix.downmix` auto-insertion stops being a rare
+edge case and starts mattering, the schema v5 migration plan (including the
+asymmetric-old-patch case), and a 5-wave implementation order.
+
+**Not implemented yet** — this milestone was explicitly "scope it out," not "build
+it." Waves 1–5 in §9.7 are the next 0.2.x-style work once building starts.
 
 ## 0.3 — Master Out / output designation, fixed
 
