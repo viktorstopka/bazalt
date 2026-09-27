@@ -181,6 +181,26 @@ function makeId(prefix: string): string {
   return `${prefix}${nextId++}`
 }
 
+/** Re-seeds `nextId` past every "node<N>" id already present in a graph
+    just loaded from the engine — a real bug found in testing: `nextId`
+    started fresh at 1 on every page load regardless of what a restored
+    saved patch (or the engine's own current graph) already contained, so
+    adding a node to a patch that already had "node1"/"node2"/... (e.g. from
+    an earlier session's own auto-named nodes) collided and failed with
+    "Node id already exists" — repeatedly, once per already-used number,
+    until `nextId` happened to count past all of them. Called once from
+    `ensureInitialized()`'s initial snapshot load; new nodes placed during
+    the session already keep `nextId` correctly ahead of themselves.
+*/
+function reseedNextIdPast(loadedNodes: readonly GraphNode[]): void {
+  let highest = 0
+  for (const node of loadedNodes) {
+    const match = /^node(\d+)$/.exec(node.id)
+    if (match) highest = Math.max(highest, Number(match[1]))
+  }
+  nextId = Math.max(nextId, highest + 1)
+}
+
 let cachedSnapshot: GraphSnapshot = buildSnapshot()
 function buildSnapshot(): GraphSnapshot {
   return {
@@ -258,6 +278,7 @@ export function ensureInitialized(): void {
       const state = patchJsonToLocalState(json)
       nodes = state.nodes
       wires = state.wires
+      reseedNextIdPast([...state.nodes.values()])
       notify()
     })
     .catch((error) => {
