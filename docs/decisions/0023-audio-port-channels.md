@@ -1,7 +1,8 @@
 # 0023 — `channels: Mono | Stereo | Inherited` on Audio ports; no multi-channel buffer plumbing yet
 
 ## Status
-Proposed (M16). `PortDescriptor::channels` and `canConnect`'s corresponding rule are implemented;
+Proposed (M16), amended and the open stereo-representation question resolved (M22 — see the
+Amendment below). `PortDescriptor::channels` and `canConnect`'s corresponding rule are implemented;
 the actual multi-channel-per-port buffer representation this field implies is explicitly **not**
 built, and this ADR says so rather than papering over it.
 
@@ -53,3 +54,28 @@ instead of guessing at a shape that doesn't fit.
 - `mix.downmix` stays real and useful regardless of which representation wins — a two-mono-input
   downmix is meaningful either way (either as the manual adapter for a single-multi-channel-port
   world, or as the natural way to fold a `left`/`right` port pair down to one signal).
+
+## Amendment (M22) — the question is answered: `left`/`right` port pairs, `channels: Stereo` stays unused
+
+This ADR's own Consequences section asked for this decision "before any real stereo-capable node...
+is implemented," and named `space.reverb`/`resonator.plate` (M28) as the trigger — `space.pan` and
+`space.width` got there first, six milestones earlier than anticipated.
+
+**Decision: every stereo-capable node uses two separate `left`/`right` Audio ports, matching
+`DownmixNode`'s existing (M16) input-side precedent and the catalogue's own text for every stereo
+entry it lists — `space.reverb`, `resonator.plate`, `sampler.granular`, and now `space.pan` (output)
+and `space.width` (input and output).** `PortDescriptor::channels = Channels::Stereo` stays exactly
+as this ADR left it: a real, tested-in-isolation schema field with no node using it, and no near-term
+plan to build the buffer plumbing it would need (one port carrying two interleaved or dual-pointer
+channels — a change to `AlignedBuffer`/`ExecutionPlan` this decision doesn't require and doesn't
+motivate building). `mix.downmix`'s existing two-mono-input shape needed no change either way, exactly
+as this ADR's own Consequences section already anticipated.
+
+This was the cheaper, zero-new-infrastructure path — `left`/`right` ports are ordinary
+`PortDescriptor`s the compiler, `canConnect`, and every UI layer already handle correctly today,
+while a real `channels: Stereo` buffer would have meant new `AlignedBuffer` multi-channel storage,
+new `ExecutionPlan` scheduling for it, and new UI port-glyph handling for a "this one socket carries
+two signals" concept nothing in the node editor currently expresses — real scope no stereo node
+actually needs in order to work. Revisit only if a future node's stereo signal must move as one
+tightly-coupled unit through generic (type-agnostic) plumbing that a `left`/`right` pair can't express
+— nothing built as of M22 has needed that.

@@ -41,6 +41,7 @@ add_executable(EngineTests
     SampleRateCoverageTests.cpp
     SineOscillatorNodeTests.cpp
     SmoothedParameterTests.cpp
+    SpaceNodesTests.cpp
     SvfFilterTests.cpp
     TapTests.cpp
     TelemetryFrameBufferTests.cpp

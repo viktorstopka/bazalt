@@ -53,6 +53,8 @@
 #include "bazalt/engine/nodes/LadderFilterNode.h"
 #include "bazalt/engine/nodes/RandomSteppedNode.h"
 #include "bazalt/engine/nodes/RandomDriftNode.h"
+#include "bazalt/engine/nodes/PanNode.h"
+#include "bazalt/engine/nodes/WidthNode.h"
 
 namespace bazalt::engine
 {
@@ -124,6 +126,11 @@ namespace bazalt::engine
         // M22 wave 4 — random.stepped, random.drift.
         factory.registerType ("random.stepped", [] { return std::make_unique<nodes::RandomSteppedNode>(); });
         factory.registerType ("random.drift", [] { return std::make_unique<nodes::RandomDriftNode>(); });
+        // M22 wave 5 — space.pan, space.width; ADR-0023 Amendment (M22)
+        // settles the left/right-vs-Channels::Stereo question these first
+        // real stereo nodes raised.
+        factory.registerType ("space.pan", [] { return std::make_unique<nodes::PanNode>(); });
+        factory.registerType ("space.width", [] { return std::make_unique<nodes::WidthNode>(); });
         return factory;
     }
 
