@@ -51,6 +51,8 @@
 #include "bazalt/engine/nodes/ShelfFilterNode.h"
 #include "bazalt/engine/nodes/AllpassFilterNode.h"
 #include "bazalt/engine/nodes/LadderFilterNode.h"
+#include "bazalt/engine/nodes/RandomSteppedNode.h"
+#include "bazalt/engine/nodes/RandomDriftNode.h"
 
 namespace bazalt::engine
 {
@@ -119,6 +121,9 @@ namespace bazalt::engine
         // M22 wave 3 — filter.ladder, the one node NODE_CATALOG.md itself
         // flags numerically delicate.
         factory.registerType ("filter.ladder", [] { return std::make_unique<nodes::LadderFilterNode>(); });
+        // M22 wave 4 — random.stepped, random.drift.
+        factory.registerType ("random.stepped", [] { return std::make_unique<nodes::RandomSteppedNode>(); });
+        factory.registerType ("random.drift", [] { return std::make_unique<nodes::RandomDriftNode>(); });
         return factory;
     }
 

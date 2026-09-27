@@ -36,6 +36,7 @@ add_executable(EngineTests
     PlanSwapperTests.cpp
     PolyBlepOscillatorTests.cpp
     ProofGraphRenderTests.cpp
+    RandomNodesTests.cpp
     RtAllocationTrapTests.cpp
     SampleRateCoverageTests.cpp
     SineOscillatorNodeTests.cpp
