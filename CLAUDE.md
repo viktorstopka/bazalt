@@ -5,7 +5,9 @@ WebView UI. **Current, active node/architecture reference:** `wiki/NODES.md`
 (the node catalog) and `wiki/NODES.System.md` (architecture rules — signal
 types, the value contract, the full connection/adapter matrix with real-vs-
 aspirational columns, domains, naming philosophy, factories). Current gap
-tracking: `wiki/NODES_Gaps.md`. Current milestone plan: `wiki/MILESTONES.md`
+tracking: `wiki/NODES_Gaps.md`. Current per-node build status (Implemented/
+MVP/To be implemented, necessity+difficulty, build batches, build-next order):
+`wiki/NODES.Status.md`. Current milestone plan: `wiki/MILESTONES.md`
 (a `0.x`-numbered arc, separate from the `archive_docs/MILESTONES.md` M-arc
 below). Not-yet-decided new capabilities get designed in `wiki/plans/` (one
 file per proposal, e.g. `wiki/plans/AudioControlBridge.md`) before any code
