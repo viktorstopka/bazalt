@@ -23,6 +23,12 @@ namespace bazalt::engine::nodes
         graph that never wires anything into `"right"` behaves exactly as
         before (an unconnected Audio input reads silence, matching the old
         node's own mono behaviour byte for byte).
+
+        `.label` (display text, no compatibility constraint) is "Left"/
+        "Right" on both pairs, matching `space.pan`/`space.width`'s own
+        convention — only the *ids* had to stay "in"/"out" (rule 3); a first
+        pass left the labels reading "In"/"Right" and "Out"/"Right", which
+        doesn't visually read as a stereo pair. Fixed once flagged live.
     */
     class OutputNode : public Node
     {
@@ -39,7 +45,7 @@ namespace bazalt::engine::nodes
         std::vector<PortDescriptor> getInputPorts() const override
         {
             return {
-                PortDescriptor { .id = "in", .type = SignalType::Audio, .label = "In", .channels = Channels::Stereo },
+                PortDescriptor { .id = "in", .type = SignalType::Audio, .label = "Left", .channels = Channels::Stereo },
                 PortDescriptor { .id = "right", .type = SignalType::Audio, .label = "Right", .channels = Channels::Stereo },
             };
         }
@@ -53,7 +59,7 @@ namespace bazalt::engine::nodes
             // hit this exact issue first and is why its own inputs are
             // "in.left"/"in.right" rather than reusing "left"/"right".
             return {
-                PortDescriptor { .id = "out", .type = SignalType::Audio, .label = "Out", .isPrimaryOutput = true, .channels = Channels::Stereo },
+                PortDescriptor { .id = "out", .type = SignalType::Audio, .label = "Left", .isPrimaryOutput = true, .channels = Channels::Stereo },
                 PortDescriptor { .id = "outRight", .type = SignalType::Audio, .label = "Right", .channels = Channels::Stereo },
             };
         }
