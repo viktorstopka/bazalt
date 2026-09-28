@@ -389,6 +389,14 @@ namespace bazalt::engine
             plan.nodeIdToSlot[instance.id] = slot;
             plan.nodeIdToType[instance.id] = instance.type;
             plan.nodeIdToAppliedParameters[instance.id] = instance.parameters;
+
+            // ExecutionPlan::noteInNodeId's own comment has the full story:
+            // resolved once here, by type, instead of PluginProcessor
+            // hardcoding a specific instance id that the editor's own
+            // Add-menu never actually produces.
+            if (plan.noteInNodeId.isEmpty() && instance.type == "io.noteIn")
+                plan.noteInNodeId = instance.id;
+
             plan.nodes.push_back (std::move (node));
         }
 

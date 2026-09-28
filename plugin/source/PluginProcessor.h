@@ -203,7 +203,6 @@ namespace bazalt
         bazalt::engine::PlanSwapper globalPlanSwapper;
         std::atomic<bool> hasGlobalDomain { false };
         std::atomic<bool> monoOnlyGraph { false };
-        const juce::String noteInNodeId { "noteIn" }; // see findNoteIn
 
         bazalt::engine::VoiceManager voiceManager;
         MacroParameters macroParameters;

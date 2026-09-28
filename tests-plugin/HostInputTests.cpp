@@ -150,6 +150,67 @@ TEST_CASE ("09-28-InstanceAllocator.1: an unrelated, unconnected instance.alloca
     CHECK (rms > 0.1); // the sine is genuinely audible - the allocator's presence didn't gate it
 }
 
+TEST_CASE ("09-28-InstanceAllocator.1b: MIDI reaches io.noteIn regardless of its instance id, not only when it happens to be literally 'noteIn'",
+           "[plugin][host-input][InstanceAllocator]")
+{
+    // Another real bug found live in the same session, same symptom
+    // ("instance.allocator's gate never moves"): PluginProcessor used to
+    // find the plan's io.noteIn node by a HARDCODED instance id ("noteIn")
+    // rather than by type. The editor's own Add-menu auto-generates
+    // ordinary ids ("node2", "node3", ...) for a placed node - never that
+    // specific magic string - so a patch built entirely through the normal
+    // UI workflow silently never received a single MIDI note. Deliberately
+    // named "node3" here, exactly matching what a real UI-built patch
+    // looked like when this was diagnosed.
+    //
+    // MUST gate a VCA through a real envelope, not just wire osc.analog's
+    // pitch from the allocator - a first version of this test read the raw
+    // oscillator, which free-runs off allocator.pitch's already-valid
+    // default (60.0f) the moment its VOICE SLOT is marked active
+    // (VoiceManager::noteOn(), called unconditionally in handleMidiEvent
+    // BEFORE findNoteIn/injectNoteOn are ever reached) - completely
+    // independent of whether the noteIn poke this milestone fixes actually
+    // succeeds. That version passed even with the bug reintroduced by
+    // mutation, catching nothing. Gating through env.adsr's own gate input
+    // (fed from allocator.gate, which only ever becomes true via a real
+    // noteOn() call reaching the allocator) makes silence genuinely mean
+    // "the note never arrived."
+    using bazalt::engine::NodeGraph;
+
+    NodeGraph graph;
+    graph.addNode ({ "node3", "io.noteIn", {}, {}, {} }); // NOT "noteIn"
+    graph.addNode ({ "alloc", "instance.allocator", {}, {}, {} });
+    graph.addNode ({ "osc", "osc.analog", {}, {}, {} });
+    graph.addNode ({ "env", "env.adsr", {}, { { "env.adsr.attack", 0.0f } }, {} });
+    graph.addNode ({ "vca", "mix.gain", {}, {}, {} });
+    graph.addNode ({ "out", "io.output", {}, {}, {} });
+    graph.addConnection ({ "node3", "notes", "alloc", "spawn" });
+    graph.addConnection ({ "alloc", "pitch", "osc", "pitch" });
+    graph.addConnection ({ "alloc", "gate", "env", "gate" });
+    graph.addConnection ({ "osc", "out", "vca", "audio" });
+    graph.addConnection ({ "env", "out", "vca", "gain" });
+    graph.addConnection ({ "vca", "out", "out", "in" });
+    graph.setOutput ("out", "out");
+
+    BazaltAudioProcessor processor;
+    processor.prepareToPlay (44100.0, 512);
+    REQUIRE (processor.getGraphEditController().setGraph (graph).success);
+
+    juce::MidiBuffer noteOn;
+    noteOn.addEvent (juce::MidiMessage::noteOn (1, 60, 1.0f), 0);
+    processWithMainInput (processor, 0.0f, 0.0f, 512, noteOn);
+    juce::AudioBuffer<float> out;
+    for (int block = 0; block < 4; ++block) // let the envelope open and the oscillator settle
+        out = processWithMainInput (processor, 0.0f, 0.0f, 512);
+
+    double sumSquares = 0.0;
+    for (int i = 0; i < 512; ++i)
+        sumSquares += (double) out.getSample (0, i) * out.getSample (0, i);
+    const auto rms = std::sqrt (sumSquares / 512.0);
+
+    CHECK (rms > 0.1); // the note genuinely reached the voice, opened the envelope, and the VCA let sound through
+}
+
 TEST_CASE ("A genuinely stereo graph (space.pan into io.output's stereo pair) sends different signals to each host channel",
            "[plugin][host-input][stereo]")
 {

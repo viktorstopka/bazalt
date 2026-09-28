@@ -196,6 +196,27 @@ namespace bazalt::engine
         // same field rather than each inventing its own thread-safe
         // driver-to-audio-thread handoff.
         juce::String externalInputNodeId;
+
+        // Real bug found live (09-28-InstanceAllocator arc): PluginProcessor
+        // used to find the plan's io.noteIn node by a HARDCODED instance id
+        // ("noteIn") rather than by type — the UI's own Add-menu auto-
+        // generates ordinary ids ("node2", "node3", ...) for a placed node,
+        // never that specific magic string, so a patch built entirely
+        // through the normal editor workflow silently never received a
+        // single MIDI note: findNoteIn() always returned nullptr, gate
+        // never moved, and nothing anywhere said why. Resolved here instead
+        // — the id of whichever node has type "io.noteIn" in this graph
+        // (empty if none), exactly once at compile time, the same pattern
+        // externalInputNodeId above already established for "the driver
+        // needs to find one well-known node by a property of the graph,
+        // not by asking the user to type the right id." Only the first
+        // io.noteIn found (graph declaration order) is used — today's real
+        // usage never has more than one per voice region; a graph that
+        // somehow did would silently pick one, exactly as today's
+        // hardcoded-id version could already silently pick the wrong node
+        // if a second one happened to be named "noteIn".
+        juce::String noteInNodeId;
+
         std::vector<AlignedBuffer> blockBuffers;    // one per block-rate node-output port
         std::vector<float> regionScalars;           // one per per-sample-region-internal node-output port
 

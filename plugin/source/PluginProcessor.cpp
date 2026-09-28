@@ -174,7 +174,12 @@ namespace bazalt
 
     bazalt::engine::nodes::IoNoteInNode* BazaltAudioProcessor::findNoteIn (bazalt::engine::ExecutionPlan* plan) const noexcept
     {
-        return plan == nullptr ? nullptr : dynamic_cast<bazalt::engine::nodes::IoNoteInNode*> (plan->getNodeById (noteInNodeId));
+        // 09-28-InstanceAllocator: resolved by type at compile time
+        // (ExecutionPlan::noteInNodeId's own comment has the real bug this
+        // fixes) — plan->noteInNodeId is a prebuilt String read here, never
+        // a literal (CLAUDE.md's own "never call getNodeById on a literal
+        // on the audio thread" rule).
+        return plan == nullptr ? nullptr : dynamic_cast<bazalt::engine::nodes::IoNoteInNode*> (plan->getNodeById (plan->noteInNodeId));
     }
 
     void BazaltAudioProcessor::pointVoiceTapsAtCurrentVoice (const VoicePlanPtrs& voicePlans) noexcept

@@ -293,14 +293,34 @@ Every other existing `DomainSplitterTests.cpp` case confirmed untouched (none ex
 `instanceMixCount == 0` branch). New `tests-plugin` case matching the literal repro: `osc.sine →
 io.output` plus a disconnected `instance.allocator`, asserting real audio reaches the host output.
 
-**Verified:** 369/369 tests green (up from 365 — the rewritten `DomainSplitterTests.cpp` case
-split into two, plus the new `tests-plugin` literal-repro case). Mutation-tested at both layers:
-forced the fix's reachability check to a constant `false`, confirmed both the engine-level
-`DomainSplitterTests.cpp` cases AND the plugin-level real-audio test caught it (the plugin one
-failing with the exact symptom — `rms == 0.0`, genuine silence — not just a flag mismatch).
-`pluginval --strictness-level 10`: one "Parameter thread safety" timeout, isolated via
-`git stash` (reproduced identically with this milestone's changes fully removed — confirmed
-environmental, not a regression), passed clean on retry with the changes restored.
+**A second, related bug found live during verification** (same user-reported symptom —
+"instance.allocator's gate shows 0 movement" — on a real patch built through the normal editor
+workflow): `PluginProcessor::findNoteIn` looked up the plan's `io.noteIn` node by a **hardcoded
+instance id**, `"noteIn"` — but the editor's own Add-menu auto-generates ordinary ids (`"node2"`,
+`"node3"`, ...) for a placed node, never that specific string. Every graph built entirely through
+the UI therefore never delivered a single MIDI note to its allocator, silently. Fixed the same way
+`ExecutionPlan::externalInputNodeId` already solves an identical problem for `instance.mix`:
+`GraphCompiler::compile()` now resolves the id of whichever node has type `"io.noteIn"` once, at
+compile time (`ExecutionPlan::noteInNodeId`, new field) — `findNoteIn` reads that instead of a
+literal. A first version of the regression test for this (wiring `osc.analog`'s pitch straight from
+the allocator and checking the raw oscillator) passed even with the bug deliberately reintroduced —
+`osc.analog` free-runs off `instance.allocator.pitch`'s already-valid default (60.0f) the moment its
+voice slot is marked active (`VoiceManager::noteOn()`, called unconditionally in `handleMidiEvent`
+*before* `findNoteIn` is ever reached), completely independent of whether the noteIn poke this fix
+targets actually succeeds. Corrected by gating a `mix.gain` VCA through a real `env.adsr` fed from
+`instance.allocator.gate` — gate only ever becomes true via a real `noteOn()` reaching the
+allocator, so silence genuinely means "the note never arrived." That corrected version does catch
+the mutation (`rms == 0.0` with the fix reverted).
+
+**Verified:** 370/370 tests green (up from 365 — the rewritten `DomainSplitterTests.cpp` case
+split into two, the new `tests-plugin` literal-repro case, and the `findNoteIn`-by-type regression
+test). Mutation-tested at both layers for the reachability fix (forced the check to a constant
+`false`, confirmed both the engine-level `DomainSplitterTests.cpp` cases and the plugin-level
+real-audio test caught it) and separately for the `findNoteIn` fix (reverted to the hardcoded id,
+confirmed the corrected regression test — not the first, flawed version — catches it).
+`pluginval --strictness-level 10`: the "Parameter thread safety" timeout recurred on this same
+change too; already isolated once this session (`git stash` comparison, confirmed environmental),
+passed clean on retry both times.
 
 **Also folded in** (same file, directly related): `archive_docs/decisions/
 0020-instance-allocator-lifetime.md` still said "Status: Proposed (M17). Not implemented" — false,
