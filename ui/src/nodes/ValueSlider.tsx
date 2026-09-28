@@ -20,7 +20,32 @@
 //    a burst of ticks previews live and commits once after a short pause,
 //    the same "one undo step per gesture" idea commitNodeMoves already
 //    uses for dragging, applied to a gesture that has no natural mouseup.
-//  - Click without moving: enters type-to-edit mode.
+//  - Click without moving: enters type-to-edit mode IMMEDIATELY, no
+//    artificial delay. Direct feedback: "there is maybe a conflict of the
+//    double click to reset and click to edit — the edit has priority."
+//    There used to be one: single-click waited DOUBLE_CLICK_MS to see
+//    whether a second click would arrive before committing to edit mode,
+//    a hand-timed guess that could lose the double-click-to-reset race
+//    against a real double-click paced any slower than that guess (a
+//    trackpad, a deliberate slower double-click, or simply a value picked
+//    too aggressively) — reset would silently never fire, edit mode would
+//    "win" every time. Fixed by not guessing at all: a native `dblclick`
+//    (fires after the browser's own, OS-timing-aware double-click
+//    detection — never a hardcoded delay) always overrides whatever the
+//    preceding click(s) did and commits the reset instead, handled below
+//    via onDoubleClick. The edit `<input>` can flash on screen for a
+//    single click's worth of a genuine double-click before the reset
+//    fires; a real, deliberate trade-off for a click-to-edit that's
+//    instant the rest of the time, not a bug.
+//
+// Tab/Shift+Tab while editing (direct feedback: "I would like the
+// functionality of Tab and Shift Tab to work when editing a prop... it
+// focuses on the next prop and saves the value") commit the current value
+// (same as Enter) and move edit focus to the next/previous ValueSlider
+// within the same node card (`.node-card`), wrapping around at either end —
+// see the input's onKeyDown and the `bazalt-enter-edit` custom-event
+// listener below. Deliberately scoped to ValueSlider rows only (not
+// TriggerSelect's dropdowns, which have no typed value to Tab out of).
 //
 // Holding Shift during a drag or a wheel tick drops the effective speed to
 // PRECISION_FACTOR (direct feedback: "holding shift should slow the
@@ -40,7 +65,7 @@
 // is what `isInteger` below fixes: 0 decimals and whole-number rounding on
 // every path (drag, wheel, typed edit) instead of a hardcoded 2 decimals
 // for everything regardless of what the descriptor actually says.
-import { useEffect, useRef, useState, type MouseEvent as ReactMouseEvent, type WheelEvent as ReactWheelEvent } from 'react'
+import { useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, type WheelEvent as ReactWheelEvent } from 'react'
 import './ValueSlider.css'
 
 export interface ValueSliderProps {
@@ -86,7 +111,6 @@ export interface ValueSliderProps {
 }
 
 const DRAG_THRESHOLD_PX = 3
-const DOUBLE_CLICK_MS = 300
 const WHEEL_COMMIT_DEBOUNCE_MS = 400
 const WHEEL_STEP_FRACTION = 0.02 // one wheel "tick" ~= 2% of the full range
 const PRECISION_FACTOR = 0.15 // holding Shift: drag/scroll move the value at ~15% of normal speed
@@ -130,7 +154,6 @@ export function ValueSlider({ label, value, min, max, hardMin, hardMax, defaultV
   const rootRef = useRef<HTMLDivElement | null>(null)
   const dragRef = useRef<{ startX: number; startY: number; lastX: number; lastY: number; moved: boolean } | null>(null)
   const wheelTimeoutRef = useRef<number | null>(null)
-  const clickTimeoutRef = useRef<number | null>(null)
   const editResolvedRef = useRef(false)
 
   const updateLiveValue = (next: number | null): void => {
@@ -141,10 +164,25 @@ export function ValueSlider({ label, value, min, max, hardMin, hardMax, defaultV
   useEffect(
     () => () => {
       if (wheelTimeoutRef.current !== null) window.clearTimeout(wheelTimeoutRef.current)
-      if (clickTimeoutRef.current !== null) window.clearTimeout(clickTimeoutRef.current)
     },
     [],
   )
+
+  // Tab/Shift+Tab lands here from a SIBLING ValueSlider's own onKeyDown
+  // (below) — there's no shared parent state tracking "which field is
+  // active" across the node's whole prop list, so a custom DOM event is the
+  // simplest way for one instance to tell a specific sibling "you're next"
+  // without a context/refactor spanning every row type in NodeCard.tsx.
+  useEffect(() => {
+    const el = rootRef.current
+    if (!el) return
+    const onEnterEdit = (): void => {
+      editResolvedRef.current = false
+      setEditing(true)
+    }
+    el.addEventListener('bazalt-enter-edit', onEnterEdit)
+    return () => el.removeEventListener('bazalt-enter-edit', onEnterEdit)
+  }, [])
 
   const displayValue = liveValue ?? committedValue
   const fraction = clamp((displayValue - min) / (max - min || 1), 0, 1)
@@ -217,23 +255,12 @@ export function ValueSlider({ label, value, min, max, hardMin, hardMax, defaultV
       if (wasDrag && finalLive !== null) {
         commit(finalLive)
       } else if (!wasDrag) {
-        // A clean click, no drag. Disambiguated from a double-click (reset
-        // to default) by waiting one short window before committing to
-        // edit mode — direct feedback asked whether double-click-to-reset
-        // exists; it didn't. A plain single click still enters edit mode,
-        // just DOUBLE_CLICK_MS later than before, the standard cost of
-        // telling one click from the first half of two.
-        if (clickTimeoutRef.current !== null) {
-          window.clearTimeout(clickTimeoutRef.current)
-          clickTimeoutRef.current = null
-          if (defaultValue !== undefined) commit(defaultValue)
-        } else {
-          clickTimeoutRef.current = window.setTimeout(() => {
-            clickTimeoutRef.current = null
-            editResolvedRef.current = false
-            setEditing(true)
-          }, DOUBLE_CLICK_MS)
-        }
+        // A clean click, no drag: enter edit mode immediately (see the
+        // header comment on why this used to wait, and why waiting was the
+        // actual bug). A following native dblclick, if one arrives,
+        // overrides this via onDoubleClick below.
+        editResolvedRef.current = false
+        setEditing(true)
       }
     }
     window.addEventListener('mousemove', onMove)
@@ -268,6 +295,43 @@ export function ValueSlider({ label, value, min, max, hardMin, hardMax, defaultV
     setEditing(false)
   }
 
+  // Native dblclick — fires after the browser's own OS-timing-aware
+  // double-click detection, so this always wins over whatever the
+  // preceding click(s) already did (including having entered edit mode;
+  // see the header comment). No defaultValue declared for this port/
+  // parameter: nothing to reset to, so a double-click is just two edit-mode
+  // entries, same as today.
+  const onDoubleClick = (): void => {
+    if (defaultValue === undefined) return
+    editResolvedRef.current = true
+    setEditing(false)
+    commit(defaultValue)
+  }
+
+  // Tab: commit like Enter, then hand off edit focus to the next/previous
+  // ValueSlider in this node card (wrapping at either end) via a custom
+  // event — see the `bazalt-enter-edit` listener above for the receiving
+  // side. preventDefault so the browser's own tab-to-next-focusable never
+  // also fires and fights this.
+  const onEditKeyDown = (e: ReactKeyboardEvent<HTMLInputElement>): void => {
+    if (e.key === 'Enter') {
+      commitEdit(e.currentTarget.value)
+    } else if (e.key === 'Escape') {
+      cancelEdit()
+    } else if (e.key === 'Tab') {
+      e.preventDefault()
+      commitEdit(e.currentTarget.value)
+      const root = rootRef.current
+      const scope = root?.closest('.node-card')
+      if (!root || !scope) return
+      const fields = Array.from(scope.querySelectorAll<HTMLElement>('.value-slider'))
+      const index = fields.indexOf(root)
+      if (index === -1) return
+      const nextIndex = (index + (e.shiftKey ? -1 : 1) + fields.length) % fields.length
+      fields[nextIndex]?.dispatchEvent(new CustomEvent('bazalt-enter-edit'))
+    }
+  }
+
   return (
     <div
       ref={rootRef}
@@ -276,6 +340,10 @@ export function ValueSlider({ label, value, min, max, hardMin, hardMax, defaultV
       onMouseDown={onMouseDown}
       onWheel={onWheel}
       onClick={(e) => e.stopPropagation()}
+      onDoubleClick={(e) => {
+        e.stopPropagation()
+        onDoubleClick()
+      }}
       onContextMenu={(e) => e.stopPropagation()}
     >
       <div className="value-slider-fill" style={{ width: `${fraction * 100}%`, background: color }} />
@@ -288,10 +356,7 @@ export function ValueSlider({ label, value, min, max, hardMin, hardMax, defaultV
           onMouseDown={(e) => e.stopPropagation()}
           onClick={(e) => e.stopPropagation()}
           onBlur={(e) => commitEdit(e.currentTarget.value)}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter') commitEdit(e.currentTarget.value)
-            else if (e.key === 'Escape') cancelEdit()
-          }}
+          onKeyDown={onEditKeyDown}
         />
       ) : (
         <>
