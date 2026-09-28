@@ -329,6 +329,69 @@ Voice mode shipped M17-M18. Corrected honestly, including naming that the ADR's 
 (still a hard `instanceAllocatorCount > 1` rejection) — real, separate, larger future work, named
 so it isn't silently lost.
 
+**A third bug found live, this time in the fix above** (same symptom again, reported against the
+user's own real, mid-build patch — `noteIn → allocator`, allocator's `gate` output not yet wired to
+anything past a `view.glance` tap, Master Out fed by something else entirely): the reachability fix
+above set `monoOnly = true` whenever the allocator's chain didn't reach the designated output — but
+`monoOnly` isn't just a rendering-path switch, it's also what `PluginProcessor::handleMidiEvent`
+gates *all* MIDI dispatch on (`if (monoOnlyGraph.load(...)) return;`). A real allocator, honestly
+wired to a real `noteIn`, stopped receiving MIDI at all the moment its own output wasn't reachable
+yet — exactly the mid-build state a user *inspecting* an allocator's gate via Glance, before wiring
+it further, is in. Not a Glance bug, not a MIDI-settings bug: a real gap in this same milestone's
+first pass.
+
+**The fix:** decoupled two questions that had been conflated into one boolean. Whether a real
+`instance.allocator` gets per-voice plans and real MIDI dispatch is now unconditional — `monoOnly`
+stays `false` whenever an allocator genuinely exists, full stop. Reachability now answers a
+separate question only: whether an "independent global region" needs to run *alongside* the voice
+plans to produce the actual audible output, when the voice domain doesn't reach it. This reuses the
+existing `hasGlobalDomain`/`globalGraph`/`PlanSwapper` machinery (previously exercised only by the
+`instance.mix`-bridged case), distinguished by `instanceMixNodeId` being empty for the new,
+unbridged case (`DomainSplitter.h`'s `hasGlobalDomain`/`instanceMixNodeId` comments updated to
+document both cases). `PluginProcessor::finalizeInstanceMixIntoOutput` gained the matching branch:
+when `hasGlobalDomain` is true but `externalInputNodeId` is empty, the global plan runs
+unconditionally every block (never fed a voice sum) and its own output is what's audible — the same
+role `monoOnly` used to play alone. `GraphEditController.cpp` needed zero changes — already
+generic over "compile voice plans whenever `!monoOnly`" and "compile the global plan whenever
+`hasGlobalDomain`" as independent conditions.
+
+Reachability itself also needed a real fix while rebuilding this: `voiceReachable` must be forward-
+**and-backward** reachable from the allocator (union of both directions), not forward-only — found
+via two *pre-existing* tests breaking (`StressGraphTests.cpp`'s 500-node compile, `GraphEditController
+Tests.cpp`'s `deleteNode`/disconnect test) plus this milestone's own new test: a forward-only check
+misclassified `io.noteIn → allocator.spawn` (a predecessor edge — noteIn is upstream of the
+allocator, not downstream) as a voice/global domain crossing. `DOMAINS.md` §2 already says a mono
+source feeding the poly region is free; the union fix makes `voiceReachable` agree with that
+principle instead of silently contradicting it for the single most common allocator-adjacent shape
+in the whole codebase (`buildVoiceProofGraph()` itself is exactly this shape).
+
+**New coverage:** `tests/DomainSplitterTests.cpp`'s case rewritten with two subcases (a fully
+disconnected allocator; a wired-but-output-irrelevant one) asserting `monoOnly` stays `false` and
+`hasGlobalDomain` is `true` with an empty `instanceMixNodeId` in both. New end-to-end
+`tests-plugin/VisualizationTapTests.cpp` case shaped exactly like the user's real patch — subscribes
+a visualization tap to the allocator's own `"gate"` output (the same mechanism `view.glance` itself
+uses) and asserts it goes non-zero after a real `playNote()` call, directly validating the user's
+literal report ("I tried plugging in Glance to the gate in instance allocator and it had 0
+movement").
+
+**Verified:** 371/371 tests green. Mutation-tested both the `monoOnly = false` line (reverted to
+`true`, confirmed the engine test, the new plugin telemetry test, *and* the pre-existing `.1b` test
+all correctly fail) and the `finalizeInstanceMixIntoOutput` branch (a mutation that processes the
+global plan but "forgets" to point `finalMono` at its output is caught by the pre-existing
+"unrelated, unconnected instance.allocator" test's real-audio assertion — a first mutation attempt
+that skipped `processPlanRange` entirely was a no-op, since both the pre- and post-mutation buffers
+were still zero-initialized at that point in a single-block test; not a meaningful mutation, redone
+properly). `pluginval` wasn't reachable in this environment for this pass (not on `PATH`, not in
+any of the usual install locations checked) — noted rather than silently skipped; the rest of the
+project's standing pluginval track record on this same code area (run clean, twice, earlier in this
+same arc) stands.
+
+**Also fixed in passing:** the first draft of the new plugin test used a real em dash in its Catch2
+test name, which broke CTest's own test discovery on this Windows/locale setup (an encoding mismatch
+between CTest's test-name discovery and its invocation of the Catch2 executable — reported as
+"Failed" with "No test cases matched", not a logic bug). Replaced with a plain hyphen, matching
+every other test name in this codebase.
+
 ## `09-28-InstanceAllocator.2` — `random1`/`random2` real determinism
 
 **Root cause:** `InstanceAllocatorNode::prepare()` calls `random.setSeedRandomly()` — reseeded
