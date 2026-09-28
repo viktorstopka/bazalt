@@ -166,3 +166,30 @@ TEST_CASE ("A node with no title override falls back to its type id in the descr
     CHECK (descriptors[0].title == "test.untitled");
     CHECK (descriptors[0].category == "Uncategorized");
 }
+
+TEST_CASE ("09-29-AddMenu.3: no registered node's category is fragmented by the Add menu's "
+           "'/' nesting delimiter",
+           "[engine][NodeFactory][NODE_EDITOR]")
+{
+    // ui/src/graph/categoryTree.ts splits `category` on "/" to build the Add
+    // menu's nested flyouts ("Domain/Allocate" -> Domain > Allocate). A
+    // category that isn't meant to nest must not contain a literal "/" of
+    // its own, or it silently fragments into a bogus multi-letter-turned-
+    // one-letter-per-segment flyout - exactly what happened to "I/O" (split
+    // into a top-level "I" category with a nested "O" flyout) before this
+    // test existed. A real category segment is always more than one
+    // character, so "every segment has length > 1" catches this class of
+    // mistake generically, for every current and future node, without
+    // hardcoding which categories are allowed to nest.
+    auto factory = bazalt::engine::buildDefaultNodeFactory();
+    const auto descriptors = factory.describeAll();
+
+    for (const auto& d : descriptors)
+    {
+        for (const auto& segment : juce::StringArray::fromTokens (d.category, "/", {}))
+        {
+            INFO ("node " << d.typeId << " has category \"" << d.category << "\"");
+            CHECK (segment.length() > 1);
+        }
+    }
+}

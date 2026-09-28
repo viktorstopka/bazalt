@@ -745,3 +745,31 @@ same reasoning as `.1`.
 Standalone app by this session (no computer-use/screenshot capability here) — the change is served
 live by the already-running Vite dev server (`ui/src` HMR), so the already-open window picks it up
 without a rebuild; confirming the actual hover behavior is the user's own next step.
+
+## `09-29-AddMenu.3` — "I/O" silently fragmented into a bogus "I" > "O" flyout — fixed
+
+**Root cause:** live testing (`.2`'s own category flyout) surfaced a top-level category literally
+named "I" with a single subcategory that reads as "0" in the menu's small mono font but is actually
+the letter "O" — containing exactly 4 nodes. `IoAudioInNode`/`IoControlNode`/`IoNoteInNode`/
+`IoTransportNode` all declared `getCategory() == "I/O"` (a pre-existing, pre-arc category name) —
+and `categoryTree.ts` treats every `/` as a nesting delimiter, so "I/O" silently split into a
+top-level "I" category containing one subcategory "O", exactly the 4 nodes the user saw. A real
+naming collision this arc's own delimiter choice introduced, not caught before shipping `.1`/`.2`
+because nothing scanned every node's category for this specific failure mode.
+
+**The fix:** renamed the category string itself, `"I/O"` → `"IO"` (no slash), across all four
+nodes — a pure UI-label change, same category *meaning*, no typeId/parameter/patch impact. Checked
+every other registered node's category for the same mistake (`grep` across all 55 node headers) —
+"I/O" was the only unintentional collision; `InstanceVoiceNode`'s `"Domain/Allocate"` is the one
+deliberate nested category and stays as-is. Added a warning to `Node::getCategory()`'s own base
+declaration (`Node.h`) so the next node written doesn't repeat this. Added a new, generic regression
+test (`tests/NodeDescriptorTests.cpp`) scanning every registered node's category for a segment of
+length ≤ 1 — the actual shape this exact mistake takes — so any *future* accidental slash is caught
+by `ctest`, not by a screenshot.
+
+**Tests:** new test passes for all 58 registered nodes; 378/378 total (up from 377). UI `npm run
+build`/`npm run lint` clean (unchanged — this was a pure engine-side string fix, no `ui/src` edit).
+Standalone app rebuilt and relaunched (category strings are baked into the compiled descriptor JSON
+the native bridge serves, unlike `.2`'s pure-TS fix, so this one genuinely needed a rebuild+relaunch,
+not just Vite HMR) — visual confirmation that "IO" now renders as one flat category is the user's own
+next step, same computer-use-capability caveat as every earlier entry in this arc.

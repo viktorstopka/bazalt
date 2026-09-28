@@ -49,7 +49,7 @@ namespace bazalt::engine::nodes
         int getNumOutputPorts() const noexcept override { return numOutputs; }
 
         juce::String getTitle() const override { return "MIDI Control"; }
-        juce::String getCategory() const override { return "I/O"; }
+        juce::String getCategory() const override { return "IO"; } // not "I/O" - "/" is the Add menu's category-nesting delimiter (09-29-AddMenu.3)
 
         std::vector<PortDescriptor> getOutputPorts() const override
         {

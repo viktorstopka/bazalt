@@ -146,6 +146,12 @@ namespace bazalt::engine
         // matters to the Add menu (NodeFactory::describeAll() is what
         // reads these, never the audio thread).
         virtual juce::String getTitle() const { return {}; }       // falls back to the type id in the UI if empty
+        // 09-29-AddMenu.1/.3: the Add menu treats "/" in this string as a
+        // category-nesting delimiter ("Domain/Allocate" nests "Allocate"
+        // under "Domain" - ui/src/graph/categoryTree.ts). A single-segment
+        // category name must NOT itself contain a literal "/" - "I/O" once
+        // silently became a bogus "I" > "O" flyout this way (IoAudioInNode
+        // and friends are "IO" now, not "I/O", precisely because of this).
         virtual juce::String getCategory() const { return "Uncategorized"; }
         virtual NodeLayoutVariant getLayoutVariant() const { return NodeLayoutVariant::Standard; }
         virtual juce::String getIcon() const { return {}; }
