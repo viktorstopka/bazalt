@@ -1145,6 +1145,7 @@ export const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, InfiniteCanvasPro
           wires={snapshot.wires}
           selection={snapshot.selection}
           getDescriptor={(typeId) => snapshot.descriptors.find((d) => d.typeId === typeId)}
+          domains={snapshot.domains}
           ghost={ghost}
           ghostElementRef={ghostElRef}
           overlayTarget={overlayEl}

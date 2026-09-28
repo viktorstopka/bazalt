@@ -243,6 +243,22 @@ namespace bazalt
             completion (commandResultToVar (result));
         });
 
+        // 09-28-InstanceAllocator arc: a plain debugging read, not a graph-
+        // editing command (no NodeGraph mutation, no recompile) — same
+        // "own native function, not folded into the snapshot JSON" reasoning
+        // getNodeDescriptors already established, since this is derived,
+        // recomputed-every-compile state, never part of the persisted
+        // PatchDocument the snapshot mirrors. Returns a plain
+        // {"nodeId": "voice"|"global"|"mono"} JSON object.
+        options = options.withNativeFunction ("graphGetNodeDomains", [&processor] (Args, Completion completion)
+        {
+            auto& controller = processor.getGraphEditController();
+            auto* obj = new juce::DynamicObject();
+            for (const auto& [nodeId, domain] : controller.getNodeDomains())
+                obj->setProperty (nodeId, domain);
+            completion (juce::JSON::toString (juce::var (obj), true));
+        });
+
         // M9 (NODE_EDITOR.md §3): every registered node type's descriptor,
         // fetched once at editor load — not a graph-editing command (no
         // NodeGraph mutation, no recompile), but still goes over this

@@ -62,6 +62,17 @@ export interface NodeCardState {
   */
   parameterValues?: Readonly<Record<string, number>>
   onParameterCommit?: (id: string, value: number) => void
+  /** Which DomainSplitter region this node's LAST successful compile put
+      it in — 'voice' (runs once per active voice), 'global' (runs once,
+      always, whether bridged through a real instance.mix or an
+      independent unbridged region), or 'mono' (no allocator/instance.mix
+      in the graph at all, so the voice/global distinction doesn't apply).
+      graphStore.ts fetches this alongside every snapshot refresh
+      (graphGetNodeDomains); undefined for the M9 gallery (no live graph to
+      classify) and for a node the engine hasn't compiled into any plan
+      yet (mid-edit, or a rejected command's rolled-back state).
+  */
+  domain?: 'voice' | 'global' | 'mono'
 }
 
 interface NodeCardProps {
@@ -398,11 +409,27 @@ function ParameterRow({
   )
 }
 
+/** The small before-the-title marker (see tokens.ts's domainVoice/
+    domainGlobal comment for why this and not a border/glow) — omitted
+    entirely for 'mono' or unset, so a graph with no allocator/instance.mix
+    yet (most graphs, most of the time) and the M9 gallery both render
+    exactly as before, no dot at all.
+*/
+function DomainDot({ domain }: { domain?: 'voice' | 'global' | 'mono' }) {
+  if (domain !== 'voice' && domain !== 'global') return null
+  const color = domain === 'voice' ? tokens.color.domainVoice : tokens.color.domainGlobal
+  const label = domain === 'voice' ? 'Voice domain — runs once per active voice' : 'Global domain — runs once, always'
+  return <span className="node-domain-dot" style={{ background: color }} title={label} />
+}
+
 function TitleBar({ descriptor, state }: { descriptor: NodeDescriptor; state: NodeCardState }) {
   const isMacro = descriptor.category === 'Macro'
   return (
     <div className="node-title-bar">
-      <span className="node-title">{descriptor.title || descriptor.typeId}</span>
+      <span className="node-title-left">
+        <DomainDot domain={state.domain} />
+        <span className="node-title">{descriptor.title || descriptor.typeId}</span>
+      </span>
       <div className="node-title-icons">
         {state.error && (
           <span className="node-error-badge" title={state.error}>

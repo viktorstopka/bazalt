@@ -555,6 +555,37 @@ style) difference, per `DOMAINS.md`'s own steer away from color.
 **Sequenced last deliberately:** it's describing `.1`–`.3`'s own output (domain-splitting is only
 *correct* as of `.1`; the node types it's labeling are only honest as of `.3`).
 
+**Partially shipped early, unplanned** (2026-09-28, same session `.1` finished in — the user asked
+directly for a debugging aid while hand-testing `.1`'s fixes, not scoped as `.4` at request time):
+a per-NODE domain indicator, not the per-cable one this section describes. A small dot in each
+node's title bar (`NodeCard.tsx`'s new `DomainDot`) — green (`tokens.domainVoice`, reusing the
+existing "poly" green exactly) for a node the last successful compile put in the voice domain,
+grey (`tokens.domainGlobal`) for global, no dot at all for a `monoOnly` graph (most graphs, most of
+the time) or a node the engine hasn't compiled yet. `GraphEditController` now tracks
+`nodeDomains` (a plain `nodeId -> "voice"|"global"|"mono"` map, computed once per successful
+recompile from whichever `DomainSplitter` branch actually ran — the SAME logic already this whole
+arc's other fixes are built on, not a new classification), exposed via a new read-only native
+function `graphGetNodeDomains`; `graphStore.ts` fetches it in parallel with every snapshot refresh
+(`ensureInitialized`/`withHistory`/`undo`/`redo`) and threads it through `GraphSurface.tsx` into
+`NodeCardState.domain`. Verified live: pixel-sampled a screenshot of the running Standalone app
+against the user's own real mid-build patch and confirmed exact colour matches at both a
+correctly-green (Note In, Instance Allocator — voice) and correctly-grey (Oscillator, Master Out —
+not yet wired to the allocator) node. Real, correctness-critical piece caught and fixed before this
+shipped: the domain map must only be committed to the controller's member state on an ACTUAL
+publish, not right after `DomainSplitter::split()` succeeds (`split` succeeding only proves the
+graph partitions cleanly, not that `GraphCompiler::compile()` can actually build either half) — a
+first draft got this wrong, would have left the indicator showing a REJECTED command's attempted
+domain shape instead of the graph that's actually live; caught by writing the correctness test
+first (`GraphEditControllerTests.cpp`'s new "leaves it exactly as it was" case) and mutation-testing
+it (committing early was reintroduced deliberately, confirmed the test breaks, reverted).
+
+**Still open, unchanged from the description above:** the per-CABLE version (stroke weight/style on
+`nodeEditorRenderer.ts`'s WebGL cable renderer) — the node-level dot is a real, useful, but coarser
+signal (it tells you a node's OWN domain, not which specific wire crossed a boundary), and doesn't
+by itself replace what a cable-level treatment would show for a node that's genuinely a boundary
+(e.g. `instance.mix` itself, which is always "global" by the current node-level classification even
+though its OWN input cable is meaningfully different from its output cable).
+
 ## Explicitly out of scope for this whole arc
 
 Named so nothing is silently dropped, not because any of it is wrong:

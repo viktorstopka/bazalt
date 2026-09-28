@@ -2,6 +2,7 @@
 
 #include "bazalt/engine/graph/NodeGraph.h"
 #include <functional>
+#include <unordered_map>
 #include <juce_core/juce_core.h>
 
 namespace bazalt
@@ -143,6 +144,19 @@ namespace bazalt
         */
         const juce::String& getInstanceMixNodeId() const noexcept { return instanceMixNodeId; }
 
+        /** Which DomainSplitter region ("voice"/"global"/"mono") each node
+            id landed in as of the LAST successful recompile — a debugging
+            aid (the UI's DomainDot, 09-28-InstanceAllocator arc), computed
+            once right after `DomainSplitter::split()` succeeds and reused
+            for whichever of the mono/bridged/unbridged-independent branches
+            that result took, rather than duplicating the classification
+            logic per branch. Never mutated on a REJECTED command (the
+            rollback contract means the live graph — and therefore its real
+            domain membership — didn't change either). Empty before the
+            first successful compile.
+        */
+        const std::unordered_map<juce::String, juce::String>& getNodeDomains() const noexcept { return nodeDomains; }
+
     private:
         CommandResult recompileAndPublish();
         uint64_t nextGeneration() noexcept { return generationCounter++; }
@@ -155,6 +169,7 @@ namespace bazalt
         int blockSize = 512;
         bool hasGlobalDomain = false;
         juce::String instanceMixNodeId;
+        std::unordered_map<juce::String, juce::String> nodeDomains;
         uint64_t generationCounter = 1;
     };
 }

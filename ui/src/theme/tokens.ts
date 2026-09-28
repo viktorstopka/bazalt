@@ -64,6 +64,26 @@ export const tokens = {
     nodeBorder: '#ffffff',
     nodeListening: '#7fd9e0',
     frameFill: 'rgba(120, 45, 45, 0.22)',
+
+    // Per-node domain indicator (09-28-InstanceAllocator.1's own debugging
+    // arc: DomainSplitter's voice/global split has repeatedly been the
+    // source of confusing, hard-to-guess-at-from-the-canvas behaviour — a
+    // simple always-visible marker beats needing to reason about
+    // reachability by eye). A small title-bar dot, not a border/glow (those
+    // already carry meaning — accent for selected, nodeListening for
+    // listening, error for error — and DOMAINS.md §11 already leans toward
+    // NOT colour for the cable-level version of this same question, to
+    // avoid competing with the 6-colour port-type palette; a small dot in
+    // the title bar sits away from both). `domainVoice` reuses `portPoly`
+    // exactly — this codebase's own established "green marks polyphonic
+    // content" convention already means the same thing. `domainGlobal`
+    // matches `textSecondary`'s value on purpose (the mundane, "just runs
+    // once" side, no separate token needed for the colour itself, but kept
+    // named for what it means here rather than reading as a random reuse).
+    // Mono-only graphs (no allocator, no instance.mix — most graphs before
+    // a voice/global split is even meaningful) show no dot at all.
+    domainVoice: '#4ade80',
+    domainGlobal: '#9a9ca3',
   },
   font: {
     // Design reference's specified face (loaded via Google Fonts in

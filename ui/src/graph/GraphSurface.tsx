@@ -30,11 +30,12 @@ interface NodeWrapperProps {
   selected: boolean
   selection: ReadonlySet<string>
   connectedPortIds: ReadonlySet<string> | undefined
+  domain: 'voice' | 'global' | 'mono' | undefined
   overlayTarget: HTMLElement | null
   ghostActive: boolean
 }
 
-function NodeWrapper({ node, descriptor, selected, selection, connectedPortIds, overlayTarget, ghostActive }: NodeWrapperProps) {
+function NodeWrapper({ node, descriptor, selected, selection, connectedPortIds, domain, overlayTarget, ghostActive }: NodeWrapperProps) {
   const [editing, setEditing] = useState(false)
   const [menuPos, setMenuPos] = useState<{ x: number; y: number } | null>(null)
   const wrapperRef = useRef<HTMLDivElement | null>(null)
@@ -57,6 +58,7 @@ function NodeWrapper({ node, descriptor, selected, selection, connectedPortIds, 
     connectedPortIds,
     parameterValues: node.parameterValues,
     onParameterCommit: (id, value) => setParameterValue(node.id, id, value),
+    domain,
   }
 
   const startEditing = () => {
@@ -193,6 +195,12 @@ interface GraphSurfaceProps {
   wires: readonly GraphWire[]
   selection: ReadonlySet<string>
   getDescriptor: (typeId: string) => NodeDescriptor | undefined
+  /** Which DomainSplitter region each node's last successful compile put it
+      in — graphStore.ts's own `domains` snapshot field, a plain lookup by
+      node id. Absent/empty is fine (NodeCard.tsx's DomainDot just renders
+      nothing) — this is a debugging aid, never load-bearing.
+  */
+  domains: ReadonlyMap<string, 'voice' | 'global' | 'mono'>
   ghost: GhostPlacement | null
   /** The ghost wrapper's DOM node, exposed so InfiniteCanvas's mousemove
       handler can set its world position directly (style.left/top) every
@@ -205,7 +213,7 @@ interface GraphSurfaceProps {
   overlayTarget: HTMLElement | null
 }
 
-export function GraphSurface({ nodes, wires, selection, getDescriptor, ghost, ghostElementRef, overlayTarget }: GraphSurfaceProps) {
+export function GraphSurface({ nodes, wires, selection, getDescriptor, domains, ghost, ghostElementRef, overlayTarget }: GraphSurfaceProps) {
   const ghostActive = ghost !== null
   const ghostDescriptor = ghost ? getDescriptor(ghost.typeId) : undefined
 
@@ -248,6 +256,7 @@ export function GraphSurface({ nodes, wires, selection, getDescriptor, ghost, gh
             selected={selection.has(node.id)}
             selection={selection}
             connectedPortIds={connectionsByNode.get(node.id)}
+            domain={domains.get(node.id)}
             overlayTarget={overlayTarget}
             ghostActive={ghostActive}
           />

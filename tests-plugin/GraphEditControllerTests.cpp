@@ -561,3 +561,56 @@ TEST_CASE ("logic.select through the controller: data cables of any plain type, 
 
     CHECK (controller.getGraph().getConnections().size() == connectionsBefore);
 }
+
+TEST_CASE ("getNodeDomains() classifies every node as voice/global/mono after a real recompile, "
+           "and a rejected command leaves it exactly as it was",
+           "[plugin][GraphEditController][InstanceAllocator]")
+{
+    BazaltAudioProcessor processor;
+    processor.prepareToPlay (44100.0, 512);
+    auto& controller = processor.getGraphEditController();
+
+    // Fresh mono graph (the default Init Patch's own allocator + instance.mix
+    // -> everything should read "voice" or "global" once it's compiled).
+    REQUIRE (controller.getNodeDomains().count ("allocator") == 1);
+    CHECK (controller.getNodeDomains().at ("allocator") == "voice");
+    REQUIRE (controller.getNodeDomains().count ("voiceMix") == 1);
+    CHECK (controller.getNodeDomains().at ("voiceMix") == "global");
+    REQUIRE (controller.getNodeDomains().count ("masterOut") == 1);
+    CHECK (controller.getNodeDomains().at ("masterOut") == "global");
+
+    // A plain audio-effect graph (no allocator at all) reads "mono" for
+    // every node - the monoOnly branch, exercised separately from the
+    // bridged one above.
+    bazalt::engine::NodeGraph mono;
+    mono.addNode ({ "in", "io.audioIn", {}, {}, {} });
+    mono.addNode ({ "out", "io.output", {}, {}, {} });
+    mono.addConnection ({ "in", "channel.0", "out", "in" });
+    mono.setOutput ("out", "out");
+    REQUIRE (controller.setGraph (mono).success);
+    REQUIRE (controller.getNodeDomains().count ("in") == 1);
+    CHECK (controller.getNodeDomains().at ("in") == "mono");
+    CHECK (controller.getNodeDomains().at ("out") == "mono");
+
+    // A rejected command must leave getNodeDomains() exactly as it was -
+    // the same rollback contract every other piece of controller-owned
+    // state (getGraph(), getHasGlobalDomain()) already gets. Uses a graph
+    // shape where the ATTEMPTED (but never published) topology would
+    // genuinely reclassify a node's domain if the rollback didn't hold -
+    // a same-domains-either-way scenario (e.g. just a bad port id on an
+    // already-settled graph) wouldn't actually exercise the rollback path,
+    // since nothing about node membership would differ regardless.
+    REQUIRE (controller.setGraph (bazalt::engine::buildInitPatchGraph()).success);
+    REQUIRE (controller.addNode ("osc.analog", "orphanOsc", 0.0f, 0.0f).success);
+    REQUIRE (controller.getNodeDomains().count ("orphanOsc") == 1);
+    CHECK (controller.getNodeDomains().at ("orphanOsc") == "global"); // unconnected, fed by nothing
+
+    const auto domainsBefore = controller.getNodeDomains();
+    // Would reclassify orphanOsc to "voice" (fed by the voice-domain
+    // allocator) IF this published - but "no-such-port" doesn't exist on
+    // osc.analog, so GraphCompiler rejects it and nothing should change.
+    const auto rejected = controller.connect ("allocator", "gate", "orphanOsc", "no-such-port");
+    CHECK_FALSE (rejected.success);
+    CHECK (controller.getNodeDomains() == domainsBefore);
+    CHECK (controller.getNodeDomains().at ("orphanOsc") == "global"); // still, not "voice"
+}

@@ -62,6 +62,7 @@ import {
   graphConnectWithAutoAdapt,
   graphDeleteNode,
   graphDisconnect,
+  graphGetNodeDomains,
   graphGetSnapshot,
   graphMoveNode,
   graphRestoreSnapshot,
@@ -100,6 +101,13 @@ export interface GraphSnapshot {
   selection: ReadonlySet<string>
   descriptors: NodeDescriptor[]
   descriptorsLoaded: boolean
+  /** Which DomainSplitter region ("voice"/"global"/"mono") each node's last
+      confirmed compile put it in — see graphCommands.ts's
+      graphGetNodeDomains. Refreshed alongside every nodes/wires resync
+      (ensureInitialized, withHistory, undo, redo); absent for a node the
+      engine hasn't compiled yet, or entirely outside the real WebView.
+  */
+  domains: ReadonlyMap<string, 'voice' | 'global' | 'mono'>
   canUndo: boolean
   canRedo: boolean
   /** The most recent rejected command's reason, or null — NODE_EDITOR.md
@@ -166,7 +174,21 @@ let wires = new Map<string, GraphWire>()
 let selection = new Set<string>()
 let descriptors: NodeDescriptor[] = []
 let descriptorsLoaded = false
+let domains = new Map<string, 'voice' | 'global' | 'mono'>()
 let lastError: string | null = null
+
+/** Fetched in parallel with graphGetSnapshot everywhere that's refreshed
+    (see the header comment for why: both are "resync local state from the
+    engine's own confirmed truth" after the same events) — a separate round
+    trip rather than folding into the snapshot JSON itself because domain
+    membership is DERIVED, recomputed every compile, never part of the
+    persisted PatchDocument (unlike bypassed/title, which live in
+    NodeInstance.properties and round-trip through save/load).
+*/
+async function fetchDomains(): Promise<Map<string, 'voice' | 'global' | 'mono'>> {
+  const result = await graphGetNodeDomains()
+  return result ? new Map(Object.entries(result)) : new Map()
+}
 
 // The engine's own last-confirmed graph JSON — the "before" a history entry
 // captures is always this value, read synchronously (it's just a cached
@@ -210,6 +232,7 @@ function buildSnapshot(): GraphSnapshot {
     selection,
     descriptors,
     descriptorsLoaded,
+    domains,
     canUndo: past.length > 0,
     canRedo: future.length > 0,
     lastError,
@@ -284,6 +307,15 @@ export function ensureInitialized(): void {
     })
     .catch((error) => {
       console.warn('graphGetSnapshot failed', error)
+    })
+
+  void fetchDomains()
+    .then((result) => {
+      domains = result
+      notify()
+    })
+    .catch((error) => {
+      console.warn('graphGetNodeDomains failed', error)
     })
 }
 
@@ -384,6 +416,7 @@ export function undo(): void {
     }
     future.push(afterJson)
     engineSnapshotCache = beforeJson
+    domains = await fetchDomains()
     notify()
   })()
 }
@@ -412,6 +445,7 @@ export function redo(): void {
     }
     past.push(beforeJson)
     engineSnapshotCache = afterJson
+    domains = await fetchDomains()
     notify()
   })()
 }
@@ -448,7 +482,8 @@ async function withHistory(gesture: () => Promise<void>, optimistic?: () => void
   }
   await gesture()
 
-  const afterJson = await graphGetSnapshot()
+  const [afterJson, domainsResult] = await Promise.all([graphGetSnapshot(), fetchDomains()])
+  domains = domainsResult
   if (afterJson !== null) {
     engineSnapshotCache = afterJson
     const state = patchJsonToLocalState(afterJson)

@@ -85,3 +85,17 @@ export async function graphGetSnapshot(): Promise<string | null> {
 export function graphRestoreSnapshot(json: string): Promise<CommandResult> {
   return callCommand('graphRestoreSnapshot', json)
 }
+
+/** Which DomainSplitter region ("voice" | "global" | "mono") each node in
+    the current graph's LAST SUCCESSFUL compile landed in — a plain
+    `{ [nodeId]: domain }` object, computed once per recompile by
+    GraphEditController (the same place hasGlobalDomain/instanceMixNodeId
+    already are) and read back out here purely for display (NodeCard.tsx's
+    DomainDot) — a debugging aid, not load-bearing on anything. Null outside
+    the real WebView, same convention as graphGetSnapshot.
+*/
+export async function graphGetNodeDomains(): Promise<Record<string, 'voice' | 'global' | 'mono'> | null> {
+  if (typeof window.__JUCE__ === 'undefined') return null
+  const result = await getNativeFunction('graphGetNodeDomains')()
+  return typeof result === 'string' ? (JSON.parse(result) as Record<string, 'voice' | 'global' | 'mono'>) : null
+}

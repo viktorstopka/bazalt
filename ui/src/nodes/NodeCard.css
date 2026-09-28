@@ -51,11 +51,28 @@
   gap: var(--space-xs);
 }
 
+.node-title-left {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0; /* lets .node-title's own ellipsis actually kick in inside a flex row */
+}
+
 .node-title {
   font-weight: 500;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+/* 09-28-InstanceAllocator arc: which DomainSplitter region a node's last
+   compile put it in — see tokens.ts's domainVoice/domainGlobal comment for
+   why a small dot here, not a border/glow. */
+.node-domain-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex-shrink: 0;
 }
 
 .node-title-icons {

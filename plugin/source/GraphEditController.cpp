@@ -443,6 +443,25 @@ namespace bazalt
         if (! split.success)
             return { false, split.errorMessage };
 
+        // 09-28-InstanceAllocator arc: computed once here, uniformly, for
+        // whichever of the three branches below split actually took, rather
+        // than duplicating "which nodes ended up where" per branch. A plain
+        // debugging aid (getNodeDomains(), the UI's DomainDot). Kept LOCAL
+        // until a real publish succeeds, deliberately not written straight
+        // into the `nodeDomains` member here: `split` succeeding only means
+        // the GRAPH partitions cleanly, not that GraphCompiler can actually
+        // compile either half - several return paths below still fail
+        // after this point, and CLAUDE.md rule 5's rollback contract means
+        // the member must keep reflecting the last graph that ACTUALLY
+        // published, not one that was merely attempted.
+        std::unordered_map<juce::String, juce::String> newNodeDomains;
+        const juce::String voiceLabel = split.monoOnly ? "mono" : "voice";
+        for (const auto& node : split.voiceGraph.getNodes())
+            newNodeDomains[node.id] = voiceLabel;
+        if (split.hasGlobalDomain)
+            for (const auto& node : split.globalGraph.getNodes())
+                newNodeDomains[node.id] = "global";
+
         const bazalt::engine::NodePrepareInfo prepareInfo { sampleRate, blockSize };
         auto& factory = processor.getNodeFactory();
 
@@ -476,6 +495,7 @@ namespace bazalt
             hasGlobalDomain = false;
             processor.setHasGlobalDomain (false);
             processor.setMonoOnly (true); // after the plan is live, so the audio thread never sees the flag first
+            nodeDomains = std::move (newNodeDomains);
 
             return { true, {} };
         }
@@ -559,6 +579,7 @@ namespace bazalt
         hasGlobalDomain = split.hasGlobalDomain;
         processor.setHasGlobalDomain (hasGlobalDomain);
         processor.setMonoOnly (false); // after the voice (and global) plans are live
+        nodeDomains = std::move (newNodeDomains);
 
         return { true, {} };
     }
