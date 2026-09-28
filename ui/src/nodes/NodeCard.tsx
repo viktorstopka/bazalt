@@ -116,8 +116,13 @@ function isSameProperty(input: PortDescriptor, output: PortDescriptor): boolean 
     port on its own row unless its specific primary pair qualifies.
 */
 function splitPorts(descriptor: NodeDescriptor): { merged: MergedRow | null; inputs: PortRowData[]; outputs: PortRowData[] } {
+  // PortDescriptor.hidden (io.output's own "out" only, today): never a
+  // candidate for the primary-output/merge logic below, and never rendered
+  // as its own row either - a terminal "Master Out" node shouldn't show a
+  // wireable output glyph at all, merged row or not.
+  const visibleOutputs = descriptor.outputs.filter((o) => !o.hidden)
   const primaryInput = descriptor.inputs[0] as PortDescriptor | undefined
-  const primaryOutput = (descriptor.outputs.find((o) => o.isPrimaryOutput) ?? descriptor.outputs[0]) as PortDescriptor | undefined
+  const primaryOutput = (visibleOutputs.find((o) => o.isPrimaryOutput) ?? visibleOutputs[0]) as PortDescriptor | undefined
 
   const merged = primaryInput && primaryOutput && isSameProperty(primaryInput, primaryOutput)
     ? { kind: 'merged' as const, id: primaryInput.id, input: primaryInput, output: primaryOutput }
@@ -126,7 +131,7 @@ function splitPorts(descriptor: NodeDescriptor): { merged: MergedRow | null; inp
   return {
     merged,
     inputs: descriptor.inputs.filter((p) => p !== merged?.input).map((port) => ({ kind: 'port', direction: 'input', port })),
-    outputs: descriptor.outputs.filter((p) => p !== merged?.output).map((port) => ({ kind: 'port', direction: 'output', port })),
+    outputs: visibleOutputs.filter((p) => p !== merged?.output).map((port) => ({ kind: 'port', direction: 'output', port })),
   }
 }
 

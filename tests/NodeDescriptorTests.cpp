@@ -57,6 +57,51 @@ TEST_CASE ("NodeFactory::describeAll() returns a descriptor for every registered
     }
 }
 
+TEST_CASE ("io.output's own output port is hidden from the editor - a terminal 'Master Out' node shouldn't offer a further wireable output",
+           "[engine][NodeFactory][Stereo]")
+{
+    // PortDescriptor::hidden exists specifically (and, today, only) for
+    // this: the port still fully exists for GraphCompiler's "Final output"
+    // resolution (NodeGraph::setOutput() needs a real output port on the
+    // designated node), but a user should never be offered it as a drag
+    // target - caught live ("the master out still has an output").
+    auto factory = bazalt::engine::buildDefaultNodeFactory();
+    const auto descriptors = factory.describeAll();
+
+    auto findByTypeId = [&] (const juce::String& typeId) -> const NodeDescriptor*
+    {
+        for (const auto& d : descriptors)
+            if (d.typeId == typeId)
+                return &d;
+        return nullptr;
+    };
+
+    const auto* output = findByTypeId ("io.output");
+    REQUIRE (output != nullptr);
+    REQUIRE (output->outputs.size() == 1);
+    CHECK (output->outputs[0].id == "out");
+    CHECK (output->outputs[0].hidden);
+
+    // Its input stays fully visible - only the dangling further-output is
+    // the problem, not the node itself.
+    REQUIRE (output->inputs.size() == 1);
+    CHECK_FALSE (output->inputs[0].hidden);
+
+    // Nothing else in the whole catalog should be hidden - this is a
+    // narrow, deliberate exception for one node, not a general-purpose
+    // mechanism anything else should reach for without its own reasoning.
+    for (const auto& d : descriptors)
+    {
+        if (d.typeId == "io.output")
+            continue;
+
+        for (const auto& in : d.inputs)
+            CHECK_FALSE (in.hidden);
+        for (const auto& out : d.outputs)
+            CHECK_FALSE (out.hidden);
+    }
+}
+
 TEST_CASE ("A node with no title override falls back to its type id in the descriptor",
            "[engine][NodeFactory][NODE_EDITOR]")
 {

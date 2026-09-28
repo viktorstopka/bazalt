@@ -36,6 +36,7 @@ const VALUE_CONTRACT_DEFAULTS = {
 function port(p: Partial<PortDescriptor> & Pick<PortDescriptor, 'id' | 'type' | 'label'>): PortDescriptor {
   return {
     isPrimaryOutput: false,
+    hidden: false,
     unit: '',
     minValue: null,
     maxValue: null,

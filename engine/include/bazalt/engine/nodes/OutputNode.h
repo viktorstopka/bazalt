@@ -12,6 +12,14 @@ namespace bazalt::engine::nodes
         any other node's, so the existing final-output mechanism needs no
         changes to support it.
 
+        The output port is real (the compiler genuinely needs it) but marked
+        `.hidden = true` — a terminal "Master Out" node showing its own
+        further output as something you could drag a NEW cable from reads as
+        a real UX bug, not a quirk to leave alone (caught live: "the master
+        out still has an output"). See `PortDescriptor::hidden`'s own
+        comment for the full reasoning on why this is a UI-only hint, not an
+        engine restriction.
+
         Real stereo cable redesign (`wiki/NODES.System.md` §9): `"in"`/
         `"out"` keep their exact shipped ids (CLAUDE.md rule 3 — this is the
         node behind the graph's real, already-saved Master Out) and are now
@@ -55,7 +63,7 @@ namespace bazalt::engine::nodes
         std::vector<PortDescriptor> getOutputPorts() const override
         {
             return {
-                PortDescriptor { .id = "out", .type = SignalType::Audio, .label = "Out", .isPrimaryOutput = true, .channels = Channels::Stereo },
+                PortDescriptor { .id = "out", .type = SignalType::Audio, .label = "Out", .isPrimaryOutput = true, .hidden = true, .channels = Channels::Stereo },
             };
         }
 

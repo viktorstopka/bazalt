@@ -199,6 +199,7 @@ namespace bazalt
             obj->setProperty ("type", signalTypeToString (port.type));
             obj->setProperty ("label", port.label);
             obj->setProperty ("isPrimaryOutput", port.isPrimaryOutput);
+            obj->setProperty ("hidden", port.hidden);
             obj->setProperty ("unit", port.unit);
             obj->setProperty ("minValue", optionalFloatToVar (port.minValue));
             obj->setProperty ("maxValue", optionalFloatToVar (port.maxValue));

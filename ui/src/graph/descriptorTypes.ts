@@ -57,6 +57,13 @@ export interface PortDescriptor {
   type: SignalType
   label: string
   isPrimaryOutput: boolean
+  /** Mirrors PortDescriptor.h's own field: true only for io.output's own
+      "out" port. UI-only hint — the port still fully exists for the
+      compiler, this just tells the editor not to render it as a wireable
+      glyph (see PortDescriptor::hidden's own comment for the full
+      reasoning). NodeCard.tsx's splitPorts() filters it out entirely.
+  */
+  hidden: boolean
   unit: string
   minValue: number | null
   maxValue: number | null

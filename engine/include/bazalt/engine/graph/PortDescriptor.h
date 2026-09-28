@@ -157,6 +157,24 @@ namespace bazalt::engine
         bool isPrimaryOutput = false; // drives Alt-drag Mix/Add/Multiply and horizontal-node
                                        // output indicators (NODE_EDITOR.md §7's "primary output")
 
+        // False for every port except io.output's own "out" (OutputNode.h).
+        // Purely a UI-editor hint: this port still fully exists for the
+        // compiler (NodeGraph::setOutput() needs a real output port on the
+        // designated node to point at, and OutputNode.h's own comment
+        // explains why that stays true rather than special-casing the
+        // compiler) — `hidden` only tells the editor not to render it as a
+        // wireable glyph. Nothing user-facing should ever start a cable
+        // FROM "Master Out" (its own output is unity passthrough of its
+        // input, and the graph's real audible signal is designated
+        // automatically — graphStore.ts's designateOutputIfMasterOut() —
+        // the moment something wires INTO Master Out; a user never drags
+        // from Master Out's own output in the first place). The engine
+        // itself stays fully permissive — canConnect/GraphCompiler don't
+        // check this field at all, so a hand-built graph (a test, or a
+        // future programmatic use) can still wire from it if it genuinely
+        // wants to; only the editor stops offering it as a drag target.
+        bool hidden = false;
+
         // Numeric-value metadata (meaningful for Control/Boolean ports that
         // render as the UI's Value/Integer/Modulation/Boolean palette
         // entries, NODE_EDITOR.md §5) — left at defaults for Audio/Event
