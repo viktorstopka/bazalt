@@ -32,6 +32,54 @@ TEST_CASE ("subscribeVisualizationTap rejects an unknown node or port", "[plugin
     CHECK_FALSE (processor.subscribeVisualizationTap ("osc", "no-such-port", bazalt::engine::PreviewKind::Waveform));
 }
 
+TEST_CASE ("09-28-InstanceAllocator.1 (part 3): a voice domain not reaching the output still dispatches "
+           "real MIDI and its allocator's gate tap shows real movement - the user's own literal repro "
+           "(Note In -> Instance Allocator -> Glance on gate, nothing wired to Master Out yet)",
+           "[plugin][telemetry][InstanceAllocator]")
+{
+    using namespace bazalt::engine;
+
+    // Shaped exactly like the reported patch: a voice chain that never
+    // reaches the designated output (nothing plugged into masterOut at
+    // all), plus a completely unrelated node feeding masterOut instead
+    // (io.audioIn here stands in for "whatever else was on the canvas").
+    // Before this fix, DomainSplitter::split() set monoOnly=true for the
+    // WHOLE graph in this shape (masterOut isn't allocator-reachable),
+    // and PluginProcessor::handleMidiEvent's `if (monoOnlyGraph...)
+    // return;` meant MIDI was dispatched nowhere — the allocator's gate
+    // never moved, matching the user's exact report ("I tried plugging
+    // in Glance to the gate in instance allocator and it had 0
+    // movement").
+    NodeGraph graph;
+    graph.addNode ({ "noteIn", "io.noteIn", { 40.0f, 40.0f }, {}, {} });
+    graph.addNode ({ "allocator", "instance.allocator", { 340.0f, 40.0f }, {}, {} });
+    graph.addNode ({ "audioIn", "io.audioIn", { 40.0f, 400.0f }, {}, {} });
+    graph.addNode ({ "masterOut", "io.output", { 340.0f, 400.0f }, {}, {} });
+
+    graph.addConnection ({ "noteIn", "notes", "allocator", "spawn" });
+    graph.addConnection ({ "audioIn", "channel.0", "masterOut", "in" });
+    graph.setOutput ("masterOut", "out");
+
+    BazaltAudioProcessor processor;
+    processor.prepareToPlay (44100.0, 512);
+    REQUIRE (processor.getGraphEditController().setGraph (graph).success);
+
+    REQUIRE (processor.subscribeVisualizationTap ("allocator", "gate", PreviewKind::Waveform));
+    auto* tap = processor.getTelemetryHub().subscribeTap ("node:allocator:gate");
+    REQUIRE (tap != nullptr);
+
+    playNote (processor, 60);
+
+    float readBack[512] {};
+    const auto available = tap->readLatest (readBack, 512);
+    REQUIRE (available > 0);
+
+    bool sawGateOn = false;
+    for (int i = 0; i < available; ++i)
+        if (readBack[i] != 0.0f) sawGateOn = true;
+    CHECK (sawGateOn);
+}
+
 TEST_CASE ("subscribeVisualizationTap on a real voice-domain port receives real pushed values",
            "[plugin][telemetry][M20]")
 {

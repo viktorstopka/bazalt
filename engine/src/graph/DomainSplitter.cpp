@@ -65,39 +65,115 @@ namespace bazalt::engine
 
         if (instanceMixCount == 0)
         {
-            result.success = true;
-            result.hasGlobalDomain = false;
-            result.voiceGraph = graph;
-
             if (instanceAllocatorCount == 0)
             {
+                result.success = true;
+                result.hasGlobalDomain = false;
                 result.monoOnly = true;
+                result.voiceGraph = graph;
+                return result;
             }
-            else
+
+            // 09-28-InstanceAllocator.1: an instance.allocator that genuinely
+            // exists must ALWAYS receive MIDI and run its own per-voice
+            // plans — dispatch (PluginProcessor::handleMidiEvent) and
+            // rendering are keyed off `monoOnly` alone, so a real allocator
+            // must never leave it true, regardless of whether its output
+            // currently reaches the graph's designated output. (First cut of
+            // this fix got this wrong: it set monoOnly=true whenever the
+            // output wasn't allocator-reachable, which also silently
+            // disabled MIDI dispatch entirely — correct for an UNRELATED,
+            // disconnected allocator, wrong for one the user is actively
+            // wiring/testing, e.g. via a view.glance tap on its gate output
+            // before it's wired anywhere else. Found live, same session.)
+            result.monoOnly = false;
+
+            std::unordered_map<juce::String, std::vector<juce::String>> successorsOf, predecessorsOf;
+            for (const auto& connection : connections)
             {
-                // 09-28-InstanceAllocator.1: an instance.allocator's mere
-                // presence must not silence content it isn't wired to (the
-                // exact bug this fixes: a disconnected/irrelevant allocator
-                // used to force per-voice treatment on the WHOLE graph,
-                // regardless of whether anything it feeds ever reaches the
-                // designated output). Only treat the graph as genuinely
-                // per-voice if the output is actually reachable FORWARD from
-                // the allocator; otherwise this behaves exactly as if no
-                // allocator existed at all. Safe even when the allocator IS
-                // wired to something real but that something doesn't reach
-                // the output: a node inside a monoOnly-dispatched plan is
-                // never poked via noteOn()/noteOff() (MIDI dispatch only
-                // ever targets per-voice plan slots), so it just sits inert
-                // — exactly matching its real (non-)contribution to what's
-                // audible.
-                std::unordered_map<juce::String, std::vector<juce::String>> successorsOf;
-                for (const auto& connection : connections)
-                    successorsOf[connection.fromNodeId].push_back (connection.toNodeId);
-
-                const auto voiceReachable = reachableFollowing (instanceAllocatorId, successorsOf, true);
-                result.monoOnly = voiceReachable.count (graph.getOutputNodeId()) == 0;
+                successorsOf[connection.fromNodeId].push_back (connection.toNodeId);
+                predecessorsOf[connection.toNodeId].push_back (connection.fromNodeId);
             }
 
+            // Forward (what the allocator feeds) UNION backward (what feeds
+            // the allocator) — a real bug found live via the project's own
+            // simplest proof graph (buildVoiceProofGraph(): "noteIn ->
+            // allocator.spawn" is exactly this shape): io.noteIn isn't
+            // "inside" the voice domain in the sense of running per-voice
+            // DSP, but it's also not unrelated global content either — it's
+            // the allocator's own trigger source, exactly the "mono source
+            // feeding the poly region" DOMAINS.md §2 already says is free.
+            // Forward-only reachability treated it as a domain crossing.
+            auto voiceReachable = reachableFollowing (instanceAllocatorId, successorsOf, true);
+            for (const auto& id : reachableFollowing (instanceAllocatorId, predecessorsOf, false))
+                voiceReachable.insert (id);
+
+            if (voiceReachable.count (graph.getOutputNodeId()) > 0)
+            {
+                // The designated output genuinely lives in the voice domain
+                // — the ordinary "no instance.mix needed, voice sum IS the
+                // final output" case that already worked before this
+                // milestone. voiceGraph is the whole graph, exactly as
+                // every such graph already compiles today.
+                result.success = true;
+                result.hasGlobalDomain = false;
+                result.voiceGraph = graph;
+                return result;
+            }
+
+            // The designated output is NOT reachable from the allocator:
+            // split for real. voiceGraph becomes ONLY what's actually
+            // allocator-reachable (so voices run and are observable via
+            // taps/previews, contributing nothing to the audible signal
+            // yet); everything else becomes an independent, unbridged
+            // global region that runs unconditionally every block — see
+            // hasGlobalDomain's own doc comment for how PluginProcessor
+            // tells this apart from the bridged-via-instance.mix case
+            // (instanceMixNodeId stays empty here).
+            for (const auto& connection : connections)
+            {
+                const auto fromInVoice = voiceReachable.count (connection.fromNodeId) > 0;
+                const auto toInVoice = voiceReachable.count (connection.toNodeId) > 0;
+
+                if (fromInVoice != toInVoice)
+                {
+                    result.errorMessage = "Node '" + connection.fromNodeId + "' ("
+                                           + (fromInVoice ? juce::String ("voice domain") : juce::String ("global domain"))
+                                           + ") feeds node '" + connection.toNodeId + "' ("
+                                           + (toInVoice ? juce::String ("voice domain") : juce::String ("global domain"))
+                                           + ") directly: with no instance.mix node present, a signal can only cross"
+                                           + " between the voice-reachable region and the rest of the graph through one.";
+                    return result;
+                }
+            }
+
+            NodeGraph voiceOnly;
+            for (const auto& node : nodes)
+                if (voiceReachable.count (node.id) > 0)
+                    voiceOnly.addNode (node);
+            for (const auto& connection : connections)
+                if (voiceReachable.count (connection.fromNodeId) > 0)
+                    voiceOnly.addConnection (connection);
+            // voiceOnly's own output designation is never read by
+            // PluginProcessor in this branch (the independent global
+            // region's output is what's final) — GraphCompiler still needs
+            // SOME real, always-present output port to compile against, so
+            // point it at the allocator's own primary output.
+            voiceOnly.setOutput (instanceAllocatorId, "gate");
+
+            NodeGraph independentGlobal;
+            for (const auto& node : nodes)
+                if (voiceReachable.count (node.id) == 0)
+                    independentGlobal.addNode (node);
+            for (const auto& connection : connections)
+                if (voiceReachable.count (connection.fromNodeId) == 0)
+                    independentGlobal.addConnection (connection);
+            independentGlobal.setOutput (graph.getOutputNodeId(), graph.getOutputPortId());
+
+            result.success = true;
+            result.hasGlobalDomain = true; // instanceMixNodeId stays empty: unbridged, see its own comment
+            result.voiceGraph = std::move (voiceOnly);
+            result.globalGraph = std::move (independentGlobal);
             return result;
         }
 

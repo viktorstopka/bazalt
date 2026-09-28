@@ -752,6 +752,29 @@ namespace bazalt
                                              .getChannelPointer (0);
                     }
                 }
+                else
+                {
+                    // 09-28-InstanceAllocator.1: DomainSplitter's
+                    // independent-global-region case (DomainSplitter.h's own
+                    // comment on hasGlobalDomain) — an allocator exists and
+                    // is running real per-voice plans, but the graph's
+                    // designated output lives entirely OUTSIDE the voice
+                    // domain, with no instance.mix bridging the two. This
+                    // plan is never fed a voice sum (nothing to set
+                    // externally) — it just runs every block on its own,
+                    // exactly like the monoOnly path does, and its own
+                    // output replaces the (irrelevant, unused) voice sum
+                    // entirely.
+                    processPlanRange (globalPlan, 0, numSamples);
+                    finalMono = globalPlan->blockBuffers[(size_t) globalPlan->finalOutputBufferIndex]
+                                    .getBlock()
+                                    .getChannelPointer (0);
+
+                    if (globalPlan->finalOutputBufferIndexRight >= 0)
+                        finalRight = globalPlan->blockBuffers[(size_t) globalPlan->finalOutputBufferIndexRight]
+                                         .getBlock()
+                                         .getChannelPointer (0);
+                }
             }
         }
 

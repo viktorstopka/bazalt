@@ -298,14 +298,21 @@ TEST_CASE ("A graph with no instance.allocator and no instance.mix is a mono gra
     CHECK (result.voiceGraph.getNodes().size() == 2); // still the unchanged graph, for anything keyed on it
 }
 
-TEST_CASE ("09-28-InstanceAllocator.1: an instance.allocator not reachable from the output doesn't force per-voice treatment",
+TEST_CASE ("09-28-InstanceAllocator.1: an instance.allocator not reachable from the output still runs real per-voice plans, and the unrelated output plays regardless",
            "[engine][DomainSplitter][InstanceAllocator]")
 {
-    // The exact regression this milestone fixes. Before the fix, an
-    // allocator's mere PRESENCE (even completely disconnected from the
-    // output) flipped monoOnly to false for the WHOLE graph — a sine wired
-    // straight to Master Out went silent the moment an unrelated,
-    // unconnected instance.allocator was dropped onto the canvas.
+    // The exact regression this milestone fixes, in its FINAL corrected
+    // shape (a first cut set monoOnly=true here instead — which fixed the
+    // audible symptom but also silently disabled MIDI dispatch/voice
+    // rendering entirely, breaking the ability to build and observe an
+    // allocator chain, e.g. via view.glance, before it's wired to the
+    // output. Found live, same session, real user testing). Two
+    // requirements, genuinely in tension, both real:
+    //  (a) content unrelated to the allocator must play regardless — an
+    //      independent, unconditionally-running global region.
+    //  (b) an allocator that genuinely exists must ALWAYS receive MIDI and
+    //      run real per-voice plans, whether or not its own output
+    //      currently reaches the designated output.
     NodeGraph effect;
     effect.addNode ({ "in", "io.audioIn", {}, {}, {} });
     effect.addNode ({ "out", "io.output", {}, {}, {} });
@@ -316,12 +323,22 @@ TEST_CASE ("09-28-InstanceAllocator.1: an instance.allocator not reachable from 
     withUnconnectedAllocator.addNode ({ "alloc", "instance.allocator", {}, {}, {} }); // no connections at all
     auto result = DomainSplitter::split (withUnconnectedAllocator);
     REQUIRE (result.success);
-    CHECK (result.monoOnly); // unchanged from the no-allocator case above
+    CHECK_FALSE (result.monoOnly); // a real allocator exists - voices always run
+    REQUIRE (result.hasGlobalDomain); // an independent region carries the unrelated content
+    CHECK (result.instanceMixNodeId.isEmpty()); // unbridged - no instance.mix involved
 
-    // Also covers the case where the allocator IS wired to something real,
-    // just not to anything that reaches the designated output — its own
-    // little fragment is harmless dead code, not a reason to gate the
-    // unrelated audible chain.
+    REQUIRE (result.voiceGraph.getNodes().size() == 1);
+    CHECK (result.voiceGraph.getNodes()[0].id == "alloc");
+
+    REQUIRE (result.globalGraph.getNodes().size() == 2);
+    CHECK (result.globalGraph.getOutputNodeId() == "out");
+    CHECK (result.globalGraph.getOutputPortId() == "out");
+
+    // Also covers the case where the allocator IS wired to something real
+    // (its own trigger source, io.noteIn) — that source must land in
+    // voiceGraph alongside the allocator (it's the allocator's own
+    // predecessor, not unrelated content), even though NEITHER of them
+    // reaches the designated output.
     NodeGraph withWiredButIrrelevantAllocator = effect;
     withWiredButIrrelevantAllocator.addNode ({ "noteIn", "io.noteIn", {}, {}, {} });
     withWiredButIrrelevantAllocator.addNode ({ "alloc", "instance.allocator", {}, {}, {} });
@@ -329,7 +346,16 @@ TEST_CASE ("09-28-InstanceAllocator.1: an instance.allocator not reachable from 
     // alloc's own outputs (pitch/gate/...) are never wired to anything further.
     result = DomainSplitter::split (withWiredButIrrelevantAllocator);
     REQUIRE (result.success);
-    CHECK (result.monoOnly);
+    CHECK_FALSE (result.monoOnly);
+    REQUIRE (result.hasGlobalDomain);
+
+    REQUIRE (result.voiceGraph.getNodes().size() == 2);
+    for (const auto& node : result.voiceGraph.getNodes())
+        CHECK ((node.id == "noteIn" || node.id == "alloc"));
+
+    REQUIRE (result.globalGraph.getNodes().size() == 2);
+    for (const auto& node : result.globalGraph.getNodes())
+        CHECK ((node.id == "in" || node.id == "out"));
 }
 
 TEST_CASE ("09-28-InstanceAllocator.1: an instance.allocator genuinely wired through to the output IS treated as per-voice, even with no instance.mix",

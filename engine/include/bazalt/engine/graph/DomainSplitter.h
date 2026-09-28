@@ -9,11 +9,26 @@ namespace bazalt::engine
         bool success = false;
         juce::String errorMessage;
 
-        /** False for any graph with no "instance.mix" node — every M2-M6
-            graph, and every graph a future editor builds before the user
-            ever adds a voice/global boundary. `voiceGraph` is then just a
-            copy of the original graph and `globalGraph` is unused, so
-            nothing downstream needs a special case for "no boundary yet".
+        /** True whenever a second, always-running plan (`globalGraph`)
+            exists and needs to be compiled/run alongside the voice plans.
+            Two real cases, distinguished by `instanceMixNodeId`:
+             - Bridged (`instanceMixNodeId` non-empty): a real "instance.mix"
+               node sums live voices into this plan (the original, oldest
+               meaning of this flag).
+             - Independent (`instanceMixNodeId` empty,
+               09-28-InstanceAllocator.1): no "instance.mix" exists, but the
+               graph's designated output isn't reachable from the allocator
+               either — everything NOT reachable from the allocator runs as
+               its own always-on plan, completely unbridged, and ITS OWN
+               output (not any voice sum) is what's audible
+               (`PluginProcessor::finalizeInstanceMixIntoOutput` reads this
+               distinction directly from whether `externalInputNodeId` is
+               empty).
+            False for the simplest case — every M2-M6 graph, and every graph
+            with either no boundary-relevant node at all or one whose voice
+            domain already reaches the designated output on its own. Then
+            `globalGraph` is unused, so nothing downstream needs a special
+            case for "no second plan needed at all".
         */
         bool hasGlobalDomain = false;
 
@@ -35,11 +50,16 @@ namespace bazalt::engine
         bool monoOnly = false;
 
         /** The "instance.mix" node's own (user-chosen) id — set only when
-            hasGlobalDomain is true. The compiled global ExecutionPlan's
+            hasGlobalDomain is true AND a real "instance.mix" bridges voices
+            into `globalGraph`. The compiled global ExecutionPlan's
             getNodeById(instanceMixNodeId) is how the driver (PluginProcessor)
             finds the node to call setExternalBlock() on each block; there
             is no other well-known name to look it up by, since the node's
-            id is whatever the user (or a command) gave it.
+            id is whatever the user (or a command) gave it. Empty when
+            hasGlobalDomain is true for the OTHER reason
+            (09-28-InstanceAllocator.1's independent-region case, see
+            hasGlobalDomain's own comment) — `globalGraph` still gets
+            compiled and run every block, just never handed a voice sum.
         */
         juce::String instanceMixNodeId;
 
