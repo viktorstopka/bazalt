@@ -716,3 +716,32 @@ UI `npm run build`/`npm run lint` clean, zero warnings on any new file. Standalo
 relaunched for a manual click-through (this environment has no computer-use/screenshot capability
 to drive a native Win32 window itself, so the actual visual flyout-hover check is the user's own,
 not claimed here).
+
+## `09-29-AddMenu.2` — root categories collapse too, not just the ones with subcategories — done
+
+**Root cause:** `.1` only special-cased categories that genuinely have subcategories (today: just
+"Domain") into a hoverable flyout trigger — every other top-level category (Adapters, Effects,
+Filters, ...) still rendered fully expanded inline, exactly like before this arc. Direct feedback
+after `.1`: the root list should show category names ONLY, closed, every one of them — not a mix of
+"most categories inline, one category collapsed." Opening the menu should show categories; hovering
+one shows what's in it.
+
+**The fix:** root now renders one row per top-level category, unconditionally, via the exact same
+`CategoryRow`/`renderRow` shape a nested flyout already used — no more special inline-vs-flyout
+branch. A category with no subcategories of its own (still true of all but "Domain") opens a flyout
+showing its items directly, using the same recursive `FlyoutPanel`/`rowsOf` machinery `.1` already
+built for "Domain/Allocate" — this needed no new mechanism, just removing the special-cased inline
+rendering path at the root level so root behaves like any other level. `browseRows` (the keyboard-
+navigable row set) shrank to match: at root it's now just the category list itself, not every node
+in the catalog concatenated together.
+
+**Left unchanged, deliberately:** search mode. Typing a query still shows a flat, top-level-grouped
+list with items visible immediately — collapsing search results into hoverable categories would
+fight the reason someone types a query in the first place. `ComponentGallery.tsx` still untouched,
+same reasoning as `.1`.
+
+**Tests:** no engine change (pure `ui/src` edit), so no `ctest` re-run needed. UI `npm run build`/
+`npm run lint` clean, zero warnings on the touched files. Not re-verified against the running
+Standalone app by this session (no computer-use/screenshot capability here) — the change is served
+live by the already-running Vite dev server (`ui/src` HMR), so the already-open window picks it up
+without a rebuild; confirming the actual hover behavior is the user's own next step.

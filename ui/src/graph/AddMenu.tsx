@@ -7,13 +7,14 @@
 //
 // 09-29-AddMenu.1: categories can now nest ("Domain/Allocate", a "/"-
 // separated `category` string — see categoryTree.ts) and browsing them is a
-// Blender/Blender-shader-node-style flyout: hover a category that has
-// subcategories and a panel opens beside it. This is additive, not a
-// rewrite of the common case — a category with no subcategories (still
-// nearly all of them) renders exactly as before, inline, no hover required;
-// only a category that genuinely has children gets an extra hoverable row.
-// Typing a query drops all of this and shows a flat, top-level-grouped
-// match list, same as before — drilling into a nested flyout while search-
+// real Blender-style flyout: the menu opens showing category names ONLY
+// (Adapters, Domain, Effects, Filters, ...), every one of them a closed,
+// hoverable row — hovering (or clicking) any one opens a panel beside it
+// with that category's own contents (items, and further subcategory rows
+// if it has any, recursively). Nothing is expanded inline up front, at any
+// depth — that's the whole point versus the old flat "everything visible at
+// once" list. Typing a query drops all of this and shows a flat, top-level-
+// grouped match list instead — drilling into nested flyouts while search-
 // filtering would defeat the point of typing a query.
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type MouseEvent as ReactMouseEvent, type ReactElement } from 'react'
 import type { NodeDescriptor } from './descriptorTypes'
@@ -74,6 +75,16 @@ export function AddMenu({ x, y, descriptors, onChoose, onClose }: AddMenuProps) 
 
   const roots = useMemo(() => buildCategoryTree(descriptors), [descriptors])
 
+  // The root list itself is just category rows — every top-level category is
+  // a closed, hoverable entry (even one with no subcategories of its own;
+  // its "children" from the root's point of view are just its items), never
+  // expanded inline. Reuses the exact same CategoryRow/renderRow shape a
+  // nested flyout's rows use, so root behaves like any other level.
+  const rootRows = useMemo<CategoryRow[]>(
+    () => roots.map((node): CategoryRow => ({ kind: 'category', key: `cat:${node.path}`, label: node.label, node })),
+    [roots],
+  )
+
   // Search mode: a flat, top-level-grouped match list — no nesting, same
   // shape as this menu had before 09-29-AddMenu.1.
   const searchSections = useMemo(() => {
@@ -97,12 +108,12 @@ export function AddMenu({ x, y, descriptors, onChoose, onClose }: AddMenuProps) 
   )
 
   // Browse mode's currently keyboard-navigable rows: the deepest open
-  // flyout's own rows, or every root category's rows concatenated if
-  // nothing's open yet — matches what's actually visible on screen.
+  // flyout's own rows, or the closed root category list if nothing's open
+  // yet — matches what's actually visible on screen.
   const browseRows = useMemo<CategoryRow[]>(() => {
     if (openChain.length > 0) return rowsOf(openChain[openChain.length - 1].node)
-    return roots.flatMap(rowsOf)
-  }, [roots, openChain])
+    return rootRows
+  }, [rootRows, openChain])
 
   const activeRows = searching ? searchRows : browseRows
 
@@ -266,13 +277,8 @@ export function AddMenu({ x, y, descriptors, onChoose, onClose }: AddMenuProps) 
           </>
         ) : (
           <>
-            {roots.length === 0 && <div className="add-menu-empty">No matches</div>}
-            {roots.map((node) => (
-              <div key={node.path} className="add-menu-category">
-                <div className="add-menu-category-title">{node.label}</div>
-                {rowsOf(node).map((row) => renderRow(row, -1))}
-              </div>
-            ))}
+            {rootRows.length === 0 && <div className="add-menu-empty">No matches</div>}
+            {rootRows.map((row) => renderRow(row, -1))}
           </>
         )}
       </div>
