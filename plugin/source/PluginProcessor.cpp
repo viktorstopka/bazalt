@@ -166,7 +166,7 @@ namespace bazalt
         plan->reset(); // fresh phase/envelope/filter state for the (possibly stolen) voice
 
         // M18 (ADR-0024): the one remaining direct C++ poke — everything
-        // downstream (instance.voice's outputs into osc's "pitch" and
+        // downstream (instance.allocate.voice's outputs into osc's "pitch" and
         // env's "gate") is now real graph wiring, not further pokes.
         if (auto* noteIn = findNoteIn (plan))
             noteIn->injectNoteOn (pitch, velocity);
@@ -217,7 +217,7 @@ namespace bazalt
             hostInputs.pitchBend = juce::jlimit (-1.0f, 1.0f, ((float) message.getPitchWheelValue() - 8192.0f) / 8192.0f);
         }
 
-        // A mono graph (no instance.voice) has no voices: nothing below -
+        // A mono graph (no instance.allocate.voice) has no voices: nothing below -
         // allocating one, poking its note-in - applies.
         if (monoOnlyGraph.load (std::memory_order_acquire))
             return;
@@ -683,7 +683,7 @@ namespace bazalt
         plan->process (numSamples);
     }
 
-    // A graph with no instance.voice (DomainSplitter's monoOnly) is one
+    // A graph with no instance.allocate.voice (DomainSplitter's monoOnly) is one
     // plan, run over every range of the block whether or not any note is
     // held. Its output lands in the same scratch buffer the voice sum uses,
     // so finalizeInstanceMixIntoOutput needs no special case.
@@ -856,7 +856,7 @@ namespace bazalt
         // contract (PlanSwapper.h) — handleMidiEvent/renderVoiceRange below
         // both read from this same cached array rather than re-querying
         // the swappers mid-block.
-        // M21: a graph with no instance.voice is ONE plan in the global
+        // M21: a graph with no instance.allocate.voice is ONE plan in the global
         // swapper, run every block (see renderMonoRange). Fetched once, like the
         // voice plans, per PlanSwapper's contract.
         const auto monoOnly = monoOnlyGraph.load (std::memory_order_acquire);

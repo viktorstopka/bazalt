@@ -1,12 +1,25 @@
 // Shift+A / right-click-on-empty-canvas Add menu (blueprint §6.2):
-// auto-focused search, category groups derived from the descriptor catalog,
-// arrow-key navigation + Enter, auto-flip near viewport edges. Selecting an
-// entry hands the typeId back to InfiniteCanvas, which arms ghost placement
-// rather than adding the node immediately — the ghost still needs to track
-// the cursor and support splice-on-wire-hover before a click commits it.
-import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react'
+// auto-focused search, nested category browsing, arrow-key navigation +
+// Enter, auto-flip near viewport edges. Selecting an entry hands the typeId
+// back to InfiniteCanvas, which arms ghost placement rather than adding the
+// node immediately — the ghost still needs to track the cursor and support
+// splice-on-wire-hover before a click commits it.
+//
+// 09-29-AddMenu.1: categories can now nest ("Domain/Allocate", a "/"-
+// separated `category` string — see categoryTree.ts) and browsing them is a
+// Blender/Blender-shader-node-style flyout: hover a category that has
+// subcategories and a panel opens beside it. This is additive, not a
+// rewrite of the common case — a category with no subcategories (still
+// nearly all of them) renders exactly as before, inline, no hover required;
+// only a category that genuinely has children gets an extra hoverable row.
+// Typing a query drops all of this and shows a flat, top-level-grouped
+// match list, same as before — drilling into a nested flyout while search-
+// filtering would defeat the point of typing a query.
+import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type MouseEvent as ReactMouseEvent, type ReactElement } from 'react'
 import type { NodeDescriptor } from './descriptorTypes'
 import { useAutoFlipPosition } from './useAutoFlipPosition'
+import { useFlyoutPosition } from './useFlyoutPosition'
+import { buildCategoryTree, rowsOf, topLevelCategory, type CategoryRow, type CategoryTreeNode } from './categoryTree'
 import './AddMenu.css'
 
 interface AddMenuProps {
@@ -17,36 +30,86 @@ interface AddMenuProps {
   onClose: () => void
 }
 
+/** One open flyout in the chain — index 0 is opened from the root list,
+    index N+1 from a row inside index N's own panel. */
+interface OpenFlyout {
+  path: string
+  node: CategoryTreeNode
+  anchorRect: DOMRect
+}
+
+const HOVER_INTENT_MS = 150
+
 export function AddMenu({ x, y, descriptors, onChoose, onClose }: AddMenuProps) {
   const [query, setQuery] = useState('')
-  // Tracked by typeId, not raw index: real descriptors can arrive
-  // asynchronously after the menu is already open, which reorders/extends
-  // `flat` — remapping by identity means the highlighted row never
-  // silently jumps to a different node just because the list underneath it
-  // changed (M10_REVIEW.md §5).
-  const [focusedTypeId, setFocusedTypeId] = useState<string | null>(null)
+  // Keyed by a row's stable key ("item:<typeId>" / "cat:<path>"), not raw
+  // index: real descriptors can arrive asynchronously after the menu is
+  // already open, which reorders/extends the tree underneath it — remapping
+  // by identity means the highlighted row never silently jumps just because
+  // the list changed (M10_REVIEW.md §5).
+  const [focusedKey, setFocusedKey] = useState<string | null>(null)
+  const [openChain, setOpenChain] = useState<OpenFlyout[]>([])
   const inputRef = useRef<HTMLInputElement | null>(null)
   const rootRef = useRef<HTMLDivElement | null>(null)
   const pos = useAutoFlipPosition(x, y, rootRef)
 
-  const categories = useMemo(() => {
+  // DOM elements for whichever rows are currently rendered, keyed the same
+  // way as focusedKey — lets a keyboard-driven open (ArrowRight/Enter, no
+  // mouse event to read a rect from) measure the same rect a hover would.
+  const rowElsRef = useRef(new Map<string, HTMLElement>())
+  const registerRowEl = (key: string, el: HTMLElement | null) => {
+    if (el) rowElsRef.current.set(key, el)
+    else rowElsRef.current.delete(key)
+  }
+  const hoverTimerRef = useRef<number | null>(null)
+  const clearHoverTimer = () => {
+    if (hoverTimerRef.current != null) {
+      window.clearTimeout(hoverTimerRef.current)
+      hoverTimerRef.current = null
+    }
+  }
+  useEffect(() => clearHoverTimer, [])
+
+  const searching = query.trim().length > 0
+
+  const roots = useMemo(() => buildCategoryTree(descriptors), [descriptors])
+
+  // Search mode: a flat, top-level-grouped match list — no nesting, same
+  // shape as this menu had before 09-29-AddMenu.1.
+  const searchSections = useMemo(() => {
+    if (!searching) return []
     const q = query.trim().toLowerCase()
-    const matches = q ? descriptors.filter((d) => d.title.toLowerCase().includes(q) || d.typeId.toLowerCase().includes(q)) : descriptors
+    const matches = descriptors.filter((d) => d.title.toLowerCase().includes(q) || d.typeId.toLowerCase().includes(q))
     const byCategory = new Map<string, NodeDescriptor[]>()
     for (const d of matches) {
-      const list = byCategory.get(d.category) ?? []
+      const top = topLevelCategory(d.category)
+      const list = byCategory.get(top) ?? []
       list.push(d)
-      byCategory.set(d.category, list)
+      byCategory.set(top, list)
     }
+    for (const list of byCategory.values()) list.sort((a, b) => a.title.localeCompare(b.title))
     return [...byCategory.entries()].sort(([a], [b]) => a.localeCompare(b))
-  }, [descriptors, query])
+  }, [descriptors, query, searching])
 
-  const flat = useMemo(() => categories.flatMap(([, items]) => items), [categories])
+  const searchRows = useMemo<CategoryRow[]>(
+    () => searchSections.flatMap(([, items]) => items.map((d): CategoryRow => ({ kind: 'item', key: `item:${d.typeId}`, label: d.title, descriptor: d }))),
+    [searchSections],
+  )
+
+  // Browse mode's currently keyboard-navigable rows: the deepest open
+  // flyout's own rows, or every root category's rows concatenated if
+  // nothing's open yet — matches what's actually visible on screen.
+  const browseRows = useMemo<CategoryRow[]>(() => {
+    if (openChain.length > 0) return rowsOf(openChain[openChain.length - 1].node)
+    return roots.flatMap(rowsOf)
+  }, [roots, openChain])
+
+  const activeRows = searching ? searchRows : browseRows
 
   const focusedIndex = useMemo(() => {
-    const index = focusedTypeId ? flat.findIndex((d) => d.typeId === focusedTypeId) : -1
+    const index = focusedKey ? activeRows.findIndex((r) => r.key === focusedKey) : -1
     return index >= 0 ? index : 0
-  }, [flat, focusedTypeId])
+  }, [activeRows, focusedKey])
 
   useEffect(() => inputRef.current?.focus(), [])
 
@@ -58,9 +121,58 @@ export function AddMenu({ x, y, descriptors, onChoose, onClose }: AddMenuProps) 
     return () => window.removeEventListener('mousedown', onPointerDown, true)
   }, [onClose])
 
+  // Reset flyout/focus state right on the searching/browsing transition —
+  // stale openChain entries point at rows that may not even render in
+  // search mode. Adjusted during render (React's own documented pattern for
+  // "reset state when a prop changes") rather than in an effect, since an
+  // effect here would just add an extra, unnecessary re-render pass.
+  const [wasSearching, setWasSearching] = useState(searching)
+  if (searching !== wasSearching) {
+    setWasSearching(searching)
+    setOpenChain([])
+    setFocusedKey(null)
+  }
+
   const focusByIndex = (index: number) => {
-    const clamped = Math.max(0, Math.min(flat.length - 1, index))
-    setFocusedTypeId(flat[clamped]?.typeId ?? null)
+    const clamped = Math.max(0, Math.min(activeRows.length - 1, index))
+    setFocusedKey(activeRows[clamped]?.key ?? null)
+  }
+
+  /** containerDepth: -1 for a root row, or the openChain index of the panel
+      a row lives in — see categoryTree.ts's rowsOf for why every row
+      (root or nested) is built the same shape. */
+  const openCategoryAt = (containerDepth: number, node: CategoryTreeNode, rect: DOMRect) => {
+    setOpenChain((prev) => [...prev.slice(0, containerDepth + 1), { path: node.path, node, anchorRect: rect }])
+    setFocusedKey(`cat:${node.path}`)
+  }
+
+  const closeFromDepth = (containerDepth: number) => {
+    setOpenChain((prev) => (prev.length > containerDepth + 1 ? prev.slice(0, containerDepth + 1) : prev))
+  }
+
+  const openFocusedCategory = () => {
+    const row = activeRows[focusedIndex]
+    if (!row || row.kind !== 'category') return
+    const el = rowElsRef.current.get(row.key)
+    if (!el) return
+    const containerDepth = openChain.length - 1
+    openCategoryAt(containerDepth, row.node, el.getBoundingClientRect())
+    const firstChildRow = rowsOf(row.node)[0]
+    if (firstChildRow) setFocusedKey(firstChildRow.key)
+  }
+
+  const closeDeepestFlyout = () => {
+    if (openChain.length === 0) return
+    const closing = openChain[openChain.length - 1]
+    setOpenChain((prev) => prev.slice(0, prev.length - 1))
+    setFocusedKey(`cat:${closing.path}`)
+  }
+
+  const chooseFocused = () => {
+    const row = activeRows[focusedIndex]
+    if (!row) return
+    if (row.kind === 'item') onChoose(row.descriptor.typeId)
+    else openFocusedCategory()
   }
 
   const onKeyDown = (e: KeyboardEvent) => {
@@ -73,11 +185,60 @@ export function AddMenu({ x, y, descriptors, onChoose, onClose }: AddMenuProps) 
     } else if (e.key === 'ArrowUp') {
       e.preventDefault()
       focusByIndex(focusedIndex - 1)
+    } else if (!searching && e.key === 'ArrowRight') {
+      e.preventDefault()
+      openFocusedCategory()
+    } else if (!searching && e.key === 'ArrowLeft') {
+      e.preventDefault()
+      closeDeepestFlyout()
     } else if (e.key === 'Enter') {
       e.preventDefault()
-      const chosen = flat[focusedIndex]
-      if (chosen) onChoose(chosen.typeId)
+      chooseFocused()
     }
+  }
+
+  const renderRow = (row: CategoryRow, containerDepth: number): ReactElement => {
+    const isFocused = row.key === focusedKey
+    if (row.kind === 'item') {
+      return (
+        <button
+          key={row.key}
+          ref={(el) => registerRowEl(row.key, el)}
+          className={`add-menu-item${isFocused ? ' add-menu-item-focused' : ''}`}
+          onMouseEnter={() => {
+            clearHoverTimer()
+            setFocusedKey(row.key)
+            closeFromDepth(containerDepth)
+          }}
+          onClick={() => onChoose(row.descriptor.typeId)}
+        >
+          <span>{row.label}</span>
+          {row.descriptor.isMock && <span className="add-menu-item-mock">mock</span>}
+        </button>
+      )
+    }
+
+    const isOpen = openChain[containerDepth + 1]?.path === row.node.path
+    return (
+      <button
+        key={row.key}
+        ref={(el) => registerRowEl(row.key, el)}
+        className={`add-menu-item add-menu-item-category${isFocused ? ' add-menu-item-focused' : ''}${isOpen ? ' add-menu-item-open' : ''}`}
+        onMouseEnter={(e: ReactMouseEvent<HTMLButtonElement>) => {
+          setFocusedKey(row.key)
+          const rect = e.currentTarget.getBoundingClientRect()
+          clearHoverTimer()
+          hoverTimerRef.current = window.setTimeout(() => openCategoryAt(containerDepth, row.node, rect), HOVER_INTENT_MS)
+        }}
+        onClick={(e: ReactMouseEvent<HTMLButtonElement>) => {
+          clearHoverTimer()
+          openCategoryAt(containerDepth, row.node, e.currentTarget.getBoundingClientRect())
+        }}
+      >
+        <span>{row.label}</span>
+        <span className="add-menu-chevron">▸</span>
+      </button>
+    )
   }
 
   return (
@@ -89,31 +250,56 @@ export function AddMenu({ x, y, descriptors, onChoose, onClose }: AddMenuProps) 
         value={query}
         onChange={(e) => {
           setQuery(e.target.value)
-          setFocusedTypeId(null)
+          setFocusedKey(null)
         }}
       />
       <div className="add-menu-results">
-        {flat.length === 0 && <div className="add-menu-empty">No matches</div>}
-        {categories.map(([category, items]) => (
-          <div key={category} className="add-menu-category">
-            <div className="add-menu-category-title">{category}</div>
-            {items.map((d) => {
-              const index = flat.indexOf(d)
-              return (
-                <button
-                  key={d.typeId}
-                  className={`add-menu-item${index === focusedIndex ? ' add-menu-item-focused' : ''}`}
-                  onMouseEnter={() => setFocusedTypeId(d.typeId)}
-                  onClick={() => onChoose(d.typeId)}
-                >
-                  <span>{d.title}</span>
-                  {d.isMock && <span className="add-menu-item-mock">mock</span>}
-                </button>
-              )
-            })}
-          </div>
-        ))}
+        {searching ? (
+          <>
+            {searchRows.length === 0 && <div className="add-menu-empty">No matches</div>}
+            {searchSections.map(([category, items]) => (
+              <div key={category} className="add-menu-category">
+                <div className="add-menu-category-title">{category}</div>
+                {items.map((d) => renderRow({ kind: 'item', key: `item:${d.typeId}`, label: d.title, descriptor: d }, -1))}
+              </div>
+            ))}
+          </>
+        ) : (
+          <>
+            {roots.length === 0 && <div className="add-menu-empty">No matches</div>}
+            {roots.map((node) => (
+              <div key={node.path} className="add-menu-category">
+                <div className="add-menu-category-title">{node.label}</div>
+                {rowsOf(node).map((row) => renderRow(row, -1))}
+              </div>
+            ))}
+          </>
+        )}
       </div>
+      {!searching && openChain.map((entry, depth) => (
+        <FlyoutPanel key={entry.path} entry={entry} depth={depth} renderRow={renderRow} />
+      ))}
+    </div>
+  )
+}
+
+function FlyoutPanel({
+  entry,
+  depth,
+  renderRow,
+}: {
+  entry: OpenFlyout
+  depth: number
+  renderRow: (row: CategoryRow, containerDepth: number) => ReactElement
+}) {
+  const panelRef = useRef<HTMLDivElement | null>(null)
+  const pos = useFlyoutPosition(entry.anchorRect, panelRef)
+  const rows = rowsOf(entry.node)
+
+  return (
+    <div ref={panelRef} className="add-menu-flyout" style={{ left: pos.left, top: pos.top }}>
+      {rows.length === 0 && <div className="add-menu-empty">Empty</div>}
+      {rows.map((row) => renderRow(row, depth))}
     </div>
   )
 }

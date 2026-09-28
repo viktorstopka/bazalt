@@ -33,9 +33,9 @@ namespace bazalt::engine
         bool hasGlobalDomain = false;
 
         /** M21 — DOMAINS.md §7: the compiler marks the allocator's outputs
-            poly and propagates forward, so a graph with NO instance.voice
+            poly and propagates forward, so a graph with NO instance.allocate.voice
             has no poly region at all and is entirely mono. True exactly then
-            (no instance.voice, and no instance.mix wired in either). The
+            (no instance.allocate.voice, and no instance.mix wired in either). The
             driver compiles the whole `voiceGraph` once, as the one global
             plan, and runs it every block — with or without a held note —
             instead of once per voice while voices are active. That is what
@@ -81,7 +81,7 @@ namespace bazalt::engine
         multiple allowed" needs ExecutionPlan/GraphCompiler to support more
         than one named output per compiled plan, which doesn't exist yet
         (documented finding, not silently assumed). If one or more
-        "instance.voice" nodes are present, each must land in the
+        "instance.allocate.voice" nodes are present, each must land in the
         voice domain — a light correctness check, not a functional
         requirement (M17's allocator has no real graph inputs yet, so it
         can't actually influence which domain it lands in via reachability

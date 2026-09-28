@@ -9,7 +9,7 @@ namespace bazalt::engine
     {
         constexpr const char* instanceMixTypeId = "instance.mix";
         constexpr const char* instanceMixInputPortId = "in";
-        constexpr const char* instanceVoiceTypeId = "instance.voice"; // 09-28-InstanceAllocator.3 — renamed from "instance.allocator"
+        constexpr const char* instanceVoiceTypeId = "instance.allocate.voice"; // 09-28-InstanceAllocator.3 — renamed from "instance.allocator"; 09-29-AddMenu.1 — renamed again from "instance.voice"
 
         std::unordered_set<juce::String> reachableFollowing (const juce::String& start,
                                                                const std::unordered_map<juce::String, std::vector<juce::String>>& edges,
@@ -74,7 +74,7 @@ namespace bazalt::engine
                 return result;
             }
 
-            // 09-28-InstanceAllocator.1: an instance.voice that genuinely
+            // 09-28-InstanceAllocator.1: an instance.allocate.voice that genuinely
             // exists must ALWAYS receive MIDI and run its own per-voice
             // plans — dispatch (PluginProcessor::handleMidiEvent) and
             // rendering are keyed off `monoOnly` alone, so a real allocator
@@ -188,7 +188,7 @@ namespace bazalt::engine
 
         if (instanceVoiceCount > 1)
         {
-            result.errorMessage = "Only one instance.voice node is supported per graph (found "
+            result.errorMessage = "Only one instance.allocate.voice node is supported per graph (found "
                                    + juce::String (instanceVoiceCount)
                                    + ") — multiple simultaneous instanced regions are M28 (Swarm) territory, not built yet";
             return result;
@@ -271,7 +271,7 @@ namespace bazalt::engine
         // cluster of such nodes wired only to each other, or — the case
         // that broke this fix's first cut, found live — a node ALREADY fed
         // by the voice domain (e.g. logic.select's condition wired straight
-        // from instance.voice's gate) but not yet wired onward to
+        // from instance.allocate.voice's gate) but not yet wired onward to
         // anything that reaches instance.mix. Used to be a hard compile
         // error the instant instance.mix had a real upstream connection
         // ("Node 'X' is not connected to either the voice or global
@@ -292,7 +292,7 @@ namespace bazalt::engine
         // domain as before — inert until wired further, but fully compiled
         // and inspectable via a tap immediately, matching how the
         // instanceMixCount==0 branch above already treats an unconnected
-        // instance.voice. Never poaches an already-earned membership.
+        // instance.allocate.voice. Never poaches an already-earned membership.
         std::unordered_set<juce::String> foldedNodeIds;
         {
             std::unordered_set<juce::String> unclassified;
@@ -389,7 +389,7 @@ namespace bazalt::engine
                 return result;
             }
 
-            // An instance.voice folded by the block just above (almost
+            // An instance.allocate.voice folded by the block just above (almost
             // always into globalDomain, since it has nothing feeding it by
             // definition — an allocator has no real inputs of its own to be
             // "fed by voice" through) is legitimately not yet wired to
@@ -397,7 +397,7 @@ namespace bazalt::engine
             // this check exists to catch.
             if (node.type == instanceVoiceTypeId && ! inVoice && foldedNodeIds.count (node.id) == 0)
             {
-                result.errorMessage = "instance.voice node '" + node.id
+                result.errorMessage = "instance.allocate.voice node '" + node.id
                                        + "' must be in the voice domain (upstream of instance.mix)";
                 return result;
             }

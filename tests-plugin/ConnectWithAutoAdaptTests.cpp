@@ -131,7 +131,7 @@ TEST_CASE ("connectWithAutoAdapt inserts adapt.remap for two different real quan
     auto& controller = processor.getGraphEditController();
     REQUIRE (controller.setGraph (bazalt::engine::buildVoiceProofGraph()).success);
 
-    REQUIRE (controller.addNode ("instance.voice", "alloc", 0.0f, 0.0f).success);
+    REQUIRE (controller.addNode ("instance.allocate.voice", "alloc", 0.0f, 0.0f).success);
 
     const auto result = controller.connectWithAutoAdapt ("alloc", "pitch", "svf", "filter.svf.cutoff");
     REQUIRE (result.success);

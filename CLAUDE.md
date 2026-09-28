@@ -7,7 +7,11 @@ types, the value contract, the full connection/adapter matrix with real-vs-
 aspirational columns, domains, naming philosophy, factories). Current gap
 tracking: `wiki/NODES_Gaps.md`. Current milestone plan: `wiki/MILESTONES.md`
 (a `0.x`-numbered arc, separate from the `archive_docs/MILESTONES.md` M-arc
-below). **Historical design docs (M0–M22 era, superseded, not maintained —
+below). Not-yet-decided new capabilities get designed in `wiki/plans/` (one
+file per proposal, e.g. `wiki/plans/AudioControlBridge.md`) before any code
+exists for them — distinct from `wiki/reports/` (investigative write-ups
+answering a specific question) and `wiki/NODES_Gaps.md` (found-defect
+tracking for existing behavior). **Historical design docs (M0–M22 era, superseded, not maintained —
 don't read for current specs/plan):** `archive_docs/ARCHITECTURE.md`,
 `archive_docs/NODE_EDITOR.md`, `archive_docs/MILESTONES.md`,
 `archive_docs/decisions/`. Still the right place to look for *why* something
@@ -227,7 +231,7 @@ ctest --test-dir build -C Debug -R PluginTests --output-on-failure
   (`ExecutionPlan::applyHostInputs`), never JUCE types. `io.noteIn` is NOT on
   that mechanism — it's still poked by the hardcoded id `"noteIn"`
   (`BazaltAudioProcessor::findNoteIn`), so a note-in placed under another id is
-  silently ignored. A graph with no `instance.voice` (`DomainSplitter::
+  silently ignored. A graph with no `instance.allocate.voice` (`DomainSplitter::
   monoOnly`) is one plan run every block, so audio effects work but it plays no
   notes. **Never call `ExecutionPlan::getNodeById ("literal")` on the audio
   thread** — the literal becomes a heap-allocated `juce::String`; pass one built

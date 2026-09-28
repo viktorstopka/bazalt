@@ -63,7 +63,7 @@ namespace bazalt::engine
 {
     /** Registers every M1/M2 DSP node type, the M7 utility node types
         (NODE_EDITOR.md §2), M16's adapter nodes, and M17's
-        instance.voice/instance.mix (superseding util.voiceSum) under
+        instance.allocate.voice/instance.mix (superseding util.voiceSum) under
         their stable type ids. Shared by render-cli and the Catch2 suite
         so the two hardcoded proof graphs below only need to be built once.
     */
@@ -95,7 +95,7 @@ namespace bazalt::engine
         factory.registerType ("adapt.normalise", [] { return std::make_unique<nodes::NormaliseNode>(); });
         factory.registerType ("adapt.threshold", [] { return std::make_unique<nodes::ThresholdNode>(); });
         factory.registerType ("mix.downmix", [] { return std::make_unique<nodes::DownmixNode>(); });
-        factory.registerType ("instance.voice", [] { return std::make_unique<nodes::InstanceVoiceNode>(); }); // 09-28-InstanceAllocator.3 — renamed from "instance.allocator"
+        factory.registerType ("instance.allocate.voice", [] { return std::make_unique<nodes::InstanceVoiceNode>(); }); // 09-28-InstanceAllocator.3 — renamed from "instance.allocator"; 09-29-AddMenu.1 — renamed again from "instance.voice"
         factory.registerType ("instance.mix", [] { return std::make_unique<nodes::InstanceMixNode>(); });
         factory.registerType ("io.noteIn", [] { return std::make_unique<nodes::IoNoteInNode>(); });
         // M21 Batch A, wave 1 — fixed-arity nodes needing no new infrastructure.
@@ -141,7 +141,7 @@ namespace bazalt::engine
     }
 
     /** M22 — the Init Patch (NODE_CATALOG.md's Part B one-liner: `io.noteIn`
-        `-> instance.voice -> osc.analog x2 -> filter.ladder -> env.adsr
+        `-> instance.allocate.voice -> osc.analog x2 -> filter.ladder -> env.adsr
         -> instance.mix -> space.reverb`), built for real and made
         `GraphEditController`'s constructor default (replacing
         `buildVoiceProofGraph()` there — that graph stays registered and
@@ -183,7 +183,7 @@ namespace bazalt::engine
         NodeGraph graph;
 
         graph.addNode ({ "noteIn", "io.noteIn", { 40.0f, 260.0f }, {}, {} });
-        graph.addNode ({ "allocator", "instance.voice", { 340.0f, 260.0f }, {}, {} });
+        graph.addNode ({ "allocator", "instance.allocate.voice", { 340.0f, 260.0f }, {}, {} });
 
         graph.addNode ({ "osc1", "osc.analog", { 640.0f, 40.0f }, { { "osc.analog.shape", 1.0f } }, {} }); // saw
         graph.addNode ({ "detuneConst", "util.constant", { 340.0f, 460.0f }, { { "util.constant.value", 0.07f } }, {} });
@@ -248,9 +248,9 @@ namespace bazalt::engine
     }
 
     /** ARCHITECTURE.md §3.4's example voice path, M18-rewired (ADR-0024):
-        MIDI -> io.noteIn -> instance.voice -> PolyBLEP osc (pitch) ->
+        MIDI -> io.noteIn -> instance.allocate.voice -> PolyBLEP osc (pitch) ->
         SVF -> ADSR-gated amp (gate) -> out. Purely acyclic — every node
-        schedules as an ordinary block-rate step. `instance.voice`'s
+        schedules as an ordinary block-rate step. `instance.allocate.voice`'s
         "spawn" input is a real Note-typed connection now, not the inert
         placeholder M17 shipped it with; `osc`/`env`'s "pitch"/"gate" ports
         are real too — `PluginProcessor::triggerVoiceNote`/`handleMidiEvent`
@@ -271,7 +271,7 @@ namespace bazalt::engine
         // right: noteIn/allocator feed osc (pitch) and env (gate) below/
         // beside them; osc -> svf -> amp; env -> amp.
         graph.addNode ({ "noteIn", "io.noteIn", { 40.0f, 40.0f }, {}, {} });
-        graph.addNode ({ "allocator", "instance.voice", { 340.0f, 40.0f }, {}, {} });
+        graph.addNode ({ "allocator", "instance.allocate.voice", { 340.0f, 40.0f }, {}, {} });
         graph.addNode ({ "env", "env.adsr", { 640.0f, 40.0f }, {}, {} });
         graph.addNode ({ "osc", "osc.analog", { 340.0f, 420.0f }, {}, {} });
         graph.addNode ({ "svf", "filter.svf", { 640.0f, 420.0f }, { { "filter.svf.cutoff", 3000.0f }, { "filter.svf.resonance", 0.9f } }, {} });

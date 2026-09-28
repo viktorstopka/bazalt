@@ -12,7 +12,7 @@ namespace
     {
         NodeGraph graph;
         graph.addNode ({ "noteIn", "io.noteIn", {}, {}, {} });
-        graph.addNode ({ "allocator", "instance.voice", {}, {}, {} });
+        graph.addNode ({ "allocator", "instance.allocate.voice", {}, {}, {} });
         graph.addConnection ({ "noteIn", "notes", "allocator", "spawn" });
         graph.setOutput ("allocator", "gate"); // arbitrary — bufferIndexFor() below reads any port directly
         return graph;
@@ -45,7 +45,7 @@ namespace
     }
 }
 
-TEST_CASE ("io.noteIn -> instance.voice delivers a real Note-typed connection (M18, ADR-0024)",
+TEST_CASE ("io.noteIn -> instance.allocate.voice delivers a real Note-typed connection (M18, ADR-0024)",
            "[engine][GraphCompiler][Note][M18]")
 {
     auto graph = buildNoteInToAllocatorGraph();

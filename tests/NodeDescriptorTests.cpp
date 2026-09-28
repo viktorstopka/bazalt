@@ -102,7 +102,7 @@ TEST_CASE ("io.output's own output port is hidden from the editor - a terminal '
     }
 }
 
-TEST_CASE ("09-28-InstanceAllocator.3: instance.voice (renamed from instance.allocator) no longer "
+TEST_CASE ("09-28-InstanceAllocator.3: instance.allocate.voice (renamed from instance.allocator) no longer "
            "exposes a dead 'configuration' dropdown",
            "[engine][NodeFactory][InstanceAllocator]")
 {
@@ -123,21 +123,25 @@ TEST_CASE ("09-28-InstanceAllocator.3: instance.voice (renamed from instance.all
         return nullptr;
     };
 
-    // The old type id is gone entirely - a graph still referencing it fails
-    // to compile with a clear "unknown node type" error, not silently.
+    // Both old type ids are gone entirely - a graph still referencing either
+    // fails to compile with a clear "unknown node type" error, not silently.
     CHECK (findByTypeId ("instance.allocator") == nullptr);
+    CHECK (findByTypeId ("instance.voice") == nullptr); // 09-29-AddMenu.1's own rename
 
-    const auto* voice = findByTypeId ("instance.voice");
+    const auto* voice = findByTypeId ("instance.allocate.voice");
     REQUIRE (voice != nullptr);
     CHECK (voice->title == "Voice");
-    CHECK (voice->category == "Domain");
+    // "Domain/Allocate", not flat "Domain" - 09-29-AddMenu.1 nests Voice (and
+    // its future Swarm/Trigger siblings) under an Add-menu flyout, one level
+    // deeper than instance.mix, which deliberately stays flat "Domain".
+    CHECK (voice->category == "Domain/Allocate");
 
     bool sawConfiguration = false;
     bool sawMaxInstances = false;
     for (const auto& p : voice->parameters)
     {
         if (p.id.containsIgnoreCase ("configuration")) sawConfiguration = true;
-        if (p.id == "instance.voice.maxInstances") sawMaxInstances = true;
+        if (p.id == "instance.allocate.voice.maxInstances") sawMaxInstances = true;
     }
     CHECK_FALSE (sawConfiguration);
     CHECK (sawMaxInstances);

@@ -92,7 +92,7 @@ namespace
     // also has a Note-typed output — the minimal way to prove GraphCompiler
     // rejects a Note connection whose endpoint lands inside a feedback
     // cycle, since neither real Note-capable node (io.noteIn, has no
-    // inputs at all; instance.voice, whose only input IS its Note
+    // inputs at all; instance.allocate.voice, whose only input IS its Note
     // port) can actually be wired into a real cycle themselves.
     class NoteProducerWithAudioLoopNode : public Node
     {

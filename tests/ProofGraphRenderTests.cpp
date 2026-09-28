@@ -33,7 +33,7 @@ TEST_CASE ("Voice proof graph is silent before noteOn, sounds during sustain, de
     auto& plan = result.plan;
 
     // M18 (ADR-0024): "osc"/"env" no longer take frequency/gate directly —
-    // instance.voice's real pitch/gate ports drive them now, fed by
+    // instance.allocate.voice's real pitch/gate ports drive them now, fed by
     // io.noteIn.
     auto* noteIn = dynamic_cast<nodes::IoNoteInNode*> (plan.getNodeById ("noteIn"));
     REQUIRE (noteIn != nullptr);

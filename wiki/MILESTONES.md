@@ -636,7 +636,8 @@ Named so nothing is silently dropped, not because any of it is wrong:
   random nodes fully replace `random1`/`random2`") — a real, buildable idea, explicitly not
   recommended as urgent in the report, not included here.
 - The Add-menu category-nesting / node-id-naming-convention question — the user's own proposal
-  from the same conversation, explicitly excluded per their own instruction.
+  from the same conversation, explicitly excluded per their own instruction. **Picked up and
+  built in `09-29-AddMenu.1`, below** — not still open.
 
 ## Verification, every `09-28-InstanceAllocator` milestone
 
@@ -645,3 +646,73 @@ correctness-critical logic (`.1`'s reachability check, `.2`'s determinism), `plu
 --strictness-level 10`, UI `npm run build && npm run lint` clean (only `.4` touches UI code),
 Standalone app launched and sanity-checked against the Init Patch (which uses this node for real).
 Each milestone commits on its own once green, without asking.
+
+## `09-29-AddMenu.1` — nested node categories, Blender-style flyout Add menu — done
+
+**Root cause:** the Add menu (`ui/src/graph/AddMenu.tsx`) only ever grouped by a single flat
+`category` string — no way to nest, so a node whose natural home is "a kind of Domain node,
+specifically one of the spawn mechanisms" had nowhere to go but a flat "Domain" bucket alongside
+unrelated siblings. Already getting messy with today's ~55 nodes; explicitly called out as needing
+order before the upcoming node batches land (the user's own framing). This exact proposal was raised
+during the `09-28-InstanceAllocator` arc and deliberately deferred — see that arc's "Explicitly out
+of scope" section, now cross-referenced here.
+
+**The fix, category data model:** `category` stays a plain string (no schema change, no engine-side
+parsing) — it's just now allowed to be a `/`-separated path, e.g. `"Domain/Allocate"`. New pure
+module `ui/src/graph/categoryTree.ts` turns a flat descriptor list into a tree (`buildCategoryTree`),
+and produces one level's alphabetically-interleaved rows (items + subcategories, `rowsOf`). Search
+mode groups by the top-level segment only (`topLevelCategory`) — drilling into a nested flyout while
+a query is active would defeat the point of typing one, so search stays a flat, familiar list, same
+shape as before this milestone.
+
+**The fix, node rename:** `instance.voice` → `instance.allocate.voice` (direct rename, CLAUDE.md rule
+3 is suspended, no migration — same treatment `instance.allocator` → `instance.voice` got in
+`09-28-InstanceAllocator.3`, no schema-version bump needed there either). The inserted `allocate`
+segment is what lets `getCategory()` return `"Domain/Allocate"` for Voice while `instance.mix` stays
+flat `"Domain"` — it isn't a spawn-mechanism sibling, it's the region-closing node. The parameter id
+followed suit: `instance.voice.maxInstances` → `instance.allocate.voice.maxInstances`, matching this
+codebase's universal `<typeId>.<paramName>` convention. Future `instance.allocate.swarmPopulation`/
+`swarmTransient`/`trigger` (M28, still unbuilt) land in the same "Domain/Allocate" flyout once they
+exist, with zero further menu work. Every real reference updated to match (`ProofGraphs.h`'s
+registration + both proof graphs, `DomainSplitter.h/.cpp`'s `instanceVoiceTypeId` constant and error
+messages, every test file with an `"instance.voice"` string literal, `CLAUDE.md`'s own interim-
+simplifications note, `wiki/NODES.md`/`wiki/NODES.System.md`/`wiki/NODES_Gaps.md`) — `wiki/
+reports/InstanceAllocator_2026-09-28.md` and `archive_docs/**` deliberately left untouched, same
+"don't rewrite the reasoning that led to a change" precedent `09-28-InstanceAllocator.3` set.
+
+**The fix, menu UI:** a category with no subcategories (still nearly every one of them) renders
+exactly as before — inline header, inline item buttons, no hover required, zero behavior change.
+A category that genuinely has children (today: only "Domain") additionally gets one hoverable row
+per child ("Allocate ▸"); hovering it (after a short, standard hover-intent delay so moving the
+mouse diagonally across the menu doesn't flicker-open the wrong one) or clicking it opens a floating
+flyout panel beside it — `ui/src/graph/useFlyoutPosition.ts`, a new hook alongside the existing
+`useAutoFlipPosition.ts` (kept separate rather than generalizing the shared one, so
+`NodeContextMenu.tsx`'s existing `(x, y)`-based call site can't regress), anchored to the trigger
+row's own measured rect and flipping to the left/clamping vertically near a viewport edge.
+Recursion is generic to any depth, not hardcoded to two levels. Full keyboard parity: ArrowUp/Down
+move within the current level, ArrowRight/Enter drills into a focused category (measuring the same
+row via a small DOM-element registry, since a keyboard-driven open has no mouse event to read a rect
+from), ArrowLeft backs out one level and refocuses the row that opened it, Escape still closes the
+whole menu. Clicking outside still closes everything for free — flyouts render as nested JSX inside
+the root menu's own DOM subtree (fixed positioning doesn't require being a direct child of `body`),
+so the existing single `contains()` check already covers them.
+
+**Left exactly as-is, deliberately:** `ui/src/gallery/ComponentGallery.tsx` (the separate, read-only
+M9 component gallery) still groups by the same flat `category` string with no nesting awareness — it
+will show `instance.allocate.voice` under a literal "Domain/Allocate" header instead of a proper
+flyout. Harmless (nodes still land in the right, findable group) and out of scope — the user's ask
+was specifically the Add menu, and the gallery already fetches its own separate descriptor copy.
+
+**Tests:** `tests/NodeDescriptorTests.cpp`'s existing `09-28-InstanceAllocator.3` test updated for
+the new type id/category (`instance.voice` also confirmed gone, alongside the already-checked
+`instance.allocator`; `category == "Domain/Allocate"` replaces the old flat check) — no new engine
+test needed beyond that, since nothing about compilation/connection semantics changed, only a string.
+No TS test framework exists in `ui/` (this project's UI is verified via `npm run build && npm run
+lint` plus a manual Standalone launch, not unit tests) — `categoryTree.ts`'s tree-building and
+`AddMenu.tsx`'s flyout logic are new, pure-enough TS that a future milestone adding real UI test
+infra would want to backfill coverage for, not assumed covered here. 377/377 engine+plugin tests
+green. `pluginval` not available in this environment to re-run (documented absence, not a new gap).
+UI `npm run build`/`npm run lint` clean, zero warnings on any new file. Standalone app rebuilt and
+relaunched for a manual click-through (this environment has no computer-use/screenshot capability
+to drive a native Win32 window itself, so the actual visual flyout-hover check is the user's own,
+not claimed here).

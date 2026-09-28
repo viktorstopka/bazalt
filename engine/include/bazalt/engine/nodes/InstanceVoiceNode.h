@@ -6,11 +6,17 @@
 
 namespace bazalt::engine::nodes
 {
-    /** Stable type id: "instance.voice" (M17, renamed from "instance.allocator"
-        in 09-28-InstanceAllocator.3 — CLAUDE.md rule 3 is suspended, so this is
-        a direct rename, no migration path). `DOMAINS.md` §3's Instance
-        Allocator concept — **Voice configuration only**, and (as of this
-        rename) the ONLY configuration this class implements at all: the
+    /** Stable type id: "instance.allocate.voice" (M17, renamed from "instance.allocator"
+        in 09-28-InstanceAllocator.3, renamed again from "instance.voice" in
+        09-29-AddMenu.1 — CLAUDE.md rule 3 is suspended, so both are direct
+        renames, no migration path). The second rename inserts an "allocate"
+        namespace segment purely so the Add menu's category tree (also
+        09-29-AddMenu.1) can nest Voice under Domain > Allocate — `instance.mix`
+        deliberately stays flat (no such segment) since it isn't one of several
+        spawn-mechanism siblings the way Voice/Swarm/Trigger are. `DOMAINS.md`
+        §3's Instance Allocator concept — **Voice configuration only**, and (as
+        of the first rename) the ONLY configuration this class implements at
+        all: the
         `configuration` enum parameter (Voice/Swarm-population/Swarm-transient/
         Trigger) that used to live here has been removed outright, not just
         defaulted — three of its four options never did anything (M17-M27's
@@ -66,7 +72,12 @@ namespace bazalt::engine::nodes
         int getNumOutputPorts() const noexcept override { return numOutputs; }
 
         juce::String getTitle() const override { return "Voice"; }
-        juce::String getCategory() const override { return "Domain"; }
+        // "Domain/Allocate" — nests under the Add menu's Domain category as a
+        // flyout (09-29-AddMenu.1), alongside instance.mix which stays flat
+        // "Domain" (see the class comment above for why). Sibling spawn
+        // mechanisms (instance.allocate.swarmPopulation, etc., M28) land in
+        // the same "Domain/Allocate" flyout once built.
+        juce::String getCategory() const override { return "Domain/Allocate"; }
 
         std::vector<PortDescriptor> getInputPorts() const override
         {
@@ -98,7 +109,7 @@ namespace bazalt::engine::nodes
             // 09-28-InstanceAllocator.3: "configuration" removed outright —
             // see the class comment. maxInstances is the only real structural
             // parameter this node has left.
-            return { ParameterDescriptor { .id = "instance.voice.maxInstances",
+            return { ParameterDescriptor { .id = "instance.allocate.voice.maxInstances",
                                             .minValue = 1.0f,
                                             .maxValue = 64.0f,
                                             .defaultValue = 8.0f,
@@ -109,7 +120,7 @@ namespace bazalt::engine::nodes
 
         void setParameter (const juce::String& parameterId, float value) override
         {
-            if (parameterId == "instance.voice.maxInstances")
+            if (parameterId == "instance.allocate.voice.maxInstances")
                 maxInstances = (int) (value + 0.5f);
         }
 
