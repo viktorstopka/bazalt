@@ -156,21 +156,18 @@ namespace bazalt::engine
 
         No `space.reverb` tail: it's M28's node, doesn't exist yet — a
         forced, expected scope boundary (M22 can't build M28's node), not an
-        oversight. No `space.pan` tail either, despite M22 building it this
-        same milestone: `NodeGraph::setOutput()` designates exactly one
-        final port, and `PluginProcessor`'s whole render path
-        (`finalizeInstanceMixIntoOutput`) tracks exactly one final mono
-        buffer, duplicated to both physical output channels — genuinely
-        mono end to end today, a real architectural fact discovered while
-        building this graph, not a small gap. Building a real stereo output
-        path (an `io.output` with `left`/`right` inputs, `PluginProcessor`
-        tracking two final buffers) is real, cross-cutting engine work
-        outside this wave's scope; `space.pan`/`space.width` stay fully
-        real, tested, independently usable nodes — just not wired into
-        THIS patch's own output stage. Logged as a known gap, not silently
-        worked around by forcing a pan node into the chain and immediately
-        downmixing it back to mono, which would add nodes with no audible
-        effect.
+        oversight.
+
+        This M22-era comment originally noted "no `space.pan` tail either" —
+        genuinely mono end to end, since neither `io.output` nor
+        `PluginProcessor` tracked a second channel at all back then. That
+        gap closed for real in two steps: a narrow point-fix (superseded
+        Milestone 0.2), then the real stereo cable redesign
+        (`wiki/NODES.System.md` §9) — `space.pan`'s output is now one real
+        `Channels::Stereo` port, and this patch wires it straight into
+        `masterOut`'s equally-real stereo `in` as one cable. A fresh plugin
+        instance now opens playing genuinely panned stereo, not mono
+        duplicated to both speakers.
 
         `detuneOffset`/`baseCutoff` are `util.constant` feeding `math.add`,
         not initial parameter values on `osc2`/`filter.ladder` directly —
@@ -243,8 +240,7 @@ namespace bazalt::engine
 
         graph.addConnection ({ "ampVCA", "out", "voiceMix", "in" });
         graph.addConnection ({ "voiceMix", "out", "pan", "in" });
-        graph.addConnection ({ "pan", "left", "masterOut", "in" });
-        graph.addConnection ({ "pan", "right", "masterOut", "right" });
+        graph.addConnection ({ "pan", "out", "masterOut", "in" }); // one real stereo cable (wiki/NODES.System.md §9)
 
         graph.setOutput ("masterOut", "out");
 

@@ -4,26 +4,30 @@
 
 namespace bazalt::engine::nodes
 {
-    /** Stable type id: "stereo.split". Milestone 0.2 (wiki/NODES.System.md
-        §9.4): the bridge node independent per-channel wiring needs now
-        that stereo-capable nodes present one paired socket instead of two
-        separately-wireable mono ports. One stereo input (`in.left`/
-        `in.right`, both `Channels::Stereo` — the UI wires a stereo pair
-        into it as one gesture); two ordinary, individually-wireable mono
-        outputs (`left`/`right`, deliberately NOT marked Stereo) for
-        whatever needs to treat the two channels asymmetrically from here
-        on (different filters per side, a Haas-style delay offset, ...).
+    /** Stable type id: "stereo.split". Real stereo cable redesign
+        (`wiki/NODES.System.md` §9): the bridge node independent per-channel
+        wiring needs — takes one real stereo cable (`in`, `Channels::Stereo`)
+        and re-exposes each side as an ordinary, individually-wireable mono
+        output (`left`/`right`, deliberately NOT marked Stereo) for whatever
+        needs to treat the two channels asymmetrically from here on
+        (different filters per side, a Haas-style delay offset, ...).
         Trivial passthrough — Pattern B inline DSP, nothing here worth a
         standalone primitive.
+
+        `getNumInputChannels()` must be overridden (see `Node.h`'s own
+        comment) since the default would otherwise report 1 (one
+        descriptor), not the 2 real flat channels `processBlock`'s scratch
+        loop needs to actually reach the right channel.
     */
     class StereoSplitNode : public Node
     {
     public:
-        static constexpr int numInputs = 2;
-        static constexpr int numOutputs = 2;
+        static constexpr int numInputs = 1;  // in (Stereo)
+        static constexpr int numOutputs = 2; // left, right
 
         int getNumInputPorts() const noexcept override { return numInputs; }
         int getNumOutputPorts() const noexcept override { return numOutputs; }
+        int getNumInputChannels() const noexcept override { return 2; }
 
         juce::String getTitle() const override { return "Stereo Split"; }
         juce::String getCategory() const override { return "Adapters"; }
@@ -31,8 +35,7 @@ namespace bazalt::engine::nodes
         std::vector<PortDescriptor> getInputPorts() const override
         {
             return {
-                PortDescriptor { .id = "in.left", .type = SignalType::Audio, .label = "In L", .channels = Channels::Stereo },
-                PortDescriptor { .id = "in.right", .type = SignalType::Audio, .label = "In R", .channels = Channels::Stereo },
+                PortDescriptor { .id = "in", .type = SignalType::Audio, .channels = Channels::Stereo },
             };
         }
 

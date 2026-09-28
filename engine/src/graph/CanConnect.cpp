@@ -55,25 +55,18 @@ namespace bazalt::engine
 
             if (from.channels == Channels::Stereo && to.channels == Channels::Mono)
             {
-                // NOTE: no real stereo-output node exists yet — every port
-                // today is a single mono buffer (AlignedBuffer/ExecutionPlan
-                // never allocate more than one channel per port). This
-                // branch is correct as a *rule*, but `mix.downmix`'s real
-                // shape (two separate mono inputs, "left"/"right") can't be
-                // driven by a single `AdapterStep` the way `adapt.map`/
-                // `adapt.normalise`/`adapt.threshold` can — those are
-                // genuine 1-in-1-out transformers; downmix is 2-in-1-out.
-                // Auto-insertion for this specific case is therefore not
-                // attempted yet (`GraphEditController::connectWithAutoAdapt`
-                // rejects it with a message pointing at manual insertion) —
-                // flagged honestly rather than claiming a chain shape that
-                // doesn't fit. Revisit once a real multi-channel-per-port
-                // buffer exists and/or once a real stereo-output node needs
-                // this for real (M22+).
+                // Real stereo cable redesign (wiki/NODES.System.md §9):
+                // `mix.downmix` is now a genuine 1-in-1-out node (one real
+                // `Channels::Stereo` "in" port, one mono "out"), so this
+                // fits the same single-`AdapterStep` splice mechanism
+                // `adapt.map`/`adapt.normalise`/`adapt.threshold` already
+                // use — `GraphEditController::connectWithAutoAdapt` auto-
+                // inserts it now, closing the gap this comment used to flag
+                // (downmix used to be 2-in-1-out, which never fit).
                 CanConnectResult result;
                 result.outcome = ConnectionOutcome::NeedsAdapters;
-                result.adapterChain = { AdapterStep { "mix.downmix", "left" } }; // informational only, see above
-                result.reason = "Stereo source into a mono-only port needs mix.downmix (manual insertion for now)";
+                result.adapterChain = { AdapterStep { "mix.downmix", "in" } };
+                result.reason = "Stereo source into a mono-only port needs mix.downmix";
                 return result;
             }
 

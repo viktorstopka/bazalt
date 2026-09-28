@@ -297,11 +297,11 @@ TEST_CASE ("WidthNode's ports fall back to setParameter's value exactly when unc
 }
 
 TEST_CASE ("StereoSplitNode and StereoCombineNode are exact, unmodified passthroughs",
-           "[engine][nodes][space][M0.2]")
+           "[engine][nodes][space][Stereo]")
 {
-    // Milestone 0.2 (wiki/NODES.System.md §9.4): the independent-per-channel
-    // bridge - both are trivial by design, so the only thing worth proving
-    // is that they really are transparent (no gain, no swap, no drift).
+    // wiki/NODES.System.md §9.4: the independent-per-channel bridge - both
+    // are trivial by design, so the only thing worth proving is that they
+    // really are transparent (no gain, no swap, no drift).
     bazalt::engine::nodes::StereoSplitNode split;
     bazalt::engine::nodes::StereoCombineNode combine;
 

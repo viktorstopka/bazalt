@@ -343,14 +343,14 @@ namespace bazalt::engine
         std::vector<std::vector<NoteEvent>> noteBuffers;
         std::vector<Step> steps;                    // schedule, in execution order
         int finalOutputBufferIndex = -1;             // into blockBuffers; holds the plan's audible output after process()
-        // Milestone 0.2 (wiki/NODES.System.md §9): set only when the graph's
-        // designated output port is the first of a real stereo pair (itself
-        // Stereo-channeled, immediately followed in its node's own declared
-        // port list by a second Stereo-channeled output — GraphCompiler's
-        // "Final output" section resolves this the same way it resolves
-        // finalOutputBufferIndex, right beside it). -1 for every mono-only
-        // graph — which is every graph that existed before this milestone,
-        // unaffected byte for byte.
+        // Real stereo cable redesign (wiki/NODES.System.md §9): set only when
+        // the graph's designated output port is itself a real 2-channel
+        // (`Channels::Stereo`) Audio port — GraphCompiler's "Final output"
+        // section resolves this the same way it resolves
+        // finalOutputBufferIndex, right beside it. -1 for a Mono-only output
+        // port (still every graph that predates this redesign, unaffected
+        // byte for byte, and any future graph whose designated output stays
+        // plain mono).
         int finalOutputBufferIndexRight = -1;
         int maxBlockSize = 0;
 

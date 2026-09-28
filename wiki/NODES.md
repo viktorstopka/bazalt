@@ -71,7 +71,7 @@ are telemetry outputs for live visualization, not ports.
 Reads one of the plugin's real input buses. **Out:** `channel.0…channel.N` — `Audio`, a port group sized by the selected bus (stereo main gives 2, a six-channel bus gives 6). **Structural:** `bus` (enum: Main, Aux 1–4). **Behavior:** passthrough; silence when the host has not activated the bus. **Taps:** per-channel level. **Native:** the plugin I/O boundary.
 
 #### `io.output` — Master Out ✅
-**In:** `in` (id stays `in`, labeled "Left"), `right` (labeled "Right") — `Audio`. **Out:** `out` (id stays `out`, labeled "Left", primary), `outRight` (labeled "Right") — `Audio`. **Behavior:** unity passthrough per channel. Milestone 0.2 (`NODES.System.md` §9): gained a real second channel — wiring both `in`/`right` to a stereo source (e.g. `space.pan`'s `left`/`right` outputs) sends genuinely different signal to the host's two physical output channels; leaving `right` unwired keeps the old, exact mono-duplicate behavior (`GraphCompiler.cpp`'s `rightInputIsWired` guard, regression-tested). **The ids are asymmetric on purpose** (`in`/`out` are the original pre-stereo ids, CLAUDE.md rule 3 — can't be renamed; `right`/`outRight` are the new companions), but the first pass left the *display labels* matching that same asymmetry ("In"/"Right", "Out"/"Right") instead of relabeling to read as an obvious stereo pair — caught live, fixed to "Left"/"Right" on both pairs (label is a separate field from id, zero compatibility cost). The `missing-ui-command` (`graphSetOutput`) bug `NODES_Gaps.md` flagged is unrelated to this node's own port shape and still needs its own fix. **Taps:** output scope, spectrum, level.
+**In:** `in` — `Audio` (`Channels::Stereo` — one real stereo cable). **Out:** `out` — `Audio` (`Channels::Stereo`, primary). **Behavior:** unity passthrough per channel. A mono source wired into `in` broadcasts to both physical output channels automatically (`canConnect`'s free mono→stereo rule, `NODES.System.md` §9) — every pre-stereo patch behaves unchanged. The `missing-ui-command` (`graphSetOutput`) bug `NODES_Gaps.md` flagged is unrelated to this node's own port shape and still needs its own fix. **Taps:** output scope, spectrum, level.
 
 #### `io.noteIn` — Note In ✅
 **Out:** `notes` — `Note`. **Structural:** `channel` (enum: Omni, 1–16, schema-only — every channel is accepted regardless), `mpeMode` (enum: off, MPE, schema-only). **Behavior:** translates host MIDI into `Note` events; pitch bend folds into the continuous pitch field rather than a separate port. **Native:** plugin I/O boundary.
@@ -223,16 +223,16 @@ A multi-section waveguide whose cross-section profile is read from a curve, so f
 **In:** `in`; `size`; `amount`. **Out:** `out`. **Structural:** `stages` (2–8). **Behavior:** an allpass chain — early reflections, transient smearing. **M28.**
 
 #### `space.pan` — Pan ✅
-**In:** `in` — `Audio`; `pan [audio]`; `width`. **Out:** `left`, `right` — `Audio` **(named-port pair, `Channels::Stereo`-marked metadata since Milestone 0.2 — still two ports to wire, not one cable; see `NODES.System.md` §9.2 for why the full single-cable reopening stayed out of scope)**. **Structural:** `law` (enum: linear, −3dB, −4.5dB, constant power — default constant power). **Behavior:** `width` is an equal-power mid/side cross-mix of the already-panned pair; `width=1` is a true no-op. Feeds `io.output`'s `in`/`right` directly in the Init Patch — the first real, audible use of Milestone 0.2's stereo output path.
+**In:** `in` — `Audio`; `pan [audio]`; `width`. **Out:** `out` — `Audio` (`Channels::Stereo`, primary — one real stereo cable). **Structural:** `law` (enum: linear, −3dB, −4.5dB, constant power — default constant power). **Behavior:** `width` is an equal-power mid/side cross-mix of the already-panned pair; `width=1` is a true no-op. Feeds `io.output`'s `in` directly in the Init Patch — a fresh plugin instance opens playing genuinely panned stereo.
 
 #### `space.width` — Width ✅
-**In:** `in.left`, `in.right` — `Audio` **(two separate mono ports, `Channels::Stereo`-marked since Milestone 0.2, same open item as `space.pan`)**; `width`; `bassMonoBelow`. **Out:** `left`, `right` — `Audio`. **Behavior:** the same mid/side cross-mix `space.pan` uses, plus a one-pole crossover so `width` only touches the band above `bassMonoBelow` (keeps bass phase-coherent, an ordinary mastering-chain technique).
+**In:** `in` — `Audio` (`Channels::Stereo`); `width`; `bassMonoBelow`. **Out:** `out` — `Audio` (`Channels::Stereo`, primary). **Behavior:** the same mid/side cross-mix `space.pan` uses, plus a one-pole crossover so `width` only touches the band above `bassMonoBelow` (keeps bass phase-coherent, an ordinary mastering-chain technique).
 
-#### `stereo.split` — Stereo Split ✅ *(new, Milestone 0.2)*
-**In:** `in.left`, `in.right` — `Audio` (`Channels::Stereo`-marked pair). **Out:** `left`, `right` — `Audio` (ordinary, independently-wireable mono outputs). **Behavior:** exact passthrough — re-exposes each side of a stereo-marked pair as a separate mono signal, e.g. to send only one channel into a different filter. Adapters category, Pattern B inline DSP.
+#### `stereo.split` — Stereo Split ✅
+**In:** `in` — `Audio` (`Channels::Stereo`). **Out:** `left`, `right` — `Audio` (ordinary, independently-wireable mono outputs). **Behavior:** exact passthrough — re-exposes each side of a stereo cable as a separate mono signal, e.g. to send only one channel into a different filter. Adapters category, Pattern B inline DSP.
 
-#### `stereo.combine` — Stereo Combine ✅ *(new, Milestone 0.2)*
-**In:** `in.left`, `in.right` — `Audio` (two ordinary, independently-wireable mono inputs). **Out:** `left`, `right` — `Audio` (`Channels::Stereo`-marked pair). **Behavior:** exact passthrough — the inverse of `stereo.split`; lets two unrelated mono sources feed one stereo-marked destination (e.g. `io.output`'s `in`/`right`) as a labeled pair. Adapters category, Pattern B inline DSP.
+#### `stereo.combine` — Stereo Combine ✅
+**In:** `left`, `right` — `Audio` (two ordinary, independently-wireable mono inputs). **Out:** `out` — `Audio` (`Channels::Stereo`, primary). **Behavior:** exact passthrough — the inverse of `stereo.split`; lets two unrelated mono sources feed one stereo-shaped destination (e.g. `io.output`'s `in`) as one cable. Adapters category, Pattern B inline DSP.
 
 ## mix
 
@@ -246,7 +246,7 @@ A multi-section waveguide whose cross-section profile is read from a curve, so f
 **In:** `audio` — `Audio`; `gain [audio]·0–4×·log·1` (displayed in dB). **Out:** `out` — `Audio`. **Behavior:** audio-rate `gain` makes it a ring modulator too. Now titled "Gain" in the running engine (was "VCA"), and `gain` has a real unconnected default (unity, 1.0) — leaving it unpatched is genuinely "just as loud as before."
 
 #### `mix.downmix` — Downmix ✅
-**In:** `left`, `right`. **Out:** `out` — `Audio`. **Structural:** `mode` (enum: sum, left, right, mid, side).
+**In:** `in` — `Audio` (`Channels::Stereo`). **Out:** `out` — `Audio` (mono). **Structural:** `mode` (enum: sum, left, right, mid, side). Genuine 1-in-1-out shape now (`NODES.System.md` §9.2) — `connectWithAutoAdapt` auto-inserts it for a stereo source into a mono-only port, the same way `adapt.map`/`adapt.normalise`/`adapt.threshold` already do.
 
 ## env — envelopes
 
@@ -520,7 +520,7 @@ group).
 | **Bowed String** | Violin-like | `excite.stickSlip` ↔ `resonator.string`, coupling loop closed through `motion` | 📋 |
 | **Struck Body** | Drum, bell, plate | `excite.mallet` ↔ `resonator.plate` or `resonator.modal` | 📋 |
 | **Hex Guitar Front End** | Six strings to six note streams | six `io.audioIn` channels → `analysis.onset` + `analysis.pitch` → `note.assemble` per string | 📋 |
-| **Init Patch** | Ordinary subtractive synth | `io.noteIn` → `instance.allocator` → `osc.analog` ×2 → `filter.ladder` → `env.adsr` (×2: amp + filter cutoff) → `instance.mix` → `space.pan` (`left`/`right` → `io.output`'s `in`/`right`) | ✅ real hand-built graph, genuinely stereo as of Milestone 0.2; 📋 not yet a loadable `stock.*` asset — no `space.reverb` tail yet (M28) |
+| **Init Patch** | Ordinary subtractive synth | `io.noteIn` → `instance.allocator` → `osc.analog` ×2 → `filter.ladder` → `env.adsr` (×2: amp + filter cutoff) → `instance.mix` → `space.pan` → `io.output` (one real stereo cable, `pan.out` → `masterOut.in`) | ✅ real hand-built graph, genuinely stereo; 📋 not yet a loadable `stock.*` asset — no `space.reverb` tail yet (M28) |
 | **Voiced self-oscillation (cat purr)** *(Correction 1's new coverage item)* | The hardest test in the set | `env.curve` (breath pressure) → `random.drift` (stiffness jitter) + `lfo.shape` (~26Hz stiffness modulation, for entrainment) → `excite.vocalFolds` → `flow` gates `noise.colored` through `mix.gain` (aspiration) → `resonator.junction` splits `resonator.tract` (nasal route) vs. a closed branch (antiresonances) vs. `resonator.modal` (body conduction) → `mix.crossfade` (microphone position) | 📋 — exercises audio-rate physical-parameter modulation, emergent oscillation thresholds, source–resonator coupling, branched waveguides, `Data` as a geometric profile, flow-gated noise, two sources sharing one tract, sub-30Hz fundamentals. **Testing note:** self-oscillating/chaotic models are deterministic but rounding-sensitive — two compilers or an enabled FMA path diverge within seconds, so bit-exact golden renders don't work here; verify statistically (measured f₀/spectral envelope/jitter/shimmer within tolerance, oscillation threshold within a pressure window) or CI failures become indistinguishable from physics. |
 
 # Reference patches: coverage

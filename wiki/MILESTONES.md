@@ -109,45 +109,54 @@ no regressions.
 
 ## 0.2 — Stereo — done
 
-Scoped as one design (twin flat slots, `left`/`right` reopened into one true stereo
-cable everywhere), **built as a smaller, safer one** once implementation started and
-reading `GraphCompiler.cpp` in full showed the full reopening would touch every
-port-indexed loop in the compiler for a much bigger blast radius than the actual goal
-needed. What shipped instead (`wiki/NODES.System.md` §9.1–§9.4; the original scoping
-is preserved as §9-old for the record):
+Went through three passes before landing: a scoping-only design (never built), a
+narrow point-fix (Master Out gained a second channel via a special case, every other
+node kept separate `left`/`right` ports), then — on the user's explicit request to
+"build the full redesign now" after questioning why `space.pan` still needed two
+cables — the real thing, which supersedes and replaces the point-fix rather than
+sitting alongside it. Full detail in `wiki/NODES.System.md` §9.
 
-- `io.output` ("Master Out") gained a real second channel — `right` input, `outRight`
-  output, both `Channels::Stereo`-marked, alongside the unchanged `in`/`out`.
-- `GraphCompiler.cpp`'s "Final output" resolution gained one small, additive lookup
-  (`ExecutionPlan::finalOutputBufferIndexRight`) for a designated output node's
-  second Stereo-paired channel — gated by a `rightInputIsWired` guard confirmed real
-  and load-bearing by a mutation-testing pass (an unwired `right` input must keep
-  duplicating left exactly as every graph did before this milestone, not go silent).
-- `PluginProcessor::finalizeInstanceMixIntoOutput` writes the real second channel to
-  the host when the compiler resolved one; unchanged otherwise.
-- Two new bridge nodes, `stereo.split`/`stereo.combine`, for independent-per-channel
-  wiring (proven byte-for-byte transparent passthroughs).
-- The Init Patch is rewired (`ProofGraphs.h::buildInitPatchGraph()`) so `space.pan`'s
-  `left`/`right` outputs feed `io.output`'s `in`/`right` directly — a fresh plugin
-  instance now opens playing genuinely panned stereo, not mono duplicated to both
-  speakers.
+**What shipped:** a stereo signal is one real Audio cable, catalog-wide.
+`GraphCompiler.cpp` now backs `canConnect`'s already-existing mono/stereo rules
+(mono→mono, mono→stereo free broadcast, stereo→stereo, stereo→mono needs downmix)
+with real per-channel buffers — a `Channels::Stereo` port occupies two flat buffer
+slots, resolved once per compile, with zero change to `Node::processSample`/
+`processBlock`'s signatures (proven first against synthetic node types in
+`tests/GraphCompilerTests.cpp`, before any real node was touched). Six real nodes
+redesigned onto one stereo port per side: `space.pan`, `space.width`, `io.output`,
+`mix.downmix` (now also auto-insertable by `connectWithAutoAdapt`, closing a second,
+related gap), `stereo.split`, `stereo.combine`. The Init Patch wires `pan.out` →
+`masterOut.in` as one cable — a fresh plugin instance opens playing genuinely panned
+stereo.
 
-**Deliberately out of scope** (§9.2 has the full list): `space.pan`/`space.width`
-keep their own `left`/`right` port-pair shape, not collapsed into one cable;
-`mix.downmix` unchanged; the mono-only no-allocator render path
-(`PluginProcessor::renderMonoRange`) not extended — an `io.audioIn`-only graph still
-duplicates mono to both channels; no patch schema migration needed, since nothing
-shipped renames or removes an existing port (only adds new ones) — a real, verified
-difference from the original scoping, which would have needed a v4→v5 migration.
+**A real bug found during implementation, not by inspection:** `Node.h`'s default
+`processBlock()` sized its scratch loop from descriptor counts, not flat channel
+counts — a node with one Stereo output but no override would silently leave its
+second channel uninitialized. Caught by a synthetic test reading back
+`-431602080.0f` (classic uninitialized-debug-memory pattern). Fixed by adding
+`Node::getNumInputChannels()`/`getNumOutputChannels()`, defaulting to the existing
+port-count methods (a no-op for every node that never overrides them).
 
-**Verified:** 361/361 tests green, including two new `[M0.2]`-tagged
-`tests-plugin/HostInputTests.cpp` cases (a voice+global-domain graph proving left and
-right genuinely differ via RMS; the mirror case proving an unwired right still
-duplicates left) and a `tests/SpaceNodesTests.cpp` transparency test for the two new
-bridge nodes. `tests/NodeDescriptorTests.cpp` bumped 56→58 registered types. UI
-`npm run build`/`npm run lint` clean with zero `ui/src` changes needed (both new node
-types are picked up by the existing descriptor-driven Add menu/gallery). Standalone
-app built and sanity-checked.
+**CLAUDE.md rule 3 ("port ids never renamed once shipped") is suspended**, on the
+user's own explicit instruction — see that rule's own note in CLAUDE.md for the full
+reasoning and the re-enable trigger. This is what made the redesign tractable without
+elaborate migration-bridging code: every one of the six nodes' port ids changed
+directly, no v4→v5 data migration was written (schema version still bumped to 5 for
+hygiene, with a trivial version-only migration so old patches still parse).
+
+**Deliberately out of scope** (§9.4 has the full list): tap/preview lookups on a
+stereo port read channel 0 only; no visually distinct stereo cable in the UI (not
+needed — `channels` was already unread anywhere in `ui/src` except `canConnect.ts`);
+the mono-only no-allocator render path untouched.
+
+**Verified:** 365/365 tests green (new `[Stereo]`-tagged synthetic compiler tests
+proving flat-slot allocation directly; real-node coverage across
+`tests-plugin/HostInputTests.cpp`, `tests/SpaceNodesTests.cpp`,
+`tests-plugin/ConnectWithAutoAdaptTests.cpp`). A real mutation-testing pass on the
+mono→stereo broadcast logic crashed on a debug assertion rather than silently
+passing, confirming it's load-bearing. `pluginval --strictness-level 10` SUCCESS. UI
+`npm run build`/`npm run lint` clean with zero `ui/src` changes. Standalone app built,
+launched, and sanity-checked against the redesigned Init Patch.
 
 ## 0.3 — Master Out / output designation, fixed
 

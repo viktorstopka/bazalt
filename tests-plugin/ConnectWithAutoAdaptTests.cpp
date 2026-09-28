@@ -2,6 +2,7 @@
 #include "PluginProcessor.h"
 #include "bazalt/engine/graph/ProofGraphs.h"
 #include "bazalt/engine/graph/Node.h"
+#include <algorithm>
 #include <cmath>
 
 using namespace bazalt;
@@ -10,15 +11,17 @@ namespace
 {
     // A minimal synthetic node with a Stereo-channels Audio output, just to
     // exercise canConnect's channels rule end to end through the real
-    // command path — no real catalog node produces this yet (M16's own
-    // scope note: no multi-channel-per-port buffer plumbing exists), so
-    // this is registered only for this test, not part of the production
-    // NodeFactory (ProofGraphs.h).
+    // command path — real catalog nodes (space.pan, etc.) produce this too
+    // now (the real stereo cable redesign), but a dedicated synthetic
+    // source keeps this test focused on the adapter-insertion mechanism
+    // itself, not any one real node's own behavior. Registered only for
+    // this test, not part of the production NodeFactory (ProofGraphs.h).
     class StereoTestSourceNode : public bazalt::engine::Node
     {
     public:
         int getNumInputPorts() const noexcept override { return 0; }
         int getNumOutputPorts() const noexcept override { return 1; }
+        int getNumOutputChannels() const noexcept override { return 2; } // the one descriptor is Stereo
 
         std::vector<bazalt::engine::PortDescriptor> getOutputPorts() const override
         {
@@ -27,7 +30,11 @@ namespace
             return { port };
         }
 
-        void processSample (const float*, float* outputs) noexcept override { outputs[0] = 0.0f; }
+        void processSample (const float*, float* outputs) noexcept override
+        {
+            outputs[0] = 0.3f;
+            outputs[1] = 0.7f;
+        }
     };
 }
 
@@ -160,9 +167,15 @@ TEST_CASE ("connectWithAutoAdapt inserts adapt.remap for two different real quan
     CHECK (remapToDestination);
 }
 
-TEST_CASE ("connectWithAutoAdapt does not attempt to auto-insert mix.downmix (2-in-1-out doesn't fit a single splice)",
-           "[plugin][GraphEditController][CanConnect][M16]")
+TEST_CASE ("connectWithAutoAdapt auto-inserts mix.downmix for a Stereo source into a mono-only port",
+           "[plugin][GraphEditController][CanConnect][Stereo]")
 {
+    // Real stereo cable redesign (wiki/NODES.System.md §9): mix.downmix
+    // became a genuine 1-in-1-out node (one real Channels::Stereo "in", one
+    // mono "out"), closing the gap CanConnect.cpp used to flag — before this
+    // redesign, downmix's 2-in-1-out shape never fit connectWithAutoAdapt's
+    // single-AdapterStep splice mechanism and this exact scenario was
+    // rejected outright.
     BazaltAudioProcessor processor;
     processor.prepareToPlay (44100.0, 512);
     auto& controller = processor.getGraphEditController();
@@ -175,8 +188,22 @@ TEST_CASE ("connectWithAutoAdapt does not attempt to auto-insert mix.downmix (2-
     const auto nodesBefore = controller.getGraph().getNodes().size();
     const auto result = controller.connectWithAutoAdapt ("stereoSrc", "out", "amp", "audio");
 
-    CHECK_FALSE (result.success);
-    CHECK (result.errorMessage.isNotEmpty());
-    // No mix.downmix (or anything else) was silently inserted.
-    CHECK (controller.getGraph().getNodes().size() == nodesBefore);
+    REQUIRE (result.success);
+    CHECK (controller.getGraph().getNodes().size() == nodesBefore + 1); // exactly one mix.downmix inserted
+
+    const auto& nodes = controller.getGraph().getNodes();
+    const auto downmixIt = std::find_if (nodes.begin(), nodes.end(), [] (const auto& n) { return n.type == "mix.downmix"; });
+    REQUIRE (downmixIt != nodes.end());
+
+    const auto& connections = controller.getGraph().getConnections();
+    const auto feedsDownmixIn = std::any_of (connections.begin(), connections.end(), [&] (const auto& c)
+    {
+        return c.fromNodeId == "stereoSrc" && c.fromPortId == "out" && c.toNodeId == downmixIt->id && c.toPortId == "in";
+    });
+    const auto downmixFeedsAmp = std::any_of (connections.begin(), connections.end(), [&] (const auto& c)
+    {
+        return c.fromNodeId == downmixIt->id && c.fromPortId == "out" && c.toNodeId == "amp" && c.toPortId == "audio";
+    });
+    CHECK (feedsDownmixIn);
+    CHECK (downmixFeedsAmp);
 }

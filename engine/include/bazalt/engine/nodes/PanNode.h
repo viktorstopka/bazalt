@@ -7,14 +7,19 @@
 namespace bazalt::engine::nodes
 {
     /** Stable type id: "space.pan" (NODE_CATALOG.md's `space.*` row). Mono
-        in, stereo out — `left`/`right` named ports, not
-        `PortDescriptor::channels = Channels::Stereo` (see ADR-0023's
-        Amendment (M22), which settles this exact question for the whole
-        catalog, not just this node: that field exists and is wired into
-        `canConnect`, but no real node produces actual multi-sample-per-frame
-        audio through it, and every stereo entry in NODE_CATALOG.md — this
-        one, `space.width`, `space.reverb`, `resonator.plate`,
-        `sampler.granular` — is already written with `left`/`right` pairs).
+        in, stereo out — a real `Channels::Stereo` output port, one cable.
+
+        Real stereo cable redesign (superseding ADR-0023's Amendment (M22),
+        which originally chose `left`/`right` named ports over this field —
+        see `wiki/NODES.System.md` §9 for the full story): `getOutputPorts()`
+        now declares ONE `out` descriptor instead of two, but
+        `processSample()` is byte-for-byte unchanged — `outputs[0]`/
+        `outputs[1]` were always the left/right flat positions, and still
+        are; only how many *descriptors* the graph/UI see changed.
+        `getNumOutputChannels()` must be overridden (see `Node.h`'s own
+        comment) since the default would otherwise report 1 (one
+        descriptor), not the 2 real flat channels `processBlock`'s scratch
+        loop needs to actually reach the right channel.
 
         **`law`** (structural, default `constantPower` — the catalog names
         four options but gives no default): at pan=0 (centre),
@@ -41,13 +46,14 @@ namespace bazalt::engine::nodes
     class PanNode : public Node
     {
     public:
-        static constexpr int numInputs = 3; // in, pan, width
-        static constexpr int numOutputs = 2; // left, right
+        static constexpr int numInputs = 3;  // in, pan, width
+        static constexpr int numOutputs = 1; // out (Stereo — 2 flat channels)
 
         enum class Law { Linear, Minus3dB, Minus4_5dB, ConstantPower };
 
         int getNumInputPorts() const noexcept override { return numInputs; }
         int getNumOutputPorts() const noexcept override { return numOutputs; }
+        int getNumOutputChannels() const noexcept override { return 2; }
 
         juce::String getTitle() const override { return "Pan"; }
         juce::String getCategory() const override { return "Space"; }
@@ -68,15 +74,8 @@ namespace bazalt::engine::nodes
 
         std::vector<PortDescriptor> getOutputPorts() const override
         {
-            // Milestone 0.2 (wiki/NODES.System.md §9): `channels = Stereo`
-            // on both, in this declared order, is what GraphCompiler.cpp's
-            // "Final output" resolution and the UI's stereo-pair grouping
-            // read to treat "left" immediately followed by "right" as one
-            // paired signal — a metadata-only addition, the ids/behaviour
-            // are exactly what shipped before this milestone.
             return {
-                PortDescriptor { .id = "left", .type = SignalType::Audio, .label = "Left", .isPrimaryOutput = true, .channels = Channels::Stereo },
-                PortDescriptor { .id = "right", .type = SignalType::Audio, .label = "Right", .channels = Channels::Stereo },
+                PortDescriptor { .id = "out", .type = SignalType::Audio, .label = "Out", .isPrimaryOutput = true, .channels = Channels::Stereo },
             };
         }
 

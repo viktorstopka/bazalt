@@ -66,9 +66,26 @@ folder was renamed `archive_docs/` and is historical reference only.
 
 3. **Node type IDs, parameter IDs, and port IDs are hand-assigned strings**
    (e.g. `"osc.analog"`, `"filter.svf.cutoff"`), never array indices or enum
-   values, and **never renamed once shipped**. This is what lets old patches
-   survive refactors. Silently violating it is the single most expensive
-   mistake to make early.
+   values. In steady state this also means **never renamed once shipped** —
+   that's what lets old patches survive refactors, and would be the single
+   most expensive mistake to make early once it matters.
+
+   **This "never renamed" half is SUSPENDED as of 2026-09-28, on the user's
+   own explicit instruction, not a Claude decision.** Their reasoning,
+   verbatim: "This rule only makes sense when we are actually building
+   patches and stuff. There is a loooong way to go before that, so right now
+   it is just annoying." Nothing real depends on today's port/node/parameter
+   ids yet — no distributed patches, no saved user work at stake. While
+   suspended: rename a port/node/parameter id freely when it's the right
+   call, same as any other identifier in the codebase — no migration
+   required, just bump `PatchDocument::currentSchemaVersion` for hygiene if
+   the shape changed. **Re-enable trigger, watch for this and raise it
+   proactively rather than staying silently suspended forever**: once real
+   patches exist that the user (or anyone else) is actually saving and
+   relying on — i.e. once patch save/load is a genuine workflow, not just
+   test fixtures and this session's own throwaway graphs. The moment that's
+   true, this note should be deleted and the rule goes back to being
+   unconditional.
 
 4. **`engine/` never depends on `juce_audio_processors`, `juce_gui_basics`,
    or anything plugin/UI-shaped** — only `juce_core`, `juce_audio_basics`,

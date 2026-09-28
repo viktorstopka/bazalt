@@ -708,12 +708,11 @@ namespace bazalt
     void BazaltAudioProcessor::finalizeInstanceMixIntoOutput (juce::AudioBuffer<float>& output, int numSamples) noexcept
     {
         const float* finalMono = instanceMixScratchBuffer.getReadPointer (0);
-        // Milestone 0.2 (wiki/NODES.System.md §9): set below only when the
-        // plan that actually reaches the speakers resolved a real second
-        // (right) channel for its designated output — every graph that
-        // doesn't (every graph that existed before this milestone) leaves
-        // this null, and the mono-duplicate path at the bottom is
-        // unchanged, byte for byte.
+        // Real stereo cable redesign (wiki/NODES.System.md §9): set below
+        // only when the plan that actually reaches the speakers resolved a
+        // real second (right) channel for its designated output — a graph
+        // whose output stays plain Mono leaves this null, and the mono-
+        // duplicate path at the bottom is unchanged, byte for byte.
         const float* finalRight = nullptr;
 
         if (! monoRenderedThisBlock && hasGlobalDomain.load (std::memory_order_acquire))

@@ -207,6 +207,87 @@ namespace
         int capturedCount = 0;
     };
 
+    // Real stereo cable redesign: a synthetic pair proving GraphCompiler's
+    // flat-slot allocation directly, before any real node relies on it.
+    // Outputs one real `Channels::Stereo` port with independently-settable
+    // left/right constants.
+    class StereoConstantNode : public Node
+    {
+    public:
+        int getNumInputPorts() const noexcept override { return 0; }
+        int getNumOutputPorts() const noexcept override { return 1; }
+        int getNumOutputChannels() const noexcept override { return 2; } // the one descriptor is Stereo
+        std::vector<PortDescriptor> getOutputPorts() const override
+        {
+            return { PortDescriptor { .id = "out", .type = SignalType::Audio, .isPrimaryOutput = true, .channels = Channels::Stereo } };
+        }
+
+        void setParameter (const juce::String& id, float value) override
+        {
+            if (id == "left")
+                leftValue = value;
+            else if (id == "right")
+                rightValue = value;
+        }
+
+        void processSample (const float*, float* outputs) noexcept override
+        {
+            outputs[0] = leftValue;
+            outputs[1] = rightValue;
+        }
+
+    private:
+        float leftValue = 0.0f;
+        float rightValue = 0.0f;
+    };
+
+    // Trivial stereo passthrough — one Stereo `in`, one Stereo `out`, exactly
+    // the "twin flat slots" shape a real node like PanNode/OutputNode uses.
+    class StereoPassthroughNode : public Node
+    {
+    public:
+        int getNumInputPorts() const noexcept override { return 1; }
+        int getNumOutputPorts() const noexcept override { return 1; }
+        int getNumInputChannels() const noexcept override { return 2; }
+        int getNumOutputChannels() const noexcept override { return 2; }
+        std::vector<PortDescriptor> getInputPorts() const override
+        {
+            return { PortDescriptor { .id = "in", .type = SignalType::Audio, .channels = Channels::Stereo } };
+        }
+        std::vector<PortDescriptor> getOutputPorts() const override
+        {
+            return { PortDescriptor { .id = "out", .type = SignalType::Audio, .isPrimaryOutput = true, .channels = Channels::Stereo } };
+        }
+
+        void processSample (const float* inputs, float* outputs) noexcept override
+        {
+            outputs[0] = inputs[0];
+            outputs[1] = inputs[1];
+        }
+    };
+
+    // 17 Stereo-marked input descriptors = 34 flat channels, but only 17
+    // descriptors — well under maxPortsPerNode (32) by descriptor count, but
+    // over it by flat-channel count. Proves the compile-time channel-count
+    // check counts flat channels, not descriptors (a check that compared
+    // descriptor count alone would have wrongly let this node through, a
+    // real scratch-array overrun at runtime once Stereo counts as two).
+    class TooManyStereoChannelsNode : public Node
+    {
+    public:
+        int getNumInputPorts() const noexcept override { return 17; }
+        int getNumOutputPorts() const noexcept override { return 1; }
+        std::vector<PortDescriptor> getInputPorts() const override
+        {
+            std::vector<PortDescriptor> ports;
+            for (int i = 0; i < 17; ++i)
+                ports.push_back (PortDescriptor { .id = "in" + juce::String (i), .type = SignalType::Audio, .channels = Channels::Stereo });
+            return ports;
+        }
+        std::vector<PortDescriptor> getOutputPorts() const override { return { { "out", SignalType::Audio } }; }
+        void processSample (const float*, float* outputs) noexcept override { outputs[0] = 0.0f; }
+    };
+
     NodeFactory buildTestFactory()
     {
         NodeFactory factory;
@@ -221,6 +302,9 @@ namespace
         factory.registerType ("test.counter", [] { return std::make_unique<CounterNode>(); });
         factory.registerType ("test.noteProducerWithAudioLoop", [] { return std::make_unique<NoteProducerWithAudioLoopNode>(); });
         factory.registerType ("test.noteSink", [] { return std::make_unique<NoteSinkNode>(); });
+        factory.registerType ("test.stereoConstant", [] { return std::make_unique<StereoConstantNode>(); });
+        factory.registerType ("test.stereoPassthrough", [] { return std::make_unique<StereoPassthroughNode>(); });
+        factory.registerType ("test.tooManyStereoChannels", [] { return std::make_unique<TooManyStereoChannelsNode>(); });
         return factory;
     }
 }
@@ -597,4 +681,108 @@ TEST_CASE ("A recompile never reuses a Reroute, so it can't keep a stale type af
     const auto& secondNode = second.plan.nodes[(size_t) second.plan.nodeIdToSlot.at ("rr")];
     CHECK (secondNode != first.plan.nodes[(size_t) first.plan.nodeIdToSlot.at ("rr")]);
     CHECK (secondNode->getInputPorts()[0].type == SignalType::Audio);
+}
+
+// ---- Real stereo cable redesign: flat-slot allocation, proven against
+// synthetic node types before any real node relies on it ----
+
+TEST_CASE ("A Stereo port occupies two flat buffer slots, resolved pairwise from another Stereo source",
+           "[engine][GraphCompiler][Stereo]")
+{
+    NodeGraph graph;
+    graph.addNode ({ "src", "test.stereoConstant", {}, { { "left", 3.0f }, { "right", 7.0f } }, {} });
+    graph.setOutput ("src", "out");
+
+    auto factory = buildTestFactory();
+    auto result = GraphCompiler::compile (graph, factory, { 44100.0, 64 }, 1);
+    REQUIRE (result.success);
+
+    // The Stereo output allocated TWO buffers, not one - and the final
+    // output resolution found both without any extra "is it wired" guard
+    // (this graph never even connects "out" to anything else).
+    REQUIRE (result.plan.finalOutputBufferIndex >= 0);
+    REQUIRE (result.plan.finalOutputBufferIndexRight >= 0);
+    CHECK (result.plan.finalOutputBufferIndex != result.plan.finalOutputBufferIndexRight);
+
+    result.plan.process (4);
+    const auto* left = result.plan.blockBuffers[(size_t) result.plan.finalOutputBufferIndex].getBlock().getChannelPointer (0);
+    const auto* right = result.plan.blockBuffers[(size_t) result.plan.finalOutputBufferIndexRight].getBlock().getChannelPointer (0);
+
+    for (int i = 0; i < 4; ++i)
+    {
+        CHECK (left[i] == 3.0f);
+        CHECK (right[i] == 7.0f);
+    }
+}
+
+TEST_CASE ("A Stereo destination fed by a Mono source broadcasts the same buffer to both channels",
+           "[engine][GraphCompiler][Stereo]")
+{
+    // canConnect's existing mono->stereo rule (CanConnect.cpp) is free -
+    // this proves the compiler actually backs it with a real second buffer,
+    // not just permitting the connection.
+    NodeGraph graph;
+    graph.addNode ({ "src", "test.constant", {}, { { "value", 5.0f } }, {} });
+    graph.addNode ({ "pass", "test.stereoPassthrough", {}, {}, {} });
+    graph.addConnection ({ "src", "out", "pass", "in" });
+    graph.setOutput ("pass", "out");
+
+    auto factory = buildTestFactory();
+    auto result = GraphCompiler::compile (graph, factory, { 44100.0, 64 }, 1);
+    REQUIRE (result.success);
+    REQUIRE (result.plan.finalOutputBufferIndexRight >= 0);
+
+    result.plan.process (4);
+    const auto* left = result.plan.blockBuffers[(size_t) result.plan.finalOutputBufferIndex].getBlock().getChannelPointer (0);
+    const auto* right = result.plan.blockBuffers[(size_t) result.plan.finalOutputBufferIndexRight].getBlock().getChannelPointer (0);
+
+    for (int i = 0; i < 4; ++i)
+    {
+        CHECK (left[i] == 5.0f);
+        CHECK (right[i] == 5.0f); // broadcast, not silence - the same mono source reaches both channels
+    }
+}
+
+TEST_CASE ("Chaining two Stereo nodes keeps left and right independent all the way through",
+           "[engine][GraphCompiler][Stereo]")
+{
+    NodeGraph graph;
+    graph.addNode ({ "src", "test.stereoConstant", {}, { { "left", 1.0f }, { "right", 2.0f } }, {} });
+    graph.addNode ({ "pass", "test.stereoPassthrough", {}, {}, {} });
+    graph.addConnection ({ "src", "out", "pass", "in" });
+    graph.setOutput ("pass", "out");
+
+    auto factory = buildTestFactory();
+    auto result = GraphCompiler::compile (graph, factory, { 44100.0, 64 }, 1);
+    REQUIRE (result.success);
+    REQUIRE (result.plan.finalOutputBufferIndexRight >= 0);
+
+    result.plan.process (4);
+    const auto* left = result.plan.blockBuffers[(size_t) result.plan.finalOutputBufferIndex].getBlock().getChannelPointer (0);
+    const auto* right = result.plan.blockBuffers[(size_t) result.plan.finalOutputBufferIndexRight].getBlock().getChannelPointer (0);
+
+    for (int i = 0; i < 4; ++i)
+    {
+        CHECK (left[i] == 1.0f);
+        CHECK (right[i] == 2.0f);
+    }
+}
+
+TEST_CASE ("A node declaring more flat channels than maxPortsPerNode is rejected, even with few descriptors",
+           "[engine][GraphCompiler][Stereo]")
+{
+    // A real regression this redesign had to guard against: the OLD check
+    // compared DESCRIPTOR count to maxPortsPerNode. 17 Stereo descriptors is
+    // well under 32 by descriptor count, but 34 flat channels - over the
+    // limit ExecutionPlan::process()'s scratch arrays are actually sized
+    // for. The old check would have silently passed this and let it
+    // overrun those arrays at runtime; the fixed check counts flat channels.
+    NodeGraph graph;
+    graph.addNode ({ "n", "test.tooManyStereoChannels", {}, {}, {} });
+    graph.setOutput ("n", "out");
+
+    auto factory = buildTestFactory();
+    auto result = GraphCompiler::compile (graph, factory, { 44100.0, 64 }, 1);
+    REQUIRE_FALSE (result.success);
+    CHECK (result.errorMessage.isNotEmpty());
 }

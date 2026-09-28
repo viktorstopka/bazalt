@@ -7,17 +7,14 @@
 namespace bazalt::engine::nodes
 {
     /** Stable type id: "space.width" (NODE_CATALOG.md's `space.*` row).
-        Stereo in, stereo out — `left`/`right`-style named ports, matching
-        `DownmixNode`'s existing precedent and ADR-0023's Amendment (M22)
-        (see `PanNode.h`'s own comment for the full reasoning).
-
-        **Input port ids are `in.left`/`in.right`, not `left`/`right`** —
-        this node is the one place in the catalogue with a stereo pair on
-        BOTH sides, and a port id must be unique across a node's inputs and
-        outputs (`findTappableBufferIndex()`/tap naming identify a port by
-        id alone, asserted for every registered type by a test). Outputs
-        keep the plain `left`/`right` `PanNode.h` and the rest of the
-        catalogue's stereo entries use.
+        Stereo in, stereo out — one real `Channels::Stereo` port each side
+        (real stereo cable redesign — see `PanNode.h`'s own comment and
+        `wiki/NODES.System.md` §9 for the full reasoning). `processSample()`
+        is byte-for-byte unchanged: `inputs[0]`/`inputs[1]` and
+        `outputs[0]`/`outputs[1]` were always the left/right flat positions.
+        `getNumInputChannels()`/`getNumOutputChannels()` must be overridden
+        (see `Node.h`'s own comment) since the default would otherwise
+        report descriptor counts, not real flat-channel counts.
 
         **`width`**: the same equal-power mid/side cross-mix `space.pan`
         applies to its own already-panned pair — `width=1` is a true no-op,
@@ -37,8 +34,8 @@ namespace bazalt::engine::nodes
     {
     public:
         static constexpr float defaultBassMonoBelowHz = 120.0f;
-        static constexpr int numInputs = 4; // in.left, in.right, width, bassMonoBelow
-        static constexpr int numOutputs = 2; // left, right
+        static constexpr int numInputs = 3;  // in (Stereo), width, bassMonoBelow
+        static constexpr int numOutputs = 1; // out (Stereo)
 
         void prepare (const NodePrepareInfo& info) override { sampleRate = info.sampleRate; }
 
@@ -50,20 +47,16 @@ namespace bazalt::engine::nodes
 
         int getNumInputPorts() const noexcept override { return numInputs; }
         int getNumOutputPorts() const noexcept override { return numOutputs; }
+        int getNumInputChannels() const noexcept override { return 4; }  // in(2) + width(1) + bassMonoBelow(1)
+        int getNumOutputChannels() const noexcept override { return 2; }
 
         juce::String getTitle() const override { return "Width"; }
         juce::String getCategory() const override { return "Space"; }
 
         std::vector<PortDescriptor> getInputPorts() const override
         {
-            // Milestone 0.2 (wiki/NODES.System.md §9): `channels = Stereo` on
-            // both audio inputs, in this declared order — a metadata-only
-            // addition (see PanNode.h's own comment for the full reasoning);
-            // the ids/behaviour are exactly what shipped before this
-            // milestone.
             return {
-                PortDescriptor { .id = "in.left", .type = SignalType::Audio, .channels = Channels::Stereo },
-                PortDescriptor { .id = "in.right", .type = SignalType::Audio, .channels = Channels::Stereo },
+                PortDescriptor { .id = "in", .type = SignalType::Audio, .channels = Channels::Stereo },
                 PortDescriptor { .id = "space.width.width", .type = SignalType::Control, .label = "Width",
                                   .minValue = 0.0f, .maxValue = 2.0f, .defaultValue = 1.0f,
                                   .hasFallbackWhenUnconnected = true, .quantity = Quantity::Unipolar },
@@ -76,10 +69,8 @@ namespace bazalt::engine::nodes
 
         std::vector<PortDescriptor> getOutputPorts() const override
         {
-            // Milestone 0.2: same Stereo-channel marking as the inputs above.
             return {
-                PortDescriptor { .id = "left", .type = SignalType::Audio, .label = "Left", .isPrimaryOutput = true, .channels = Channels::Stereo },
-                PortDescriptor { .id = "right", .type = SignalType::Audio, .label = "Right", .channels = Channels::Stereo },
+                PortDescriptor { .id = "out", .type = SignalType::Audio, .label = "Out", .isPrimaryOutput = true, .channels = Channels::Stereo },
             };
         }
 

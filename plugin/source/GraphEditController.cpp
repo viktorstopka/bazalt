@@ -241,18 +241,15 @@ namespace bazalt
 
         // NeedsAdapters. A 1- or 2-step, single-input chain can be spliced
         // in generically (adapt.map/adapt.normalise/adapt.threshold/
-        // adapt.remap today; ADR-0019's later waves — Envelope Follower,
-        // Sample & Hold, Note gate/value — may need the 2-step path this
-        // loop already supports); mix.downmix's 2-in-1-out channels case is
-        // flagged but not auto-inserted (CanConnect.cpp's own comment
-        // explains why). Every step is a real, ordinary, visible node added
-        // to the graph below — never a hidden/implicit conversion inside
-        // the wire itself (ADR-0019's whole premise).
+        // adapt.remap, and — since the real stereo cable redesign made it a
+        // genuine 1-in-1-out node — mix.downmix too now; ADR-0019's later
+        // waves — Envelope Follower, Sample & Hold, Note gate/value — may
+        // need the 2-step path this loop already supports). Every step is a
+        // real, ordinary, visible node added to the graph below — never a
+        // hidden/implicit conversion inside the wire itself (ADR-0019's
+        // whole premise).
         if (connectivity.adapterChain.empty() || connectivity.adapterChain.size() > 2)
             return { false, "No auto-insertable adapter for this connection: " + connectivity.reason };
-
-        if (connectivity.adapterChain.front().typeId == "mix.downmix")
-            return { false, connectivity.reason };
 
         const auto numSteps = (int) connectivity.adapterChain.size();
 

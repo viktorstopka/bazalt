@@ -42,6 +42,46 @@ namespace bazalt::engine
         };
 
         //==============================================================================
+        // Real stereo cable redesign: a single Audio port marked
+        // `Channels::Stereo` occupies TWO consecutive "flat" buffer/scalar
+        // slots instead of one — everything else (Note/Control/Boolean/
+        // Event/Data ports, and every Mono/Inherited Audio port) still
+        // occupies exactly one, unchanged. `Node::processSample`/
+        // `processBlock`'s flat `inputs`/`outputs` arrays are addressed by
+        // this same flat index, so a node that declares a stereo port simply
+        // reads/writes two adjacent array slots for it — no interface change
+        // needed (`ExecutionPlan::process()` already iterates however many
+        // entries GraphCompiler put in `BlockStep::inputs`/
+        // `outputBufferIndices`, never `node->getNumInputPorts()` directly).
+        int channelCountOf (const PortDescriptor& port) noexcept
+        {
+            return (port.type == SignalType::Audio && port.channels == Channels::Stereo) ? 2 : 1;
+        }
+
+        // One entry per descriptor: the flat index its first channel starts
+        // at (its second channel, if any, is always startIndex+1 — declared
+        // stereo ports are never split apart from each other).
+        std::vector<int> computeFlatStarts (const std::vector<PortDescriptor>& ports)
+        {
+            std::vector<int> starts (ports.size());
+            int running = 0;
+            for (size_t i = 0; i < ports.size(); ++i)
+            {
+                starts[i] = running;
+                running += channelCountOf (ports[i]);
+            }
+            return starts;
+        }
+
+        int totalFlatCount (const std::vector<PortDescriptor>& ports)
+        {
+            int total = 0;
+            for (const auto& p : ports)
+                total += channelCountOf (p);
+            return total;
+        }
+
+        //==============================================================================
         // Tarjan's SCC algorithm on the node-level dependency graph
         // (successors[v] = nodes v directly feeds). Emits SCCs in reverse
         // topological order relative to data flow; caller reverses.
@@ -209,14 +249,20 @@ namespace bazalt::engine
         plan.nodes.reserve ((size_t) numNodes);
         std::vector<PortIdIndex> portIdIndexBySlot ((size_t) numNodes);
         // Captured alongside portIdIndexBySlot, before each node is moved
-        // into plan.nodes — resolveInput() (below) reads each unconnected
-        // input's own PortDescriptor to decide Silence vs. its
+        // into plan.nodes — resolveInputChannel() (below) reads each
+        // unconnected input's own PortDescriptor to decide Silence vs. its
         // hasFallbackWhenUnconnected NaN-sentinel behaviour.
         std::vector<std::vector<PortDescriptor>> inputPortsBySlot ((size_t) numNodes);
         // Captured alongside inputPortsBySlot, for the same reason:
         // canConnect() (below) needs each connection's actual FROM port
         // descriptor, not just its resolved index.
         std::vector<std::vector<PortDescriptor>> outputPortsBySlot ((size_t) numNodes);
+        // Real stereo cable redesign: one flat-slot start index per
+        // descriptor, computed from inputPortsBySlot/outputPortsBySlot —
+        // always kept in sync with them (recomputed anywhere those change,
+        // including inside the polymorphic-port resolution loop below).
+        std::vector<std::vector<int>> flatStartForInputBySlot ((size_t) numNodes);
+        std::vector<std::vector<int>> flatStartForOutputBySlot ((size_t) numNodes);
 
         // Every input port ID each node is connected to, indexed once here so
         // growable-group sizing (PortGroups.h) doesn't rescan the whole
@@ -324,16 +370,20 @@ namespace bazalt::engine
             portIdIndexBySlot[(size_t) slot] = buildPortIdIndex (*node);
             inputPortsBySlot[(size_t) slot] = node->getInputPorts();
             outputPortsBySlot[(size_t) slot] = node->getOutputPorts();
+            flatStartForInputBySlot[(size_t) slot] = computeFlatStarts (inputPortsBySlot[(size_t) slot]);
+            flatStartForOutputBySlot[(size_t) slot] = computeFlatStarts (outputPortsBySlot[(size_t) slot]);
 
             // ExecutionPlan::process()'s per-step scratch arrays hold exactly
-            // maxPortsPerNode entries; a node declaring more would be a stack
-            // overrun (undefined behaviour in a release build, where the
-            // jassert there compiles out) — so it's a compile error here.
-            if ((int) inputPortsBySlot[(size_t) slot].size() > ExecutionPlan::maxPortsPerNode
-                || (int) outputPortsBySlot[(size_t) slot].size() > ExecutionPlan::maxPortsPerNode)
+            // maxPortsPerNode entries, indexed by FLAT channel slot (a
+            // Channels::Stereo port occupies two) — a node whose total
+            // channel count exceeds that would be a stack overrun (undefined
+            // behaviour in a release build, where the jassert there compiles
+            // out) — so it's a compile error here.
+            if (totalFlatCount (inputPortsBySlot[(size_t) slot]) > ExecutionPlan::maxPortsPerNode
+                || totalFlatCount (outputPortsBySlot[(size_t) slot]) > ExecutionPlan::maxPortsPerNode)
             {
                 result.errorMessage = "Node '" + instance.id + "' declares more than "
-                                       + juce::String (ExecutionPlan::maxPortsPerNode) + " input or output ports";
+                                       + juce::String (ExecutionPlan::maxPortsPerNode) + " input or output channels";
                 return result;
             }
             plan.nodeIdToSlot[instance.id] = slot;
@@ -398,6 +448,8 @@ namespace bazalt::engine
                     inputPortsBySlot[(size_t) toIt->second] = std::move (inputsNow);
                     outputPortsBySlot[(size_t) toIt->second] = std::move (outputsNow);
                     portIdIndexBySlot[(size_t) toIt->second] = buildPortIdIndex (*toNode);
+                    flatStartForInputBySlot[(size_t) toIt->second] = computeFlatStarts (inputPortsBySlot[(size_t) toIt->second]);
+                    flatStartForOutputBySlot[(size_t) toIt->second] = computeFlatStarts (outputPortsBySlot[(size_t) toIt->second]);
                     anyChanged = true;
                 }
             }
@@ -407,7 +459,15 @@ namespace bazalt::engine
         }
 
         // ---- Resolve connections to slot/port indices --------------------
-        std::unordered_map<PortKey, PortKey, PortKeyHash> incomingSource; // (toSlot,toPort) -> (fromSlot,fromPort)
+        // incomingSource maps (toSlot, toDESCRIPTOR-index) -> one PortKey per
+        // destination CHANNEL, each a (fromSlot, fromFLAT-index) pair. For an
+        // ordinary Mono->Mono connection this is a single-element vector,
+        // same as every connection before this redesign. For Mono->Stereo
+        // (free broadcast, canConnect's existing rule) both destination
+        // channels point at the SAME source flat slot. For Stereo->Stereo
+        // they're bound pairwise. Stereo->Mono never reaches here — canConnect
+        // already rejects it (NeedsAdapters via mix.downmix).
+        std::unordered_map<PortKey, std::vector<PortKey>, PortKeyHash> incomingSource;
         std::vector<std::vector<int>> successors ((size_t) numNodes);
         std::vector<std::unordered_set<int>> successorSet ((size_t) numNodes); // for dedup
         std::vector<NoteConnection> noteConnections; // M18 (ADR-0024)
@@ -471,8 +531,11 @@ namespace bazalt::engine
             // M18 (ADR-0024): a Note-typed connection still participates in
             // ordinary successors/SCC scheduling (so the producer is
             // guaranteed to run before the consumer, same as any other
-            // edge) but is routed around incomingSource/resolveInput
-            // entirely — ExecutionPlan::noteBuffers carries it instead.
+            // edge) but is routed around incomingSource/resolveInputChannel
+            // entirely — ExecutionPlan::noteBuffers carries it instead. A
+            // Note port's channel count is always 1 (channelCountOf only
+            // doubles an Audio port), so its descriptor index and flat index
+            // are always the same — no conversion needed here.
             if (fromPort.type == SignalType::Note)
             {
                 if (noteInputsUsed.find (toKey) != noteInputsUsed.end())
@@ -498,7 +561,23 @@ namespace bazalt::engine
                 return result;
             }
 
-            incomingSource[toKey] = { fromIt->second, fromPortIt->second };
+            const auto fromChannels = channelCountOf (fromPort);
+            const auto toChannels = channelCountOf (toPort);
+            const auto fromFlatStart = flatStartForOutputBySlot[(size_t) fromIt->second][(size_t) fromPortIt->second];
+
+            std::vector<PortKey> sources;
+            sources.reserve ((size_t) toChannels);
+            for (int c = 0; c < toChannels; ++c)
+            {
+                // Mono source into a Stereo destination (canConnect's free-
+                // broadcast rule): every destination channel reads the same
+                // single source flat slot. Otherwise (Mono->Mono, or
+                // Stereo->Stereo — Stereo->Mono is already rejected above)
+                // channels are bound one-to-one.
+                const auto channelOffset = (fromChannels == 1) ? 0 : c;
+                sources.push_back ({ fromIt->second, fromFlatStart + channelOffset });
+            }
+            incomingSource[toKey] = std::move (sources);
 
             if (successorSet[(size_t) fromIt->second].insert (toIt->second).second)
                 successors[(size_t) fromIt->second].push_back (toIt->second);
@@ -535,13 +614,17 @@ namespace bazalt::engine
         // ---- Strongly connected components -> schedule order -------------
         const auto sccs = computeStronglyConnectedComponents (numNodes, successors);
 
-        OutputLocationMap outputLocation;
+        OutputLocationMap outputLocation; // keyed by (slot, FLAT index)
         plan.maxBlockSize = prepareInfo.maxBlockSize;
         plan.generation = generation;
 
-        const auto resolveInput = [&] (int toSlot, int toPort) -> ExecutionPlan::InputRef
+        // Resolves ONE channel of ONE input descriptor. toDescriptor is a
+        // descriptor index (matching inputPortsBySlot's own indexing);
+        // channelIndex selects which of that descriptor's 1-or-2 flat
+        // channels (always 0 for a Mono port).
+        const auto resolveInputChannel = [&] (int toSlot, int toDescriptor, int channelIndex) -> ExecutionPlan::InputRef
         {
-            const auto it = incomingSource.find ({ toSlot, toPort });
+            const auto it = incomingSource.find ({ toSlot, toDescriptor });
             if (it == incomingSource.end())
             {
                 // hasFallbackWhenUnconnected ports (PortDescriptor.h) read a
@@ -554,9 +637,12 @@ namespace bazalt::engine
                 // adjustable via setParameter() after compilation. The node
                 // itself resolves NaN -> "use my own current value" every
                 // sample instead, which stays live no matter when
-                // setParameter() was last called.
+                // setParameter() was last called. No port with this flag is
+                // ever Stereo today, so this path is only ever reached with
+                // channelIndex == 0 in practice — written generically
+                // anyway, not hardcoded to that assumption.
                 const auto& inputPorts = inputPortsBySlot[(size_t) toSlot];
-                if (toPort < (int) inputPorts.size() && inputPorts[(size_t) toPort].hasFallbackWhenUnconnected)
+                if (toDescriptor < (int) inputPorts.size() && inputPorts[(size_t) toDescriptor].hasFallbackWhenUnconnected)
                 {
                     AlignedBuffer buffer;
                     buffer.resize (1, (size_t) prepareInfo.maxBlockSize);
@@ -567,7 +653,9 @@ namespace bazalt::engine
                 return { ExecutionPlan::InputRef::Kind::Silence, -1 };
             }
 
-            const auto locIt = outputLocation.find (it->second);
+            const auto& sources = it->second;
+            jassert (channelIndex < (int) sources.size());
+            const auto locIt = outputLocation.find (sources[(size_t) channelIndex]);
             jassert (locIt != outputLocation.end()); // guaranteed by SCC topological scheduling order
             return locIt->second;
         };
@@ -583,23 +671,34 @@ namespace bazalt::engine
                 auto& node = plan.nodes[(size_t) slot];
                 const auto numOutputs = node->getNumOutputPorts();
                 const auto numInputs = node->getNumInputPorts();
+                const auto& inputDescs = inputPortsBySlot[(size_t) slot];
+                const auto& outputDescs = outputPortsBySlot[(size_t) slot];
+                const auto& outputFlatStarts = flatStartForOutputBySlot[(size_t) slot];
 
                 ExecutionPlan::BlockStep blockStep;
                 blockStep.nodeSlot = slot;
 
-                blockStep.inputs.reserve ((size_t) numInputs);
+                blockStep.inputs.reserve ((size_t) totalFlatCount (inputDescs));
                 for (int p = 0; p < numInputs; ++p)
-                    blockStep.inputs.push_back (resolveInput (slot, p));
+                {
+                    const auto channelCount = channelCountOf (inputDescs[(size_t) p]);
+                    for (int c = 0; c < channelCount; ++c)
+                        blockStep.inputs.push_back (resolveInputChannel (slot, p, c));
+                }
 
-                blockStep.outputBufferIndices.reserve ((size_t) numOutputs);
+                blockStep.outputBufferIndices.reserve ((size_t) totalFlatCount (outputDescs));
                 for (int p = 0; p < numOutputs; ++p)
                 {
-                    AlignedBuffer buffer;
-                    buffer.resize (1, (size_t) prepareInfo.maxBlockSize);
-                    plan.blockBuffers.push_back (std::move (buffer));
-                    const auto bufferIndex = (int) plan.blockBuffers.size() - 1;
-                    blockStep.outputBufferIndices.push_back (bufferIndex);
-                    outputLocation[{ slot, p }] = { ExecutionPlan::InputRef::Kind::BlockBuffer, bufferIndex };
+                    const auto channelCount = channelCountOf (outputDescs[(size_t) p]);
+                    for (int c = 0; c < channelCount; ++c)
+                    {
+                        AlignedBuffer buffer;
+                        buffer.resize (1, (size_t) prepareInfo.maxBlockSize);
+                        plan.blockBuffers.push_back (std::move (buffer));
+                        const auto bufferIndex = (int) plan.blockBuffers.size() - 1;
+                        blockStep.outputBufferIndices.push_back (bufferIndex);
+                        outputLocation[{ slot, outputFlatStarts[(size_t) p] + c }] = { ExecutionPlan::InputRef::Kind::BlockBuffer, bufferIndex };
+                    }
                 }
 
                 // docs/CLEANUP.md Priority 1 #1: resolve bypass here, once,
@@ -608,7 +707,12 @@ namespace bazalt::engine
                 // "Primary" output is the one flagged isPrimaryOutput, or
                 // output 0 if none is (matching NodeCard.tsx's own
                 // splitPorts() convention); "primary" input is always input
-                // 0, already resolved into blockStep.inputs[0] above.
+                // 0, already resolved into blockStep.inputs[0] above. For a
+                // Stereo primary output this copies only its first (left)
+                // flat channel — the same "channel 0 only" simplification
+                // this redesign already applies to tap/preview lookups; a
+                // bypassed stereo node's second channel is a known limit,
+                // not silently promised.
                 const auto& instanceProperties = graphNodes[(size_t) slot].properties;
                 const auto bypassedIt = instanceProperties.find ("bypassed");
                 if (bypassedIt != instanceProperties.end() && (bool) bypassedIt->second)
@@ -617,25 +721,26 @@ namespace bazalt::engine
 
                     if (numOutputs > 0)
                     {
-                        const auto& outputs = outputPortsBySlot[(size_t) slot];
                         auto primaryOutputPort = 0;
-                        for (int p = 0; p < (int) outputs.size(); ++p)
+                        for (int p = 0; p < (int) outputDescs.size(); ++p)
                         {
-                            if (outputs[(size_t) p].isPrimaryOutput)
+                            if (outputDescs[(size_t) p].isPrimaryOutput)
                             {
                                 primaryOutputPort = p;
                                 break;
                             }
                         }
 
-                        blockStep.bypassOutputBufferIndex = blockStep.outputBufferIndices[(size_t) primaryOutputPort];
+                        blockStep.bypassOutputBufferIndex = blockStep.outputBufferIndices[(size_t) outputFlatStarts[(size_t) primaryOutputPort]];
                     }
                 }
 
                 // M18 (ADR-0024): a connected Note-typed port routes through
                 // noteBuffers instead of the ordinary arrays just built
                 // above (that port's own `inputs`/blockBuffers entry, if it
-                // has one, is simply unused).
+                // has one, is simply unused). Descriptor index used directly
+                // — a Note port's flat index always equals its descriptor
+                // index (never doubled).
                 for (int p = 0; p < numInputs; ++p)
                 {
                     const auto it = noteInputBufferIndexFor.find ({ slot, p });
@@ -694,8 +799,12 @@ namespace bazalt::engine
             regionStep.nodeSlotsInOrder = internalOrder;
 
             // First pass: allocate a scalar for every region node's every
-            // output port, so resolveInput() can find region-internal
-            // producers regardless of position within the region.
+            // output CHANNEL (2 for a Stereo port), so resolveInputChannel()
+            // can find region-internal producers regardless of position
+            // within the region. No existing per-sample-region-capable node
+            // (every one of them predates this redesign) declares a Stereo
+            // port, so this is a byte-for-byte no-op for all of them today —
+            // written generically so a future one doesn't silently misbehave.
             std::unordered_map<int, int> positionOfSlot;
             for (int pos = 0; pos < (int) internalOrder.size(); ++pos)
                 positionOfSlot[internalOrder[(size_t) pos]] = pos;
@@ -707,13 +816,19 @@ namespace bazalt::engine
                 const auto slot = internalOrder[(size_t) pos];
                 auto& node = plan.nodes[(size_t) slot];
                 const auto numOutputs = node->getNumOutputPorts();
+                const auto& outputDescs = outputPortsBySlot[(size_t) slot];
+                const auto& outputFlatStarts = flatStartForOutputBySlot[(size_t) slot];
 
                 for (int p = 0; p < numOutputs; ++p)
                 {
-                    plan.regionScalars.push_back (0.0f);
-                    const auto scalarIndex = (int) plan.regionScalars.size() - 1;
-                    regionStep.outputScalarIndices[(size_t) pos].push_back (scalarIndex);
-                    outputLocation[{ slot, p }] = { ExecutionPlan::InputRef::Kind::RegionScalar, scalarIndex };
+                    const auto channelCount = channelCountOf (outputDescs[(size_t) p]);
+                    for (int c = 0; c < channelCount; ++c)
+                    {
+                        plan.regionScalars.push_back (0.0f);
+                        const auto scalarIndex = (int) plan.regionScalars.size() - 1;
+                        regionStep.outputScalarIndices[(size_t) pos].push_back (scalarIndex);
+                        outputLocation[{ slot, outputFlatStarts[(size_t) p] + c }] = { ExecutionPlan::InputRef::Kind::RegionScalar, scalarIndex };
+                    }
                 }
             }
 
@@ -726,22 +841,44 @@ namespace bazalt::engine
                 const auto slot = internalOrder[(size_t) pos];
                 auto& node = plan.nodes[(size_t) slot];
                 const auto numInputs = node->getNumInputPorts();
+                const auto& inputDescs = inputPortsBySlot[(size_t) slot];
 
                 for (int p = 0; p < numInputs; ++p)
-                    regionStep.inputsPerNode[(size_t) pos].push_back (resolveInput (slot, p));
+                {
+                    const auto channelCount = channelCountOf (inputDescs[(size_t) p]);
+                    for (int c = 0; c < channelCount; ++c)
+                        regionStep.inputsPerNode[(size_t) pos].push_back (resolveInputChannel (slot, p, c));
+                }
             }
 
             // Does anything outside the region (another node, or the
             // graph's own designated output) need this region's result?
+            // externalProducerPort is a FLAT index throughout. Only the
+            // first external consumption found is captured (arbitrary map
+            // iteration order) — the pre-existing limitation this redesign
+            // inherits unchanged; no per-sample-region-capable node is ever
+            // Stereo today, so a region can't actually have more than one
+            // channel to publish in practice.
             int externalProducerSlot = -1, externalProducerPort = -1;
 
-            for (const auto& [toKey, fromKey] : incomingSource)
-                if (inRegion.count (fromKey.slot) > 0 && inRegion.count (toKey.slot) == 0)
+            for (const auto& [toKey, fromRefs] : incomingSource)
+            {
+                if (inRegion.count (toKey.slot) > 0)
+                    continue; // consumer is itself inside the region
+
+                for (const auto& fromKey : fromRefs)
                 {
-                    externalProducerSlot = fromKey.slot;
-                    externalProducerPort = fromKey.port;
-                    break;
+                    if (inRegion.count (fromKey.slot) > 0)
+                    {
+                        externalProducerSlot = fromKey.slot;
+                        externalProducerPort = fromKey.port;
+                        break;
+                    }
                 }
+
+                if (externalProducerSlot != -1)
+                    break;
+            }
 
             if (externalProducerSlot == -1)
             {
@@ -753,7 +890,7 @@ namespace bazalt::engine
                     if (outPortIt != outPortsById.end())
                     {
                         externalProducerSlot = outSlotIt->second;
-                        externalProducerPort = outPortIt->second;
+                        externalProducerPort = flatStartForOutputBySlot[(size_t) outSlotIt->second][(size_t) outPortIt->second];
                     }
                 }
             }
@@ -800,7 +937,10 @@ namespace bazalt::engine
             return result;
         }
 
-        const auto outLocIt = outputLocation.find ({ outSlotIt->second, outPortIt->second });
+        const auto& finalOutputPorts = outputPortsBySlot[(size_t) outSlotIt->second];
+        const auto finalFlatStart = flatStartForOutputBySlot[(size_t) outSlotIt->second][(size_t) outPortIt->second];
+
+        const auto outLocIt = outputLocation.find ({ outSlotIt->second, finalFlatStart });
         if (outLocIt == outputLocation.end() || outLocIt->second.kind != ExecutionPlan::InputRef::Kind::BlockBuffer)
         {
             result.errorMessage = "Graph output port has no resolvable buffer";
@@ -809,73 +949,60 @@ namespace bazalt::engine
 
         plan.finalOutputBufferIndex = outLocIt->second.index;
 
-        // Milestone 0.2 (wiki/NODES.System.md §9): if the designated output
-        // port is the first of a stereo pair — itself Stereo-channeled, and
-        // immediately followed in the node's own declared port list by a
-        // second Stereo-channeled output — resolve that second channel's
-        // buffer too, but ONLY if the same node's corresponding right-
-        // channel INPUT is actually wired to something. This second check
-        // is load-bearing, not a nicety: every declared output allocates a
-        // real buffer unconditionally (see the per-node output loop above),
-        // so an unwired "right" input still produces a resolvable (silent)
-        // output buffer — treating that as "genuinely stereo" would silently
-        // send silence to the host's right channel for any graph (several
-        // already-shipped proof/test graphs included) that only ever wired
-        // the left/primary side, replacing the old, correct "duplicate left
-        // to both channels" fallback with a real regression. The rule is
-        // generic either way (declaration order + PortDescriptor::channels,
-        // nothing hardcoded to a literal port name), so it works for
-        // io.output exactly the same way it would for any future
-        // stereo-output node.
-        auto rightInputIsWired = false;
+        // Real stereo cable redesign: if the designated output port is
+        // itself a genuine 2-channel port (one real `Channels::Stereo`
+        // Audio port now, not a separate left/right port pair), its second
+        // flat channel ALWAYS has a real, resolvable buffer by construction
+        // — every flat channel is allocated unconditionally above, and
+        // canConnect's mono->stereo broadcast rule already guarantees a real
+        // value reaches both channels even when only a mono source feeds
+        // this port. No "is the right channel actually wired" guard is
+        // needed here — that guard existed only in the superseded Milestone
+        // 0.2 point-fix, where a stereo-shaped node still exposed its two
+        // channels as two SEPARATE, independently-(un)connectable ports.
+        if (channelCountOf (finalOutputPorts[(size_t) outPortIt->second]) == 2)
         {
-            const auto& finalNodeInputs = inputPortsBySlot[(size_t) outSlotIt->second];
-            for (int i = 0; i + 1 < (int) finalNodeInputs.size(); ++i)
-            {
-                if (finalNodeInputs[(size_t) i].channels == Channels::Stereo && finalNodeInputs[(size_t) (i + 1)].channels == Channels::Stereo)
-                {
-                    rightInputIsWired = incomingSource.find ({ outSlotIt->second, i + 1 }) != incomingSource.end();
-                    break;
-                }
-            }
-        }
-
-        const auto& finalOutputPorts = outputPortsBySlot[(size_t) outSlotIt->second];
-        if (rightInputIsWired
-            && outPortIt->second < (int) finalOutputPorts.size()
-            && finalOutputPorts[(size_t) outPortIt->second].channels == Channels::Stereo
-            && outPortIt->second + 1 < (int) finalOutputPorts.size()
-            && finalOutputPorts[(size_t) (outPortIt->second + 1)].channels == Channels::Stereo)
-        {
-            const auto rightLocIt = outputLocation.find ({ outSlotIt->second, outPortIt->second + 1 });
+            const auto rightLocIt = outputLocation.find ({ outSlotIt->second, finalFlatStart + 1 });
             if (rightLocIt != outputLocation.end() && rightLocIt->second.kind == ExecutionPlan::InputRef::Kind::BlockBuffer)
                 plan.finalOutputBufferIndexRight = rightLocIt->second.index;
         }
 
         plan.silenceBuffer.assign ((size_t) prepareInfo.maxBlockSize, 0.0f);
 
-        // M20: (nodeId, portId) -> blockBuffers index for every output that
-        // resolved to a real block buffer — see ExecutionPlan.h's own
-        // comment on why region-scalar-only outputs (never published
-        // externally) have no entry. outputLocation already holds the
-        // fully-resolved final state for every key at this point (nothing
-        // schedules after this).
-        for (const auto& [key, location] : outputLocation)
+        // M20: (nodeId, portId) -> blockBuffers index for every declared
+        // output port, reading its FIRST flat channel only (channel 0) — the
+        // same "honest MVP" scope this redesign uses for bypass, above: a
+        // stereo-aware scope/meter/tap is real future work, not silently
+        // promised. Iterated per (slot, descriptor) rather than over
+        // outputLocation's own keys directly, since those are now flat
+        // indices, not descriptor indices, and would otherwise report the
+        // wrong port id for any node after a Stereo one in its own list.
+        for (int slot = 0; slot < numNodes; ++slot)
         {
-            if (location.kind != ExecutionPlan::InputRef::Kind::BlockBuffer)
-                continue;
+            const auto& outputs = outputPortsBySlot[(size_t) slot];
+            const auto& outputStarts = flatStartForOutputBySlot[(size_t) slot];
+            const auto& nodeId = graphNodes[(size_t) slot].id;
 
-            const auto& nodeId = graphNodes[(size_t) key.slot].id;
-            const auto& portId = outputPortsBySlot[(size_t) key.slot][(size_t) key.port].id;
-            plan.outputBufferIndexByNodeAndPort[nodeId][portId] = location.index;
+            for (int p = 0; p < (int) outputs.size(); ++p)
+            {
+                const auto locIt = outputLocation.find ({ slot, outputStarts[(size_t) p] });
+                if (locIt == outputLocation.end() || locIt->second.kind != ExecutionPlan::InputRef::Kind::BlockBuffer)
+                    continue;
+
+                plan.outputBufferIndexByNodeAndPort[nodeId][outputs[(size_t) p].id] = locIt->second.index;
+            }
         }
 
-        // ADR-0029: the same for input ports - what is wired INTO (node, port).
-        // An input fed from a per-sample region's internal scalar has no block
-        // buffer to point at, exactly like the output case above.
-        for (const auto& [toKey, fromKey] : incomingSource)
+        // ADR-0029: the same for input ports — what is wired INTO (node,
+        // port), reading the first source channel only (see above). An input
+        // fed from a per-sample region's internal scalar has no block buffer
+        // to point at, exactly like the output case above.
+        for (const auto& [toKey, fromRefs] : incomingSource)
         {
-            const auto locationIt = outputLocation.find (fromKey);
+            if (fromRefs.empty())
+                continue;
+
+            const auto locationIt = outputLocation.find (fromRefs[0]);
             if (locationIt == outputLocation.end() || locationIt->second.kind != ExecutionPlan::InputRef::Kind::BlockBuffer)
                 continue;
 

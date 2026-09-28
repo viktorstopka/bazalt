@@ -225,24 +225,23 @@ per-input check"). Dropping a second cable onto an already-wired input is reject
 rather than replacing the old one. Not yet located to the exact UI drop-handler call
 site that would need to change to auto-disconnect first.
 
-### Stereo: Master Out was mono-only, no way to get a real stereo signal to the host — FIXED (Milestone 0.2)
-The concrete, user-visible half of this gap — `io.output` could only ever produce one
-mono buffer, duplicated to both physical output channels, with no way for a patch to
-send genuinely different signal to each — is fixed. `io.output` gained a real second
-channel (`right` input, `outRight` output, both `Channels::Stereo`-marked); the Init
-Patch now wires `space.pan`'s `left`/`right` outputs straight into it, so a fresh
-plugin instance opens playing real, audibly panned stereo, not a mono chain duplicated
-to both speakers. An unwired `right` input still duplicates left exactly as before —
-regression-tested, including a mutation-testing pass on the correctness-critical guard
-that prevents every pre-existing mono-only graph from silently losing its right
-channel. Two new bridge nodes, `stereo.split`/`stereo.combine`, cover independent
-per-channel wiring. Full detail and what was deliberately left out of scope (no
-`left`/`right`→one-cable reopening for `space.pan`/`space.width` themselves, no patch
-migration needed, the mono-only no-allocator render path unaffected) is in
-`wiki/NODES.System.md` §9 — the original 5-wave "twin flat slots, one cable
-everywhere" scoping from the initial pass is preserved there as §9-old for the record,
-superseded by this smaller, additive design once actual implementation showed the
-full reopening wasn't needed to close the real gap.
+### Stereo: `left`/`right` port pairs instead of one real cable — FIXED
+A stereo signal is one real Audio cable now, catalog-wide. `space.pan`/`space.width`/
+`io.output`/`mix.downmix`/`stereo.split`/`stereo.combine` each declare a real
+`Channels::Stereo` port instead of separate `left`/`right` ports — `GraphCompiler.cpp`
+backs `canConnect`'s already-existing mono/stereo rules with real per-channel buffers
+(a stereo port occupies two flat buffer slots, resolved by the compiler; node
+`processSample`/`processBlock` signatures didn't change). The Init Patch wires
+`space.pan`'s `out` straight into `io.output`'s `in` as one cable — a fresh plugin
+instance opens playing real, audibly panned stereo. A mono source into a stereo
+destination still duplicates/broadcasts exactly as before (canConnect's free
+mono→stereo rule, now real) — regression-tested, including a mutation-testing pass
+confirming the broadcast logic is load-bearing. `mix.downmix` becoming a genuine
+1-in-1-out node also closed a second, related gap: it's now auto-insertable by
+`connectWithAutoAdapt`, which used to refuse it outright. Full detail, including what's
+deliberately still out of scope (channel-0-only tap/preview lookups, no visually
+distinct stereo cable in the UI, no patch migration — CLAUDE.md rule 3 is suspended
+for now, see its own note), is in `wiki/NODES.System.md` §9.
 
 ### Reroute "not connectable"
 `util.reroute` (`RerouteNode.h`) reads correctly in isolation — real polymorphic

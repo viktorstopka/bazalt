@@ -77,7 +77,25 @@ namespace bazalt::engine
     */
     struct PatchDocument
     {
-        static constexpr int currentSchemaVersion = 4;
+        // Schema v5 (real stereo cable redesign, wiki/NODES.System.md §9):
+        // space.pan/space.width/io.output/mix.downmix/stereo.split/
+        // stereo.combine collapsed their left/right port pairs into real
+        // Channels::Stereo ports. No migration was written for this bump -
+        // CLAUDE.md rule 3 ("port ids never renamed once shipped") is
+        // suspended for now on the user's own explicit instruction (see
+        // that rule's own note): nothing real depends on the pre-v5 shape
+        // yet, no distributed patches, nothing saved that anyone relies on.
+        // The version number still bumps for hygiene - a marker in case a
+        // stray old file ever surfaces - but a v4 (or earlier) patch that
+        // actually reaches this version today has no dispatch-table entry
+        // and will fail to load rather than silently misinterpreting old
+        // port ids as new ones. If a real migration is ever needed later
+        // (once rule 3's suspension ends), PatchSerializer.cpp's
+        // migrateV3ToV4 is the template: walk nodes/connections as
+        // juce::var, insert a bridge node (stereo.combine/stereo.split) for
+        // a genuinely asymmetric old pair, retarget a matching pair
+        // straight onto the new single port.
+        static constexpr int currentSchemaVersion = 5;
 
         int schemaVersion = currentSchemaVersion;
         std::vector<NodeInstance> nodes;

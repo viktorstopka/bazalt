@@ -498,6 +498,28 @@ namespace bazalt::engine
             return root;
         }
 
+        // Schema v5 (real stereo cable redesign, PatchDocument.h's own
+        // comment on `currentSchemaVersion` has the full reasoning):
+        // space.pan/space.width/io.output/mix.downmix/stereo.split/
+        // stereo.combine collapsed their left/right port pairs into real
+        // Channels::Stereo ports. No node/connection rewriting here on
+        // purpose — CLAUDE.md rule 3 is suspended for now, and nothing real
+        // depends on the pre-v5 port ids. This is a version-number bump
+        // ONLY, kept as a real migration entry (not just a version check
+        // skipped elsewhere) so an old v1-v4 patch still PARSES successfully
+        // through the existing migration chain, exactly as before this
+        // redesign — a patch that happens to reference one of the six
+        // renamed nodes' old port ids fails later, at GraphCompiler::compile()
+        // time, with a clear "no such port" error naming the exact node -
+        // not silently misinterpreted, and not an opaque parse failure for
+        // every old patch regardless of whether it used a stereo node at all.
+        juce::var migrateV4ToV5 (juce::var v4Root)
+        {
+            auto root = v4Root.clone();
+            root.getDynamicObject()->setProperty ("schemaVersion", 5);
+            return root;
+        }
+
         // vN -> vN+1 migrations, keyed by the version they migrate FROM.
         using Migration = std::function<juce::var (juce::var)>;
 
@@ -507,6 +529,7 @@ namespace bazalt::engine
                 { 1, migrateV1ToV2 },
                 { 2, migrateV2ToV3 },
                 { 3, migrateV3ToV4 },
+                { 4, migrateV4ToV5 },
             };
             return migrations;
         }

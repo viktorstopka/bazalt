@@ -153,6 +153,26 @@ namespace bazalt::engine
         virtual int getNumInputPorts() const noexcept { return 0; }
         virtual int getNumOutputPorts() const noexcept { return 0; }
 
+        /** Real stereo cable redesign: how many FLAT channels
+            processSample()/the default processBlock() actually read/write —
+            one per port, except a `Channels::Stereo` Audio port, which is
+            two adjacent flat slots for exactly one descriptor. Defaults to
+            getNumInputPorts()/getNumOutputPorts() (identical for every node
+            with no Stereo port — the entire existing catalog, unaffected).
+            A node that declares a Stereo port MUST override both of these
+            with the real flat count (a plain hardcoded constant, same idiom
+            as this codebase's existing `numInputs`/`numOutputs` pattern) —
+            GraphCompiler.cpp itself never calls this (it reads the
+            descriptor list's own `.channels` field directly to compute flat
+            layout at compile time, message-thread only); this exists
+            specifically so the audio-thread-safe default processBlock()
+            below can loop the right number of scratch-array slots without
+            ever calling getInputPorts()/getOutputPorts() (which allocate —
+            forbidden on the audio thread, CLAUDE.md rule 2).
+        */
+        virtual int getNumInputChannels() const noexcept { return getNumInputPorts(); }
+        virtual int getNumOutputChannels() const noexcept { return getNumOutputPorts(); }
+
         virtual void setParameter (const juce::String& parameterId, float value)
         {
             juce::ignoreUnused (parameterId, value);
@@ -183,8 +203,8 @@ namespace bazalt::engine
             // not allocate. Bumped from 8 in M18 and to 32 in M21 — keep in sync
             // with ExecutionPlan.h's own maxPortsPerNode (see its comment).
             static constexpr int maxPortsPerNode = 32;
-            const auto numInputs = getNumInputPorts();
-            const auto numOutputs = getNumOutputPorts();
+            const auto numInputs = getNumInputChannels();
+            const auto numOutputs = getNumOutputChannels();
             jassert (numInputs <= maxPortsPerNode && numOutputs <= maxPortsPerNode);
 
             float inSample[maxPortsPerNode] {};
