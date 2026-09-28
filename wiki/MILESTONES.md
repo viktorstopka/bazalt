@@ -241,3 +241,150 @@ revert.
 Build + `ctest` green, `pluginval --strictness-level 10`, `cd ui && npm run build &&
 npm run lint` clean, build+launch the Standalone app to confirm by ear/eye (never
 browser testing). Commit each milestone once green, without asking.
+
+---
+
+# `09-28-InstanceAllocator` — a separate arc, its own numbering
+
+Not part of the `0.x` sequence above — a self-contained arc scoped from a real bug report
+(`wiki/reports/InstanceAllocator_2026-09-28.md` has the full reasoning, code citations, and
+alternatives considered for every milestone below; this is the plan, not a restatement of the
+report). Numbered by date + feature name rather than sequentially, since it's parallel to, not
+part of, the `0.x` arc's own progression. **None of the four milestones below are done yet** —
+written as the approved forward plan, same pattern the `0.x` arc itself used when it started.
+
+**The bug, precisely:** adding an `instance.allocator` node to a graph — even completely
+disconnected from anything — silently converts the *entire* graph from "always-on, runs every
+block" to "per-voice, only runs while a voice is triggered." `DomainSplitter::split()`'s own
+shortcut is the cause: when no `instance.mix` node exists, the whole graph becomes the "voice
+graph" unconditionally, with no check on whether the graph's designated output is actually
+reachable from the allocator.
+
+**Not needed to fix this:** the PhasePlant-style "a voice-triggered part and a separate always-on
+part, both audible at once" coexistence the user asked about is already fully supported today via
+`instance.mix` (already real, already tested — a voice chain and an independent global source both
+feeding one `mix.sum`, bridged only through `instance.mix`). What's actually broken is narrower:
+the *no-`instance.mix`* case, where an allocator's mere existence shouldn't matter to content it
+isn't wired to.
+
+## `09-28-InstanceAllocator.1` — the reachability fix
+
+**Root cause:** `DomainSplitter.cpp`'s `instanceMixCount == 0` branch sets `result.monoOnly =
+(instanceAllocatorCount == 0)` and always returns the *whole* graph as `voiceGraph` — never
+checking whether the graph's designated output is reachable from the allocator at all.
+
+**The fix:** when `instanceMixCount == 0` and `instanceAllocatorCount == 1`, compute forward
+reachability from the allocator's own node id using the file's own existing `reachableFollowing()`
+helper (already used elsewhere in the same file, just not in this branch, and not forward from an
+allocator yet), and set `monoOnly = (graph.getOutputNodeId() is NOT in that reachable set)`.
+Everything else in this branch — `voiceGraph = graph` unconditionally, `hasGlobalDomain = false` —
+stays exactly as today. No change to `DomainSplitResult`'s shape, `PluginProcessor.cpp`, or
+`GraphEditController.cpp` needed: a disconnected allocator sitting inside a `monoOnly`-dispatched
+plan simply never receives a `noteOn()` poke (MIDI dispatch only targets per-voice plan slots), so
+it sits inert — exactly matching its own real contribution to the audible signal.
+
+**Tests:** `tests/DomainSplitterTests.cpp`'s `"A graph with no instance.allocator and no
+instance.mix is a mono graph; one with an allocator is not"` currently encodes the bug as
+contract (asserts `monoOnly` becomes `false` for a disconnected allocator) — rewritten to assert
+`monoOnly` stays `true`, plus a new case in the same test for the legitimate "fully wired `noteIn →
+alloc → osc → output`, no `instance.mix`" graph, asserting `monoOnly` is correctly `false` there.
+Every other existing `DomainSplitterTests.cpp` case confirmed untouched (none exercise the
+`instanceMixCount == 0` branch). New `tests-plugin` case matching the literal repro: `osc.sine →
+io.output` plus a disconnected `instance.allocator`, asserting real audio reaches the host output.
+
+**Also folded in** (same file, directly related): `archive_docs/decisions/
+0020-instance-allocator-lifetime.md` still says "Status: Proposed (M17). Not implemented" — false,
+Voice mode shipped M17-M18. Corrected honestly, including naming that the ADR's own "generalize
+`DomainSplitter` to N allocator regions" decision was never carried out and stays out of scope here
+(still a hard `instanceAllocatorCount > 1` rejection) — real, separate, larger future work, named
+so it isn't silently lost.
+
+## `09-28-InstanceAllocator.2` — `random1`/`random2` real determinism
+
+**Root cause:** `InstanceAllocatorNode::prepare()` calls `random.setSeedRandomly()` — reseeded
+randomly per plugin-instance-lifetime, not from a real patch-level seed. Directly contradicts the
+one stated reason these ports exist as allocator-owned state rather than a plain `random.*` node
+(`archive_docs/DOMAINS.md` §4): "the same patch, the same MIDI, the same seed produce bit-identical
+output... required for the offline render CLI to be a useful regression tool." Today it doesn't.
+
+**The fix:** add `instance.allocator.seed` (structural parameter, matching `random.drift`/
+`random.stepped`'s existing `seed` convention — integer, fixed default, not time-based). Stop
+maintaining a persistent `juce::Random` member seeded once at `prepare()`; instead, at each
+`noteOn()`, draw `random1`/`random2` from a `juce::Random` constructed fresh from
+`hashCombine(seed, instanceIndex)`, so the value is a pure function of (patch seed, spawn ordinal)
+— no dependency on wall-clock time, call order, or elapsed blocks.
+
+**Tests:** a real regression test compiling the same graph twice from a clean `prepare()`, same
+seed, asserting `random1`/`random2` are bit-identical across runs; a second case with a different
+seed asserting the values differ. Mutation-checked (temporarily revert to `setSeedRandomly()`,
+confirm the new test catches the non-determinism, revert back).
+
+## `09-28-InstanceAllocator.3` — split into a real `instance.voice` node, drop the dead configuration dropdown
+
+**Root cause:** `instance.allocator`'s `configuration` enum (Voice / Swarm-population /
+Swarm-transient / Trigger) is real, visible UI surface today — `setParameter()`'s own comment
+admits three of the four options do nothing. The four configurations don't even share a port shape
+(Voice needs a `Note` `spawn` input; Swarm-population needs none at all) — a real structural
+mismatch for one node with a mode switch, unlike `mix.downmix`'s legitimate same-shape mode enum.
+
+**The fix:** rename the type id `instance.allocator` → `instance.voice` (direct rename — CLAUDE.md
+rule 3 is suspended, no migration needed; every real reference updated: `ProofGraphs.h`'s factory
+registration and Init Patch, `DomainSplitter.cpp`'s `instanceAllocatorTypeId` constant, every test
+graph that builds one, `wiki/NODES.md`). Remove the `configuration` parameter and its backing
+member entirely — one real configuration means a single-option enum is UI clutter, not a choice.
+Rename the source file/class too (`InstanceAllocatorNode.h` → `InstanceVoiceNode.h`, class
+`InstanceVoiceNode`) rather than leaving an `Allocator`-named class behind a `voice` type id. Title
+becomes "Voice" — category stays "Domain" (the Add menu's existing category grouping, confirmed
+already real in `AddMenu.tsx`, gives the context, not the node's own name).
+
+**Explicitly not built here:** `instance.swarmPopulation`/`instance.swarmTransient`/
+`instance.trigger` as real node types — created later, as their own real milestones, once actual
+Swarm/Trigger runtime machinery exists, not as empty shells now (which would just recreate the
+same dead-surface problem this milestone fixes).
+
+**Tests:** every existing `"instance.allocator"` string reference updated (a stale one fails at
+graph-compile time with a clear "unknown node type" error, not silently — mechanical/grep-driven).
+New test confirming `getParameters()` no longer exposes a `configuration`-named parameter. Full
+suite green, `pluginval`, Standalone sanity check that the Init Patch (which uses this node) still
+plays.
+
+## `09-28-InstanceAllocator.4` — a visual indicator for voice-domain cables
+
+**Root cause:** no way to see, by looking at the graph, which cables run per-voice versus once —
+only discoverable by mentally tracing allocator reachability, or hitting a compile error after the
+fact. `archive_docs/DOMAINS.md` §11's own open-questions list already asked this in the original
+design pass, years ago, and already leaned toward an answer: *"It must not collide with the type
+palette, so the proposal is line style or weight rather than colour."*
+
+**The fix** (more design-open than `.1`–`.3` — exact visual treatment decided during this
+milestone, not pre-specified here): surface per-node domain membership (voice / global) through
+the existing `NodeInstance`/descriptor bridge, the same way `bypassed` already rides along — no new
+per-connection concept needed, since a cable's domain is derivable from the domain of the nodes it
+connects (both ends agree except exactly at the `instance.mix` boundary). Render the distinction in
+`ui/src/canvas/webgl/nodeEditorRenderer.ts`'s existing cable-drawing code as a stroke-weight (or
+style) difference, per `DOMAINS.md`'s own steer away from color.
+
+**Sequenced last deliberately:** it's describing `.1`–`.3`'s own output (domain-splitting is only
+*correct* as of `.1`; the node types it's labeling are only honest as of `.3`).
+
+## Explicitly out of scope for this whole arc
+
+Named so nothing is silently dropped, not because any of it is wrong:
+- Lifting `DomainSplitter`'s one-allocator-per-graph limit (ADR-0020's own un-carried-out
+  decision) — real, larger, separate work.
+- `note.*`/`clock.*` (arpeggiator/chord generation) and Swarm-population/Swarm-transient/Trigger's
+  real runtime behavior — entirely unbuilt, large, M28-territory features the report answered
+  questions about but did not recommend building now.
+- A random node seedable from `instanceIndex` (the report's answer to "could sample-and-hold +
+  random nodes fully replace `random1`/`random2`") — a real, buildable idea, explicitly not
+  recommended as urgent in the report, not included here.
+- The Add-menu category-nesting / node-id-naming-convention question — the user's own proposal
+  from the same conversation, explicitly excluded per their own instruction.
+
+## Verification, every `09-28-InstanceAllocator` milestone
+
+Same standing discipline as the `0.x` arc: build + `ctest` green, mutation-test the
+correctness-critical logic (`.1`'s reachability check, `.2`'s determinism), `pluginval
+--strictness-level 10`, UI `npm run build && npm run lint` clean (only `.4` touches UI code),
+Standalone app launched and sanity-checked against the Init Patch (which uses this node for real).
+Each milestone commits on its own once green, without asking.
