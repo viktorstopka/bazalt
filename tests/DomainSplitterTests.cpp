@@ -221,14 +221,102 @@ TEST_CASE ("DomainSplitter rejects instance.mix with more than one connection in
     CHECK (result.errorMessage.contains ("at most one connection"));
 }
 
-TEST_CASE ("DomainSplitter rejects an orphaned node connected to neither domain", "[engine][DomainSplitter]")
+TEST_CASE ("09-28-InstanceAllocator.1 (part 4): an orphaned node connected to neither domain is folded "
+           "into the global domain, not rejected - the editor always places a node before wiring it",
+           "[engine][DomainSplitter][InstanceAllocator]")
 {
+    // Real bug found live: once instance.mix had a real upstream connection,
+    // placing ANY brand-new node made the whole graph fail to compile - a
+    // freshly-placed node starts with zero connections by construction, so
+    // this made it impossible to place a node at all in a graph with a real
+    // global domain already active. "Node 'orphan' is not connected to
+    // either the voice or global domain" used to be exactly this milestone's
+    // own literal repro, just in the OTHER (instanceMixCount==1) branch of
+    // DomainSplitter than the one this milestone originally fixed.
     auto graph = buildSplitTestGraph();
     graph.addNode ({ "orphan", "excite.burst", {}, {}, {} }); // never connected to anything
 
     const auto result = DomainSplitter::split (graph);
+    REQUIRE (result.success);
+    REQUIRE (result.hasGlobalDomain);
+
+    bool orphanInGlobal = false;
+    for (const auto& node : result.globalGraph.getNodes())
+        if (node.id == "orphan") orphanInGlobal = true;
+    CHECK (orphanInGlobal);
+
+    for (const auto& node : result.voiceGraph.getNodes())
+        CHECK (node.id != "orphan"); // never poaches the voice domain
+}
+
+TEST_CASE ("09-28-InstanceAllocator.1 (part 4): a little cluster of orphaned nodes wired only to each "
+           "other is folded into the global domain together, not rejected",
+           "[engine][DomainSplitter][InstanceAllocator]")
+{
+    auto graph = buildSplitTestGraph();
+    graph.addNode ({ "orphanA", "util.constant", {}, {}, {} });
+    graph.addNode ({ "orphanB", "math.add", {}, {}, {} });
+    graph.addConnection ({ "orphanA", "out", "orphanB", "in.0" }); // wired to each other, not to anything real yet
+
+    const auto result = DomainSplitter::split (graph);
+    REQUIRE (result.success);
+    REQUIRE (result.hasGlobalDomain);
+
+    bool aFound = false, bFound = false;
+    for (const auto& node : result.globalGraph.getNodes())
+    {
+        if (node.id == "orphanA") aFound = true;
+        if (node.id == "orphanB") bFound = true;
+    }
+    CHECK (aFound);
+    CHECK (bFound);
+
+    bool connectionPreserved = false;
+    for (const auto& connection : result.globalGraph.getConnections())
+        if (connection.fromNodeId == "orphanA" && connection.toNodeId == "orphanB")
+            connectionPreserved = true;
+    CHECK (connectionPreserved);
+}
+
+TEST_CASE ("09-28-InstanceAllocator.1 (part 4): an orphan wired straight to a voice-domain node without "
+           "going through instance.mix is still a real, correctly-caught error",
+           "[engine][DomainSplitter][InstanceAllocator]")
+{
+    // The orphan fold above must never become a backdoor around the
+    // existing "voice domain feeds global domain directly" validation.
+    auto graph = buildSplitTestGraph();
+    graph.addNode ({ "orphan", "mix.gain", {}, {}, {} });
+    graph.addConnection ({ "svf", "out", "orphan", "audio" }); // svf is voice domain; this bypasses instance.mix
+
+    const auto result = DomainSplitter::split (graph);
     CHECK_FALSE (result.success);
+    CHECK (result.errorMessage.contains ("svf"));
     CHECK (result.errorMessage.contains ("orphan"));
+    CHECK (result.errorMessage.contains ("instance.mix"));
+}
+
+TEST_CASE ("09-28-InstanceAllocator.1 (part 4): a freshly-placed, unconnected instance.allocator in a "
+           "graph that already has a real instance.mix is folded in as an orphan, not rejected",
+           "[engine][DomainSplitter][InstanceAllocator]")
+{
+    // The "instance.allocator must be in the voice domain" check exists to
+    // catch a genuinely malformed graph (one connected the wrong way round),
+    // not "not connected to anything yet" - the normal, expected state of
+    // any node right after the editor places it.
+    auto graph = buildSplitTestGraph();
+    graph.addNode ({ "alloc", "instance.allocator", {}, {}, {} }); // deliberately unconnected
+
+    const auto result = DomainSplitter::split (graph);
+    REQUIRE (result.success);
+    REQUIRE (result.hasGlobalDomain);
+
+    bool allocInGlobal = false;
+    for (const auto& node : result.globalGraph.getNodes())
+        if (node.id == "alloc") allocInGlobal = true;
+    CHECK (allocInGlobal);
+
+    for (const auto& node : result.voiceGraph.getNodes())
+        CHECK (node.id != "alloc");
 }
 
 TEST_CASE ("DomainSplitter rejects a graph output node left in the voice domain", "[engine][DomainSplitter]")
@@ -442,13 +530,19 @@ TEST_CASE ("A mono source that feeds BOTH domains gets a clear error asking for 
     CHECK (result.errorMessage.contains ("mono source"));
 }
 
-TEST_CASE ("An unconnected node is still rejected even when a mono source is accepted",
-           "[engine][DomainSplitter][M21]")
+TEST_CASE ("09-28-InstanceAllocator.1 (part 4): an unconnected node is folded into the global domain "
+           "even when a mono source is also accepted in the same graph",
+           "[engine][DomainSplitter][InstanceAllocator]")
 {
     auto graph = buildMonoSourceGraph();
     graph.addNode ({ "orphan", "io.transport", {}, {}, {} }); // feeds nothing
 
     const auto result = DomainSplitter::split (graph);
-    CHECK_FALSE (result.success);
-    CHECK (result.errorMessage.contains ("orphan"));
+    REQUIRE (result.success);
+    REQUIRE (result.hasGlobalDomain);
+
+    bool orphanInGlobal = false;
+    for (const auto& node : result.globalGraph.getNodes())
+        if (node.id == "orphan") orphanInGlobal = true;
+    CHECK (orphanInGlobal);
 }

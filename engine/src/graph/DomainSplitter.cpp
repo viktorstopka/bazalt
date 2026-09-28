@@ -279,11 +279,70 @@ namespace bazalt::engine
             }
         }
 
+        // 09-28-InstanceAllocator.1 (part 4): a node reachable from NEITHER
+        // domain is either a freshly-placed, not-yet-wired node (the editor
+        // always places a node before wiring it — the exact same "must be
+        // placeable on its own" reasoning the instance.mix incomingCount==0
+        // carve-out above already applies to instance.mix itself) or a
+        // little cluster of such nodes wired only to each other. Used to be
+        // a hard compile error the instant instance.mix had a real upstream
+        // connection ("Node 'X' is not connected to either the voice or
+        // global domain") — found live: placing ANY new node became
+        // impossible the moment a real bridged graph existed, since a
+        // brand-new node starts with zero connections by construction. Fold
+        // every such node (and anything only reachable through other such
+        // nodes) into the global domain instead — it already runs
+        // unconditionally every block, so this makes an orphan inert
+        // (contributes nothing to final output, exactly right for
+        // something not wired to anything yet) while keeping it fully
+        // compiled and inspectable via a tap immediately, matching how the
+        // instanceMixCount==0 branch above already treats an unconnected
+        // instance.allocator. Never poaches an already-earned voiceDomain
+        // membership.
+        std::unordered_set<juce::String> orphanNodeIds;
+        {
+            std::vector<juce::String> stack;
+            for (const auto& node : nodes)
+                if (voiceDomain.count (node.id) == 0 && globalDomain.count (node.id) == 0)
+                    if (orphanNodeIds.insert (node.id).second)
+                        stack.push_back (node.id);
+
+            while (! stack.empty())
+            {
+                const auto current = stack.back();
+                stack.pop_back();
+
+                auto tryAdd = [&] (const juce::String& id)
+                {
+                    if (voiceDomain.count (id) > 0 || globalDomain.count (id) > 0)
+                        return; // never poach a domain a node already legitimately earned
+                    if (orphanNodeIds.insert (id).second)
+                        stack.push_back (id);
+                };
+
+                const auto itFwd = successorsOf.find (current);
+                if (itFwd != successorsOf.end())
+                    for (const auto& next : itFwd->second)
+                        tryAdd (next);
+
+                const auto itBack = predecessorsOf.find (current);
+                if (itBack != predecessorsOf.end())
+                    for (const auto& previous : itBack->second)
+                        tryAdd (previous);
+            }
+
+            for (const auto& id : orphanNodeIds)
+                globalDomain.insert (id);
+        }
+
         // DOMAINS.md §2/§7: poly -> mono needs a Voice Mix, "no implicit
         // summing anywhere, ever". Before M21 such an edge was silently
         // dropped when the global graph was built, leaving its target reading
         // silence with no indication why; say so instead. The one legitimate
         // edge from the voice domain into the global one is into the mix.
+        // (Runs after the orphan fold above, so an orphan that turns out to
+        // be wired straight to a voice-domain node without going through
+        // instance.mix is still correctly caught here, not silently allowed.)
         for (const auto& connection : connections)
         {
             if (voiceDomain.count (connection.fromNodeId) == 0 || globalDomain.count (connection.toNodeId) == 0)
@@ -303,12 +362,6 @@ namespace bazalt::engine
             const auto inVoice = voiceDomain.count (node.id) > 0;
             const auto inGlobal = globalDomain.count (node.id) > 0;
 
-            if (! inVoice && ! inGlobal)
-            {
-                result.errorMessage = "Node '" + node.id + "' is not connected to either the voice or global domain";
-                return result;
-            }
-
             if (inVoice && inGlobal)
             {
                 result.errorMessage = "Node '" + node.id
@@ -316,7 +369,10 @@ namespace bazalt::engine
                 return result;
             }
 
-            if (node.type == instanceAllocatorTypeId && ! inVoice)
+            // An orphaned instance.allocator (folded into globalDomain just
+            // above) is legitimately not yet wired to anything - not the
+            // "connected the wrong way" case this check exists to catch.
+            if (node.type == instanceAllocatorTypeId && ! inVoice && orphanNodeIds.count (node.id) == 0)
             {
                 result.errorMessage = "instance.allocator node '" + node.id
                                        + "' must be in the voice domain (upstream of instance.mix)";

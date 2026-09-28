@@ -392,6 +392,54 @@ between CTest's test-name discovery and its invocation of the Catch2 executable 
 "Failed" with "No test cases matched", not a logic bug). Replaced with a plain hyphen, matching
 every other test name in this codebase.
 
+**A fourth bug found live, once the third fix above actually got sound playing**: with sound
+working, the user's very next action — placing a brand-new node onto the canvas of their now
+real, bridged graph (a real `instance.mix` wired all the way to Master Out) — failed outright:
+"Node 'node12' is not connected to either the voice or global domain." Root cause, in the OTHER
+branch of `DomainSplitter::split()` than every fix above touched (`instanceMixCount == 1`, the
+original M17 bridged-`instance.mix` path, untouched by parts 1-3): once `instance.mix` has a
+real upstream connection, every single node in the graph is required to be reachable from either
+`voiceDomain` (backward from `instance.mix`) or `globalDomain` (forward from it, plus M21's mono-
+source backward-expansion) — a hard compile error otherwise. A freshly-placed node starts with
+*zero* connections by construction (the editor always places a node, then wires it, as two
+separate commands — the exact same reasoning the `instance.mix`-itself carve-out a few lines above
+this check already uses), so this made it **structurally impossible to place any new node at all**
+the moment a graph had a real, connected global domain — not a rare edge case, the single most
+common thing to do right after getting a first patch working.
+
+**The fix:** the same philosophy as `.1`'s original fix and `.1` (part 3) above, applied to this
+branch too — a node reachable from neither domain is folded into the global domain instead of
+being a hard error (plus anything only reachable through OTHER such orphans, so a disconnected
+`osc -> filter` pair wired only to each other still compiles and runs together), never poaching a
+domain a node already legitimately earned. This makes an orphan inert (it reaches neither
+`instance.mix` nor the designated output, so it contributes nothing to the audible signal) while
+keeping it fully compiled and inspectable via a tap the instant it's placed — exactly the same
+outcome `.1`'s original fix already gives the `instanceMixCount == 0` branch's disconnected
+allocator. The orphan fold runs *before* the existing "voice domain feeds global domain directly"
+validation, so an orphan that turns out to be wired straight to a voice-domain node without going
+through `instance.mix` is still correctly rejected, not silently allowed through — mutation-tested
+directly (removing the "never poach" guard, and removing the fold step entirely, both correctly
+broke a real test each time). The one pre-existing check this fix had to special-case: a freshly-
+placed, still-unconnected `instance.allocator` itself now also gets the orphan carve-out (an
+allocator genuinely wired the wrong way round — connected, but not upstream of the mix — is still
+rejected exactly as before; only "not connected to anything yet" is now allowed).
+
+**New/updated coverage:** `tests/DomainSplitterTests.cpp`'s old "DomainSplitter rejects an
+orphaned node connected to neither domain" test (which encoded the bug as contract) rewritten into
+four cases — a single orphan, a small cluster of orphans wired to each other, an orphan wired
+straight into the voice domain (still correctly rejected), and a freshly-placed unconnected
+`instance.allocator` (now also accepted). 374/374 tests green (up from 371). `pluginval
+--strictness-level 10`: the "Parameter thread safety" timeout recurred here too (twice in a row
+this time, not just once) — isolated via a full `git stash`/rebuild/retest A/B comparison,
+reproduced byte-for-byte identically with this fix fully reverted, confirmed environmental,
+passed clean (`SUCCESS`) on retry with the fix back in place.
+
+**Also found and fixed in passing, unrelated to this bug**: the part-3 writeup above was written
+during that commit but never actually `git add`ed into it — a real slip in the commit's explicit
+file list. Caught via the `git stash`/`git stash pop` used to isolate the pluginval flake above
+(the stash surfaced it as an unexpectedly-still-modified file), committed on its own
+(documentation only, no code) immediately before this milestone's own commit.
+
 ## `09-28-InstanceAllocator.2` — `random1`/`random2` real determinism
 
 **Root cause:** `InstanceAllocatorNode::prepare()` calls `random.setSeedRandomly()` — reseeded
