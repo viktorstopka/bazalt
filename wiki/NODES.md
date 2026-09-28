@@ -425,16 +425,19 @@ The physical-modelling counterpart of `data.scale`. **In:** `stiffness`; `densit
 Full domain model (configurations, instance context, lifetime, events-across-boundary)
 lives in `wiki/NODES.System.md` §5. Node specs only, here:
 
-#### `instance.allocator` — Instance Allocator 🚧
-Opens an instanced region. One node, several configurations — only **Voice** actually
-runs today; Swarm-population/Swarm-transient/Trigger are declared in the
-`configuration` enum and recorded honestly but don't change behavior yet (M28). **In:**
-`spawn` — `Note` (Voice) or `Event` (Swarm-transient, Trigger); absent in
-Swarm-population. **Out** (all `polyOnly`; real today: `gate`, `pitch`, `velocity`,
-`instanceIndex`, `instanceAge`, `random1`, `random2`, `start`, `stop` — 9 ports, Voice
-shape only; the catalog's fuller Swarm-context ports like `panPosition`/`distance`/
-`unisonIndex`/`unisonDetune` aren't wired to anything yet). **Structural:**
-`configuration` (enum), `maxInstances`.
+#### `instance.voice` — Voice ✅ *(renamed from `instance.allocator`, 09-28-InstanceAllocator.3)*
+Opens an instanced region. Was "one node, several configurations" (a `configuration`
+enum for Voice/Swarm-population/Swarm-transient/Trigger); three of those four options
+never did anything, and the four don't even share a port shape (Voice needs a `Note`
+`spawn` input, Swarm-population needs none at all) — real UI surface for a choice that
+wasn't one. The dropdown is gone outright, not just defaulted: this node now does
+exactly the one thing it ever actually did (Voice allocation), and Swarm-population/
+Swarm-transient/Trigger will get their own real node types later, once actual
+Swarm/Trigger runtime machinery exists — not empty shells bolted onto this one.
+`wiki/reports/InstanceAllocator_2026-09-28.md` has the full reasoning. **In:** `spawn`
+— `Note`. **Out** (all `polyOnly`): `gate`, `pitch`, `velocity`, `instanceIndex`,
+`instanceAge`, `random1`, `random2`, `start`, `stop` — 9 ports. **Structural:**
+`maxInstances`.
 
 #### `instance.mix` — Voice Mix ✅
 Closes an instanced region. **In:** `in` — `Audio`, `polyOnly`. **Out:** `out` —
@@ -511,16 +514,16 @@ group).
 | **Arpeggiator** | Cycles held notes | `note.hold` → `clock.pulse` → `clock.counter` → `note.select` | 📋 |
 | **Chord** | One note becomes several | `note.chord` with `data.scale` | 📋 |
 | **Bubble** | A single water bubble | `osc.sine` with pitch from `env.curve` (rising chirp) × `env.adsr` (short decay) | 📋 |
-| **Water** | Rain, a stream, a boil | `noise.dust` → `instance.allocator` (Swarm-transient) → Bubble per instance, radius from `random` → `instance.mix` | 📋 |
+| **Water** | Rain, a stream, a boil | `noise.dust` → a future `instance.swarmTransient` (09-28-InstanceAllocator.3: Swarm modes are no longer a config on `instance.voice` — they'll be their own node type once built) → Bubble per instance, radius from `random` → `instance.mix` | 📋 |
 | **Crackle** | Fire, static, ice | `noise.dust` → `excite.burst` → `resonator.modal` with a small stone/ceramic set | 📋 |
 | **Scrape** | Stone dragged across asphalt | `excite.contact` → `resonator.modal` with `data.material` (stone, irregular) → `space.reverb` | 📋 |
 | **Cicada** | One insect | `clock.pulse` with jitter → `excite.burst` → `filter.formant` → body from `resonator.modal` | 📋 |
-| **Cicada Field** | A population of them | `instance.allocator` (Swarm-population) → Cicada per instance, rate/pitch from `random.drift`, placement from `panPosition` | 📋 |
+| **Cicada Field** | A population of them | a future `instance.swarmPopulation` (see the Water row above) → Cicada per instance, rate/pitch from `random.drift`, placement from `panPosition` | 📋 |
 | **Breath / Wind** | Wind, breathing, flutes | `excite.breath` → `resonator.tube`, contour from `env.curve` | 📋 |
 | **Bowed String** | Violin-like | `excite.stickSlip` ↔ `resonator.string`, coupling loop closed through `motion` | 📋 |
 | **Struck Body** | Drum, bell, plate | `excite.mallet` ↔ `resonator.plate` or `resonator.modal` | 📋 |
 | **Hex Guitar Front End** | Six strings to six note streams | six `io.audioIn` channels → `analysis.onset` + `analysis.pitch` → `note.assemble` per string | 📋 |
-| **Init Patch** | Ordinary subtractive synth | `io.noteIn` → `instance.allocator` → `osc.analog` ×2 → `filter.ladder` → `env.adsr` (×2: amp + filter cutoff) → `instance.mix` → `space.pan` → `io.output` (one real stereo cable, `pan.out` → `masterOut.in`) | ✅ real hand-built graph, genuinely stereo; 📋 not yet a loadable `stock.*` asset — no `space.reverb` tail yet (M28) |
+| **Init Patch** | Ordinary subtractive synth | `io.noteIn` → `instance.voice` → `osc.analog` ×2 → `filter.ladder` → `env.adsr` (×2: amp + filter cutoff) → `instance.mix` → `space.pan` → `io.output` (one real stereo cable, `pan.out` → `masterOut.in`) | ✅ real hand-built graph, genuinely stereo; 📋 not yet a loadable `stock.*` asset — no `space.reverb` tail yet (M28) |
 | **Voiced self-oscillation (cat purr)** *(Correction 1's new coverage item)* | The hardest test in the set | `env.curve` (breath pressure) → `random.drift` (stiffness jitter) + `lfo.shape` (~26Hz stiffness modulation, for entrainment) → `excite.vocalFolds` → `flow` gates `noise.colored` through `mix.gain` (aspiration) → `resonator.junction` splits `resonator.tract` (nasal route) vs. a closed branch (antiresonances) vs. `resonator.modal` (body conduction) → `mix.crossfade` (microphone position) | 📋 — exercises audio-rate physical-parameter modulation, emergent oscillation thresholds, source–resonator coupling, branched waveguides, `Data` as a geometric profile, flow-gated noise, two sources sharing one tract, sub-30Hz fundamentals. **Testing note:** self-oscillating/chaotic models are deterministic but rounding-sensitive — two compilers or an enabled FMA path diverge within seconds, so bit-exact golden renders don't work here; verify statistically (measured f₀/spectral envelope/jitter/shimmer within tolerance, oscillation threshold within a pressure window) or CI failures become indistinguishable from physics. |
 
 # Reference patches: coverage
@@ -533,10 +536,10 @@ missing primitives (once M23–M29 land):
 3. **Arpeggiator and chords** — `note.hold`, `clock.counter`, `note.select`, `note.chord`.
 4. **Struck body with material data** — `excite.mallet` → `resonator.modal` ← `data.material`.
 5. **Stone on asphalt** — `excite.contact` → `resonator.modal`, `util.macro` driving speed/pressure.
-6. **Transient and persistent swarms** — `instance.allocator` in both swarm configurations.
+6. **Transient and persistent swarms** — future `instance.swarmTransient`/`instance.swarmPopulation` node types (09-28-InstanceAllocator.3: no longer configurations of `instance.voice` — see the Water/Cicada Field rows above).
 7. **Ordinary subtractive patch** — `osc.analog`, `filter.ladder`, `env.adsr` — **built, playable today** as Init Patch.
 8. **Per-voice effects** — `shape.waveshaper`, `delay.line`, `space.reverb` placed before `instance.mix`.
-9. **Hexaphonic guitar** — `io.audioIn` per channel → `analysis.onset` + `analysis.pitch` → `note.assemble` → `instance.allocator` (each string gets its own allocator/mix pair, not a shared one — avoids needing a Note-stream-merge node).
+9. **Hexaphonic guitar** — `io.audioIn` per channel → `analysis.onset` + `analysis.pitch` → `note.assemble` → `instance.voice` (each string gets its own voice/mix pair, not a shared one — avoids needing a Note-stream-merge node).
 10. **Voiced self-oscillation (cat purr)** — see Part B, above.
 
 # Deliberately deferred

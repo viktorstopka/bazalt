@@ -9,7 +9,7 @@ namespace bazalt::engine::nodes
     /** Stable type id: "io.noteIn" (M18, ADR-0024). NODE_CATALOG.md's
         plugin I/O boundary for MIDI: one `Note`-typed output ("notes"),
         no inputs. Translates MIDI into `NoteEvent`s (`produceNoteBlock()`)
-        for whatever's wired downstream — `instance.allocator`'s "spawn"
+        for whatever's wired downstream — `instance.voice`'s "spawn"
         input is the only consumer today (M18's own scope).
 
         Driven by direct C++ pokes from `PluginProcessor::handleMidiEvent`
@@ -17,7 +17,7 @@ namespace bazalt::engine::nodes
         "poke a concrete node type via getNodeById + dynamic_cast" pattern
         `AdsrNode`/`InstanceAllocatorNode` already use — this node is now
         the ONE thing poked for note delivery; everything downstream of it
-        (`instance.allocator`, `env.adsr`'s gate, `osc.analog`'s pitch)
+        (`instance.voice`, `env.adsr`'s gate, `osc.analog`'s pitch)
         receives real, ordinary port data instead of further direct pokes.
 
         `channel` (Omni/1-16) and `mpeMode` (off/MPE) are schema-only for
@@ -92,7 +92,7 @@ namespace bazalt::engine::nodes
         }
 
         /** Direct C++ poke — see class comment. `pitchIn` is the absolute
-            MIDI note number (0-127), matching `instance.allocator.pitch`'s
+            MIDI note number (0-127), matching `instance.voice.pitch`'s
             own contract exactly.
         */
         void injectNoteOn (float pitchIn, float velocityIn) noexcept

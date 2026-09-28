@@ -53,7 +53,7 @@ All five real types (`Audio`, `Control`, `Event`, `Note`, `Data` for `canConnect
 purposes — `Data` itself has no real producer node yet) are implemented in
 `engine/src/graph/CanConnect.cpp` / mirrored in `ui/src/graph/canConnect.ts`. `Note`
 has exactly two real ports anywhere in the engine right now: `io.noteIn`'s `notes`
-output and `instance.allocator`'s `spawn` input (plus polymorphic `util.reroute`,
+output and `instance.voice`'s `spawn` input (plus polymorphic `util.reroute`,
 which can carry a Note cable through unchanged). A connected Note port doesn't use the
 ordinary per-sample `blockBuffers` mechanism — it gets a dedicated `NoteEvent`-typed
 buffer (`ExecutionPlan::noteBuffers`), and **only one Note input and one Note output
@@ -91,10 +91,11 @@ ValueContract {
   in canonical units; `curve` only maps a control's 0–1 gesture onto the range.
 - **Enum option IDs are part of the patch format.** Renaming a label is safe;
   changing an ID breaks saved patches. Reordering options must never change behaviour
-  — nothing may rely on option index (contrast: `instance.allocator.configuration`'s
-  *index* genuinely is its stored value today, which is correct only because it's
-  also treated as a stable ID by convention — see `NODES_Gaps.md` if this ever needs
-  revisiting).
+  — nothing may rely on option index. (This rule had exactly one real violation:
+  `instance.allocator.configuration`'s index genuinely was its stored value — the
+  parameter this caveat used to cite. 09-28-InstanceAllocator.3 removed that parameter
+  outright rather than fixing the violation, so as of that milestone the rule has no
+  known exceptions again.)
 
 ### Quantity — the physical dimension of a value
 
@@ -233,7 +234,7 @@ should close.
 | `Event` | `Control` | — | catalog names `env.adsr`(trigger-fed)/`adapt.sampleHold`("Latch") as the manual pattern | ❌ not auto-inserted |
 | `Audio` | `Control` | — | catalog names `env.follower` | ❌ not auto-inserted — today this is a straight `reject` unless placed by hand |
 | `Note` | `Event` | — | catalog names a `note.gate`-style "Note gate" adapter | ❌ `note.gate` itself isn't built yet (M25) |
-| `Note` | `Control` | — | catalog names via `instance.allocator`'s own outputs, or `note.value` | ❌ `note.value` isn't built yet (M25); the allocator path is real but isn't a `canConnect` adapter — it's just wiring the allocator's own output ports |
+| `Note` | `Control` | — | catalog names via `instance.voice`'s own outputs, or `note.value` | ❌ `note.value` isn't built yet (M25); the instance.voice path is real but isn't a `canConnect` adapter — it's just wiring its own output ports |
 | `Data` (tag X) | `Data` (accepts tag X) | Ok | — | ✅ |
 | `Data` (tag X) | `Data` (accepts tag Y ≠ X) | Reject | "Data tag mismatch" | ✅ |
 | `Data` (tag X) | anything non-`Data` | Reject | "Data never converts implicitly" | ✅ |
@@ -266,22 +267,36 @@ A graph is mono everywhere by default. An **Instance Allocator** opens a poly
 runs once *per instance*, with its own state — this is how per-voice distortion,
 per-voice delay, and per-voice resonators work.
 
-### `instance.allocator` — one node, several configurations
+### `instance.voice` — the region-opening node (renamed from `instance.allocator`, 09-28-InstanceAllocator.3)
 
-Voice allocation and "swarm" spawning are the same runtime machinery with a different
-event source — one node type, not several that grow apart.
+Originally designed as "one node, several configurations" (Voice allocation and
+"swarm" spawning treated as the same runtime machinery with a different event
+source, switched by a `configuration` enum) — that design shipped with a real,
+found-live cost: three of the four configurations (Swarm-population/Swarm-transient/
+Trigger) never did anything behaviorally, so the dropdown was pure UI clutter, and
+the four configurations don't even share a port shape (Voice needs a `Note` `spawn`
+input; Swarm-population needs none at all) — a real structural mismatch for one node
+with a mode switch, unlike e.g. `mix.downmix`'s legitimate same-shape mode enum.
+`wiki/reports/InstanceAllocator_2026-09-28.md` has the full critique.
 
-| Configuration | Spawn source | Instance context | Typical use | Built? |
+**Current design, as of 09-28-InstanceAllocator.3:** `instance.voice` does exactly the
+one thing it ever actually did — Voice allocation, spawned from a `Note` stream. The
+`configuration` parameter is gone outright, not defaulted. Swarm-population/
+Swarm-transient/Trigger are still real, wanted future capability, but as **separate
+node types** sharing the same underlying runtime machinery (instance context,
+lifetime, events-across-boundary — everything below this point still applies to all
+of them equally), each built as its own milestone once its real spawn/lifecycle
+behavior actually exists — not as empty shells on `instance.voice` now, which would
+just recreate the same dead-surface problem this rename fixed.
+
+| Future node type | Spawn source | Instance context | Typical use | Built? |
 |---|---|---|---|---|
-| Voice | a `Note` stream | the note | playing an instrument | ✅ (only one, today) |
-| Swarm (population) | fixed count, always live | index + seeded randoms | cicadas, a drone of many bodies | 📋 M28 |
-| Swarm (transient) | an `Event` stream | seeded randoms per spawn | bubbles, crackles, sparks, raindrops | 📋 M28 |
-| Trigger | an `Event` stream, one instance at a time | payload | percussive one-shots | 📋 M28 |
+| `instance.voice` | a `Note` stream | the note | playing an instrument | ✅ |
+| `instance.swarmPopulation` | fixed count, always live | index + seeded randoms | cicadas, a drone of many bodies | 📋 M28 |
+| `instance.swarmTransient` | an `Event` stream | seeded randoms per spawn | bubbles, crackles, sparks, raindrops | 📋 M28 |
+| `instance.trigger` | an `Event` stream, one instance at a time | payload | percussive one-shots | 📋 M28 |
 
-The `configuration` structural parameter already exists and records a non-zero value
-honestly, but only Voice actually runs different behavior today.
-
-### Instance context (the allocator's output ports)
+### Instance context (instance.voice's output ports)
 
 Everything here is `polyOnly`. Common to all configurations: **Instance Index**
 (`Count`), **Instance Age** (`Time`), **Random** — a stable random value seeded from
@@ -580,7 +595,7 @@ the template to copy if a real migration is ever needed once rule 3's suspension
   `canConnect.ts` (already correct); cable rendering draws by port screen position
   regardless of channel count. A visually distinct stereo cable (thicker line, doubled
   glyph, a small indicator) is optional polish, not built.
-- **The mono-only render path is untouched.** A graph with no `instance.allocator`
+- **The mono-only render path is untouched.** A graph with no `instance.voice`
   (`DomainSplitter::monoOnly`, `PluginProcessor::renderMonoRange`) still only ever
   tracks one mono buffer.
 - **Per-sample feedback regions** got the same flat-slot generalization for

@@ -34,7 +34,7 @@ TEST_CASE ("subscribeVisualizationTap rejects an unknown node or port", "[plugin
 
 TEST_CASE ("09-28-InstanceAllocator.1 (part 3): a voice domain not reaching the output still dispatches "
            "real MIDI and its allocator's gate tap shows real movement - the user's own literal repro "
-           "(Note In -> Instance Allocator -> Glance on gate, nothing wired to Master Out yet)",
+           "(Note In -> Voice -> Glance on gate, nothing wired to Master Out yet)",
            "[plugin][telemetry][InstanceAllocator]")
 {
     using namespace bazalt::engine;
@@ -52,7 +52,7 @@ TEST_CASE ("09-28-InstanceAllocator.1 (part 3): a voice domain not reaching the 
     // movement").
     NodeGraph graph;
     graph.addNode ({ "noteIn", "io.noteIn", { 40.0f, 40.0f }, {}, {} });
-    graph.addNode ({ "allocator", "instance.allocator", { 340.0f, 40.0f }, {}, {} });
+    graph.addNode ({ "allocator", "instance.voice", { 340.0f, 40.0f }, {}, {} });
     graph.addNode ({ "audioIn", "io.audioIn", { 40.0f, 400.0f }, {}, {} });
     graph.addNode ({ "masterOut", "io.output", { 340.0f, 400.0f }, {}, {} });
 
@@ -117,10 +117,10 @@ TEST_CASE ("subscribeVisualizationTap on a real voice-domain port receives real 
     CHECK (sawVariation);
 }
 
-TEST_CASE ("subscribeVisualizationTap on instance.allocator's pitch output re-points as new notes trigger",
+TEST_CASE ("subscribeVisualizationTap on instance.voice's pitch output re-points as new notes trigger",
            "[plugin][telemetry][M20]")
 {
-    // instance.allocator's "pitch" output is an exact, predictable value
+    // instance.voice's "pitch" output is an exact, predictable value
     // (the triggered note's own MIDI number) — ideal for proving the tap
     // actually follows the most-recently-triggered voice, not a fixed one.
     BazaltAudioProcessor processor;

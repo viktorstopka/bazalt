@@ -227,7 +227,7 @@ ctest --test-dir build -C Debug -R PluginTests --output-on-failure
   (`ExecutionPlan::applyHostInputs`), never JUCE types. `io.noteIn` is NOT on
   that mechanism — it's still poked by the hardcoded id `"noteIn"`
   (`BazaltAudioProcessor::findNoteIn`), so a note-in placed under another id is
-  silently ignored. A graph with no `instance.allocator` (`DomainSplitter::
+  silently ignored. A graph with no `instance.voice` (`DomainSplitter::
   monoOnly`) is one plan run every block, so audio effects work but it plays no
   notes. **Never call `ExecutionPlan::getNodeById ("literal")` on the audio
   thread** — the literal becomes a heap-allocated `juce::String`; pass one built

@@ -102,6 +102,48 @@ TEST_CASE ("io.output's own output port is hidden from the editor - a terminal '
     }
 }
 
+TEST_CASE ("09-28-InstanceAllocator.3: instance.voice (renamed from instance.allocator) no longer "
+           "exposes a dead 'configuration' dropdown",
+           "[engine][NodeFactory][InstanceAllocator]")
+{
+    // Three of the four "configuration" options (Voice/Swarm-population/
+    // Swarm-transient/Trigger) never did anything - real UI surface for a
+    // choice that wasn't one. Removed outright rather than left defaulted,
+    // per wiki/reports/InstanceAllocator_2026-09-28.md's own recommendation:
+    // Swarm/Trigger become their own real node types later, once actual
+    // runtime machinery exists for them, not empty shells on this one.
+    auto factory = bazalt::engine::buildDefaultNodeFactory();
+    const auto descriptors = factory.describeAll();
+
+    auto findByTypeId = [&] (const juce::String& typeId) -> const NodeDescriptor*
+    {
+        for (const auto& d : descriptors)
+            if (d.typeId == typeId)
+                return &d;
+        return nullptr;
+    };
+
+    // The old type id is gone entirely - a graph still referencing it fails
+    // to compile with a clear "unknown node type" error, not silently.
+    CHECK (findByTypeId ("instance.allocator") == nullptr);
+
+    const auto* voice = findByTypeId ("instance.voice");
+    REQUIRE (voice != nullptr);
+    CHECK (voice->title == "Voice");
+    CHECK (voice->category == "Domain");
+
+    bool sawConfiguration = false;
+    bool sawMaxInstances = false;
+    for (const auto& p : voice->parameters)
+    {
+        if (p.id.containsIgnoreCase ("configuration")) sawConfiguration = true;
+        if (p.id == "instance.voice.maxInstances") sawMaxInstances = true;
+    }
+    CHECK_FALSE (sawConfiguration);
+    CHECK (sawMaxInstances);
+    REQUIRE (voice->parameters.size() == 1); // maxInstances is the only structural parameter left
+}
+
 TEST_CASE ("A node with no title override falls back to its type id in the descriptor",
            "[engine][NodeFactory][NODE_EDITOR]")
 {

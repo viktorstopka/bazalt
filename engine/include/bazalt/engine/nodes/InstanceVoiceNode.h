@@ -6,42 +6,50 @@
 
 namespace bazalt::engine::nodes
 {
-    /** Stable type id: "instance.allocator" (M17). `DOMAINS.md` §3's
-        Instance Allocator — **Voice configuration only** for M17; Swarm-
-        population/Swarm-transient/Trigger are M28 (Batch H). Supersedes
-        the upstream half of "util.voiceSum" (`RECONCILIATION.md` 3.1).
+    /** Stable type id: "instance.voice" (M17, renamed from "instance.allocator"
+        in 09-28-InstanceAllocator.3 — CLAUDE.md rule 3 is suspended, so this is
+        a direct rename, no migration path). `DOMAINS.md` §3's Instance
+        Allocator concept — **Voice configuration only**, and (as of this
+        rename) the ONLY configuration this class implements at all: the
+        `configuration` enum parameter (Voice/Swarm-population/Swarm-transient/
+        Trigger) that used to live here has been removed outright, not just
+        defaulted — three of its four options never did anything (M17-M27's
+        own comment on `setParameter` admitted as much), and beyond the "real
+        UI surface with dead options" cost, the four configurations don't even
+        share a port shape (Voice needs a `Note` `spawn` input; Swarm-
+        population needs none at all), a real structural mismatch for one node
+        with a mode switch. Swarm-population/Swarm-transient/Trigger become
+        their OWN real node types later, once actual Swarm/Trigger runtime
+        machinery exists (a `VoiceManager`-equivalent for each) — not empty
+        shells bolted onto this one now, which would just recreate the same
+        dead-surface problem this rename fixes. `wiki/reports/
+        InstanceAllocator_2026-09-28.md` has the full reasoning.
+
+        Supersedes the upstream half of "util.voiceSum" (`RECONCILIATION.md`
+        3.1).
 
         `spawn` (`Note` input, declared for schema completeness per
-        `SIGNAL_TYPES.md`'s "ports never renamed once shipped") is **not
-        wireable/functional yet** — `Note` has no real producer until M18
-        (`io.noteIn`). For M17, whoever drives voices (`PluginProcessor`)
-        pokes this node directly via `noteOn()`/`noteOff()`, exactly the
-        same "poke a concrete node type via `getNodeById` + `dynamic_cast`"
-        pattern `AdsrNode`'s own `noteOn()`/`noteOff()` already uses — this
-        node's job is to be the ONE thing poked (replacing separate pokes
-        into "osc"/"env" by name) and expose the result as real, ordinary
-        output ports. M18 replaces the poke with real `Note`-port
-        delivery; the output ports below don't change shape when that
-        happens.
+        `SIGNAL_TYPES.md`'s "ports never renamed once shipped") is real,
+        functional `Note`-port delivery as of M18 (`io.noteIn`) — see
+        `consumeNoteBlock()` below.
 
         Deliberately narrower than `NODE_CATALOG (1).md`'s full port list:
         `Pressure`/`Slide`/`ReleaseVelocity`/`Position`/`UnisonIndex`/
-        `UnisonDetune` are omitted for M17 — nothing upstream (today's
-        plain MIDI note-on/off) produces that data yet, and adding a port
-        later is safe/additive (`VALUE_MODEL.md` §8's stability table),
-        unlike removing one. Add them once something can actually drive
-        them.
+        `UnisonDetune` are omitted — nothing upstream (today's plain MIDI
+        note-on/off) produces that data yet, and adding a port later is
+        safe/additive (`VALUE_MODEL.md` §8's stability table), unlike removing
+        one. Add them once something can actually drive them.
     */
-    class InstanceAllocatorNode : public Node
+    class InstanceVoiceNode : public Node
     {
     public:
-        static constexpr int numInputs = 1;  // spawn (inert, see class comment)
+        static constexpr int numInputs = 1;  // spawn
         static constexpr int numOutputs = 9; // gate, pitch, velocity, index, age, random1, random2, start, stop
 
         void prepare (const NodePrepareInfo& info) override
         {
             sampleRate = info.sampleRate;
-            random.setSeedRandomly(); // per-process-lifetime — patch-level determinism (DOMAINS.md §4) needs a real seed parameter, not built yet (M28 territory once Swarm needs it for real)
+            random.setSeedRandomly(); // per-process-lifetime — patch-level determinism (DOMAINS.md §4) needs a real seed parameter, not built yet (09-28-InstanceAllocator.2)
         }
 
         void reset() override
@@ -57,7 +65,7 @@ namespace bazalt::engine::nodes
         int getNumInputPorts() const noexcept override { return numInputs; }
         int getNumOutputPorts() const noexcept override { return numOutputs; }
 
-        juce::String getTitle() const override { return "Instance Allocator"; }
+        juce::String getTitle() const override { return "Voice"; }
         juce::String getCategory() const override { return "Domain"; }
 
         std::vector<PortDescriptor> getInputPorts() const override
@@ -87,19 +95,10 @@ namespace bazalt::engine::nodes
 
         std::vector<ParameterDescriptor> getParameters() const override
         {
-            return { ParameterDescriptor { .id = "instance.allocator.configuration",
-                                            .minValue = 0.0f,
-                                            .maxValue = 3.0f,
-                                            .defaultValue = 0.0f,
-                                            .displayName = "Configuration",
-                                            .isInteger = true,
-                                            .kind = ValueKind::Enum,
-                                            .enumOptions = { { "voice", "Voice" },
-                                                              { "swarmPopulation", "Swarm (population)" },
-                                                              { "swarmTransient", "Swarm (transient)" },
-                                                              { "trigger", "Trigger" } },
-                                            .isStructural = true },
-                     ParameterDescriptor { .id = "instance.allocator.maxInstances",
+            // 09-28-InstanceAllocator.3: "configuration" removed outright —
+            // see the class comment. maxInstances is the only real structural
+            // parameter this node has left.
+            return { ParameterDescriptor { .id = "instance.voice.maxInstances",
                                             .minValue = 1.0f,
                                             .maxValue = 64.0f,
                                             .defaultValue = 8.0f,
@@ -110,18 +109,8 @@ namespace bazalt::engine::nodes
 
         void setParameter (const juce::String& parameterId, float value) override
         {
-            if (parameterId == "instance.allocator.configuration")
-            {
-                // M17 only ever actually runs as Voice — a non-zero value
-                // here doesn't switch behaviour yet (Swarm/Trigger are
-                // M28); recorded so the descriptor round-trips honestly
-                // once a real UI can set it, not silently ignored.
-                configuration = (int) (value + 0.5f);
-            }
-            else if (parameterId == "instance.allocator.maxInstances")
-            {
+            if (parameterId == "instance.voice.maxInstances")
                 maxInstances = (int) (value + 0.5f);
-            }
         }
 
         /** M18 (ADR-0024): the real end of the "spawn" input's Note-typed
@@ -205,7 +194,6 @@ namespace bazalt::engine::nodes
 
     private:
         double sampleRate = 44100.0;
-        int configuration = 0;
         int maxInstances = 8;
 
         bool gate = false;

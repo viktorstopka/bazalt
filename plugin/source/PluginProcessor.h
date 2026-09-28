@@ -105,7 +105,7 @@ namespace bazalt
         bazalt::engine::PlanSwapper& getGlobalPlanSwapper() noexcept { return globalPlanSwapper; }
         void setHasGlobalDomain (bool hasIt) noexcept { hasGlobalDomain.store (hasIt, std::memory_order_release); }
 
-        /** M21: true while the graph has no instance.allocator (DomainSplitter.h's
+        /** M21: true while the graph has no instance.voice (DomainSplitter.h's
             monoOnly) — the one compiled plan lives in the GLOBAL swapper and
             runs every block, voices are never allocated. Set by
             GraphEditController::recompileAndPublish(). Message-thread only.

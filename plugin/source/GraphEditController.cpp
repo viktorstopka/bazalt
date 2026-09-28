@@ -465,7 +465,7 @@ namespace bazalt
         const bazalt::engine::NodePrepareInfo prepareInfo { sampleRate, blockSize };
         auto& factory = processor.getNodeFactory();
 
-        // M21 (DOMAINS.md §7): a graph with no instance.allocator has no poly
+        // M21 (DOMAINS.md §7): a graph with no instance.voice has no poly
         // region, so the whole graph compiles ONCE and is published as the one
         // global plan, which the processor runs every block. No voice plans are
         // touched: they are never run while the mono flag is set, and the next

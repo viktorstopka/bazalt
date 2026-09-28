@@ -121,7 +121,7 @@ TEST_CASE ("connectWithAutoAdapt rejects a connection to an unknown port with no
 TEST_CASE ("connectWithAutoAdapt inserts adapt.remap for two different real quantities (M20: Pitch into a filter's Cutoff)",
            "[plugin][GraphEditController][CanConnect][M20]")
 {
-    // Instance Allocator's "pitch" output (Quantity::Pitch, 0-127) into SVF
+    // Voice's "pitch" output (Quantity::Pitch, 0-127) into SVF
     // Filter's "cutoff" input (Quantity::Frequency, 20-20000) — pitch-
     // tracking a filter cutoff, a standard synthesis technique, and exactly
     // the pair that used to be a bare Reject before M20 (adapt.remap, the
@@ -131,7 +131,7 @@ TEST_CASE ("connectWithAutoAdapt inserts adapt.remap for two different real quan
     auto& controller = processor.getGraphEditController();
     REQUIRE (controller.setGraph (bazalt::engine::buildVoiceProofGraph()).success);
 
-    REQUIRE (controller.addNode ("instance.allocator", "alloc", 0.0f, 0.0f).success);
+    REQUIRE (controller.addNode ("instance.voice", "alloc", 0.0f, 0.0f).success);
 
     const auto result = controller.connectWithAutoAdapt ("alloc", "pitch", "svf", "filter.svf.cutoff");
     REQUIRE (result.success);

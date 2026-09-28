@@ -18,7 +18,7 @@ TEST_CASE ("buildInitPatchGraph() has a real global domain - instance.mix genuin
 
     REQUIRE (split.success);
     CHECK (split.hasGlobalDomain); // instance.mix is really in this graph
-    CHECK_FALSE (split.monoOnly);  // instance.allocator is really in this graph too
+    CHECK_FALSE (split.monoOnly);  // instance.voice is really in this graph too
 }
 
 TEST_CASE ("buildInitPatchGraph() compiles, voice domain and global domain both", "[engine][InitPatch][M22]")

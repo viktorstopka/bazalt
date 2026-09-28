@@ -14,7 +14,7 @@ namespace bazalt::engine::nodes
         renderNextSample() uses), not a continuous value, so modulating it
         at signal rate would just be jarring rather than something a
         listener would call "modulation" (the same reasoning that keeps
-        instance.mix/instance.allocator's own mode-style settings static).
+        instance.mix/instance.voice's own mode-style settings static).
 
         M18 (ADR-0024) added a real "pitch" input port — absolute
         semitones, continuous, so a live pitch-bend needs no special-cased

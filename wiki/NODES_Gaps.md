@@ -5,7 +5,7 @@ confirmed, mechanical findings below (marked **FIXED** inline) at the user's
 go-ahead, before the user's own review pass happened. The review is still worth
 doing — it's what confirms these were the right fixes, not a reason they were
 blocked on it. The lower-confidence items (SVF naming, the `math.*`/`adapt.*`
-no-fallback pattern, `instance.allocator`'s randoms) are untouched, exactly as
+no-fallback pattern, `instance.voice`'s randoms) are untouched, exactly as
 originally scoped, pending that review.
 
 Process: every specific mistake you named gets
@@ -181,7 +181,7 @@ smaller follow-up if wanted, not assumed here.
 
 ## Part 2 — Flagged by you, reads as intentional design (needs your confirmation, not treated as a mistake)
 
-### `instance.allocator`'s `random1`/`random2`
+### `instance.voice`'s `random1`/`random2`
 Checked against `wiki/NODES.System.md` §5 (`DOMAINS.md`'s own design): these are
 documented as **"a stable random value for the instance's lifetime... several
 independent ones, addressable by index,"** seeded from `(patch seed, spawn ordinal)`.
@@ -258,7 +258,7 @@ My earlier working theory (a Note-buffer fan-out limitation) was **wrong** — c
 and ruled out by reading `GraphCompiler.cpp`'s actual Note-connection logic directly:
 `noteInputsUsed` guards one thing only, the same "one source per input" rule every
 ordinary connection already has, keyed by the *destination*. A Note **output** fanning
-out to several inputs (`io.noteIn.notes` → both `instance.allocator.spawn` and a
+out to several inputs (`io.noteIn.notes` → both `instance.voice.spawn` and a
 `util.reroute`, say) is never rejected — there's no fan-out limitation at all.
 
 **The real cause, confirmed by reading `ui/src/graph/portUiKind.ts` directly:**
@@ -269,7 +269,7 @@ white a real-quantity Control port (Pitch, Frequency, Time, ...) renders as.** W
 Control-typed input was always a genuine, correctly-rejected type mismatch —
 `canConnect` was right every time — it just *looked* like "same color won't connect"
 because Note had no color of its own to tell it apart. Confirmed live: screenshotted
-`instance.allocator`'s own `spawn` input in the running Standalone app and it now
+`instance.voice`'s own `spawn` input in the running Standalone app and it now
 renders in the new distinct teal (`tokens.color.portNote`, `#3ecfc0`), visibly
 different from the white ports around it.
 

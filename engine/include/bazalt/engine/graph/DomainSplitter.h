@@ -33,9 +33,9 @@ namespace bazalt::engine
         bool hasGlobalDomain = false;
 
         /** M21 — DOMAINS.md §7: the compiler marks the allocator's outputs
-            poly and propagates forward, so a graph with NO instance.allocator
+            poly and propagates forward, so a graph with NO instance.voice
             has no poly region at all and is entirely mono. True exactly then
-            (no instance.allocator, and no instance.mix wired in either). The
+            (no instance.voice, and no instance.mix wired in either). The
             driver compiles the whole `voiceGraph` once, as the one global
             plan, and runs it every block — with or without a held note —
             instead of once per voice while voices are active. That is what
@@ -73,7 +73,7 @@ namespace bazalt::engine
         the "util.voiceSum" boundary, RECONCILIATION.md 3.1) — see
         InstanceMixNode.h for the runtime half of this mechanism (how the
         global subgraph's compiled plan actually receives the per-voice sum
-        each block) and InstanceAllocatorNode.h for the (structurally
+        each block) and InstanceVoiceNode.h for the (structurally
         inert for this pass — see its own comment) upstream node.
 
         M17 scope limit: exactly one "instance.mix" node is supported, the
@@ -81,7 +81,7 @@ namespace bazalt::engine
         multiple allowed" needs ExecutionPlan/GraphCompiler to support more
         than one named output per compiled plan, which doesn't exist yet
         (documented finding, not silently assumed). If one or more
-        "instance.allocator" nodes are present, each must land in the
+        "instance.voice" nodes are present, each must land in the
         voice domain — a light correctness check, not a functional
         requirement (M17's allocator has no real graph inputs yet, so it
         can't actually influence which domain it lands in via reachability

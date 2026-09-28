@@ -142,11 +142,11 @@ TEST_CASE ("DomainSplitter rejects a graph with two instance.mix nodes", "[engin
     CHECK (result.errorMessage.isNotEmpty());
 }
 
-TEST_CASE ("DomainSplitter rejects a graph with two instance.allocator nodes", "[engine][DomainSplitter][M17]")
+TEST_CASE ("DomainSplitter rejects a graph with two instance.voice nodes", "[engine][DomainSplitter][M17]")
 {
     NodeGraph graph;
-    graph.addNode ({ "alloc1", "instance.allocator", {}, {}, {} });
-    graph.addNode ({ "alloc2", "instance.allocator", {}, {}, {} });
+    graph.addNode ({ "alloc1", "instance.voice", {}, {}, {} });
+    graph.addNode ({ "alloc2", "instance.voice", {}, {}, {} });
     graph.addNode ({ "mix", "instance.mix", {}, {}, {} });
     graph.addNode ({ "masterout", "io.output", {}, {}, {} });
     graph.addConnection ({ "alloc1", "gate", "mix", "in" });
@@ -155,10 +155,10 @@ TEST_CASE ("DomainSplitter rejects a graph with two instance.allocator nodes", "
 
     const auto result = DomainSplitter::split (graph);
     CHECK_FALSE (result.success);
-    CHECK (result.errorMessage.contains ("instance.allocator"));
+    CHECK (result.errorMessage.contains ("instance.voice"));
 }
 
-TEST_CASE ("DomainSplitter rejects instance.allocator placed downstream of instance.mix",
+TEST_CASE ("DomainSplitter rejects instance.voice placed downstream of instance.mix",
            "[engine][DomainSplitter][M17]")
 {
     // A deliberately-wrong graph: the allocator ends up in the global
@@ -169,7 +169,7 @@ TEST_CASE ("DomainSplitter rejects instance.allocator placed downstream of insta
     NodeGraph graph;
     graph.addNode ({ "osc", "osc.analog", {}, {}, {} });
     graph.addNode ({ "mix", "instance.mix", {}, {}, {} });
-    graph.addNode ({ "alloc", "instance.allocator", {}, {}, {} });
+    graph.addNode ({ "alloc", "instance.voice", {}, {}, {} });
     graph.addConnection ({ "osc", "out", "mix", "in" });
     graph.addConnection ({ "mix", "out", "alloc", "spawn" });
     graph.setOutput ("alloc", "gate");
@@ -285,7 +285,7 @@ TEST_CASE ("09-28-InstanceAllocator.1 (part 4): a node fed by the voice domain b
     // Real bug found live in this fix's own first cut: always folding an
     // unclassified node into the GLOBAL domain broke the single most
     // ordinary construction order - wire a cable in, then wire the next
-    // one. A node fed by instance.allocator's gate (e.g. logic.select),
+    // one. A node fed by instance.voice's gate (e.g. logic.select),
     // not yet wired onward to anything that reaches instance.mix, must
     // join the voice domain instead - otherwise its own real incoming
     // edge from the voice domain looks exactly like a voice->global
@@ -329,16 +329,16 @@ TEST_CASE ("09-28-InstanceAllocator.1 (part 4): a node fed by the voice domain t
     CHECK (result.errorMessage.contains ("instance.mix"));
 }
 
-TEST_CASE ("09-28-InstanceAllocator.1 (part 4): a freshly-placed, unconnected instance.allocator in a "
+TEST_CASE ("09-28-InstanceAllocator.1 (part 4): a freshly-placed, unconnected instance.voice in a "
            "graph that already has a real instance.mix is folded in as an orphan, not rejected",
            "[engine][DomainSplitter][InstanceAllocator]")
 {
-    // The "instance.allocator must be in the voice domain" check exists to
+    // The "instance.voice must be in the voice domain" check exists to
     // catch a genuinely malformed graph (one connected the wrong way round),
     // not "not connected to anything yet" - the normal, expected state of
     // any node right after the editor places it.
     auto graph = buildSplitTestGraph();
-    graph.addNode ({ "alloc", "instance.allocator", {}, {}, {} }); // deliberately unconnected
+    graph.addNode ({ "alloc", "instance.voice", {}, {}, {} }); // deliberately unconnected
 
     const auto result = DomainSplitter::split (graph);
     REQUIRE (result.success);
@@ -401,7 +401,7 @@ namespace
     }
 }
 
-TEST_CASE ("A graph with no instance.allocator and no instance.mix is a mono graph",
+TEST_CASE ("A graph with no instance.voice and no instance.mix is a mono graph",
            "[engine][DomainSplitter][M21]")
 {
     // DOMAINS.md §7: the allocator's outputs are what make a region poly, so
@@ -420,7 +420,7 @@ TEST_CASE ("A graph with no instance.allocator and no instance.mix is a mono gra
     CHECK (result.voiceGraph.getNodes().size() == 2); // still the unchanged graph, for anything keyed on it
 }
 
-TEST_CASE ("09-28-InstanceAllocator.1: an instance.allocator not reachable from the output still runs real per-voice plans, and the unrelated output plays regardless",
+TEST_CASE ("09-28-InstanceAllocator.1: an instance.voice not reachable from the output still runs real per-voice plans, and the unrelated output plays regardless",
            "[engine][DomainSplitter][InstanceAllocator]")
 {
     // The exact regression this milestone fixes, in its FINAL corrected
@@ -442,7 +442,7 @@ TEST_CASE ("09-28-InstanceAllocator.1: an instance.allocator not reachable from 
     effect.setOutput ("out", "out");
 
     NodeGraph withUnconnectedAllocator = effect;
-    withUnconnectedAllocator.addNode ({ "alloc", "instance.allocator", {}, {}, {} }); // no connections at all
+    withUnconnectedAllocator.addNode ({ "alloc", "instance.voice", {}, {}, {} }); // no connections at all
     auto result = DomainSplitter::split (withUnconnectedAllocator);
     REQUIRE (result.success);
     CHECK_FALSE (result.monoOnly); // a real allocator exists - voices always run
@@ -463,7 +463,7 @@ TEST_CASE ("09-28-InstanceAllocator.1: an instance.allocator not reachable from 
     // reaches the designated output.
     NodeGraph withWiredButIrrelevantAllocator = effect;
     withWiredButIrrelevantAllocator.addNode ({ "noteIn", "io.noteIn", {}, {}, {} });
-    withWiredButIrrelevantAllocator.addNode ({ "alloc", "instance.allocator", {}, {}, {} });
+    withWiredButIrrelevantAllocator.addNode ({ "alloc", "instance.voice", {}, {}, {} });
     withWiredButIrrelevantAllocator.addConnection ({ "noteIn", "notes", "alloc", "spawn" });
     // alloc's own outputs (pitch/gate/...) are never wired to anything further.
     result = DomainSplitter::split (withWiredButIrrelevantAllocator);
@@ -480,7 +480,7 @@ TEST_CASE ("09-28-InstanceAllocator.1: an instance.allocator not reachable from 
         CHECK ((node.id == "in" || node.id == "out"));
 }
 
-TEST_CASE ("09-28-InstanceAllocator.1: an instance.allocator genuinely wired through to the output IS treated as per-voice, even with no instance.mix",
+TEST_CASE ("09-28-InstanceAllocator.1: an instance.voice genuinely wired through to the output IS treated as per-voice, even with no instance.mix",
            "[engine][DomainSplitter][InstanceAllocator]")
 {
     // The case that must keep working exactly as before: a plain voice
@@ -489,7 +489,7 @@ TEST_CASE ("09-28-InstanceAllocator.1: an instance.allocator genuinely wired thr
     // reaching the designated output.
     NodeGraph synth;
     synth.addNode ({ "noteIn", "io.noteIn", {}, {}, {} });
-    synth.addNode ({ "alloc", "instance.allocator", {}, {}, {} });
+    synth.addNode ({ "alloc", "instance.voice", {}, {}, {} });
     synth.addNode ({ "osc", "osc.analog", {}, {}, {} });
     synth.addNode ({ "out", "io.output", {}, {}, {} });
     synth.addConnection ({ "noteIn", "notes", "alloc", "spawn" });

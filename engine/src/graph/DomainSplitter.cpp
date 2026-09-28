@@ -9,7 +9,7 @@ namespace bazalt::engine
     {
         constexpr const char* instanceMixTypeId = "instance.mix";
         constexpr const char* instanceMixInputPortId = "in";
-        constexpr const char* instanceAllocatorTypeId = "instance.allocator";
+        constexpr const char* instanceVoiceTypeId = "instance.voice"; // 09-28-InstanceAllocator.3 — renamed from "instance.allocator"
 
         std::unordered_set<juce::String> reachableFollowing (const juce::String& start,
                                                                const std::unordered_map<juce::String, std::vector<juce::String>>& edges,
@@ -46,9 +46,9 @@ namespace bazalt::engine
         const auto& connections = graph.getConnections();
 
         juce::String instanceMixId;
-        juce::String instanceAllocatorId;
+        juce::String instanceVoiceId;
         int instanceMixCount = 0;
-        int instanceAllocatorCount = 0;
+        int instanceVoiceCount = 0;
         for (const auto& node : nodes)
         {
             if (node.type == instanceMixTypeId)
@@ -56,16 +56,16 @@ namespace bazalt::engine
                 instanceMixId = node.id;
                 ++instanceMixCount;
             }
-            else if (node.type == instanceAllocatorTypeId)
+            else if (node.type == instanceVoiceTypeId)
             {
-                instanceAllocatorId = node.id;
-                ++instanceAllocatorCount;
+                instanceVoiceId = node.id;
+                ++instanceVoiceCount;
             }
         }
 
         if (instanceMixCount == 0)
         {
-            if (instanceAllocatorCount == 0)
+            if (instanceVoiceCount == 0)
             {
                 result.success = true;
                 result.hasGlobalDomain = false;
@@ -74,7 +74,7 @@ namespace bazalt::engine
                 return result;
             }
 
-            // 09-28-InstanceAllocator.1: an instance.allocator that genuinely
+            // 09-28-InstanceAllocator.1: an instance.voice that genuinely
             // exists must ALWAYS receive MIDI and run its own per-voice
             // plans — dispatch (PluginProcessor::handleMidiEvent) and
             // rendering are keyed off `monoOnly` alone, so a real allocator
@@ -104,8 +104,8 @@ namespace bazalt::engine
             // the allocator's own trigger source, exactly the "mono source
             // feeding the poly region" DOMAINS.md §2 already says is free.
             // Forward-only reachability treated it as a domain crossing.
-            auto voiceReachable = reachableFollowing (instanceAllocatorId, successorsOf, true);
-            for (const auto& id : reachableFollowing (instanceAllocatorId, predecessorsOf, false))
+            auto voiceReachable = reachableFollowing (instanceVoiceId, successorsOf, true);
+            for (const auto& id : reachableFollowing (instanceVoiceId, predecessorsOf, false))
                 voiceReachable.insert (id);
 
             if (voiceReachable.count (graph.getOutputNodeId()) > 0)
@@ -159,7 +159,7 @@ namespace bazalt::engine
             // region's output is what's final) — GraphCompiler still needs
             // SOME real, always-present output port to compile against, so
             // point it at the allocator's own primary output.
-            voiceOnly.setOutput (instanceAllocatorId, "gate");
+            voiceOnly.setOutput (instanceVoiceId, "gate");
 
             NodeGraph independentGlobal;
             for (const auto& node : nodes)
@@ -186,10 +186,10 @@ namespace bazalt::engine
             return result;
         }
 
-        if (instanceAllocatorCount > 1)
+        if (instanceVoiceCount > 1)
         {
-            result.errorMessage = "Only one instance.allocator node is supported per graph (found "
-                                   + juce::String (instanceAllocatorCount)
+            result.errorMessage = "Only one instance.voice node is supported per graph (found "
+                                   + juce::String (instanceVoiceCount)
                                    + ") — multiple simultaneous instanced regions are M28 (Swarm) territory, not built yet";
             return result;
         }
@@ -221,7 +221,7 @@ namespace bazalt::engine
         {
             result.success = true;
             result.hasGlobalDomain = false;
-            result.monoOnly = instanceAllocatorCount == 0;
+            result.monoOnly = instanceVoiceCount == 0;
             result.voiceGraph = graph;
             return result;
         }
@@ -271,7 +271,7 @@ namespace bazalt::engine
         // cluster of such nodes wired only to each other, or — the case
         // that broke this fix's first cut, found live — a node ALREADY fed
         // by the voice domain (e.g. logic.select's condition wired straight
-        // from instance.allocator's gate) but not yet wired onward to
+        // from instance.voice's gate) but not yet wired onward to
         // anything that reaches instance.mix. Used to be a hard compile
         // error the instant instance.mix had a real upstream connection
         // ("Node 'X' is not connected to either the voice or global
@@ -292,7 +292,7 @@ namespace bazalt::engine
         // domain as before — inert until wired further, but fully compiled
         // and inspectable via a tap immediately, matching how the
         // instanceMixCount==0 branch above already treats an unconnected
-        // instance.allocator. Never poaches an already-earned membership.
+        // instance.voice. Never poaches an already-earned membership.
         std::unordered_set<juce::String> foldedNodeIds;
         {
             std::unordered_set<juce::String> unclassified;
@@ -389,15 +389,15 @@ namespace bazalt::engine
                 return result;
             }
 
-            // An instance.allocator folded by the block just above (almost
+            // An instance.voice folded by the block just above (almost
             // always into globalDomain, since it has nothing feeding it by
             // definition — an allocator has no real inputs of its own to be
             // "fed by voice" through) is legitimately not yet wired to
             // anything downstream - not the "connected the wrong way" case
             // this check exists to catch.
-            if (node.type == instanceAllocatorTypeId && ! inVoice && foldedNodeIds.count (node.id) == 0)
+            if (node.type == instanceVoiceTypeId && ! inVoice && foldedNodeIds.count (node.id) == 0)
             {
-                result.errorMessage = "instance.allocator node '" + node.id
+                result.errorMessage = "instance.voice node '" + node.id
                                        + "' must be in the voice domain (upstream of instance.mix)";
                 return result;
             }

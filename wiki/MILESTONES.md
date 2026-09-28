@@ -507,34 +507,72 @@ seed, asserting `random1`/`random2` are bit-identical across runs; a second case
 seed asserting the values differ. Mutation-checked (temporarily revert to `setSeedRandomly()`,
 confirm the new test catches the non-determinism, revert back).
 
-## `09-28-InstanceAllocator.3` — split into a real `instance.voice` node, drop the dead configuration dropdown
+## `09-28-InstanceAllocator.3` — split into a real `instance.voice` node, drop the dead configuration dropdown — done
 
 **Root cause:** `instance.allocator`'s `configuration` enum (Voice / Swarm-population /
-Swarm-transient / Trigger) is real, visible UI surface today — `setParameter()`'s own comment
-admits three of the four options do nothing. The four configurations don't even share a port shape
+Swarm-transient / Trigger) was real, visible UI surface — `setParameter()`'s own comment admitted
+three of the four options did nothing. The four configurations didn't even share a port shape
 (Voice needs a `Note` `spawn` input; Swarm-population needs none at all) — a real structural
 mismatch for one node with a mode switch, unlike `mix.downmix`'s legitimate same-shape mode enum.
 
-**The fix:** rename the type id `instance.allocator` → `instance.voice` (direct rename — CLAUDE.md
-rule 3 is suspended, no migration needed; every real reference updated: `ProofGraphs.h`'s factory
-registration and Init Patch, `DomainSplitter.cpp`'s `instanceAllocatorTypeId` constant, every test
-graph that builds one, `wiki/NODES.md`). Remove the `configuration` parameter and its backing
-member entirely — one real configuration means a single-option enum is UI clutter, not a choice.
-Rename the source file/class too (`InstanceAllocatorNode.h` → `InstanceVoiceNode.h`, class
-`InstanceVoiceNode`) rather than leaving an `Allocator`-named class behind a `voice` type id. Title
-becomes "Voice" — category stays "Domain" (the Add menu's existing category grouping, confirmed
-already real in `AddMenu.tsx`, gives the context, not the node's own name).
+**The fix, as shipped:** renamed the type id `instance.allocator` → `instance.voice` (a direct
+rename — CLAUDE.md rule 3 is suspended, no migration needed). Deleted
+`InstanceAllocatorNode.h`/class `InstanceAllocatorNode` outright and wrote `InstanceVoiceNode.h`/
+class `InstanceVoiceNode` fresh from it, rather than editing the old file in place — same content,
+new name, easier to diff cleanly. The `configuration` parameter and its backing `int configuration`
+member are gone entirely, not defaulted; the surviving `maxInstances` parameter's own id was
+renamed too, `instance.allocator.maxInstances` → `instance.voice.maxInstances`, matching this
+codebase's universal `<typeId>.<paramName>` convention (every other node's parameter ids follow
+it — leaving this one stale would've been the actual inconsistency). Title is now "Voice";
+category stays "Domain" exactly as planned.
 
-**Explicitly not built here:** `instance.swarmPopulation`/`instance.swarmTransient`/
-`instance.trigger` as real node types — created later, as their own real milestones, once actual
-Swarm/Trigger runtime machinery exists, not as empty shells now (which would just recreate the
-same dead-surface problem this milestone fixes).
+**Real, functional references updated:** `engine/CMakeLists.txt`'s file list, `ProofGraphs.h`
+(factory registration, `#include`, both hardcoded proof graphs' node instances), `DomainSplitter.h`/
+`.cpp` (the `instanceAllocatorTypeId`/`instanceAllocatorId`/`instanceAllocatorCount` C++
+identifiers renamed too, not just their string values, for the same "don't leave one stale name
+behind" reasoning as the parameter id), every test file with a `"instance.allocator"` string
+literal (`tests/DomainSplitterTests.cpp`, `NoteEventTests.cpp`; `tests-plugin/
+ConnectWithAutoAdaptTests.cpp`, `HostInputTests.cpp`, `VisualizationTapTests.cpp`) plus their test
+*names* and comments referencing the old id in prose (a plain, dot-anchored `instance\.allocator`
+search-and-replace is safe against the arc's own name, `09-28-InstanceAllocator`, which has no dot
+and different capitalization — verified this distinction holds before running it broadly).
+`plugin/source/{GraphEditController,PluginEditor,PluginProcessor}.{h,cpp}`'s own comments got the
+same sweep, since they were already being touched by recent milestones in this same arc.
 
-**Tests:** every existing `"instance.allocator"` string reference updated (a stale one fails at
-graph-compile time with a clear "unknown node type" error, not silently — mechanical/grep-driven).
-New test confirming `getParameters()` no longer exposes a `configuration`-named parameter. Full
-suite green, `pluginval`, Standalone sanity check that the Init Patch (which uses this node) still
-plays.
+**Docs updated to match, not left describing the old shape:** `wiki/NODES.md`'s own node-catalog
+entry rewritten (🚧 → ✅, config-dropdown language replaced), its Reference Patches table's
+Swarm-mode-referencing rows (Water, Cicada Field, the swarm/hexaphonic-guitar bullets) reworded to
+point at *future, separate* `instance.swarmPopulation`/`instance.swarmTransient` node types instead
+of configurations of `instance.voice` — matching this milestone's own "separate types later, not
+empty shells now" decision. `wiki/NODES.System.md` §2's enum-index-stability caveat (which used to
+cite `instance.allocator.configuration` as the one real exception to "never rely on option index")
+rewritten to say the violation is resolved, since the parameter it cited is gone; §5's whole
+`instance.allocator — one node, several configurations` subsection rewritten into `instance.voice —
+the region-opening node`, reframing Swarm/Trigger as future separate node types sharing the same
+underlying instance-context/lifetime/events machinery, not future configurations of this one.
+`wiki/NODES_Gaps.md`'s still-open items (the `.2`-relevant `random1`/`random2` entry, a Note-port
+example) updated to the current name; its *historical*, already-fixed bug-report entries (the
+dropdown-clipping fix, which happens to mention screenshotting "instance.allocator's Configuration"
+dropdown specifically, at a time when that dropdown genuinely existed) left as an accurate record of
+what was true when that fix shipped, not rewritten to pretend it never existed.
+`wiki/reports/InstanceAllocator_2026-09-28.md` (the report that recommended this exact rename) and
+`archive_docs/**` (explicitly historical, not maintained, per `CLAUDE.md`'s own framing) deliberately
+left untouched — rewriting the report that recommended a change, to already assume the change
+shipped, would erase the reasoning that led to it.
+
+**Explicitly not built here (unchanged from the plan):** `instance.swarmPopulation`/
+`instance.swarmTransient`/`instance.trigger` as real node types — created later, as their own real
+milestones, once actual Swarm/Trigger runtime machinery exists, not as empty shells now.
+
+**Tests:** new engine-level test (`tests/NodeDescriptorTests.cpp`) confirms `instance.allocator` no
+longer resolves to anything in `NodeFactory::describeAll()`, `instance.voice` does, its title reads
+"Voice", and its `parameters` list contains exactly one entry (`instance.voice.maxInstances`) with
+nothing matching `*configuration*` anywhere in an id. 377/377 tests green (up from 376 — one new
+test; the rename itself didn't need new *coverage* so much as updating existing tests to the new
+name, since a stale reference fails loudly at compile time, not silently). `pluginval
+--strictness-level 10`: clean `SUCCESS` first try this round, no flake to isolate. Standalone app
+relaunched — the Init Patch (which uses this node for real, as `"allocator"`/`instance.voice`)
+still compiles and plays.
 
 ## `09-28-InstanceAllocator.4` — a visual indicator for voice-domain cables
 

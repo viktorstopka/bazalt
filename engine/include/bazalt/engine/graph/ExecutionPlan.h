@@ -42,7 +42,7 @@ namespace bazalt::engine
         //
         // M18: bumped from 8 — InstanceAllocatorNode already has 9 output
         // ports (and expects more) — an overrun that was never exercised
-        // before M18 first ran instance.allocator in a real graph. M21:
+        // before M18 first ran instance.voice in a real graph. M21:
         // bumped from 16 to 32 for mix.sum, whose 16-input growable group
         // carries a level companion each (2 ports per member). Keep this and
         // Node.h's own maxPortsPerNode in sync — they bound the same

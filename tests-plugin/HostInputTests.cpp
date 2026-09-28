@@ -54,7 +54,7 @@ namespace
 {
     using bazalt::engine::NodeGraph;
 
-    // audioIn -> out, no instance.allocator anywhere: a mono graph.
+    // audioIn -> out, no instance.voice anywhere: a mono graph.
     NodeGraph monoEffectGraph (float bus = 0.0f, const juce::String& channelPort = "channel.0")
     {
         NodeGraph graph;
@@ -96,7 +96,7 @@ namespace
 TEST_CASE ("A mono audio-effect graph passes the host main input through with no note held",
            "[plugin][host-input][mono]")
 {
-    // audioIn -> out has no instance.allocator, so nothing is per-voice: the
+    // audioIn -> out has no instance.voice, so nothing is per-voice: the
     // graph is one plan that runs every block. Before M21 it would have been
     // compiled per voice and run only while a voice was active - silent
     // forever, since no note ever plays.
@@ -119,12 +119,12 @@ TEST_CASE ("A mono audio-effect graph passes the host main input through with no
     CHECK (right.getSample (0, 100) == Catch::Approx (0.7f).margin (1.0e-6f));
 }
 
-TEST_CASE ("09-28-InstanceAllocator.1: an unrelated, unconnected instance.allocator doesn't silence an otherwise always-on chain",
+TEST_CASE ("09-28-InstanceAllocator.1: an unrelated, unconnected instance.voice doesn't silence an otherwise always-on chain",
            "[plugin][host-input][InstanceAllocator]")
 {
     // The literal user repro this milestone fixes: a sine wired straight to
     // Master Out played fine; adding a completely unconnected
-    // instance.allocator node anywhere in the graph silently converted the
+    // instance.voice node anywhere in the graph silently converted the
     // whole thing to per-voice (nothing ever triggers a voice, so it just
     // goes silent, permanently, key presses or not).
     using bazalt::engine::NodeGraph;
@@ -132,7 +132,7 @@ TEST_CASE ("09-28-InstanceAllocator.1: an unrelated, unconnected instance.alloca
     NodeGraph graph;
     graph.addNode ({ "sine", "osc.sine", {}, { { "osc.sine.frequency", 220.0f } }, {} });
     graph.addNode ({ "out", "io.output", {}, {}, {} });
-    graph.addNode ({ "alloc", "instance.allocator", {}, {}, {} }); // deliberately unconnected
+    graph.addNode ({ "alloc", "instance.voice", {}, {}, {} }); // deliberately unconnected
     graph.addConnection ({ "sine", "out", "out", "in" });
     graph.setOutput ("out", "out");
 
@@ -154,7 +154,7 @@ TEST_CASE ("09-28-InstanceAllocator.1b: MIDI reaches io.noteIn regardless of its
            "[plugin][host-input][InstanceAllocator]")
 {
     // Another real bug found live in the same session, same symptom
-    // ("instance.allocator's gate never moves"): PluginProcessor used to
+    // ("instance.voice's gate never moves"): PluginProcessor used to
     // find the plan's io.noteIn node by a HARDCODED instance id ("noteIn")
     // rather than by type. The editor's own Add-menu auto-generates
     // ordinary ids ("node2", "node3", ...) for a placed node - never that
@@ -179,7 +179,7 @@ TEST_CASE ("09-28-InstanceAllocator.1b: MIDI reaches io.noteIn regardless of its
 
     NodeGraph graph;
     graph.addNode ({ "node3", "io.noteIn", {}, {}, {} }); // NOT "noteIn"
-    graph.addNode ({ "alloc", "instance.allocator", {}, {}, {} });
+    graph.addNode ({ "alloc", "instance.voice", {}, {}, {} });
     graph.addNode ({ "osc", "osc.analog", {}, {}, {} });
     graph.addNode ({ "env", "env.adsr", {}, { { "env.adsr.attack", 0.0f } }, {} });
     graph.addNode ({ "vca", "mix.gain", {}, {}, {} });
@@ -228,7 +228,7 @@ TEST_CASE ("A genuinely stereo graph (space.pan into io.output's stereo pair) se
     // covered by the next test.
     NodeGraph graph;
     graph.addNode ({ "noteIn", "io.noteIn", {}, {}, {} });
-    graph.addNode ({ "allocator", "instance.allocator", {}, {}, {} });
+    graph.addNode ({ "allocator", "instance.voice", {}, {}, {} });
     graph.addNode ({ "osc", "osc.analog", {}, {}, {} });
     graph.addNode ({ "voiceMix", "instance.mix", {}, {}, {} });
     graph.addNode ({ "pan", "space.pan", {}, { { "space.pan.pan", -1.0f } }, {} }); // hard left
@@ -283,7 +283,7 @@ TEST_CASE ("A mono source into io.output's stereo 'in' broadcasts to both host c
     // can't exercise this mechanism either way.
     NodeGraph graph;
     graph.addNode ({ "noteIn", "io.noteIn", {}, {}, {} });
-    graph.addNode ({ "allocator", "instance.allocator", {}, {}, {} });
+    graph.addNode ({ "allocator", "instance.voice", {}, {}, {} });
     graph.addNode ({ "osc", "osc.analog", {}, {}, {} });
     graph.addNode ({ "voiceMix", "instance.mix", {}, {}, {} });
     graph.addNode ({ "out", "io.output", {}, {}, {} });
@@ -492,7 +492,7 @@ TEST_CASE ("Switching between a mono graph and a voice graph and back leaves bot
         return std::sqrt (sumSquares / 512.0);
     };
 
-    // The default graph has an instance.allocator: a note makes sound.
+    // The default graph has an instance.voice: a note makes sound.
     CHECK (rmsAfterNote() > 0.001);
 
     // Into a mono graph: audio passes, and a note plays nothing extra.
