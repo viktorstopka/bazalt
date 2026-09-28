@@ -119,6 +119,37 @@ TEST_CASE ("A mono audio-effect graph passes the host main input through with no
     CHECK (right.getSample (0, 100) == Catch::Approx (0.7f).margin (1.0e-6f));
 }
 
+TEST_CASE ("09-28-InstanceAllocator.1: an unrelated, unconnected instance.allocator doesn't silence an otherwise always-on chain",
+           "[plugin][host-input][InstanceAllocator]")
+{
+    // The literal user repro this milestone fixes: a sine wired straight to
+    // Master Out played fine; adding a completely unconnected
+    // instance.allocator node anywhere in the graph silently converted the
+    // whole thing to per-voice (nothing ever triggers a voice, so it just
+    // goes silent, permanently, key presses or not).
+    using bazalt::engine::NodeGraph;
+
+    NodeGraph graph;
+    graph.addNode ({ "sine", "osc.sine", {}, { { "osc.sine.frequency", 220.0f } }, {} });
+    graph.addNode ({ "out", "io.output", {}, {}, {} });
+    graph.addNode ({ "alloc", "instance.allocator", {}, {}, {} }); // deliberately unconnected
+    graph.addConnection ({ "sine", "out", "out", "in" });
+    graph.setOutput ("out", "out");
+
+    BazaltAudioProcessor processor;
+    processor.prepareToPlay (44100.0, 512);
+    REQUIRE (processor.getGraphEditController().setGraph (graph).success);
+
+    const auto out = processWithMainInput (processor, 0.0f, 0.0f, 512); // no note held, no MIDI at all
+
+    double sumSquares = 0.0;
+    for (int i = 0; i < 512; ++i)
+        sumSquares += (double) out.getSample (0, i) * out.getSample (0, i);
+    const auto rms = std::sqrt (sumSquares / 512.0);
+
+    CHECK (rms > 0.1); // the sine is genuinely audible - the allocator's presence didn't gate it
+}
+
 TEST_CASE ("A genuinely stereo graph (space.pan into io.output's stereo pair) sends different signals to each host channel",
            "[plugin][host-input][stereo]")
 {

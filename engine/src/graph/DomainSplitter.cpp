@@ -46,6 +46,7 @@ namespace bazalt::engine
         const auto& connections = graph.getConnections();
 
         juce::String instanceMixId;
+        juce::String instanceAllocatorId;
         int instanceMixCount = 0;
         int instanceAllocatorCount = 0;
         for (const auto& node : nodes)
@@ -57,6 +58,7 @@ namespace bazalt::engine
             }
             else if (node.type == instanceAllocatorTypeId)
             {
+                instanceAllocatorId = node.id;
                 ++instanceAllocatorCount;
             }
         }
@@ -65,8 +67,37 @@ namespace bazalt::engine
         {
             result.success = true;
             result.hasGlobalDomain = false;
-            result.monoOnly = instanceAllocatorCount == 0;
             result.voiceGraph = graph;
+
+            if (instanceAllocatorCount == 0)
+            {
+                result.monoOnly = true;
+            }
+            else
+            {
+                // 09-28-InstanceAllocator.1: an instance.allocator's mere
+                // presence must not silence content it isn't wired to (the
+                // exact bug this fixes: a disconnected/irrelevant allocator
+                // used to force per-voice treatment on the WHOLE graph,
+                // regardless of whether anything it feeds ever reaches the
+                // designated output). Only treat the graph as genuinely
+                // per-voice if the output is actually reachable FORWARD from
+                // the allocator; otherwise this behaves exactly as if no
+                // allocator existed at all. Safe even when the allocator IS
+                // wired to something real but that something doesn't reach
+                // the output: a node inside a monoOnly-dispatched plan is
+                // never poked via noteOn()/noteOff() (MIDI dispatch only
+                // ever targets per-voice plan slots), so it just sits inert
+                // — exactly matching its real (non-)contribution to what's
+                // audible.
+                std::unordered_map<juce::String, std::vector<juce::String>> successorsOf;
+                for (const auto& connection : connections)
+                    successorsOf[connection.fromNodeId].push_back (connection.toNodeId);
+
+                const auto voiceReachable = reachableFollowing (instanceAllocatorId, successorsOf, true);
+                result.monoOnly = voiceReachable.count (graph.getOutputNodeId()) == 0;
+            }
+
             return result;
         }
 

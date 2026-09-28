@@ -279,7 +279,7 @@ namespace
     }
 }
 
-TEST_CASE ("A graph with no instance.allocator and no instance.mix is a mono graph; one with an allocator is not",
+TEST_CASE ("A graph with no instance.allocator and no instance.mix is a mono graph",
            "[engine][DomainSplitter][M21]")
 {
     // DOMAINS.md §7: the allocator's outputs are what make a region poly, so
@@ -291,17 +291,69 @@ TEST_CASE ("A graph with no instance.allocator and no instance.mix is a mono gra
     effect.addConnection ({ "in", "channel.0", "out", "in" });
     effect.setOutput ("out", "out");
 
-    auto result = DomainSplitter::split (effect);
+    const auto result = DomainSplitter::split (effect);
     REQUIRE (result.success);
     CHECK (result.monoOnly);
     CHECK_FALSE (result.hasGlobalDomain);
     CHECK (result.voiceGraph.getNodes().size() == 2); // still the unchanged graph, for anything keyed on it
+}
 
-    NodeGraph synth = effect;
+TEST_CASE ("09-28-InstanceAllocator.1: an instance.allocator not reachable from the output doesn't force per-voice treatment",
+           "[engine][DomainSplitter][InstanceAllocator]")
+{
+    // The exact regression this milestone fixes. Before the fix, an
+    // allocator's mere PRESENCE (even completely disconnected from the
+    // output) flipped monoOnly to false for the WHOLE graph — a sine wired
+    // straight to Master Out went silent the moment an unrelated,
+    // unconnected instance.allocator was dropped onto the canvas.
+    NodeGraph effect;
+    effect.addNode ({ "in", "io.audioIn", {}, {}, {} });
+    effect.addNode ({ "out", "io.output", {}, {}, {} });
+    effect.addConnection ({ "in", "channel.0", "out", "in" });
+    effect.setOutput ("out", "out");
+
+    NodeGraph withUnconnectedAllocator = effect;
+    withUnconnectedAllocator.addNode ({ "alloc", "instance.allocator", {}, {}, {} }); // no connections at all
+    auto result = DomainSplitter::split (withUnconnectedAllocator);
+    REQUIRE (result.success);
+    CHECK (result.monoOnly); // unchanged from the no-allocator case above
+
+    // Also covers the case where the allocator IS wired to something real,
+    // just not to anything that reaches the designated output — its own
+    // little fragment is harmless dead code, not a reason to gate the
+    // unrelated audible chain.
+    NodeGraph withWiredButIrrelevantAllocator = effect;
+    withWiredButIrrelevantAllocator.addNode ({ "noteIn", "io.noteIn", {}, {}, {} });
+    withWiredButIrrelevantAllocator.addNode ({ "alloc", "instance.allocator", {}, {}, {} });
+    withWiredButIrrelevantAllocator.addConnection ({ "noteIn", "notes", "alloc", "spawn" });
+    // alloc's own outputs (pitch/gate/...) are never wired to anything further.
+    result = DomainSplitter::split (withWiredButIrrelevantAllocator);
+    REQUIRE (result.success);
+    CHECK (result.monoOnly);
+}
+
+TEST_CASE ("09-28-InstanceAllocator.1: an instance.allocator genuinely wired through to the output IS treated as per-voice, even with no instance.mix",
+           "[engine][DomainSplitter][InstanceAllocator]")
+{
+    // The case that must keep working exactly as before: a plain voice
+    // patch (no instance.mix at all — the "voice sum is the final output"
+    // fallback handles delivery) with the allocator's own signal genuinely
+    // reaching the designated output.
+    NodeGraph synth;
+    synth.addNode ({ "noteIn", "io.noteIn", {}, {}, {} });
     synth.addNode ({ "alloc", "instance.allocator", {}, {}, {} });
-    result = DomainSplitter::split (synth);
+    synth.addNode ({ "osc", "osc.analog", {}, {}, {} });
+    synth.addNode ({ "out", "io.output", {}, {}, {} });
+    synth.addConnection ({ "noteIn", "notes", "alloc", "spawn" });
+    synth.addConnection ({ "alloc", "pitch", "osc", "pitch" });
+    synth.addConnection ({ "osc", "out", "out", "in" });
+    synth.setOutput ("out", "out");
+
+    const auto result = DomainSplitter::split (synth);
     REQUIRE (result.success);
     CHECK_FALSE (result.monoOnly);
+    CHECK_FALSE (result.hasGlobalDomain); // no instance.mix — the pre-existing "voice sum is final output" path
+    CHECK (result.voiceGraph.getNodes().size() == 4);
 }
 
 TEST_CASE ("A mono source that feeds only the global domain joins the global plan instead of being rejected",

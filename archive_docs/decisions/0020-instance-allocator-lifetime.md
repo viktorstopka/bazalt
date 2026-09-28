@@ -1,8 +1,20 @@
 # 0020 — Instance Allocator / Voice Mix replace `util.voiceSum`; per-instance state pool finally built
 
 ## Status
-Proposed (M17). Not implemented. Supersedes `util.voiceSum` as the domain boundary; closes
-ADR-0003's originally-flagged open item.
+**Implemented (M17-M18), Voice configuration only — corrected 2026-09-28 (09-28-InstanceAllocator
+arc); this status line previously still said "Proposed... Not implemented," which had gone stale.**
+`instance.allocator`/`instance.mix` are real, separate node types replacing `util.voiceSum`;
+`VoiceManager` implements the fade-ramp stealing and generic silence-based freeing this ADR
+specifies (`VoiceManager.h`'s `stealFadeSamples`/`updateSilenceAndCheckFinished`); the per-instance
+state pool is real as of M17 (`GraphCompiler::compile()`'s `previousPlan` reuse, keyed by node id —
+see `CLAUDE.md`'s own note on how this compares to `ARCHITECTURE.md` §3.2's original sketch).
+
+**Two things this ADR decided that were NOT carried out, left deliberately out of scope by the
+09-28-InstanceAllocator arc rather than silently forgotten:** (1) Swarm-population/Swarm-transient/
+Trigger configurations — explicitly deferred by this ADR's own "Consequences" section, still
+deferred, no committed milestone. (2) "Generalize `DomainSplitter` to identify N allocator regions
+instead of exactly one fixed node type" — `DomainSplitter.cpp` still hard-rejects a second
+`instance.allocator` node today; this generalization was never attempted.
 
 ## Context
 `DOMAINS.md` proposes two separate boundary node types — **Instance Allocator** (mono→poly, four

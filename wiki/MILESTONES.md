@@ -250,8 +250,9 @@ Not part of the `0.x` sequence above — a self-contained arc scoped from a real
 (`wiki/reports/InstanceAllocator_2026-09-28.md` has the full reasoning, code citations, and
 alternatives considered for every milestone below; this is the plan, not a restatement of the
 report). Numbered by date + feature name rather than sequentially, since it's parallel to, not
-part of, the `0.x` arc's own progression. **None of the four milestones below are done yet** —
-written as the approved forward plan, same pattern the `0.x` arc itself used when it started.
+part of, the `0.x` arc's own progression. **`.1` is done; `.2`–`.4` are not yet built** — the
+rest was written as the approved forward plan, same pattern the `0.x` arc itself used when it
+started, and stays that way until each ships.
 
 **The bug, precisely:** adding an `instance.allocator` node to a graph — even completely
 disconnected from anything — silently converts the *entire* graph from "always-on, runs every
@@ -267,7 +268,7 @@ feeding one `mix.sum`, bridged only through `instance.mix`). What's actually bro
 the *no-`instance.mix`* case, where an allocator's mere existence shouldn't matter to content it
 isn't wired to.
 
-## `09-28-InstanceAllocator.1` — the reachability fix
+## `09-28-InstanceAllocator.1` — the reachability fix — done
 
 **Root cause:** `DomainSplitter.cpp`'s `instanceMixCount == 0` branch sets `result.monoOnly =
 (instanceAllocatorCount == 0)` and always returns the *whole* graph as `voiceGraph` — never
@@ -292,8 +293,17 @@ Every other existing `DomainSplitterTests.cpp` case confirmed untouched (none ex
 `instanceMixCount == 0` branch). New `tests-plugin` case matching the literal repro: `osc.sine →
 io.output` plus a disconnected `instance.allocator`, asserting real audio reaches the host output.
 
+**Verified:** 369/369 tests green (up from 365 — the rewritten `DomainSplitterTests.cpp` case
+split into two, plus the new `tests-plugin` literal-repro case). Mutation-tested at both layers:
+forced the fix's reachability check to a constant `false`, confirmed both the engine-level
+`DomainSplitterTests.cpp` cases AND the plugin-level real-audio test caught it (the plugin one
+failing with the exact symptom — `rms == 0.0`, genuine silence — not just a flag mismatch).
+`pluginval --strictness-level 10`: one "Parameter thread safety" timeout, isolated via
+`git stash` (reproduced identically with this milestone's changes fully removed — confirmed
+environmental, not a regression), passed clean on retry with the changes restored.
+
 **Also folded in** (same file, directly related): `archive_docs/decisions/
-0020-instance-allocator-lifetime.md` still says "Status: Proposed (M17). Not implemented" — false,
+0020-instance-allocator-lifetime.md` still said "Status: Proposed (M17). Not implemented" — false,
 Voice mode shipped M17-M18. Corrected honestly, including naming that the ADR's own "generalize
 `DomainSplitter` to N allocator regions" decision was never carried out and stays out of scope here
 (still a hard `instanceAllocatorCount > 1` rejection) — real, separate, larger future work, named
