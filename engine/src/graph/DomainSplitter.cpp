@@ -241,98 +241,118 @@ namespace bazalt::engine
         }
 
         // Backward from instance.mix (excluding itself) = voice domain.
-        const auto voiceDomain = reachableFollowing (instanceMixId, predecessorsOf, false);
+        auto voiceDomain = reachableFollowing (instanceMixId, predecessorsOf, false);
         // Forward from instance.mix (including itself) = global domain.
         auto globalDomain = reachableFollowing (instanceMixId, successorsOf, true);
 
-        // M21: mono sources. A node that is in neither set but feeds the global
-        // domain (io.audioIn, io.control, io.transport, a constant... feeding a
-        // chain after the mix) is not per-voice and not downstream of the mix,
-        // yet DOMAINS.md §2 is explicit that mono signals are free everywhere.
-        // Walk backward from every global node; whatever that reaches outside
-        // the voice domain is a mono source and joins the global plan.
-        // (Anything that reaches the mix backward is voice domain already, and
-        // an unconnected node reaches nothing, so it is still rejected below.)
-        {
-            std::vector<juce::String> stack (globalDomain.begin(), globalDomain.end());
-            std::unordered_set<juce::String> visited (globalDomain.begin(), globalDomain.end());
-
-            while (! stack.empty())
-            {
-                const auto current = stack.back();
-                stack.pop_back();
-
-                const auto it = predecessorsOf.find (current);
-                if (it == predecessorsOf.end())
-                    continue;
-
-                for (const auto& previous : it->second)
-                {
-                    if (voiceDomain.count (previous) > 0)
-                        continue; // a voice node feeding the global domain: checked below, not a mono source
-                    if (visited.insert (previous).second)
-                    {
-                        globalDomain.insert (previous);
-                        stack.push_back (previous);
-                    }
-                }
-            }
-        }
+        // M21's original "mono sources" backward-expansion used to live here
+        // as its own separate pass (walk backward from every global node;
+        // whatever that reaches outside the voice domain joins the global
+        // plan too — io.audioIn, io.control, a constant feeding a chain
+        // after the mix, etc., per DOMAINS.md §2's "mono signals are free
+        // everywhere"). Folded into the unified classification below
+        // instead (09-28-InstanceAllocator.1 part 4): that pass already
+        // implements the exact same "not fed by voice -> global" rule for
+        // every not-yet-classified node, PLUS the "fed by voice -> voice"
+        // half M21's own version never had — a real bug found live via this
+        // milestone's own new test (an orphan fed by the voice domain that
+        // ALSO happens to feed something already in the global domain, e.g.
+        // wired straight to the designated output, used to get silently
+        // pre-claimed as global by walking backward from that existing
+        // global node BEFORE this next pass could see it was voice-fed).
+        // Keeping two separate passes for what's really one rule meant they
+        // could race and disagree; one pass now answers the question once.
 
         // 09-28-InstanceAllocator.1 (part 4): a node reachable from NEITHER
         // domain is either a freshly-placed, not-yet-wired node (the editor
         // always places a node before wiring it — the exact same "must be
         // placeable on its own" reasoning the instance.mix incomingCount==0
-        // carve-out above already applies to instance.mix itself) or a
-        // little cluster of such nodes wired only to each other. Used to be
-        // a hard compile error the instant instance.mix had a real upstream
-        // connection ("Node 'X' is not connected to either the voice or
-        // global domain") — found live: placing ANY new node became
-        // impossible the moment a real bridged graph existed, since a
-        // brand-new node starts with zero connections by construction. Fold
-        // every such node (and anything only reachable through other such
-        // nodes) into the global domain instead — it already runs
-        // unconditionally every block, so this makes an orphan inert
-        // (contributes nothing to final output, exactly right for
-        // something not wired to anything yet) while keeping it fully
-        // compiled and inspectable via a tap immediately, matching how the
+        // carve-out above already applies to instance.mix itself), a little
+        // cluster of such nodes wired only to each other, or — the case
+        // that broke this fix's first cut, found live — a node ALREADY fed
+        // by the voice domain (e.g. logic.select's condition wired straight
+        // from instance.allocator's gate) but not yet wired onward to
+        // anything that reaches instance.mix. Used to be a hard compile
+        // error the instant instance.mix had a real upstream connection
+        // ("Node 'X' is not connected to either the voice or global
+        // domain"). First cut of this part's own fix always folded such a
+        // node into the global domain — fine for a genuinely disconnected
+        // one, but wrong for the fed-by-voice case: reclassifying it as
+        // global made its own real incoming edge FROM the voice domain
+        // look like a straight voice->global violation, rejecting the
+        // single most ordinary construction order (wire a cable in, then
+        // wire the next one). Fixed by classifying each not-yet-connected-
+        // to-either-domain cluster on its own: if ANY edge feeds into the
+        // cluster from the voice domain, the WHOLE cluster joins the voice
+        // domain instead (DOMAINS.md §2's rule is asymmetric — voice
+        // content may only reach global content through instance.mix, but
+        // nothing stops it drifting deeper into the voice domain first);
+        // everything else (no connections at all, or fed only by the
+        // global domain / other such clusters) still joins the global
+        // domain as before — inert until wired further, but fully compiled
+        // and inspectable via a tap immediately, matching how the
         // instanceMixCount==0 branch above already treats an unconnected
-        // instance.allocator. Never poaches an already-earned voiceDomain
-        // membership.
-        std::unordered_set<juce::String> orphanNodeIds;
+        // instance.allocator. Never poaches an already-earned membership.
+        std::unordered_set<juce::String> foldedNodeIds;
         {
-            std::vector<juce::String> stack;
+            std::unordered_set<juce::String> unclassified;
             for (const auto& node : nodes)
                 if (voiceDomain.count (node.id) == 0 && globalDomain.count (node.id) == 0)
-                    if (orphanNodeIds.insert (node.id).second)
-                        stack.push_back (node.id);
+                    unclassified.insert (node.id);
 
-            while (! stack.empty())
+            while (! unclassified.empty())
             {
-                const auto current = stack.back();
-                stack.pop_back();
+                // One connected component, following only edges between two
+                // still-unclassified nodes — an edge that already touches a
+                // real domain is this component's BOUNDARY, not its interior.
+                std::unordered_set<juce::String> component;
+                std::vector<juce::String> stack { *unclassified.begin() };
+                component.insert (*unclassified.begin());
 
-                auto tryAdd = [&] (const juce::String& id)
+                while (! stack.empty())
                 {
-                    if (voiceDomain.count (id) > 0 || globalDomain.count (id) > 0)
-                        return; // never poach a domain a node already legitimately earned
-                    if (orphanNodeIds.insert (id).second)
-                        stack.push_back (id);
-                };
+                    const auto current = stack.back();
+                    stack.pop_back();
 
-                const auto itFwd = successorsOf.find (current);
-                if (itFwd != successorsOf.end())
-                    for (const auto& next : itFwd->second)
-                        tryAdd (next);
+                    auto tryAdd = [&] (const juce::String& id)
+                    {
+                        if (unclassified.count (id) == 0)
+                            return; // a real domain, or already claimed by an earlier component
+                        if (component.insert (id).second)
+                            stack.push_back (id);
+                    };
 
-                const auto itBack = predecessorsOf.find (current);
-                if (itBack != predecessorsOf.end())
-                    for (const auto& previous : itBack->second)
-                        tryAdd (previous);
+                    const auto itFwd = successorsOf.find (current);
+                    if (itFwd != successorsOf.end())
+                        for (const auto& next : itFwd->second)
+                            tryAdd (next);
+
+                    const auto itBack = predecessorsOf.find (current);
+                    if (itBack != predecessorsOf.end())
+                        for (const auto& previous : itBack->second)
+                            tryAdd (previous);
+                }
+
+                auto fedByVoice = false;
+                for (const auto& connection : connections)
+                {
+                    if (component.count (connection.toNodeId) > 0 && voiceDomain.count (connection.fromNodeId) > 0)
+                    {
+                        fedByVoice = true;
+                        break;
+                    }
+                }
+
+                for (const auto& id : component)
+                {
+                    if (fedByVoice)
+                        voiceDomain.insert (id);
+                    else
+                        globalDomain.insert (id);
+                    foldedNodeIds.insert (id);
+                    unclassified.erase (id);
+                }
             }
-
-            for (const auto& id : orphanNodeIds)
-                globalDomain.insert (id);
         }
 
         // DOMAINS.md §2/§7: poly -> mono needs a Voice Mix, "no implicit
@@ -369,10 +389,13 @@ namespace bazalt::engine
                 return result;
             }
 
-            // An orphaned instance.allocator (folded into globalDomain just
-            // above) is legitimately not yet wired to anything - not the
-            // "connected the wrong way" case this check exists to catch.
-            if (node.type == instanceAllocatorTypeId && ! inVoice && orphanNodeIds.count (node.id) == 0)
+            // An instance.allocator folded by the block just above (almost
+            // always into globalDomain, since it has nothing feeding it by
+            // definition — an allocator has no real inputs of its own to be
+            // "fed by voice" through) is legitimately not yet wired to
+            // anything downstream - not the "connected the wrong way" case
+            // this check exists to catch.
+            if (node.type == instanceAllocatorTypeId && ! inVoice && foldedNodeIds.count (node.id) == 0)
             {
                 result.errorMessage = "instance.allocator node '" + node.id
                                        + "' must be in the voice domain (upstream of instance.mix)";

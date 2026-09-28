@@ -440,6 +440,53 @@ file list. Caught via the `git stash`/`git stash pop` used to isolate the plugin
 (the stash surfaced it as an unexpectedly-still-modified file), committed on its own
 (documentation only, no code) immediately before this milestone's own commit.
 
+**A fifth bug found live, immediately after part 4 shipped**: the user tried building a realistic
+patch — `instance.allocator.gate → logic.select.condition`, two `util.constant`s into `whenTrue`/
+`whenFalse`, `select.out → env.adsr.gate` — and connecting `select`'s output into `adsr` was
+rejected: "Node 'select' (voice domain) feeds node 'adsr' (global domain) directly." Root cause:
+part 4's own fold (a node reachable from neither domain always joins the global domain) was too
+narrow. `select` genuinely IS fed by the voice domain (`instance.allocator.gate`) — it just isn't
+wired *onward* to anything reaching `instance.mix` yet, exactly the ordinary "wire one cable, then
+the next" construction order. Folding it into the global domain by default made its own real
+incoming edge from voice look like a straight voice→global violation — rejecting the single most
+common thing to do right after placing a Select/Compare/Sample-and-Hold node fed by the allocator.
+
+**The fix:** classify each not-yet-connected-to-either-domain cluster on its own, not with one
+blanket default. If ANY edge feeds into the cluster from the (already-proven) voice domain, the
+whole cluster now joins the voice domain instead (`DOMAINS.md` §2's rule is asymmetric — voice
+content may only reach global content through `instance.mix`, but nothing stops it drifting
+*deeper* into the voice domain first); everything else (no connections at all, or fed only by the
+global domain / other such clusters) still joins the global domain exactly as part 4 already had
+it. The existing "voice feeds global directly" validation still runs afterward and still catches a
+genuine bypass — mutation-tested: a cluster fed by voice that ALSO wires straight into an existing
+global-domain node (e.g. the designated output) is still correctly rejected, just via that node's
+own now-correctly-classified outgoing edge instead of its incoming one.
+
+**A second, related bug found while building this fix's own test coverage**: the *pre-existing*
+M21 "mono sources" backward-expansion (a separate pass, walking backward from the global domain to
+catch things like `io.audioIn` feeding a chain after the mix) could *itself* prematurely claim a
+voice-fed node as global, racing against this fix's own classification — specifically when that
+node happened to be a direct predecessor of something *already* in the global domain (e.g. wired
+straight to the designated output, bypassing `instance.mix`). Real bug, not just a testing
+artifact: two separate passes were answering variations of the same question ("what domain does
+this in-between node belong to?") and could disagree depending on which one ran first for a given
+node. Fixed by removing the separate M21 pass entirely — this milestone's own unified
+classification already implements the exact same "not fed by voice → global" rule for every
+not-yet-classified node, PLUS the "fed by voice → voice" half the old M21 pass never had. One rule
+answers the question once, instead of two rules that could race.
+
+**New/updated coverage:** the old "an orphan wired straight to a voice-domain node... is still a
+real, correctly-caught error" test (which encoded the too-narrow default as contract) split into
+two: one confirming a voice-fed, not-yet-wired-onward node now correctly joins the voice domain,
+and one confirming a voice-fed node that ALSO bypasses `instance.mix` on its own outgoing edge is
+still correctly rejected. 375/375 tests green. Mutation-tested the `fedByVoice` classification
+itself (forced it to always `false`, confirmed two separate tests correctly break, restored).
+`pluginval --strictness-level 10`: the "Parameter thread safety" timeout recurred a third time in
+a row this session (worse than the usual once-or-twice) — isolated via the same full
+`git stash`/rebuild/retest A/B comparison, reproduced byte-for-byte identically on the clean,
+already-committed part-4 baseline with none of this fix's changes present, confirming environmental
+independent of this fix; `SUCCESS` on the next retry with the fix in place.
+
 ## `09-28-InstanceAllocator.2` — `random1`/`random2` real determinism
 
 **Root cause:** `InstanceAllocatorNode::prepare()` calls `random.setSeedRandomly()` — reseeded

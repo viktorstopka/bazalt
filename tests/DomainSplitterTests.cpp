@@ -278,20 +278,54 @@ TEST_CASE ("09-28-InstanceAllocator.1 (part 4): a little cluster of orphaned nod
     CHECK (connectionPreserved);
 }
 
-TEST_CASE ("09-28-InstanceAllocator.1 (part 4): an orphan wired straight to a voice-domain node without "
-           "going through instance.mix is still a real, correctly-caught error",
+TEST_CASE ("09-28-InstanceAllocator.1 (part 4): a node fed by the voice domain but not yet wired "
+           "onward joins the voice domain too, not the global one",
+           "[engine][DomainSplitter][InstanceAllocator]")
+{
+    // Real bug found live in this fix's own first cut: always folding an
+    // unclassified node into the GLOBAL domain broke the single most
+    // ordinary construction order - wire a cable in, then wire the next
+    // one. A node fed by instance.allocator's gate (e.g. logic.select),
+    // not yet wired onward to anything that reaches instance.mix, must
+    // join the voice domain instead - otherwise its own real incoming
+    // edge from the voice domain looks exactly like a voice->global
+    // violation the moment it's (wrongly) classified as global.
+    auto graph = buildSplitTestGraph();
+    graph.addNode ({ "orphan", "mix.gain", {}, {}, {} });
+    graph.addConnection ({ "svf", "out", "orphan", "audio" }); // fed by svf (voice), not wired onward at all
+
+    const auto result = DomainSplitter::split (graph);
+    REQUIRE (result.success);
+
+    bool orphanInVoice = false;
+    for (const auto& node : result.voiceGraph.getNodes())
+        if (node.id == "orphan") orphanInVoice = true;
+    CHECK (orphanInVoice);
+
+    for (const auto& node : result.globalGraph.getNodes())
+        CHECK (node.id != "orphan");
+}
+
+TEST_CASE ("09-28-InstanceAllocator.1 (part 4): a node fed by the voice domain that ALSO feeds "
+           "straight into the global domain, bypassing instance.mix, is still a real, "
+           "correctly-caught error",
            "[engine][DomainSplitter][InstanceAllocator]")
 {
     // The orphan fold above must never become a backdoor around the
-    // existing "voice domain feeds global domain directly" validation.
+    // existing "voice domain feeds global domain directly" validation:
+    // joining the voice domain (the test above) doesn't mean the check
+    // stops applying - it just means the check now correctly fires on
+    // THIS node's own outgoing edge instead of its incoming one.
     auto graph = buildSplitTestGraph();
     graph.addNode ({ "orphan", "mix.gain", {}, {}, {} });
-    graph.addConnection ({ "svf", "out", "orphan", "audio" }); // svf is voice domain; this bypasses instance.mix
+    graph.addConnection ({ "svf", "out", "orphan", "audio" }); // fed by svf (voice) ...
+    graph.addConnection ({ "orphan", "out", "masterout", "in" }); // ... AND bypasses instance.mix directly
+    // (instancemix -> masterout, buildSplitTestGraph's own legitimate bridge, stays intact)
 
     const auto result = DomainSplitter::split (graph);
     CHECK_FALSE (result.success);
-    CHECK (result.errorMessage.contains ("svf"));
     CHECK (result.errorMessage.contains ("orphan"));
+    CHECK (result.errorMessage.contains ("masterout"));
     CHECK (result.errorMessage.contains ("instance.mix"));
 }
 
