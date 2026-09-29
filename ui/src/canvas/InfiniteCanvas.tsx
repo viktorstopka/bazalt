@@ -45,7 +45,15 @@ const MAX_ZOOM = 8
 const RIGHT_CLICK_MOVE_THRESHOLD = 4 // px — beyond this, a right-button gesture is a pan, not an Add-menu click
 const BOX_SELECT_CLICK_THRESHOLD_PX = 4 // px — beyond this, a background mousedown-then-up is a real (if tiny) box-select drag, not a deselect-click
 const PORT_HOVER_TOLERANCE = 16 // px
-const SPLICE_HOVER_TOLERANCE = 22 // px — bumped from 10 (direct feedback: too easy to miss the cable while placing a node)
+// Direct feedback: a flat radius from the mouse point (formerly 10px, then
+// bumped to 22px) still felt too tight, and doesn't match how this actually
+// reads on screen — "if the ghost box is over the cable it should insert."
+// The splice hit-test below uses the GHOST'S OWN rendered bounding box
+// instead of a fixed radius; this is just the extra margin padded onto that
+// box on every side, so a small ghost (a Singleton/Decoration layout, much
+// narrower than a Standard node card) still gets a reasonable minimum catch
+// zone rather than only its own tiny footprint.
+const SPLICE_HOVER_PADDING = 18 // px
 const FIT_VIEW_PADDING = 80 // px
 // Direct feedback: the initial view should just start out a bit more
 // zoomed out than 1:1 — deliberately NOT computed by fitView's own
@@ -591,18 +599,58 @@ export const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, InfiniteCanvasPro
       // feedback at all, always visible even with nothing nearby to insert
       // into — see the hint-label block below for the visibility half of
       // that fix).
+      //
+      // Direct feedback, second pass: this used to be a flat radius around
+      // the mouse point; now it's genuinely "does the ghost's own box touch
+      // the cable" (plus SPLICE_HOVER_PADDING's margin) — a much bigger, and
+      // more honest, effective target for a Standard-layout node's full
+      // ~190px+ card than any single flat radius could be, while a small
+      // ghost (Singleton/Decoration) still only gets its own real footprint
+      // plus that same margin, not an oversized circle. The gate itself
+      // ("does this cable pass through the box at all") is a plain
+      // point-in-rectangle test against the cable's existing 25-point
+      // tessellation — fine-grained enough relative to a node-card-sized
+      // box for any cable of ordinary on-screen length; it isn't exact
+      // segment-vs-rectangle intersection, and doesn't need to be for a
+      // hover-feedback nicety. Ties (more than one cable's tessellation
+      // passing through the box, a real scenario with a dense patch) are
+      // broken by distanceToSegment() from the BOX'S OWN CENTER — the ghost
+      // may be snapped a little away from the raw mouse point, so its own
+      // centre is the more honest "which one is really under it" measure —
+      // nearest segment wins, same idiom the wire-drag hover above already
+      // uses for its own nearest-port tie-break.
       const currentGhost = getGhost()
       let ghostSpliceValid = false
-      if (currentGhost) {
+      if (currentGhost && ghostElRef.current) {
+        // Position the ghost BEFORE measuring its box below — otherwise
+        // getBoundingClientRect() would read back last frame's position
+        // (one rAF tick, ~16ms, stale) instead of where the mouse actually
+        // is this frame.
+        const worldPos = canvasToWorld(lastMouseCanvasX, lastMouseCanvasY)
+        ghostElRef.current.style.left = `${snapValue(worldPos.x, snapSettingsRef.current)}px`
+        ghostElRef.current.style.top = `${snapValue(worldPos.y, snapSettingsRef.current)}px`
+
+        const ghostRect = ghostElRef.current.getBoundingClientRect()
+        const canvasRectNow = canvas.getBoundingClientRect()
+        const box = {
+          left: ghostRect.left - canvasRectNow.left - SPLICE_HOVER_PADDING,
+          top: ghostRect.top - canvasRectNow.top - SPLICE_HOVER_PADDING,
+          right: ghostRect.right - canvasRectNow.left + SPLICE_HOVER_PADDING,
+          bottom: ghostRect.bottom - canvasRectNow.top + SPLICE_HOVER_PADDING,
+        }
+        const center: Point = { x: (box.left + box.right) / 2, y: (box.top + box.bottom) / 2 }
+        const insideBox = (p: Point): boolean => p.x >= box.left && p.x <= box.right && p.y >= box.top && p.y <= box.bottom
+
         let nearestWireId: string | null = null
-        let nearestDist = SPLICE_HOVER_TOLERANCE
+        let nearestDist = Infinity
         for (const wire of graphNow.wires) {
           const from = anchors.get(portKey(wire.fromNodeId, wire.fromPortId, 'output'))
           const to = anchors.get(portKey(wire.toNodeId, wire.toPortId, 'input'))
           if (!from || !to) continue
           const points = tessellateCable({ from, to, color: [0, 0, 0], alpha: 1, dashed: false })
           for (let i = 0; i < points.length - 1; i++) {
-            const d = distanceToSegment({ x: lastMouseCanvasX, y: lastMouseCanvasY }, points[i], points[i + 1])
+            if (!insideBox(points[i]) && !insideBox(points[i + 1])) continue
+            const d = distanceToSegment(center, points[i], points[i + 1])
             if (d < nearestDist) {
               nearestDist = d
               nearestWireId = wire.id
@@ -670,17 +718,15 @@ export const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, InfiniteCanvasPro
       renderer?.render({ cssWidth: size.cssWidth, cssHeight: size.cssHeight, dpr: size.dpr, zoom: camera.zoom, cables })
 
       if (currentGhost) {
-        if (ghostElRef.current) {
-          const worldPos = canvasToWorld(lastMouseCanvasX, lastMouseCanvasY)
-          ghostElRef.current.style.left = `${snapValue(worldPos.x, snapSettingsRef.current)}px`
-          ghostElRef.current.style.top = `${snapValue(worldPos.y, snapSettingsRef.current)}px`
-        }
+        // Ghost positioning itself now happens earlier, right before the
+        // splice hit-test above measures its box — see that block's own
+        // comment for why.
 
         // Direct feedback: the hint used to always show "click to place"
         // even with no wire anywhere nearby — noise for the common case.
-        // Now it only appears once a wire is actually within
-        // SPLICE_HOVER_TOLERANCE, and it agrees with the highlighted wire
-        // above: "click to insert here" when splice-able, an explicit
+        // Now it only appears once the ghost's own box actually touches a
+        // wire, and it agrees with the highlighted wire above: "click to
+        // insert here" when splice-able, an explicit
         // rejected-state hint when a wire's nearby but its type can't
         // accept this node (no in/out ports at all, or a type mismatch) —
         // the click still places the node, just unconnected in that case
