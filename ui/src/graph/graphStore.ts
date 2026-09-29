@@ -203,6 +203,38 @@ let lastError: string | null = null
     part of the persisted PatchDocument (unlike bypassed/title, which live
     in NodeInstance.properties and round-trip through save/load).
 */
+/** Direct feedback, a second real regression from the SAME polling fix
+    (the first was the unbounded-backlog one `.finally()`-chaining already
+    fixed): even self-paced, a poll that always calls `notify()` was STILL
+    laggy with almost nothing in the graph — because the cost was never
+    about the native round trip's own size at all. `notify()` reassigns
+    `cachedSnapshot` to a brand-new object every time (buildSnapshot()), and
+    `useSyncExternalStore` (useGraphSnapshot.ts) treats any new object
+    REFERENCE as "changed", full stop — it has no way to know multiplicity
+    was the only field that even ran, forcing a full re-render of the
+    entire node canvas (GraphSurface -> every NodeWrapper -> every
+    NodeCard) several times a second, forever, whether or not a single
+    voice actually turned on or off. Gating notify() on an actual content
+    change turns the overwhelming majority of poll ticks (nothing changed)
+    into a no-op past this point - only a real voice on/off still costs a
+    render, exactly as it should.
+*/
+function multiplicityEqual(a: ReadonlyMap<string, NodeMultiplicity>, b: ReadonlyMap<string, NodeMultiplicity>): boolean {
+  if (a.size !== b.size) return false
+  for (const [nodeId, aEntry] of a) {
+    const bEntry = b.get(nodeId)
+    if (!bEntry) return false
+    if (aEntry.badge?.activeCount !== bEntry.badge?.activeCount) return false
+    if (aEntry.badge?.maxCount !== bEntry.badge?.maxCount) return false
+    if (aEntry.ports.size !== bEntry.ports.size) return false
+    for (const [portId, aInfo] of aEntry.ports) {
+      const bInfo = bEntry.ports.get(portId)
+      if (!bInfo || aInfo.kind !== bInfo.kind || aInfo.originId !== bInfo.originId) return false
+    }
+  }
+  return true
+}
+
 async function fetchMultiplicity(): Promise<Map<string, NodeMultiplicity>> {
   const result = await graphGetNodeMultiplicity()
   const map = new Map<string, NodeMultiplicity>()
@@ -378,20 +410,31 @@ export function ensureInitialized(): void {
   // start. Two calls can now never be in flight at once - if a call ever
   // takes 500ms, the cycle becomes ~700ms, gracefully backing off exactly
   // in proportion to real load instead of compounding.
+  //
+  // STILL laggy after that fix alone, found live immediately after (direct
+  // feedback: laggy again on a near-empty graph, right after adding one
+  // Master Out node) - see multiplicityEqual()'s own doc comment just
+  // above fetchMultiplicity(): the real cost was never the round trip's
+  // size, it was calling notify() (a forced full node-canvas re-render)
+  // on every tick regardless of whether anything changed. Gated on that
+  // now - a tick where nothing changed touches no state and renders
+  // nothing.
   const pollMultiplicity = (): void => {
     void fetchMultiplicity()
       .then((result) => {
-        multiplicity = result
-        notify()
+        if (!multiplicityEqual(multiplicity, result)) {
+          multiplicity = result
+          notify()
+        }
       })
       .catch((error) => {
         console.warn('graphGetNodeMultiplicity poll failed', error)
       })
       .finally(() => {
-        window.setTimeout(pollMultiplicity, 200)
+        window.setTimeout(pollMultiplicity, 500)
       })
   }
-  window.setTimeout(pollMultiplicity, 200)
+  window.setTimeout(pollMultiplicity, 500)
 }
 
 // ---- Endpoint lookup (shared by wire-drag hit-testing and rendering) ----
