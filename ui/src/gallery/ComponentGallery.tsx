@@ -11,10 +11,13 @@ import { fetchNodeDescriptors } from '../graph/fetchNodeDescriptors'
 import { MOCK_DESCRIPTORS } from '../graph/mockDescriptors'
 import { PORT_UI_STYLE, portUiStyle, type PortUiKind } from '../graph/portUiKind'
 import type { NodeDescriptor, PortDescriptor } from '../graph/descriptorTypes'
-import { tokens } from '../theme/tokens'
 import './ComponentGallery.css'
 
-const PORT_KIND_ORDER: PortUiKind[] = ['audio', 'modulation', 'value', 'integer', 'trigger', 'boolean', 'note', 'data']
+// wiki/plans/DomainRedesign.md Batch 4: 'audio-poly' is now a real entry
+// here, not the separate "poly (placeholder)" swatch this list used to
+// carry alongside it — both halves of the Scalar/Poly split are ordinary
+// PORT_UI_STYLE lookups now.
+const PORT_KIND_ORDER: PortUiKind[] = ['audio-scalar', 'audio-poly', 'modulation', 'value', 'integer', 'trigger', 'boolean', 'note', 'data']
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
@@ -39,10 +42,12 @@ function LegendSwatch({ kind }: { kind: PortUiKind }) {
 }
 
 function ChainGlyph({ port }: { port: PortDescriptor }) {
-  const style = portUiStyle(port)
-  const color = port.isPolyPlaceholder ? tokens.color.portPoly : style.color
+  // The gallery has no live graph, hence no live per-port multiplicity data
+  // — `isPolyPlaceholder` is the mock-only stand-in classifyPortUiKind's own
+  // doc comment names for exactly this case.
+  const style = portUiStyle(port, port.isPolyPlaceholder)
   return (
-    <span className="chain-glyph" style={{ color }}>
+    <span className="chain-glyph" style={{ color: style.color }}>
       {style.glyph}
     </span>
   )
@@ -169,13 +174,6 @@ export function ComponentGallery({ onClose }: ComponentGalleryProps) {
             {PORT_KIND_ORDER.map((kind) => (
               <LegendSwatch key={kind} kind={kind} />
             ))}
-            <div className="gallery-legend-swatch">
-              <span className="gallery-legend-glyph" style={{ color: tokens.color.portPoly }}>
-                {'→'}
-              </span>
-              <span className="gallery-legend-label">poly (placeholder)</span>
-              <span className="gallery-legend-color">{tokens.color.portPoly}</span>
-            </div>
           </div>
         </Section>
 

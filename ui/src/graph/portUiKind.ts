@@ -2,18 +2,37 @@
 // the engine's SignalType plus PortDescriptor's numeric metadata rather
 // than being a separate type system the engine and UI could drift apart on.
 import type { PortDescriptor, SignalType } from './descriptorTypes'
+import type { PortMultiplicityInfo } from './graphCommands'
 import { tokens } from '../theme/tokens'
 
-export type PortUiKind = 'audio' | 'modulation' | 'value' | 'integer' | 'trigger' | 'boolean' | 'note' | 'data'
+// wiki/plans/DomainRedesign.md Batch 4: 'audio' splits into 'audio-scalar'/
+// 'audio-poly' — both real PortUiKind entries now, replacing the ad-hoc
+// `port.isPolyPlaceholder ? tokens.color.portPoly : ...` override that used
+// to sit outside this classifier at every call site (NodeCard.tsx had 5 of
+// them). Multiplicity (Scalar vs. Poly) is a live per-port RESOLVED fact
+// from MultiplicityResolver, not a static PortDescriptor field the way
+// SignalType is — so it can't be read off `port` alone the way every other
+// branch below is; callers pass it in as `isPoly`.
+export type PortUiKind = 'audio-scalar' | 'audio-poly' | 'modulation' | 'value' | 'integer' | 'trigger' | 'boolean' | 'note' | 'data'
 
 /** SignalType::Control ports with no unit and a 0-1 range render as
     Modulation (orange); anything else numeric renders as Value (white),
     or Integer (yellow) if isInteger is set. See NODE_EDITOR.md §5.
+
+    `isPoly` (default false) picks Audio's Scalar-vs-Poly colour split
+    (wiki/plans/DomainRedesign.md Batch 4) — irrelevant to every other
+    branch, since Multiplicity is Audio-only for now (§8's still-open
+    question on Control/other types isn't resolved here). Callers with no
+    live multiplicity data (the gallery/mock case) pass the mock-only
+    `port.isPolyPlaceholder` field through as this same argument.
 */
-export function classifyPortUiKind(port: Pick<PortDescriptor, 'type' | 'unit' | 'minValue' | 'maxValue' | 'isInteger'>): PortUiKind {
+export function classifyPortUiKind(
+  port: Pick<PortDescriptor, 'type' | 'unit' | 'minValue' | 'maxValue' | 'isInteger'>,
+  isPoly = false
+): PortUiKind {
   const type: SignalType = port.type
 
-  if (type === 'audio') return 'audio'
+  if (type === 'audio') return isPoly ? 'audio-poly' : 'audio-scalar'
   if (type === 'event') return 'trigger'
   if (type === 'boolean') return 'boolean'
   // wiki/NODES_Gaps.md's Note-port-connectivity finding: Note used to fall
@@ -63,7 +82,8 @@ export interface PortUiStyle {
 }
 
 export const PORT_UI_STYLE: Record<PortUiKind, PortUiStyle> = {
-  audio: { color: tokens.color.portAudio, glyph: '→' },
+  'audio-scalar': { color: tokens.color.portAudio, glyph: '→' },
+  'audio-poly': { color: tokens.color.portAudioPoly, glyph: '→' },
   modulation: { color: tokens.color.portModulation, glyph: '→' },
   value: { color: tokens.color.portValue, glyph: '→' },
   integer: { color: tokens.color.portInteger, glyph: '→' },
@@ -73,8 +93,29 @@ export const PORT_UI_STYLE: Record<PortUiKind, PortUiStyle> = {
   data: { color: tokens.color.portData, glyph: '≡' }, // stacked lines — "many values", distinct from every glyph above
 }
 
-export function portUiStyle(port: Pick<PortDescriptor, 'type' | 'unit' | 'minValue' | 'maxValue' | 'isInteger'>): PortUiStyle {
-  return PORT_UI_STYLE[classifyPortUiKind(port)]
+export function portUiStyle(
+  port: Pick<PortDescriptor, 'type' | 'unit' | 'minValue' | 'maxValue' | 'isInteger'>,
+  isPoly = false
+): PortUiStyle {
+  return PORT_UI_STYLE[classifyPortUiKind(port, isPoly)]
+}
+
+/** Scalar-vs-Poly for one port, live per-port multiplicity data first
+    (wiki/plans/DomainRedesign.md Batch 4's graphGetNodeMultiplicity, keyed
+    by port id), the mock-only `port.isPolyPlaceholder` placeholder as the
+    fallback when there's no live map at all (the gallery, or outside the
+    real WebView) — shared by every consumer that colours a port/cable by
+    multiplicity (NodeCard.tsx's port glyphs/labels/sliders, InfiniteCanvas.tsx's
+    cable colouring). A port id genuinely missing from a present map (a
+    growable-group member beyond the throwaway default the engine computed
+    this from) falls back to any other listed port of the same node —
+    GraphEditController.h's own comment: every ordinary node's ports
+    resolve uniformly.
+*/
+export function resolvePortIsPoly(port: Pick<PortDescriptor, 'id' | 'isPolyPlaceholder'>, multiplicity?: ReadonlyMap<string, PortMultiplicityInfo>): boolean {
+  if (!multiplicity) return port.isPolyPlaceholder ?? false
+  const info = multiplicity.get(port.id) ?? multiplicity.values().next().value
+  return info?.kind === 'poly'
 }
 
 /** Parameters (ParameterDescriptor) aren't graph-connectable ports and

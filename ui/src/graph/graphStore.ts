@@ -62,7 +62,7 @@ import {
   graphConnectWithAutoAdapt,
   graphDeleteNode,
   graphDisconnect,
-  graphGetNodeDomains,
+  graphGetNodeMultiplicity,
   graphGetSnapshot,
   graphMoveNode,
   graphRestoreSnapshot,
@@ -70,6 +70,8 @@ import {
   graphSetParameterValue,
   graphSetProperty,
   type CommandResult,
+  type NodeMultiplicityBadge,
+  type PortMultiplicityInfo,
 } from './graphCommands'
 
 export interface GraphNode {
@@ -95,19 +97,34 @@ export interface GraphWire {
   toPortId: string
 }
 
+/** One node's worth of graphGetNodeMultiplicity data — see GraphSnapshot's
+    own `multiplicity` field comment below. Named/exported so every UI layer
+    that threads this through (GraphSurface.tsx, NodeCard.tsx) shares one
+    type instead of repeating the same inline shape.
+*/
+export interface NodeMultiplicity {
+  ports: ReadonlyMap<string, PortMultiplicityInfo>
+  badge?: NodeMultiplicityBadge
+}
+
 export interface GraphSnapshot {
   nodes: GraphNode[]
   wires: GraphWire[]
   selection: ReadonlySet<string>
   descriptors: NodeDescriptor[]
   descriptorsLoaded: boolean
-  /** Which DomainSplitter region ("voice"/"global"/"mono") each node's last
-      confirmed compile put it in — see graphCommands.ts's
-      graphGetNodeDomains. Refreshed alongside every nodes/wires resync
-      (ensureInitialized, withHistory, undo, redo); absent for a node the
-      engine hasn't compiled yet, or entirely outside the real WebView.
+  /** Per-node Scalar/Poly port multiplicity plus the live instance-count
+      badge, as of the last confirmed compile — see graphCommands.ts's
+      graphGetNodeMultiplicity (wiki/plans/DomainRedesign.md Batch 4,
+      DomainDot's real replacement: a per-node voice/global/mono label
+      stopped being the right question once Scalar-vs-Poly became a
+      per-PORT resolved fact rather than a whole-graph region). Refreshed
+      alongside every nodes/wires resync (ensureInitialized, withHistory,
+      undo, redo); absent for a node the engine hasn't compiled yet, or
+      entirely outside the real WebView. `badge` is present only for
+      "instance.allocate.voice" nodes.
   */
-  domains: ReadonlyMap<string, 'voice' | 'global' | 'mono'>
+  multiplicity: ReadonlyMap<string, NodeMultiplicity>
   canUndo: boolean
   canRedo: boolean
   /** The most recent rejected command's reason, or null — NODE_EDITOR.md
@@ -174,20 +191,32 @@ let wires = new Map<string, GraphWire>()
 let selection = new Set<string>()
 let descriptors: NodeDescriptor[] = []
 let descriptorsLoaded = false
-let domains = new Map<string, 'voice' | 'global' | 'mono'>()
+let multiplicity = new Map<string, NodeMultiplicity>()
 let lastError: string | null = null
 
 /** Fetched in parallel with graphGetSnapshot everywhere that's refreshed
     (see the header comment for why: both are "resync local state from the
     engine's own confirmed truth" after the same events) — a separate round
-    trip rather than folding into the snapshot JSON itself because domain
-    membership is DERIVED, recomputed every compile, never part of the
-    persisted PatchDocument (unlike bypassed/title, which live in
-    NodeInstance.properties and round-trip through save/load).
+    trip rather than folding into the snapshot JSON itself because
+    multiplicity is DERIVED, recomputed every compile (and the badge's own
+    counts change far more often than that, on every voice on/off), never
+    part of the persisted PatchDocument (unlike bypassed/title, which live
+    in NodeInstance.properties and round-trip through save/load).
 */
-async function fetchDomains(): Promise<Map<string, 'voice' | 'global' | 'mono'>> {
-  const result = await graphGetNodeDomains()
-  return result ? new Map(Object.entries(result)) : new Map()
+async function fetchMultiplicity(): Promise<Map<string, NodeMultiplicity>> {
+  const result = await graphGetNodeMultiplicity()
+  const map = new Map<string, NodeMultiplicity>()
+  if (!result) return map
+  for (const [nodeId, ports] of Object.entries(result.ports)) {
+    map.set(nodeId, { ports: new Map(Object.entries(ports)), badge: result.badges[nodeId] })
+  }
+  // A badge-bearing node with no port entries (shouldn't happen in practice —
+  // an allocator always has ports — but guards against a badge silently
+  // never surfacing if it ever did) still gets its own entry.
+  for (const [nodeId, badge] of Object.entries(result.badges)) {
+    if (!map.has(nodeId)) map.set(nodeId, { ports: new Map(), badge })
+  }
+  return map
 }
 
 // The engine's own last-confirmed graph JSON — the "before" a history entry
@@ -232,7 +261,7 @@ function buildSnapshot(): GraphSnapshot {
     selection,
     descriptors,
     descriptorsLoaded,
-    domains,
+    multiplicity,
     canUndo: past.length > 0,
     canRedo: future.length > 0,
     lastError,
@@ -309,13 +338,13 @@ export function ensureInitialized(): void {
       console.warn('graphGetSnapshot failed', error)
     })
 
-  void fetchDomains()
+  void fetchMultiplicity()
     .then((result) => {
-      domains = result
+      multiplicity = result
       notify()
     })
     .catch((error) => {
-      console.warn('graphGetNodeDomains failed', error)
+      console.warn('graphGetNodeMultiplicity failed', error)
     })
 }
 
@@ -416,7 +445,7 @@ export function undo(): void {
     }
     future.push(afterJson)
     engineSnapshotCache = beforeJson
-    domains = await fetchDomains()
+    multiplicity = await fetchMultiplicity()
     notify()
   })()
 }
@@ -445,7 +474,7 @@ export function redo(): void {
     }
     past.push(beforeJson)
     engineSnapshotCache = afterJson
-    domains = await fetchDomains()
+    multiplicity = await fetchMultiplicity()
     notify()
   })()
 }
@@ -482,8 +511,8 @@ async function withHistory(gesture: () => Promise<void>, optimistic?: () => void
   }
   await gesture()
 
-  const [afterJson, domainsResult] = await Promise.all([graphGetSnapshot(), fetchDomains()])
-  domains = domainsResult
+  const [afterJson, multiplicityResult] = await Promise.all([graphGetSnapshot(), fetchMultiplicity()])
+  multiplicity = multiplicityResult
   if (afterJson !== null) {
     engineSnapshotCache = afterJson
     const state = patchJsonToLocalState(afterJson)

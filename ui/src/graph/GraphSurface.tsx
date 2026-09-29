@@ -18,7 +18,7 @@ import { useMemo, useRef, useState, type RefObject } from 'react'
 import { createPortal } from 'react-dom'
 import { NodeCard, type NodeCardState } from '../nodes/NodeCard'
 import { NodeContextMenu } from './NodeContextMenu'
-import { renameNode, toggleBypass, toggleBypassMany, setAsOutput, deleteNodes, setSelection, setParameterValue, resolveNodeDescriptor, type GraphNode, type GraphWire } from './graphStore'
+import { renameNode, toggleBypass, toggleBypassMany, setAsOutput, deleteNodes, setSelection, setParameterValue, resolveNodeDescriptor, type GraphNode, type GraphWire, type NodeMultiplicity } from './graphStore'
 import type { NodeDescriptor } from './descriptorTypes'
 import type { GhostPlacement } from '../canvas/interactionStore'
 import { getTitleGeometry } from './titleGeometry'
@@ -30,12 +30,12 @@ interface NodeWrapperProps {
   selected: boolean
   selection: ReadonlySet<string>
   connectedPortIds: ReadonlySet<string> | undefined
-  domain: 'voice' | 'global' | 'mono' | undefined
+  multiplicity: NodeMultiplicity | undefined
   overlayTarget: HTMLElement | null
   ghostActive: boolean
 }
 
-function NodeWrapper({ node, descriptor, selected, selection, connectedPortIds, domain, overlayTarget, ghostActive }: NodeWrapperProps) {
+function NodeWrapper({ node, descriptor, selected, selection, connectedPortIds, multiplicity, overlayTarget, ghostActive }: NodeWrapperProps) {
   const [editing, setEditing] = useState(false)
   const [menuPos, setMenuPos] = useState<{ x: number; y: number } | null>(null)
   const wrapperRef = useRef<HTMLDivElement | null>(null)
@@ -58,7 +58,8 @@ function NodeWrapper({ node, descriptor, selected, selection, connectedPortIds, 
     connectedPortIds,
     parameterValues: node.parameterValues,
     onParameterCommit: (id, value) => setParameterValue(node.id, id, value),
-    domain,
+    portMultiplicity: multiplicity?.ports,
+    instanceCountBadge: multiplicity?.badge,
   }
 
   const startEditing = () => {
@@ -195,12 +196,15 @@ interface GraphSurfaceProps {
   wires: readonly GraphWire[]
   selection: ReadonlySet<string>
   getDescriptor: (typeId: string) => NodeDescriptor | undefined
-  /** Which DomainSplitter region each node's last successful compile put it
-      in — graphStore.ts's own `domains` snapshot field, a plain lookup by
-      node id. Absent/empty is fine (NodeCard.tsx's DomainDot just renders
-      nothing) — this is a debugging aid, never load-bearing.
+  /** Per-node Scalar/Poly port multiplicity plus the live instance-count
+      badge, as of each node's last successful compile — graphStore.ts's own
+      `multiplicity` snapshot field, a plain lookup by node id (DomainDot's
+      real replacement, wiki/plans/DomainRedesign.md Batch 4). Absent/empty
+      is fine (NodeCard.tsx's InstanceCountBadge and per-port colouring just
+      fall back to their own mock-only defaults) — this is a debugging aid
+      for colour/badge display, never load-bearing on connectivity itself.
   */
-  domains: ReadonlyMap<string, 'voice' | 'global' | 'mono'>
+  multiplicity: ReadonlyMap<string, NodeMultiplicity>
   ghost: GhostPlacement | null
   /** The ghost wrapper's DOM node, exposed so InfiniteCanvas's mousemove
       handler can set its world position directly (style.left/top) every
@@ -213,7 +217,7 @@ interface GraphSurfaceProps {
   overlayTarget: HTMLElement | null
 }
 
-export function GraphSurface({ nodes, wires, selection, getDescriptor, domains, ghost, ghostElementRef, overlayTarget }: GraphSurfaceProps) {
+export function GraphSurface({ nodes, wires, selection, getDescriptor, multiplicity, ghost, ghostElementRef, overlayTarget }: GraphSurfaceProps) {
   const ghostActive = ghost !== null
   const ghostDescriptor = ghost ? getDescriptor(ghost.typeId) : undefined
 
@@ -256,7 +260,7 @@ export function GraphSurface({ nodes, wires, selection, getDescriptor, domains, 
             selected={selection.has(node.id)}
             selection={selection}
             connectedPortIds={connectionsByNode.get(node.id)}
-            domain={domains.get(node.id)}
+            multiplicity={multiplicity.get(node.id)}
             overlayTarget={overlayTarget}
             ghostActive={ghostActive}
           />

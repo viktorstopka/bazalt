@@ -86,16 +86,50 @@ export function graphRestoreSnapshot(json: string): Promise<CommandResult> {
   return callCommand('graphRestoreSnapshot', json)
 }
 
-/** Which DomainSplitter region ("voice" | "global" | "mono") each node in
-    the current graph's LAST SUCCESSFUL compile landed in — a plain
-    `{ [nodeId]: domain }` object, computed once per recompile by
-    GraphEditController (the same place hasGlobalDomain/instanceMixNodeId
-    already are) and read back out here purely for display (NodeCard.tsx's
-    DomainDot) — a debugging aid, not load-bearing on anything. Null outside
-    the real WebView, same convention as graphGetSnapshot.
+/** Which region ("voice" | "global" | "mono") each node in the current
+    graph's LAST SUCCESSFUL compile landed in — a plain `{ [nodeId]: domain }`
+    object, computed once per recompile by GraphEditController. Its UI
+    consumer (NodeCard.tsx's DomainDot) was removed outright by
+    wiki/plans/DomainRedesign.md Batch 4 — a per-node voice/global/mono label
+    stopped being the right question once MultiplicityResolver made
+    Scalar-vs-Poly a per-PORT fact instead (see graphGetNodeMultiplicity
+    below, DomainDot's real replacement) — but the native function itself
+    stays real and tested, independent complementary info, so this wrapper
+    stays too even with no current caller in ui/src. Null outside the real
+    WebView, same convention as graphGetSnapshot.
 */
 export async function graphGetNodeDomains(): Promise<Record<string, 'voice' | 'global' | 'mono'> | null> {
   if (typeof window.__JUCE__ === 'undefined') return null
   const result = await getNativeFunction('graphGetNodeDomains')()
   return typeof result === 'string' ? (JSON.parse(result) as Record<string, 'voice' | 'global' | 'mono'>) : null
+}
+
+/** Per-port Scalar/Poly multiplicity plus the live instance-count badge data
+    for every "instance.allocate.voice" node — DomainDot's real replacement
+    (wiki/plans/DomainRedesign.md Batch 4). `kind` is `'scalar'` or `'poly'`;
+    `originId` is only ever set when `kind === 'poly'`. `badges` has an entry
+    only for allocator nodes, and its two numbers are read fresh off the
+    live processor on every call (they change on every voice on/off, far
+    more often than a recompile) — never cache these across calls the way a
+    graph snapshot could be. Null outside the real WebView.
+*/
+export interface PortMultiplicityInfo {
+  kind: 'scalar' | 'poly'
+  originId?: string
+}
+
+export interface NodeMultiplicityBadge {
+  activeCount: number
+  maxCount: number
+}
+
+export interface GraphMultiplicity {
+  ports: Record<string, Record<string, PortMultiplicityInfo>>
+  badges: Record<string, NodeMultiplicityBadge>
+}
+
+export async function graphGetNodeMultiplicity(): Promise<GraphMultiplicity | null> {
+  if (typeof window.__JUCE__ === 'undefined') return null
+  const result = await getNativeFunction('graphGetNodeMultiplicity')()
+  return typeof result === 'string' ? (JSON.parse(result) as GraphMultiplicity) : null
 }

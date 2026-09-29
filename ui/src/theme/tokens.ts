@@ -30,18 +30,29 @@ export const tokens = {
     sliderFill: '#5b8def',
     error: '#e0454f',
 
-    // Port-type palette (NODE_EDITOR.md §5, blueprint §4's table). `poly`
-    // is the explicit placeholder the blueprint calls out ("green marks
-    // polyphonic audio flowing into Sum Voices... poly/mono encoding will
-    // be redesigned later") — kept isolated behind its own token so nothing
-    // else ever reaches for "green" directly.
+    // Port-type palette (NODE_EDITOR.md §5, blueprint §4's table).
+    // `portAudio` is Audio's colour for a Scalar-resolved port — unchanged
+    // value, but its MEANING changed with wiki/plans/DomainRedesign.md
+    // Batch 4: it used to be Audio's only colour, full stop; now it's
+    // specifically the Scalar half of a real Multiplicity distinction (see
+    // `portAudioPoly` below).
     portAudio: '#e0339e',
     portModulation: '#e0924b',
     portValue: '#e8e8ea',
     portInteger: '#e6c85b',
     portTrigger: '#8c7fff',
     portBoolean: '#7cc6f7',
-    portPoly: '#4ade80',
+    // wiki/plans/DomainRedesign.md §5.6/Batch 4: a direct, explicit user
+    // decision, reversing this file's own earlier "don't give Multiplicity
+    // its own hue" recommendation — Poly and Scalar Audio are "very tricky
+    // in plugging each other," and that debugging value outweighs the
+    // colour-budget cost, for now (explicitly reversible: "we can revert
+    // back later"). Retires `portPoly` (`#4ade80` — a DIFFERENT green from
+    // this one) outright: that was the blueprint's own mock-only "poly/mono
+    // encoding will be redesigned later" placeholder, and this is that
+    // redesign, landed for real, Audio-only (§8's still-open question on
+    // Control/other types is not resolved here).
+    portAudioPoly: '#40FF69',
     // wiki/NODES_Gaps.md's Note-port-connectivity finding: SignalType::Note
     // had no colour of its own (portUiKind.ts's classifier fell through to
     // portValue, the exact colour a real-quantity Control port uses) — a
@@ -74,32 +85,20 @@ export const tokens = {
     nodeListening: '#7fd9e0',
     frameFill: 'rgba(120, 45, 45, 0.22)',
 
-    // Per-node domain indicator (09-28-InstanceAllocator.1's own debugging
-    // arc: DomainSplitter's voice/global split has repeatedly been the
-    // source of confusing, hard-to-guess-at-from-the-canvas behaviour — a
-    // simple always-visible marker beats needing to reason about
-    // reachability by eye). A small title-bar dot, not a border/glow (those
-    // already carry meaning — accent for selected, nodeListening for
-    // listening, error for error — and DOMAINS.md §11 already leans toward
-    // NOT colour for the cable-level version of this same question, to
-    // avoid competing with the 6-colour port-type palette; a small dot in
-    // the title bar sits away from both). `domainVoice` reuses `portPoly`
-    // exactly — this codebase's own established "green marks polyphonic
-    // content" convention already means the same thing. `domainGlobal`
-    // matches `textSecondary`'s value on purpose (the mundane, "just runs
-    // once" side, no separate token needed for the colour itself, but kept
-    // named for what it means here rather than reading as a random reuse).
-    // Mono-only graphs (no allocator, no instance.mix) used to show no dot
-    // at all here — direct feedback reversed that: showing nothing for the
-    // first, most common case read as the indicator not being live yet
-    // ("only appearing once you add a Voice node... they should be there
-    // from the start"), not as "nothing to report." `domainMono` is its own
-    // distinct, deliberately quiet tone — neither `domainGlobal`'s grey nor
-    // `domainVoice`'s green, so all three domains stay visually distinct
-    // rather than mono silently reusing one of the other two's meaning.
-    domainVoice: '#4ade80',
-    domainGlobal: '#9a9ca3',
-    domainMono: '#5f6672',
+    // wiki/plans/DomainRedesign.md Batch 4: the per-node DomainDot (title-bar
+    // dot encoding voice/global/mono) is REMOVED outright — MultiplicityResolver
+    // replaced DomainSplitter's whole-graph voice/global split with a
+    // per-PORT Scalar/Poly resolution, so "this node's domain" is no longer a
+    // single fact a dot could show; `domainVoice`/`domainGlobal`/`domainMono`
+    // are retired along with it (superseded by `portAudioPoly` above for the
+    // per-port distinction, and by `structuralGrey` below for the
+    // instance-count badge that replaces the dot's UI slot).
+    //
+    // Instance-count badge (this same batch's replacement for the dot): a
+    // small structural readout ("3/8") on a Poly-resolved node, not a
+    // status/state colour — reuses the old `domainMono` hex under a name
+    // that describes what it's for now rather than what it used to mean.
+    structuralGrey: '#5f6672',
   },
   font: {
     // Design reference's specified face (loaded via Google Fonts in

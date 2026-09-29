@@ -7,7 +7,8 @@
 // source of truth.
 import { useMemo } from 'react'
 import type { NodeDescriptor, ParameterDescriptor, PortDescriptor } from '../graph/descriptorTypes'
-import { classifyPortUiKind, portUiStyle, parameterUiColor } from '../graph/portUiKind'
+import { classifyPortUiKind, portUiStyle, parameterUiColor, resolvePortIsPoly } from '../graph/portUiKind'
+import type { NodeMultiplicityBadge, PortMultiplicityInfo } from '../graph/graphCommands'
 import { tokens } from '../theme/tokens'
 import { ValueSlider } from './ValueSlider'
 import { TriggerSelect } from './TriggerSelect'
@@ -62,17 +63,27 @@ export interface NodeCardState {
   */
   parameterValues?: Readonly<Record<string, number>>
   onParameterCommit?: (id: string, value: number) => void
-  /** Which DomainSplitter region this node's LAST successful compile put
-      it in — 'voice' (runs once per active voice), 'global' (runs once,
-      always, whether bridged through a real instance.mix or an
-      independent unbridged region), or 'mono' (no allocator/instance.mix
-      in the graph at all, so the voice/global distinction doesn't apply).
-      graphStore.ts fetches this alongside every snapshot refresh
-      (graphGetNodeDomains); undefined for the M9 gallery (no live graph to
-      classify) and for a node the engine hasn't compiled into any plan
-      yet (mid-edit, or a rejected command's rolled-back state).
+  /** Per-port Scalar/Poly resolution for this node's LAST successful
+      compile (wiki/plans/DomainRedesign.md Batch 4, DomainDot's real
+      replacement) — graphStore.ts's `multiplicity` snapshot field,
+      GraphSurface.tsx passes this node's own `ports` map straight through.
+      Undefined for the M9 gallery (no live graph) and for a node the
+      engine hasn't compiled into any plan yet (mid-edit, or a rejected
+      command's rolled-back state) — every isPoly-consuming call site below
+      (see resolvePortIsPoly()) falls back to the descriptor's own mock-only
+      `port.isPolyPlaceholder` field in that case. A port id genuinely
+      missing from a present map (a growable-group member beyond the
+      throwaway default the engine computed this from) falls back to any
+      other listed port of this same node — GraphEditController.h's own
+      comment: every ordinary node's ports resolve uniformly.
   */
-  domain?: 'voice' | 'global' | 'mono'
+  portMultiplicity?: ReadonlyMap<string, PortMultiplicityInfo>
+  /** Live activeCount/maxCount for an "instance.allocate.voice" node, read
+      fresh off the processor on every graph resync — renders as
+      InstanceCountBadge's "3/8" corner readout. Undefined for every other
+      node type, and for the M9 gallery.
+  */
+  instanceCountBadge?: NodeMultiplicityBadge
 }
 
 interface NodeCardProps {
@@ -202,14 +213,16 @@ function PortGlyph({
   side,
   instanceId,
   connected,
+  isPoly,
 }: {
   port: PortDescriptor
   side: 'left' | 'right'
   instanceId?: string
   connected: boolean
+  isPoly?: boolean
 }) {
-  const style = portUiStyle(port)
-  const color = port.isPolyPlaceholder ? tokens.color.portPoly : style.color
+  const style = portUiStyle(port, isPoly)
+  const color = style.color
   // "side" is a 1:1 proxy for direction at every call site in this file
   // (input always renders left, output always right).
   const direction = side === 'left' ? 'input' : 'output'
@@ -237,11 +250,10 @@ function PortGlyph({
   )
 }
 
-function PortLabel({ port, connected, demoValue }: { port: PortDescriptor; connected: boolean; demoValue?: string }) {
-  const style = portUiStyle(port)
-  const color = port.isPolyPlaceholder ? tokens.color.portPoly : style.color
+function PortLabel({ port, connected, demoValue, isPoly }: { port: PortDescriptor; connected: boolean; demoValue?: string; isPoly?: boolean }) {
+  const style = portUiStyle(port, isPoly)
   return (
-    <span className="node-port-label" style={{ color }}>
+    <span className="node-port-label" style={{ color: style.color }}>
       {port.label || humanizeId(port.id)}
       {connected && <span className="node-port-live-value"> {demoValue}</span>}
     </span>
@@ -268,6 +280,7 @@ function PortRow({
   instanceId,
   value,
   onCommit,
+  isPoly,
 }: {
   direction: 'input' | 'output'
   port: PortDescriptor
@@ -276,6 +289,7 @@ function PortRow({
   instanceId?: string
   value?: number
   onCommit?: (value: number) => void
+  isPoly?: boolean
 }) {
   // Only an unconnected, editable-in-node INPUT falls back to a shown
   // control — an output has nothing to "fall back" to (it always drives
@@ -293,7 +307,7 @@ function PortRow({
   const showTriggerSelect = editable && !showSlider && port.type === 'event' && !!port.options?.length
   return (
     <div className={`node-row node-row-port node-row-${direction}`}>
-      {direction === 'input' && <PortGlyph port={port} side="left" instanceId={instanceId} connected={connected} />}
+      {direction === 'input' && <PortGlyph port={port} side="left" instanceId={instanceId} connected={connected} isPoly={isPoly} />}
       {showSlider ? (
         <ValueSlider
           label={port.label || humanizeId(port.id)}
@@ -305,7 +319,7 @@ function PortRow({
           defaultValue={port.defaultValue}
           isInteger={port.isInteger}
           unit={port.unit}
-          color={port.isPolyPlaceholder ? tokens.color.portPoly : portUiStyle(port).color}
+          color={portUiStyle(port, isPoly).color}
           onCommit={onCommit}
         />
       ) : showTriggerSelect ? (
@@ -313,18 +327,28 @@ function PortRow({
           label={port.label || humanizeId(port.id)}
           options={port.options!}
           selectedIndex={value ?? port.defaultValue}
-          color={portUiStyle(port).color}
+          color={portUiStyle(port, isPoly).color}
           onCommit={onCommit}
         />
       ) : (
-        <PortLabel port={port} connected={connected} demoValue={demoValue} />
+        <PortLabel port={port} connected={connected} demoValue={demoValue} isPoly={isPoly} />
       )}
-      {direction === 'output' && <PortGlyph port={port} side="right" instanceId={instanceId} connected />}
+      {direction === 'output' && <PortGlyph port={port} side="right" instanceId={instanceId} connected isPoly={isPoly} />}
     </div>
   )
 }
 
-function MergedRowView({ row, instanceId, connected }: { row: MergedRow; instanceId?: string; connected: boolean }) {
+function MergedRowView({
+  row,
+  instanceId,
+  connected,
+  multiplicity,
+}: {
+  row: MergedRow
+  instanceId?: string
+  connected: boolean
+  multiplicity?: ReadonlyMap<string, PortMultiplicityInfo>
+}) {
   // The output's own label/id is normally the more meaningful name
   // (Predelay's "Audio"); fall back to the input's if the output never got
   // one. The line is ONE element spanning the row's true edge-to-edge width
@@ -336,13 +360,14 @@ function MergedRowView({ row, instanceId, connected }: { row: MergedRow; instanc
   // so the line reads as one continuous stroke broken only where the label
   // text covers it.
   const label = row.output.label || row.input.label || humanizeId(row.output.id)
-  const lineColor = row.output.isPolyPlaceholder ? tokens.color.portPoly : portUiStyle(row.output).color
+  const isPolyOutput = resolvePortIsPoly(row.output, multiplicity)
+  const lineColor = portUiStyle(row.output, isPolyOutput).color
   return (
     <div className="node-row node-row-port node-row-merged">
       <span className="node-merged-line" aria-hidden="true" style={{ background: lineColor }} />
-      <PortGlyph port={row.input} side="left" instanceId={instanceId} connected={connected} />
+      <PortGlyph port={row.input} side="left" instanceId={instanceId} connected={connected} isPoly={resolvePortIsPoly(row.input, multiplicity)} />
       <span className="node-port-label node-port-label-merged">{label}</span>
-      <PortGlyph port={row.output} side="right" instanceId={instanceId} connected />
+      <PortGlyph port={row.output} side="right" instanceId={instanceId} connected isPoly={isPolyOutput} />
     </div>
   )
 }
@@ -409,26 +434,20 @@ function ParameterRow({
   )
 }
 
-/** The small before-the-title marker (see tokens.ts's domainVoice/
-    domainGlobal/domainMono comment for why this and not a border/glow).
-    Renders for all three real domains, including 'mono' — direct feedback:
-    hiding it for mono (every node, in most graphs, before an allocator is
-    even placed) read as the indicator not being live from the start, not as
-    "nothing to report." Still omitted for `undefined` (no live compile has
-    classified this node yet — a node not yet part of any successful
-    compile, or the M9 gallery's own static cards, which never have a real
-    domain in the first place).
+/** wiki/plans/DomainRedesign.md Batch 4: DomainDot's real replacement — a
+    small structural corner badge, not a title-bar element (see
+    NodeCard.css's own comment for why it's positioned off .node-card
+    itself instead). Renders only for an "instance.allocate.voice" node —
+    every other node's `state.instanceCountBadge` is undefined, same as
+    DomainDot used to render nothing for its own `undefined` domain.
 */
-function DomainDot({ domain }: { domain?: 'voice' | 'global' | 'mono' }) {
-  if (domain === undefined) return null
-  const color = domain === 'voice' ? tokens.color.domainVoice : domain === 'global' ? tokens.color.domainGlobal : tokens.color.domainMono
-  const label =
-    domain === 'voice'
-      ? 'Voice domain — runs once per active voice'
-      : domain === 'global'
-        ? 'Global domain — runs once, always'
-        : 'Mono domain — plain audio-effect graph, no voice allocation'
-  return <span className="node-domain-dot" style={{ background: color }} title={label} />
+function InstanceCountBadge({ badge }: { badge?: NodeMultiplicityBadge }) {
+  if (!badge) return null
+  return (
+    <span className="node-instance-count-badge" title={`${badge.activeCount} of ${badge.maxCount} voices active`}>
+      {badge.activeCount}/{badge.maxCount}
+    </span>
+  )
 }
 
 function TitleBar({ descriptor, state }: { descriptor: NodeDescriptor; state: NodeCardState }) {
@@ -436,7 +455,6 @@ function TitleBar({ descriptor, state }: { descriptor: NodeDescriptor; state: No
   return (
     <div className="node-title-bar">
       <span className="node-title-left">
-        <DomainDot domain={state.domain} />
         <span className="node-title">{descriptor.title || descriptor.typeId}</span>
       </span>
       <div className="node-title-icons">
@@ -495,7 +513,7 @@ function StandardBody({ descriptor, state, instanceId }: { descriptor: NodeDescr
 
   return (
     <>
-      {merged && <MergedRowView row={merged} instanceId={instanceId} connected={connected.has(merged.id)} />}
+      {merged && <MergedRowView row={merged} instanceId={instanceId} connected={connected.has(merged.id)} multiplicity={state.portMultiplicity} />}
       {inputs.map((row) => (
         <PortRow
           key={row.port.id}
@@ -506,6 +524,7 @@ function StandardBody({ descriptor, state, instanceId }: { descriptor: NodeDescr
           instanceId={instanceId}
           value={paramValue(state, row.port.id, row.port.defaultValue)}
           onCommit={paramCommit(state, row.port.id)}
+          isPoly={resolvePortIsPoly(row.port, state.portMultiplicity)}
         />
       ))}
       {descriptor.parameters.map((p) => (
@@ -526,7 +545,15 @@ function StandardBody({ descriptor, state, instanceId }: { descriptor: NodeDescr
         />
       ))}
       {outputs.map((row) => (
-        <PortRow key={row.port.id} direction="output" port={row.port} connected={connected.has(row.port.id)} demoValue={state.demoConnectedValue} instanceId={instanceId} />
+        <PortRow
+          key={row.port.id}
+          direction="output"
+          port={row.port}
+          connected={connected.has(row.port.id)}
+          demoValue={state.demoConnectedValue}
+          instanceId={instanceId}
+          isPoly={resolvePortIsPoly(row.port, state.portMultiplicity)}
+        />
       ))}
       {instanceId && descriptor.previews?.map((preview) => (
         <NodePreview key={preview.portId} nodeId={instanceId} preview={preview} />
@@ -583,6 +610,7 @@ function HorizontalBody({ descriptor, state, instanceId }: { descriptor: NodeDes
             instanceId={instanceId}
             value={paramValue(state, port.id, port.defaultValue)}
             onCommit={paramCommit(state, port.id)}
+            isPoly={resolvePortIsPoly(port, state.portMultiplicity)}
           />
         ))}
         {descriptor.parameters.map((p) => (
@@ -612,16 +640,34 @@ function HorizontalBody({ descriptor, state, instanceId }: { descriptor: NodeDes
       </div>
       {primaryOutput && (
         <div className="node-horizontal-column node-horizontal-column-output">
-          <PortRow direction="output" port={primaryOutput} connected={connected.has(primaryOutput.id)} instanceId={instanceId} />
+          <PortRow
+            direction="output"
+            port={primaryOutput}
+            connected={connected.has(primaryOutput.id)}
+            instanceId={instanceId}
+            isPoly={resolvePortIsPoly(primaryOutput, state.portMultiplicity)}
+          />
         </div>
       )}
     </div>
   )
 }
 
-function SingletonGlyph({ port, direction, instanceId, connected }: { port: PortDescriptor; direction: 'input' | 'output'; instanceId?: string; connected: boolean }) {
-  const style = portUiStyle(port)
-  const color = port.isPolyPlaceholder ? tokens.color.portPoly : style.color
+function SingletonGlyph({
+  port,
+  direction,
+  instanceId,
+  connected,
+  isPoly,
+}: {
+  port: PortDescriptor
+  direction: 'input' | 'output'
+  instanceId?: string
+  connected: boolean
+  isPoly?: boolean
+}) {
+  const style = portUiStyle(port, isPoly)
+  const color = style.color
   const showDot = direction === 'input' && !connected && isEditableInNode(port)
   // Deliberately NOT the border-piercing PortGlyph used elsewhere: adjacent
   // singletons are meant to visually chain (blueprint §4: "frames touch,
@@ -649,14 +695,14 @@ function SingletonBody({ descriptor, state, instanceId }: { descriptor: NodeDesc
   const output = descriptor.outputs[0]
   return (
     <div className="node-singleton-body">
-      {input && <SingletonGlyph port={input} direction="input" instanceId={instanceId} connected={connected.has(input.id)} />}
+      {input && <SingletonGlyph port={input} direction="input" instanceId={instanceId} connected={connected.has(input.id)} isPoly={resolvePortIsPoly(input, state.portMultiplicity)} />}
       {/* `node-title` (shared with every other layout variant, not just
           `node-singleton-title`) is what lets GraphSurface.tsx's generic
           `.closest('.node-title')` double-click/rename targeting work here
           too — previously this layout had no element carrying that class
           at all, so rename silently did nothing on it. */}
       <span className="node-singleton-title node-title">{descriptor.title}</span>
-      {output && <SingletonGlyph port={output} direction="output" instanceId={instanceId} connected={connected.has(output.id)} />}
+      {output && <SingletonGlyph port={output} direction="output" instanceId={instanceId} connected={connected.has(output.id)} isPoly={resolvePortIsPoly(output, state.portMultiplicity)} />}
     </div>
   )
 }
@@ -694,7 +740,7 @@ function GlanceBody({ descriptor, state, instanceId }: { descriptor: NodeDescrip
   const preview = descriptor.previews?.[0]
   return (
     <div className="node-glance-body">
-      {input && <SingletonGlyph port={input} direction="input" instanceId={instanceId} connected={connected.has(input.id)} />}
+      {input && <SingletonGlyph port={input} direction="input" instanceId={instanceId} connected={connected.has(input.id)} isPoly={resolvePortIsPoly(input, state.portMultiplicity)} />}
       <div className="node-glance-preview">
         {instanceId && preview && frameTypeForPreviewKind(preview.kind) !== undefined ? (
           <NodePreview nodeId={instanceId} preview={preview} />
@@ -702,7 +748,7 @@ function GlanceBody({ descriptor, state, instanceId }: { descriptor: NodeDescrip
           <PlaceholderPreview />
         )}
       </div>
-      {output && <SingletonGlyph port={output} direction="output" instanceId={instanceId} connected={connected.has(output.id)} />}
+      {output && <SingletonGlyph port={output} direction="output" instanceId={instanceId} connected={connected.has(output.id)} isPoly={resolvePortIsPoly(output, state.portMultiplicity)} />}
     </div>
   )
 }
@@ -751,6 +797,7 @@ export function NodeCard({ descriptor: declaredDescriptor, state = {}, instanceI
 
   return (
     <div className={classNames}>
+      <InstanceCountBadge badge={state.instanceCountBadge} />
       <TitleBar descriptor={descriptor} state={state} />
       {descriptor.layoutVariant === 'horizontal' ? (
         <HorizontalBody descriptor={descriptor} state={state} instanceId={instanceId} />

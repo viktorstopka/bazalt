@@ -12,6 +12,7 @@
 // live wire-drag feedback before a drop is ever attempted.
 import type { PortDescriptor, Quantity } from './descriptorTypes'
 import { synthesizeGroupPort } from './portGroups'
+import type { PortMultiplicityInfo } from './graphCommands'
 
 export type ConnectionOutcome = 'ok' | 'needsAdapters' | 'reject'
 
@@ -156,17 +157,53 @@ export function findPort(descriptor: { inputs: PortDescriptor[]; outputs: PortDe
   return synthesizeGroupPort(descriptor, portId)
 }
 
+/** wiki/plans/DomainRedesign.md Batch 4's own UI-side mirror of
+    MultiplicityResolver's real origin-mismatch rejection
+    (MultiplicityResolver.cpp: "Node 'X' is fed by two different voice
+    allocators ('Y', 'Z')...") — a rule CanConnect.cpp itself has no notion
+    of (multiplicity/origin resolution is a whole-graph fixed-point pass,
+    not a per-port type/quantity check), so it lives here as an extra guard
+    in canConnect() rather than inside canConnectPorts() above, which stays
+    a hand-mirror of CanConnect.cpp only. Only ever fires for two ALREADY-
+    Poly endpoints with two DIFFERENT known origins; an unresolved or
+    Scalar endpoint, or one with no live multiplicity data at all (the
+    gallery, or a node the engine hasn't compiled into any plan yet), lets
+    the drop through exactly as before — the engine still gets the final
+    say (connectWithAutoAdapt), this is prediction only.
+*/
+function hasOriginMismatch(
+  output: ConnectionEndpoint,
+  input: ConnectionEndpoint,
+  multiplicity?: ReadonlyMap<string, { ports: ReadonlyMap<string, PortMultiplicityInfo> }>,
+): boolean {
+  if (!multiplicity) return false
+  const outputInfo = multiplicity.get(output.nodeId)?.ports.get(output.portId)
+  const inputInfo = multiplicity.get(input.nodeId)?.ports.get(input.portId)
+  if (outputInfo?.kind !== 'poly' || inputInfo?.kind !== 'poly') return false
+  if (!outputInfo.originId || !inputInfo.originId) return false
+  return outputInfo.originId !== inputInfo.originId
+}
+
 /** Live wire-drag feedback only needs a yes/no (ADR-0010's colour scheme
     has no third "will insert an adapter" visual state yet — NeedsAdapters
     renders identically to Ok during a drag; only a true Reject shows the
     red-dashed rejected treatment). The actual commit
     (graphCommands.connectWithAutoAdapt) still gets the real three-outcome
     answer from the engine and inserts the adapter for real.
+
+    `multiplicity` (optional — see hasOriginMismatch above) is the current
+    graphStore snapshot's own per-node multiplicity map; omit it to predict
+    with type/quantity rules alone, exactly as before this parameter existed.
 */
-export function canConnect(output: ConnectionEndpoint, input: ConnectionEndpoint): boolean {
+export function canConnect(
+  output: ConnectionEndpoint,
+  input: ConnectionEndpoint,
+  multiplicity?: ReadonlyMap<string, { ports: ReadonlyMap<string, PortMultiplicityInfo> }>,
+): boolean {
   if (output.direction !== 'output' || input.direction !== 'input') return false
   if (output.nodeId === input.nodeId) return false
   // Nothing real to predict with: let the drop through and let the engine decide.
   if (output.unresolved || input.unresolved) return true
+  if (hasOriginMismatch(output, input, multiplicity)) return false
   return canConnectPorts(output.port, input.port).outcome !== 'reject'
 }
