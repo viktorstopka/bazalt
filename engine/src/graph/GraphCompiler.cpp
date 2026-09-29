@@ -480,6 +480,7 @@ namespace bazalt::engine
         std::vector<std::unordered_set<int>> successorSet ((size_t) numNodes); // for dedup
         std::vector<NoteConnection> noteConnections; // M18 (ADR-0024)
         std::unordered_set<PortKey, PortKeyHash> noteInputsUsed; // duplicate-connection guard for Note inputs, tracked separately from incomingSource
+        std::unordered_set<PortKey, PortKeyHash> dataInputsUsed; // same, for Data inputs (Data Foundations batch)
 
         for (const auto& connection : graph.getConnections())
         {
@@ -555,6 +556,36 @@ namespace bazalt::engine
 
                 noteInputsUsed.insert (toKey);
                 noteConnections.push_back ({ fromIt->second, fromPortIt->second, toIt->second, toPortIt->second });
+
+                if (successorSet[(size_t) fromIt->second].insert (toIt->second).second)
+                    successors[(size_t) fromIt->second].push_back (toIt->second);
+
+                continue;
+            }
+
+            // Data Foundations batch: a Data-typed connection is wired once,
+            // right here, by handing the consumer a raw DataPublisher*
+            // (Node.h's own getDataPublisher()/setDataInput() doc comments
+            // have the full reasoning for why this is sufficient — the
+            // publisher's address never changes, only its published
+            // contents do, which the consumer reads for itself later, live,
+            // on the audio thread). Same "one source per input" dedup and
+            // successors-edge bookkeeping as the Note case above, for the
+            // same reasons; entirely bypasses incomingSource/
+            // resolveInputChannel, since Data never flows through the
+            // ordinary per-sample float blockBuffers at all.
+            if (fromPort.type == SignalType::Data)
+            {
+                if (dataInputsUsed.find (toKey) != dataInputsUsed.end())
+                {
+                    result.errorMessage = "Input port already connected: " + connection.toNodeId
+                                           + " port " + connection.toPortId;
+                    return result;
+                }
+
+                dataInputsUsed.insert (toKey);
+                plan.nodes[(size_t) toIt->second]->setDataInput (connection.toPortId,
+                                                                   plan.nodes[(size_t) fromIt->second]->getDataPublisher());
 
                 if (successorSet[(size_t) fromIt->second].insert (toIt->second).second)
                     successors[(size_t) fromIt->second].push_back (toIt->second);

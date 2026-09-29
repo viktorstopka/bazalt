@@ -63,6 +63,9 @@
 #include "bazalt/engine/nodes/ClockCounterNode.h"
 #include "bazalt/engine/nodes/SeqStepsNode.h"
 #include "bazalt/engine/nodes/SeqEuclidNode.h"
+#include "bazalt/engine/nodes/DataScaleNode.h"
+#include "bazalt/engine/nodes/DataTableNode.h"
+#include "bazalt/engine/nodes/DataLookupNode.h"
 
 namespace bazalt::engine
 {
@@ -148,6 +151,10 @@ namespace bazalt::engine
         factory.registerType ("clock.counter", [] { return std::make_unique<nodes::ClockCounterNode>(); });
         factory.registerType ("seq.steps", [] { return std::make_unique<nodes::SeqStepsNode>(); });
         factory.registerType ("seq.euclid", [] { return std::make_unique<nodes::SeqEuclidNode>(); });
+        // Data Foundations batch — the first real Data-producing/consuming nodes.
+        factory.registerType ("data.scale", [] { return std::make_unique<nodes::DataScaleNode>(); });
+        factory.registerType ("data.table", [] { return std::make_unique<nodes::DataTableNode>(); });
+        factory.registerType ("data.lookup", [] { return std::make_unique<nodes::DataLookupNode>(); });
         return factory;
     }
 

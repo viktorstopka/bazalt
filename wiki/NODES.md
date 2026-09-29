@@ -16,10 +16,10 @@ implemented.
 **✅ Implemented** — real, registered, in `engine/include/bazalt/engine/nodes/`.
 **🚧 Partial** — implemented but narrower than this spec (the gap is named).
 **📋 Catalog only** — specified here, not built yet. Most of the catalog is this today
-— **62 of the 125 node types below are catalog-only** (down from 67 after the
-Clock+Seq batch — `wiki/NODES.Status.md` tracks the build order for what's left). Don't
-assume a node works in the running app because it's in this file; check the status
-marker.
+— **59 of the 125 node types below are catalog-only** (down from 67 before the
+Clock+Seq batch, 62 before the Data Foundations batch — `wiki/NODES.Status.md` tracks
+the build order for what's left). Don't assume a node works in the running app because
+it's in this file; check the status marker.
 
 ## Notation
 
@@ -58,7 +58,7 @@ are telemetry outputs for live visualization, not ports.
 | `math.*` | add, subtract, multiply, divide, abs, clamp, minmax, power, round, modulo, slew | ✅ all 11 |
 | `logic.*` | boolean, not, compare, toggle, select | ✅ all 5 |
 | `adapt.*` | map, remap, normalise, threshold, sampleHold | ✅ all 5 |
-| `data.*` | load, table, scale, material, analyseModes, lookup, **record**, **eqToCurve** (Correction 2) | 📋 all 8 |
+| `data.*` | load, table, scale, material, analyseModes, lookup, **record**, **eqToCurve** (Correction 2) | ✅ table, scale, lookup — 📋 load, material, analyseModes, record, eqToCurve |
 | `analysis.*` | onset, pitch, level, centroid | 📋 all 4 |
 | `instance.*` | allocator (Voice only), mix | 🚧 allocator (Voice ✅, Swarm/Trigger 📋 — M28) — ✅ mix |
 | `util.*` | constant, macro, reroute | ✅ constant, reroute — 📋 macro (ADR-0015, deliberately deferred) |
@@ -380,18 +380,22 @@ The drawn-curve shaper with the editor in its own body — internally `data.tabl
 
 ## data — producing and reading buffers
 
-Nothing else in the catalog can create a `Data` buffer — this family is a
-prerequisite for the sampler, wavetable oscillator, every resonator, and scale
-quantisation. **Entirely catalog-only today.**
+Prerequisite for the sampler, wavetable oscillator, every resonator, and scale
+quantisation. **The Data Foundations batch (`data.scale`/`data.table`/`data.lookup`) is
+the pathfinder for the whole `Data`-publishing pipeline** — before these three, no node
+in the engine had ever produced a real `Data` value; `Node::getDataPublisher()`/
+`setDataInput()` and `GraphCompiler.cpp`'s Data-connection wiring exist because of this
+batch (`wiki/NODES.Status.md`'s own cross-cutting prerequisite note, now closed). The
+remaining five (`load`/`material`/`analyseModes`/`record`/`eqToCurve`) stay catalog-only.
 
 #### `data.load` — Load File 📋
 **Out:** `data` — `Data`, tagged by content. **Structural:** `file`, `interpretAs` (enum: sample, wavetable, impulse response), `frameSize`, `normalise`, `rootNote`. **M27.**
 
-#### `data.table` — Table / Curve 📋
-**Out:** `data` — `Data(curve)`. **Structural:** the curve itself, `resolution`, `loop`. **Behavior:** the shared, hand-drawn source of envelopes, surface profiles, sequencer lanes, LFO shapes, waveshaper transfer functions, remapping curves — editing it updates every place it's used. **Note:** its "structural" curve content is really the `NodeContent` third category (`NODES.System.md` §3) once that lands — a forward-looking clarification, not a live-code conflict, since this node isn't built yet.
+#### `data.table` — Table / Curve ✅
+**Out:** `data` — `Data(curve)`. **Structural:** `resolution` (2–32, not the full generality the name might suggest — see below), `loop` (carried, not yet consumed by anything), plus a fixed bank `point.0`…`point.31`. **Behavior:** the shared curve source of envelopes, surface profiles, sequencer lanes, LFO shapes, waveshaper transfer functions, remapping curves — editing it updates every place it's used. **Deliberate interim shape:** "the curve itself" is a fixed 32-point parameter bank (same pattern `seq.steps`' own step bank uses), not real `NodeContent` — that third category (`NODES.System.md` §3) doesn't exist as code yet; this node ships ahead of it rather than waiting, same reasoning `seq.steps` already documents.
 
-#### `data.scale` — Scale 📋
-**In:** `root`. **Out:** `data` — `Data(scale)`. **Structural:** `scale` (enum: major, the church modes, pentatonics, blues, whole tone, chromatic, harmonic series, custom), `customDegrees`, `octaveSize`. **M24.**
+#### `data.scale` — Scale ✅
+**In:** `root`. **Out:** `data` — `Data(scale)`. **Structural:** `scale` (enum: major, the church modes, pentatonics, blues, whole tone, chromatic — **12 named scales**; "harmonic series" and "custom" are the two catalog items deliberately deferred, both real gaps not silent ones — see below), `octaveSize` (generalizes the 12-tone patterns to other divisions by proportional scaling, not just padding). **A real, documented RT-safety limit:** `root` is a genuine wireable port, but its *live* cable value is never read on the audio thread — rebuilding a `Data` buffer means a heap allocation, forbidden there (CLAUDE.md rule 2); only the value applied via `setParameter()` (the node's own inline slider) actually republishes. A real worker-thread content-rebuild pipeline (`NODES.System.md` §8's own still-open item) is what closes this properly — not built as a side effect of this one node.
 
 #### `data.material` — Material 📋
 The physical-modelling counterpart of `data.scale`. **In:** `stiffness`; `density`; `damping`; `size`; `inharmonicity`; `irregularity`. **Out:** `data` — `Data(modal-set)`. **Structural:** `geometry` (enum: string, bar, tube, membrane, plate, irregular solid), `modeCount` (default 32), `preset` (enum: wood, glass, metal, stone, ceramic, bone, ice, custom), `seed`. **M23.**
@@ -399,8 +403,8 @@ The physical-modelling counterpart of `data.scale`. **In:** `stiffness`; `densit
 #### `data.analyseModes` — Analyse Modes 📋
 **In:** `data` — `Data(sample)`. **Out:** `data` — `Data(modal-set)`. **Structural:** `modeCount`, `windowStart`, `windowLength`, `decayEstimation`. **Behavior:** hit a rock, drop in the file, play the rock. **M23.**
 
-#### `data.lookup` — Lookup 📋
-**In:** `in [audio]`; `data` — `Data`, required; `dataB` — `Data` (optional morph target, same tag required); `morph [audio]`. **Out:** `out`. **Structural:** `mode` (enum: nearest, interpolate, index, wrap-index), `polarity`, `edgeMode`. **M24.**
+#### `data.lookup` — Lookup ✅
+**In:** `in [audio]`; `data` — `Data`, required (accepts `Curve` or `Scale` — the two tags this batch's producers actually emit); `dataB` — `Data` (optional morph target; a tag mismatch silently falls back to `data` alone rather than rejecting at runtime, since nothing enforces "required" ports today); `morph [audio]`. **Out:** `out`. **Structural:** `mode` (enum: nearest, interpolate, index, wrap-index), `polarity`, `edgeMode` (clamp, wrap). **Behavior — this node's own concrete mode contract** (the catalog names the four modes, not their exact semantics): `nearest`/`interpolate` treat `in` as a normalised position (remapped 0..1 via `polarity`, then scaled across the buffer); `index`/`wrapIndex` treat `in` as a literal element index, ignoring `polarity` entirely (an index has no natural normalised meaning); `wrapIndex` always wraps regardless of `edgeMode`, plain `index` respects it. Only `stride() == 1` buffers (both real producers) are meaningfully supported today.
 
 #### `data.record` — Record 📋 *(Correction 2)*
 **In:** `in` — `Audio`; `trigger : Event`; `stop : Event`; `threshold` (auto-start on signal); `maxLength`. **Out:** `data` — `Data(sample)` (published on stop); `recording` — `bool`; `level [audio]`. **Structural:** `preRoll`, `channels`. **Behavior:** writes into a buffer preallocated from `maxLength`; on stop, hands off to a worker thread that writes an immutable asset. **Native:** real-time capture with preallocation and thread handoff — nothing allocates on the audio thread, recording never blocks it.

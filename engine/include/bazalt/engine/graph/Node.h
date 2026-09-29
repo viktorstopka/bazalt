@@ -1,5 +1,6 @@
 #pragma once
 
+#include "bazalt/engine/graph/Data.h"
 #include "bazalt/engine/graph/HostInputs.h"
 #include "bazalt/engine/graph/PortDescriptor.h"
 #include "bazalt/engine/graph/PreviewDescriptor.h"
@@ -116,6 +117,54 @@ namespace bazalt::engine
         virtual void resolveIncomingPort (const juce::String& toPortId, const PortDescriptor& source) noexcept
         {
             juce::ignoreUnused (toPortId, source);
+        }
+
+        /** Data Foundations batch — for a node with a `Data`-typed OUTPUT
+            port, the `DataPublisher` (Data.h) that backs it. One per node,
+            never per-port: every Data-producing node planned so far
+            (`data.scale`, `data.table`) has exactly one `Data` output, so
+            no port-id parameter is needed to disambiguate — if a future
+            node ever needs two, this method's own signature is the first
+            thing that has to change, not a silent ambiguity.
+
+            Unlike `Note`'s `produceNoteBlock()`/`consumeNoteBlock()` (called
+            every block, because a note stream is continuous per-sample
+            data), a `Data` connection is wired **once, at compile time**:
+            `GraphCompiler` calls this once per resolved `Data` connection
+            and hands the raw pointer straight to the consumer's
+            `setDataInput()` below. This is sufficient because the
+            `DataPublisher` object's own address never changes after
+            construction — only its *published contents* do, and reading
+            those live (`DataPublisher::getCurrentForAudioThread()`) is
+            exactly what the consumer does for itself, on the audio thread,
+            whenever it needs to. Returns `nullptr` for every node without a
+            `Data` output (the overwhelming majority) — message-thread only
+            (compile time), never called from the audio thread.
+        */
+        virtual DataPublisher* getDataPublisher() noexcept { return nullptr; }
+
+        /** The other half of the pair above: called once per compile
+            (message thread) on a node with a `Data`-typed INPUT port,
+            handing it the resolved producer's `DataPublisher*` — `nullptr`
+            if the port is left unconnected (there is no NaN-sentinel
+            fallback for `Data`, unlike a knob-style Control port: `Data`
+            "never converts implicitly" and never has a default either,
+            `wiki/NODES.System.md` §1/§4 — a node with an unconnected `Data`
+            input must degrade gracefully on its own, e.g. `data.lookup`
+            outputs silence rather than crash). The node stores this pointer
+            and calls `getCurrentForAudioThread()` on it itself, from the
+            audio thread, whenever it needs the current buffer — this method
+            itself must never be called from the audio thread, and must
+            never dereference `publisher` itself (only store the pointer).
+            Not `const DataPublisher*`: `getCurrentForAudioThread()` isn't
+            `const`-qualified (it records the reading thread's epoch, real
+            mutation, not just a cache) — the pointer is still only ever
+            read-from-the-audio-thread's perspective, never reseated or
+            deleted by the consumer.
+        */
+        virtual void setDataInput (const juce::String& inputPortId, DataPublisher* publisher) noexcept
+        {
+            juce::ignoreUnused (inputPortId, publisher);
         }
 
         /** M21 — the plugin-boundary nodes (io.audioIn, io.control,

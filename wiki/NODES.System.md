@@ -49,9 +49,17 @@ Deliberate consequences:
 
 ### Real state, today
 
-All five real types (`Audio`, `Control`, `Event`, `Note`, `Data` for `canConnect`'s
-purposes — `Data` itself has no real producer node yet) are implemented in
-`engine/src/graph/CanConnect.cpp` / mirrored in `ui/src/graph/canConnect.ts`. `Note`
+All five real types (`Audio`, `Control`, `Event`, `Note`, `Data`) are implemented in
+`engine/src/graph/CanConnect.cpp` / mirrored in `ui/src/graph/canConnect.ts`. `Data` got
+its first two real producers and its first real consumer in the Data Foundations batch
+(`data.scale`/`data.table` produce, `data.lookup` reads) — before that, only
+`canConnect`'s tag-matching rules were real; the actual publish/swap runtime
+(`DataPublisher`, `Data.h`) had never been exercised by a live node. `GraphCompiler.cpp`
+wires a `Data` connection once, at compile time, via `Node::getDataPublisher()`/
+`setDataInput()` — a much lighter mechanism than `Note`'s own per-block
+`produceNoteBlock()`/`consumeNoteBlock()`, since a `Data` buffer changes only on a
+discrete edit, never mid-block; the consumer just holds the raw `DataPublisher*` and
+reads `getCurrentForAudioThread()` for itself whenever it likes. `Note`
 has exactly two real ports anywhere in the engine right now: `io.noteIn`'s `notes`
 output and `instance.allocate.voice`'s `spawn` input (plus polymorphic `util.reroute`,
 which can carry a Note cable through unchanged). A connected Note port doesn't use the

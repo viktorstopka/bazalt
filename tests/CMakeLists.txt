@@ -12,6 +12,7 @@ add_executable(EngineTests
     BlockSizeInvarianceTests.cpp
     CanConnectTests.cpp
     ClockSeqNodesTests.cpp
+    DataFoundationsNodesTests.cpp
     DataTests.cpp
     DcBlockNodeTests.cpp
     DomainSplitterTests.cpp

@@ -865,3 +865,123 @@ into the family sections above (Implemented/MVP), totals recomputed (55→59 Imp
 3→4 MVP, 67→62 to build, A-tier 19→14), the Clock+Seq batch and "nodes to build next"
 step 1 marked done, and the Arpeggiator/Cicada stock-group appendix rows updated to
 reflect their now-satisfied `clock.*` dependencies.
+
+---
+
+# Data Foundations batch — `wiki/NODES.Status.md`'s own build order, step 2 — done
+
+Five node types in (Clock+Seq); three more now: `data.scale`, `data.table`,
+`data.lookup` (`engine/include/bazalt/engine/nodes/Data{Scale,Table,Lookup}Node.h`),
+registered in `ProofGraphs.h::buildDefaultNodeFactory()`. Unlike Clock+Seq, this batch
+also required **new cross-cutting engine infrastructure**, not just three node files —
+it was named as the pathfinder for exactly this reason in `wiki/NODES.Status.md`'s own
+"cross-cutting prerequisite" note, written before any of it existed: **no node in the
+engine had ever produced a real `Data` value.** `Data` was a fully real, implemented
+signal type at the `canConnect` level (tag matching, rejection rules), but the actual
+"build once, publish, swap a pointer" runtime (`DataPublisher`/`DataBuffer`, `Data.h`,
+already built and unit-tested standalone since an earlier milestone) had zero real
+callers — nothing in `GraphCompiler.cpp` knew how to wire a `Data`-typed connection
+between two nodes at all.
+
+**The new mechanism, deliberately lighter than `Note`'s own:** two new `Node.h`
+virtuals, `getDataPublisher()` (a producer hands back its own `DataPublisher*`) and
+`setDataInput(portId, publisher)` (a consumer receives the resolved producer's
+pointer). `GraphCompiler.cpp` gained a new branch in its connection-resolution loop,
+directly parallel to the existing M18 `SignalType::Note` special case (same "one
+source per input" dedup via a new `dataInputsUsed` set, same successors-edge
+bookkeeping for SCC scheduling, same bypass of `incomingSource`/`channelCountOf`'s
+ordinary float-buffer path) but structurally simpler: a `Data` connection is wired
+**once, at compile time** — `getDataPublisher()`/`setDataInput()` are called once per
+resolved connection, full stop, no per-block re-wiring the way `Note`'s
+`produceNoteBlock()`/`consumeNoteBlock()` need. This is sufficient because a
+`DataPublisher`'s own address never changes after construction, only its published
+*contents* do — reading those live (`DataPublisher::getCurrentForAudioThread()`) is
+already exactly what the consumer does for itself, on the audio thread, whenever it
+wants, cheaply and allocation-free (already proven by `Data.h`'s own pre-existing
+tests). Design reasoning captured directly in `Node.h`'s own doc comments on both new
+virtuals, not just here.
+
+**Design decisions made while building, not pre-specified by the catalog:**
+
+- **`data.scale`**: 12 named scales built in — everything the catalog names except
+  "harmonic series" (genuinely ambiguous, no agreed 12-tone approximation exists — a
+  poor guess would be worse than an honest gap) and "custom" (wants real `NodeContent`
+  editing, not a bolted-on parameter bank ahead of it). `octaveSize` proportionally
+  rescales the 12-tone patterns rather than just padding them, verified by a dedicated
+  test. **A real, documented RT-safety limit, found by reasoning through the
+  architecture before writing code, not live**: `root` is a genuine wireable port
+  (matching the catalog), but rebuilding a `Data` buffer means constructing a new
+  `std::vector<float>` — a heap allocation, forbidden on the audio thread (CLAUDE.md
+  rule 2). A cable wired into `root` compiles and is accepted; it currently has no
+  audible effect. Only the value applied via `setParameter()` (the node's own inline
+  slider, same mechanism `adapt.threshold`'s own "threshold" port already established)
+  actually republishes. Building a bespoke lock-free in-place-mutation scheme to make
+  live modulation RT-safe was judged real, separate infrastructure — `wiki/
+  NODES.System.md` §8's own still-open "asset store"/worker-thread-rebuild item — not
+  something to improvise as a side effect of one node in this batch.
+- **`data.table`**: zero RT-safety tension (the catalog gives it no input ports at
+  all) — its curve content is a fixed 32-point `ParameterDescriptor` bank, the same
+  pattern `seq.steps`' own step bank already established, ahead of real `NodeContent`
+  (§3) which doesn't exist as code yet. `resolution` (2–32) picks how many points
+  publish, truncating from the front.
+- **`data.lookup`**: the catalog names four modes (nearest/interpolate/index/
+  wrap-index) without specifying their exact contract — this session's own concrete
+  design: `nearest`/`interpolate` treat `in` as a normalised position (remapped via
+  `polarity`), `index`/`wrapIndex` treat it as a literal element index and ignore
+  `polarity` entirely (an index has no natural normalised meaning), `wrapIndex` always
+  wraps regardless of `edgeMode`. `dataB`/`morph` blending falls back gracefully to
+  `data` alone on a tag mismatch rather than rejecting — nothing in this engine
+  enforces "required" Data ports today, so graceful degradation was the honest choice
+  over inventing new enforcement machinery mid-batch.
+- **A real const-correctness bug caught by the compiler, not live**: `DataPublisher::
+  getCurrentForAudioThread()` isn't `const`-qualified (it genuinely mutates an epoch
+  atomic — real state, not just a cache), so `Node::setDataInput()`'s first draft
+  (`const DataPublisher*`) failed to compile the moment `data.lookup` tried to call it
+  through a stored member pointer. Fixed by dropping the `const` on both the virtual's
+  signature and the two stored member pointers — documented directly in `Node.h`'s own
+  comment so the next Data-consuming node doesn't rediscover this the same way.
+- **A real nested-enum shadowing risk avoided, following existing precedent**:
+  `data.lookup`'s own polarity concept was named `PositionPolarity`, not `Polarity` —
+  `bazalt::engine::Polarity` (`PortDescriptor.h`) already exists at namespace scope,
+  and `RandomSteppedNode.h`'s own `OutputPolarity` already established the same
+  avoidance for the same reason. Would still have compiled either way (class-scope
+  lookup wins), but the existing convention is there for readability, not correctness.
+
+**Tests:** new `tests/DataFoundationsNodesTests.cpp`, 18 cases. Direct per-node tests
+(scale-pattern correctness including a hand-verified `octaveSize` rescale, republish-
+on-edit generations, an `RtAllocationTrap`-wrapped proof that the *read* side is
+allocation-free, `data.table` truncation-on-resolution-change, `data.lookup`'s full
+mode/polarity/edgeMode/morph matrix using hand-built `DataBuffer`s for precise control)
+plus — the more important half — **two real compiled-graph round trips** through
+`GraphCompiler::compile()` (`data.scale`→`data.lookup` reading a scale degree by index,
+`data.table`→`data.lookup` interpolating a drawn curve) and one negative case (wiring
+two `Data` producers into the same input is rejected, exercising the new
+`dataInputsUsed` dedup specifically) — these are what actually prove the new
+`GraphCompiler.cpp` wiring works end to end, not just that the nodes behave correctly
+in isolation. One real test-authoring bug caught on the first run, not shipped: the
+`octaveSize` rescale test's expected values ignored `data.scale.root`'s own default
+(60, not 0) interacting with a changed `octaveSize` (60 mod 24 = 12, not 0) — the node
+was already correct; the test's hand-computed expectation wasn't. Fixed by explicitly
+zeroing `root` in that one test to isolate exactly what it means to check, not by
+changing the node. `NodeDescriptorTests.cpp`'s registered-type count updated 63 → 66.
+
+**Verified:** `EngineTests.exe` 332 test cases / 2,004,380 assertions, all green (18 of
+those cases are this batch's own, confirmed passing in isolation before the full-suite
+run). `ctest` (engine+plugin combined) 417/417 green. `pluginval --strictness-level
+10`: clean `SUCCESS` on the first run this time, no flake to retry. Standalone app
+rebuilt, launched, and confirmed running/responsive — no UI code changes were needed
+(the Add menu is descriptor-driven), so this was a sanity check, consistent with every
+other node-batch milestone in this project.
+
+**Docs updated to match:** `wiki/NODES.md`'s `data.scale`/`data.table`/`data.lookup`
+entries (📋 → ✅, each design decision and deviation named inline) and its `data.*`
+family intro paragraph (no longer "entirely catalog-only"); its own "59 of 125
+catalog-only" header count. `wiki/NODES.System.md` §1's "Real state, today" paragraph
+(no longer says `Data` has no real producer). `wiki/NODES.Status.md`: all 3 nodes moved
+into the `data.*` family's own Implemented table, totals recomputed (59→62 Implemented,
+62→59 to build, C-tier 12→9), the Data Foundations batch and "nodes to build next"
+step 2 marked done, `data.material` re-batched from the now-closed "Data Foundations"
+tag (a stray leftover from an earlier pass — it was never actually one of this batch's
+3 real members) to "PM Core" where it actually belongs, and the Scale Quantize/
+Arpeggiator/Chord/Crackle stock-group appendix rows updated to reflect their
+now-satisfied `data.scale` dependency.

@@ -40,17 +40,17 @@ build effort, independent of necessity — an A-tier node can still be a 3.
 
 ### A cross-cutting prerequisite worth flagging up front
 
-**No node in the engine produces a real `Data` value today.** `Data` is a declared,
-implemented signal type (`canConnect` handles it fully — tag matching, rejection
-rules) but the entire "build on a worker thread, publish, atomic pointer swap" pipeline
-`wiki/NODES.System.md` §1 describes has zero real callers. Whichever `data.*` node gets
-built *first* pays for building that pipeline; every `data.*`/`osc.wavetable`/
-`sampler.*` node after it rides on top for free. Recommendation below picks
-`data.scale` as that pathfinder (smallest, most self-contained buffer shape — no file
-I/O, no editor). Similarly, **`NodeContent` (the third value category, §3) doesn't
-exist as real code yet** — `data.table`/`seq.steps`/every `factory.*` node's content
-nominally wants it, but none of them strictly need the fully-general version to ship a
-first cut (a plain structural array works until something demands live editing).
+**Resolved by the Data Foundations batch — kept here as historical context.**
+`Data` was a declared, implemented signal type (`canConnect` handled it fully — tag
+matching, rejection rules) but the "build on a worker thread, publish, atomic pointer
+swap" pipeline `wiki/NODES.System.md` §1 describes had zero real callers until
+`data.scale`/`data.table`/`data.lookup` shipped: `Node::getDataPublisher()`/
+`setDataInput()` (new `Node.h` virtuals) and `GraphCompiler.cpp`'s new `Data`-connection
+branch now exist for real. Every later `data.*`/`osc.wavetable`/`sampler.*` node rides
+on top of this for free. Similarly, **`NodeContent` (the third value category, §3) still
+doesn't exist as real code** — `data.table`'s own curve content and `seq.steps`' own
+step bank both shipped as a fixed `ParameterDescriptor` bank ahead of it, deliberately,
+rather than waiting; every `factory.*` node still does want the real thing.
 
 ---
 
@@ -212,18 +212,31 @@ features."*
 
 All done — no rows needed.
 
-### `data.*` — producing and reading buffers — 8 to build (none started)
+### `data.*` — producing and reading buffers — 3 Implemented, 5 to build
 
 Foundational, but not "essential-for-modularity" the way `note.*`/`clock.*` are —
 these exist to feed other nodes, so bucketed **C**: needed for a first content wave,
 not the graph-flow infra `A` is reserved for.
 
+**Data Foundations batch — done.** `data.scale`/`data.table`/`data.lookup` are the
+pathfinder for the whole `Data`-publishing pipeline: before these three, no node in the
+engine had ever produced a real `Data` value — only `canConnect`'s tag-matching rules
+were real. Building them required real, new engine infrastructure, not just three node
+files: `Node::getDataPublisher()`/`setDataInput()` (new virtuals) and a new
+`Data`-typed-connection branch in `GraphCompiler.cpp`, wiring a producer's
+`DataPublisher*` straight into a consumer once, at compile time — much lighter than
+`Note`'s own per-block mechanism, since a `Data` buffer only ever changes on a discrete
+edit. Every later `data.*`/`osc.wavetable`/`sampler.*` node rides on this for free.
+
+| Node | Status | Notes |
+|---|---|---|
+| `data.scale` | Implemented | 12 named scales (everything the catalog asks for except "harmonic series" and "custom", both deliberately deferred — see below); `octaveSize` proportionally rescales the 12-tone patterns. Real, documented RT-safety limit: `root`'s *live* cable value is never read on the audio thread (rebuilding means a heap allocation) — only the value applied via `setParameter()` republishes. |
+| `data.table` | Implemented | Curve content is a fixed 32-point parameter bank (`seq.steps`' own pattern), not real `NodeContent` — that category doesn't exist as code yet. `resolution` (2–32) picks how many points publish. |
+| `data.lookup` | Implemented | 4 modes (nearest/interpolate/index/wrapIndex) with a concrete, tested contract this session had to design (the catalog names the modes, not their exact semantics); `dataB`/`morph` blending with graceful tag-mismatch fallback. |
+
 | Node | Status | Necessity | Batch | Notes |
 |---|---|---|---|---|
-| `data.scale` | To be implemented | **C2** | Data Foundations | Recommended **pathfinder** for the whole Data-publishing pipeline (smallest, self-contained buffer shape) — see the prerequisite note above. |
-| `data.table` | To be implemented | **C2** | Data Foundations | Feeds `env.curve`/`lfo.shape`/`shape.waveshaper`/`adapt.remap`'s editor. Can ship with a simplified content store ahead of full `NodeContent`. |
-| `data.lookup` | To be implemented | **C2** | Data Foundations | Reads any `Data` buffer — build paired with `data.table`, tested against it directly. |
-| `data.material` | To be implemented | **C2** | Data Foundations | Physical-modelling counterpart of `data.scale`; feeds `resonator.modal`/`filter.formant`. |
+| `data.material` | To be implemented | **C2** | PM Core | Physical-modelling counterpart of `data.scale`; feeds `resonator.modal`/`filter.formant`. (Re-batched from "Data Foundations" now that batch is closed — this node was never actually one of its 3 members, a stray tag in an earlier pass.) |
 | `data.record` | To be implemented | **C2** | EQ/Curve Data | Real-time capture + worker-thread handoff, preallocated buffer. |
 | `data.load` | To be implemented | **C3** | Sampler | File I/O + multiple interpretations (sample/wavetable/IR) — real format work, not just DSP. |
 | `data.analyseModes` | To be implemented | **C3** | Analysis+Assemble | FFT/peak-picking modal analysis of a recording. |
@@ -283,16 +296,21 @@ building for real, not simplified.
 
 | Status | Count |
 |---|---|
-| Implemented | 59 |
+| Implemented | 62 |
 | MVP | 4 (`osc.analog`, `filter.svf`, `excite.burst`, `seq.steps`) |
-| To be implemented | 62 |
+| To be implemented | 59 |
 | **Total native node types** | **125** |
 
-By necessity, among the 62 still to build: **A** 14 · **B** 30 · **C** 12 · **D** 6.
+By necessity, among the 59 still to build: **A** 14 · **B** 30 · **C** 9 · **D** 6.
 
 **Clock+Seq batch — done.** `clock.pulse`/`clock.divide`/`clock.counter`/`seq.euclid`/
 `seq.steps` all built and tested — see their family sections above for per-node notes;
 `wiki/MILESTONES.md`'s own entry has the full build record.
+
+**Data Foundations batch — done.** `data.scale`/`data.table`/`data.lookup` all built
+and tested, plus the new cross-cutting `Data`-publishing infrastructure they needed
+(`Node::getDataPublisher()`/`setDataInput()`, `GraphCompiler.cpp`'s Data-connection
+wiring) — see the `data.*` family section above and `wiki/MILESTONES.md`'s own entry.
 
 ---
 
@@ -330,10 +348,10 @@ but sit at the top of the recommended order below because `note.quantize` (A),
 | Batch | Members | Why batched |
 |---|---|---|
 | **Clock+Seq** — done | `clock.pulse`, `clock.divide`, `clock.counter`, `seq.steps`, `seq.euclid` | Chain into each other directly (pulse → divide → counter → steps/euclid); tested as one rhythmic pipeline (`tests/ClockSeqNodesTests.cpp`). |
-| **Data Foundations** | `data.scale`, `data.table`, `data.lookup` | `data.lookup` literally reads what `data.table`/`data.scale` produce — the pathfinder for the whole Data-publishing pipeline. |
+| **Data Foundations** — done | `data.scale`, `data.table`, `data.lookup` | `data.lookup` literally reads what `data.table`/`data.scale` produce — the pathfinder for the whole Data-publishing pipeline (`tests/DataFoundationsNodesTests.cpp`, 18 cases including two real compiled-graph round trips). |
 | **Note Stream** | `note.gate`, `note.value`, `note.transpose`, `note.filter`, `note.hold`, `note.select`, `note.chord`, `note.humanize`, `note.quantize` | All consume/produce `Note`, chain naturally (quantize → chord → hold → select), share test fixtures. |
 | **Domain Extensions** | `instance.allocate.swarmPopulation`, `instance.allocate.swarmTransient`, `instance.allocate.trigger` | Share the same instance-context/lifetime runtime machinery `instance.allocate.voice` already proved out. |
-| **PM Core** | `excite.impulse`, `excite.pluck`, `excite.mallet`, `resonator.comb`, `resonator.modal`, `resonator.string`, `resonator.plate`, `excite.burst` (MVP top-off) | The basic excite→resonate pairs (Struck Body, Karplus-Strong) — designed to plug straight into each other. |
+| **PM Core** | `excite.impulse`, `excite.pluck`, `excite.mallet`, `resonator.comb`, `resonator.modal`, `resonator.string`, `resonator.plate`, `excite.burst` (MVP top-off), `data.material` | The basic excite→resonate pairs (Struck Body, Karplus-Strong) — designed to plug straight into each other; `data.material` feeds `resonator.modal` directly, moved here from the now-closed Data Foundations batch (a stray tag in an earlier pass — it was never one of that batch's 3 actual members). |
 | **PM Friction/Breath** | `excite.stickSlip`, `excite.breath`, `excite.contact`, `resonator.tube` | Friction/breath-driven excitation, tested against tube/string for Bowed String / Breath-Wind. |
 | **PM Voice** | `osc.glottal`, `excite.vocalFolds`, `resonator.junction`, `resonator.tract`, `filter.formant` | Correction 1's vocal-modelling cluster — the hardest batch, targets the "cat purr" reference patch. Build last within Physical Modelling. |
 | **Noise & Grain** | `noise.colored`, `noise.dust`, `sampler.granular` | Stochastic/granular sources sharing test approach. |
@@ -359,15 +377,18 @@ matters more than the letter for a couple of "C" items:
    `seq.euclid`/`seq.steps` all built and tested (`tests/ClockSeqNodesTests.cpp`, 21
    cases). `seq.steps` shipped as MVP (two documented, deliberate spec deviations —
    see its own row above); the other four fully match the catalog.
-2. **Data Foundations** (`data.scale` → `data.table` → `data.lookup`) — now the next
-   step. Pulled forward
-   ahead of its "C" letter specifically because `note.quantize`, `env.curve`,
-   `lfo.shape`, and `shape.waveshaper`'s custom-curve mode all block on it. Build
-   `data.scale` first as the Data-pipeline pathfinder (see the prerequisite note up
-   top).
-3. **Note Stream** (the 9-node `note.*` batch) — now unblocked by step 2's
-   `data.scale`; this is the single biggest "ordinary patching" unlock in the whole
-   list (arpeggios, chords, scale-snapping become real).
+2. ~~**Data Foundations**~~ — **done.** `data.scale`/`data.table`/`data.lookup` all
+   built and tested (`tests/DataFoundationsNodesTests.cpp`, 18 cases, including two
+   real compiled-graph round trips proving the new `GraphCompiler.cpp` wiring, not just
+   direct node-to-node C++ calls). Pulled forward ahead of its nominal "C" letter, as
+   planned — it was the right call: `note.quantize`, `env.curve`, `lfo.shape`, and
+   `shape.waveshaper`'s custom-curve mode are all unblocked by it now. `data.scale`
+   really was the pathfinder — the whole `Data`-publishing pipeline
+   (`Node::getDataPublisher()`/`setDataInput()`, `GraphCompiler.cpp`'s Data-connection
+   branch) exists because of this step, not the other way around.
+3. **Note Stream** (the 9-node `note.*` batch) — now the next step, unblocked by
+   step 2's `data.scale`; this is the single biggest "ordinary patching" unlock in the
+   whole list (arpeggios, chords, scale-snapping become real).
 4. **Domain Extensions** (`instance.allocate.swarmPopulation`/`swarmTransient`/
    `trigger`) — reuses proven `instance.allocate.voice` machinery; unlocks the Water/
    Cicada Field/percussive-one-shot stock groups.
@@ -417,12 +438,12 @@ not with the A/B/C/D/Batch treatment above.
 |---|---|---|
 | **Init Patch** | ✅ real hand-built graph (not yet a loadable `stock.*` asset) | Nothing for the graph itself; needs `stock.*` loading (M29) and `space.reverb` for its tail. |
 | **Karplus-Strong** | 📋 | Only `shape.clip` (Shaping batch) is missing — everything else it uses is already Implemented. |
-| **Scale Quantize** | 📋 | `data.scale`, `note.quantize` (steps 2–3 above). |
+| **Scale Quantize** | 📋 | `data.scale` now Implemented — only `note.quantize` (step 3) remains. |
 | **Arpeggiator** | 📋 | `clock.pulse`/`clock.counter` now Implemented — only `note.hold`, `note.select` (step 3) remain. |
-| **Chord** | 📋 | `note.chord`, `data.scale` (step 3). |
+| **Chord** | 📋 | `data.scale` now Implemented — only `note.chord` (step 3) remains. |
 | **Bubble** | 📋 | `env.curve` (Env/LFO Shapes). |
 | **Water** | 📋 | `noise.dust`, `instance.allocate.swarmTransient` (step 4), Bubble. |
-| **Crackle** | 📋 | `noise.dust`, `excite.burst` (already MVP-usable), `resonator.modal` (PM Core), `data.material` (Data Foundations). |
+| **Crackle** | 📋 | `noise.dust`, `excite.burst` (already MVP-usable), `resonator.modal`, `data.material` (both PM Core). |
 | **Scrape** | 📋 | `excite.contact` (PM Friction/Breath), `resonator.modal`, `data.material`, `space.reverb`. |
 | **Cicada** | 📋 | `clock.pulse` now Implemented — `excite.burst` already MVP-usable; still needs `filter.formant` (PM Voice), `resonator.modal` (PM Core). |
 | **Cicada Field** | 📋 | `instance.allocate.swarmPopulation` (step 4), `random.drift` (already Implemented), Cicada. |
