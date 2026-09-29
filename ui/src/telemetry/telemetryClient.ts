@@ -39,6 +39,14 @@ interface TapState {
   latest: TelemetryFrame | null
   previousReceivedAtMs: number
   latestReceivedAtMs: number
+  // A reused output buffer for getInterpolatedTap()'s own blend below —
+  // that function used to allocate a brand-new Float32Array on every call,
+  // and it's called from every visible preview's render() on every single
+  // animation frame (60/sec, per visible waveform preview) - continuous,
+  // avoidable garbage generation in the hottest of hot paths. Resized only
+  // when the payload's own length actually changes (a real, rare event —
+  // a different fftOrder/window setting — not every call).
+  interpolated: Float32Array | null
 }
 
 const store = new Map<string, TapState>()
@@ -78,7 +86,7 @@ export function stopPollingTap(tap: TapName, frameType: TelemetryFrameType): voi
 function getOrCreateState(key: string): TapState {
   let state = store.get(key)
   if (!state) {
-    state = { previous: null, latest: null, previousReceivedAtMs: 0, latestReceivedAtMs: 0 }
+    state = { previous: null, latest: null, previousReceivedAtMs: 0, latestReceivedAtMs: 0, interpolated: null }
     store.set(key, state)
   }
   return state
@@ -177,7 +185,13 @@ export function getInterpolatedTap(tap: TapName, frameType: TelemetryFrameType):
 
   const previous = state.previous
   const latest = state.latest
-  const out = new Float32Array(latest.payload.length)
+  // Reused across calls (see TapState.interpolated's own comment) — every
+  // real consumer (telemetryDraw.ts's draw* functions) reads this
+  // synchronously and immediately, never retains it past the call that
+  // handed it out, so overwriting it in place on the next call is safe.
+  if (!state.interpolated || state.interpolated.length !== latest.payload.length)
+    state.interpolated = new Float32Array(latest.payload.length)
+  const out = state.interpolated
   for (let i = 0; i < out.length; i++) out[i] = previous.payload[i] * (1 - alpha) + latest.payload[i] * alpha
 
   return { payload: out, sampleRate: latest.sampleRate }
