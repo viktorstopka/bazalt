@@ -91,14 +91,19 @@ export const tokens = {
     // per-PORT Scalar/Poly resolution, so "this node's domain" is no longer a
     // single fact a dot could show; `domainVoice`/`domainGlobal`/`domainMono`
     // are retired along with it (superseded by `portAudioPoly` above for the
-    // per-port distinction, and by `structuralGrey` below for the
-    // instance-count badge that replaces the dot's UI slot).
+    // per-port distinction, and by `textFaint` below for the instance-count
+    // badge that replaces the dot's UI slot).
     //
-    // Instance-count badge (this same batch's replacement for the dot): a
-    // small structural readout ("3/8") on a Poly-resolved node, not a
-    // status/state colour — reuses the old `domainMono` hex under a name
-    // that describes what it's for now rather than what it used to mean.
-    structuralGrey: '#5f6672',
+    // Instance-count badge, direct feedback's own redesign of it: no pill
+    // background/border at all anymore (this token used to be exactly
+    // that, `structuralGrey`, `#5f6672` — a legible mid-grey, deliberately
+    // retired, not just renamed, along with the pill it painted) — plain
+    // text sitting fully outside the node, "very slightly lighter than the
+    // bg" so it reads as a quiet readout rather than a UI chrome element.
+    // `nodeFill`/`background` are both `#171414`; this is that value with a
+    // small, deliberately subtle bump on every channel (+16), nowhere near
+    // `textSecondary`'s actual "readable label" contrast.
+    textFaint: '#272424',
   },
   font: {
     // Design reference's specified face (loaded via Google Fonts in

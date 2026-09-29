@@ -68,26 +68,23 @@
 }
 
 /* wiki/plans/DomainRedesign.md Batch 4: DomainDot's real replacement — a
-   small structural "3/8" readout in the node's top-right corner, not an
-   inline title-bar dot (a correction against the plan's own §5.5 "same
-   corner" framing: DomainDot sat as a flex child inside .node-title-bar;
-   this instead anchors off .node-card itself, since it's meant to read as
-   sitting on the card's corner, not inside the title row). Only ever
-   rendered for an "instance.allocate.voice" node — see NodeCard.tsx's
-   InstanceCountBadge. */
+   "3/8" readout, not an inline title-bar dot (a correction against the
+   plan's own §5.5 "same corner" framing: DomainDot sat as a flex child
+   inside .node-title-bar; this instead anchors off .node-card itself).
+   Direct feedback redesigned this a second time: no pill at all now — no
+   background, no border, sitting entirely OUTSIDE the card's own border
+   (top is negative enough to clear the border with room to spare, not
+   just overlap the corner the way the first pill cut did) as plain text
+   in `textFaint`, "very slightly lighter than the bg" so it reads as a
+   quiet readout rather than a UI-chrome badge. Only ever rendered for an
+   "instance.allocate.voice" node — see NodeCard.tsx's InstanceCountBadge. */
 .node-instance-count-badge {
   position: absolute;
-  top: -8px;
-  right: -8px;
-  min-width: 15px;
-  padding: 1px 4px;
-  border-radius: 8px;
-  background: var(--color-structuralGrey);
-  border: var(--stroke-thin) solid var(--color-nodeBorder);
-  color: var(--color-textPrimary);
+  top: -16px;
+  right: 0;
+  color: var(--color-textFaint);
   font-size: 10px;
-  line-height: 1.3;
-  text-align: center;
+  line-height: 1;
   z-index: 2;
   cursor: default;
 }

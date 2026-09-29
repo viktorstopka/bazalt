@@ -346,6 +346,25 @@ export function ensureInitialized(): void {
     .catch((error) => {
       console.warn('graphGetNodeMultiplicity failed', error)
     })
+
+  // Direct feedback: the instance-count badge always read 0 - not a wiring
+  // bug on the native side (graphGetNodeMultiplicity's activeCount really
+  // is read fresh off the processor's live atomics on every call, per its
+  // own doc comment), the bug was that nothing here ever called it again
+  // after the initial fetch above except the 4 graph-EDIT call sites
+  // (undo/redo/withHistory/this function) - playing a note doesn't edit
+  // the graph, so the badge just showed whatever the count happened to be
+  // at the last recompile (almost always 0). Polled independently of any
+  // edit so it actually tracks voices turning on/off; 200ms is responsive
+  // enough to read as live for a small readout without hammering the
+  // native-function round trip on every animation frame the way the WebGL
+  // canvas itself runs.
+  window.setInterval(() => {
+    void fetchMultiplicity().then((result) => {
+      multiplicity = result
+      notify()
+    })
+  }, 200)
 }
 
 // ---- Endpoint lookup (shared by wire-drag hit-testing and rendering) ----
