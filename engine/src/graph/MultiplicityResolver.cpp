@@ -7,10 +7,10 @@ namespace bazalt::engine
 {
     namespace
     {
-        // Batch 1b (wiki/plans/DomainRedesign.md §10.3) renames this to
-        // "instance.sum" — kept as one isolated constant so that rename is a
+        // Batch 1b (wiki/plans/DomainRedesign.md sec 10.3) renamed this from
+        // "instance.mix" — kept as one isolated constant so that rename was a
         // one-line diff here, not a re-derivation of the algorithm below.
-        constexpr const char* instanceSumTypeId = "instance.mix";
+        constexpr const char* instanceSumTypeId = "instance.sum";
         constexpr const char* instanceSumInputPortId = "in";
         constexpr const char* instanceVoiceTypeId = "instance.allocate.voice";
     }

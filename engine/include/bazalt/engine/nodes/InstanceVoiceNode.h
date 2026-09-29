@@ -2,6 +2,7 @@
 
 #include "bazalt/engine/graph/Node.h"
 #include "bazalt/engine/graph/ValueTypes.h"
+#include <atomic>
 #include <juce_core/juce_core.h>
 
 namespace bazalt::engine::nodes
@@ -11,7 +12,7 @@ namespace bazalt::engine::nodes
         09-29-AddMenu.1 — CLAUDE.md rule 3 is suspended, so both are direct
         renames, no migration path). The second rename inserts an "allocate"
         namespace segment purely so the Add menu's category tree (also
-        09-29-AddMenu.1) can nest Voice under Domain > Allocate — `instance.mix`
+        09-29-AddMenu.1) can nest Voice under Domain > Allocate — `instance.sum`
         deliberately stays flat (no such segment) since it isn't one of several
         spawn-mechanism siblings the way Voice/Swarm/Trigger are. `DOMAINS.md`
         §3's Instance Allocator concept — **Voice configuration only**, and (as
@@ -73,7 +74,7 @@ namespace bazalt::engine::nodes
 
         juce::String getTitle() const override { return "Voice"; }
         // "Domain/Allocate" — nests under the Add menu's Domain category as a
-        // flyout (09-29-AddMenu.1), alongside instance.mix which stays flat
+        // flyout (09-29-AddMenu.1), alongside instance.sum which stays flat
         // "Domain" (see the class comment above for why). Sibling spawn
         // mechanisms (instance.allocate.swarmPopulation, etc., M28) land in
         // the same "Domain/Allocate" flyout once built.
@@ -178,13 +179,55 @@ namespace bazalt::engine::nodes
             ++instanceIndex;
             random1Value = random.nextFloat() * 2.0f - 1.0f;
             random2Value = random.nextFloat() * 2.0f - 1.0f;
+            spawnEventsThisBlock.fetch_add (1, std::memory_order_relaxed);
         }
 
         void noteOff() noexcept
         {
             gate = false;
             stopEvent = true;
+            spawnEventsThisBlock.fetch_add (1, std::memory_order_relaxed);
         }
+
+        /** DomainRedesign.md Batch 1b — the MIDI-independence fix. Root
+            cause: `VoiceManager`'s lanes only ever leave `VoiceStage::Idle`
+            via `PluginProcessor::handleMidiEvent`, driven by real host
+            MIDI — a graph that drives this node's own "spawn" input purely
+            from an internal Note-typed producer (clock -> seq ->
+            note.assemble, no io.noteIn anywhere) has that Note event reach
+            `noteOn()`/`noteOff()` above correctly (real, working
+            `Note`-port delivery since M18), but that only matters once the
+            lane is already rendering — which it never becomes, since
+            nothing ever calls `VoiceManager::noteOn()` for it.
+
+            The fix doesn't live here: `PluginProcessor` keeps ONE voice
+            slot per origin running every block regardless of `VoiceStage`
+            (mirroring how a mono graph already runs unconditionally),
+            purely to let this node's own graph-wired trigger evaluate, and
+            watches this counter for a change to detect "the graph itself
+            just fired a noteOn/noteOff, independent of host MIDI" — then
+            drives `VoiceManager` (and, for any OTHER voice slot the
+            allocator picks, a direct `noteOn()`/`noteOff()` poke on that
+            slot's own compiled instance) exactly as if a real MIDI message
+            had arrived. Real host MIDI keeps working unchanged — this
+            counter simply also increments on that path, harmlessly, since
+            nothing reads it there.
+
+            One counter for both directions (not a separate noteOn/noteOff
+            tally) — deliberately: the driver only needs to know a
+            transition HAPPENED, and reads this node's own current `gate`
+            state (already real, already correct) to tell which one.
+            `std::atomic` even though today's only reader is the same audio
+            thread that writes it within the same `processBlock()` call —
+            cheap, and matches this codebase's own established pattern for
+            an audio-thread-written, occasionally-read count
+            (`PluginProcessor::auxPeakLevels`).
+        */
+        int consumeSpawnEventsThisBlock() noexcept { return spawnEventsThisBlock.exchange (0, std::memory_order_relaxed); }
+
+        bool getGate() const noexcept { return gate; }
+        float getPitch() const noexcept { return pitch; }
+        float getVelocity() const noexcept { return velocity; }
 
         void processSample (const float*, float* outputs) noexcept override
         {
@@ -206,6 +249,8 @@ namespace bazalt::engine::nodes
     private:
         double sampleRate = 44100.0;
         int maxInstances = 8;
+
+        std::atomic<int> spawnEventsThisBlock { 0 }; // DomainRedesign.md Batch 1b — see consumeSpawnEventsThisBlock()
 
         bool gate = false;
         float pitch = 60.0f;

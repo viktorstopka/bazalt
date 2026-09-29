@@ -97,9 +97,9 @@ TEST_CASE ("nodeDescriptorToVar reports the Glance layout variant and its declar
 TEST_CASE ("nodeDescriptorToVar serializes InstanceMixNode's port metadata intact",
            "[plugin][NodeDescriptorJson][M17]")
 {
-    const auto descriptor = describeNode ("instance.mix", nodes::InstanceMixNode {});
+    const auto descriptor = describeNode ("instance.sum", nodes::InstanceMixNode {});
     const auto var = nodeDescriptorToVar (descriptor);
-    CHECK (var["typeId"].toString() == "instance.mix");
+    CHECK (var["typeId"].toString() == "instance.sum");
 
     const auto* inputs = var["inputs"].getArray();
     REQUIRE (inputs != nullptr);

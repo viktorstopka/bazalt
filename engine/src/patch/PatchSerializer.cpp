@@ -520,6 +520,22 @@ namespace bazalt::engine
             return root;
         }
 
+        // wiki/plans/DomainRedesign.md Batch 1b: "instance.mix" renamed to
+        // "instance.sum" — same reasoning as migrateV4ToV5 above (CLAUDE.md
+        // rule 3 is suspended, so this is a free rename with no id-rewriting
+        // needed): a version-number bump ONLY, kept as a real migration
+        // entry so an old v1-v5 patch (one that used the old type id) still
+        // PARSES successfully through the existing migration chain. It just
+        // won't compile once loaded — GraphCompiler rejects the now-unknown
+        // "instance.mix" type id with a clear "Unknown node type" error,
+        // not silently misinterpreted and not an opaque parse failure.
+        juce::var migrateV5ToV6 (juce::var v5Root)
+        {
+            auto root = v5Root.clone();
+            root.getDynamicObject()->setProperty ("schemaVersion", 6);
+            return root;
+        }
+
         // vN -> vN+1 migrations, keyed by the version they migrate FROM.
         using Migration = std::function<juce::var (juce::var)>;
 
@@ -530,6 +546,7 @@ namespace bazalt::engine
                 { 2, migrateV2ToV3 },
                 { 3, migrateV3ToV4 },
                 { 4, migrateV4ToV5 },
+                { 5, migrateV5ToV6 },
             };
             return migrations;
         }

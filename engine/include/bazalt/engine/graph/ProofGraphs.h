@@ -82,7 +82,7 @@ namespace bazalt::engine
 {
     /** Registers every M1/M2 DSP node type, the M7 utility node types
         (NODE_EDITOR.md §2), M16's adapter nodes, and M17's
-        instance.allocate.voice/instance.mix (superseding util.voiceSum) under
+        instance.allocate.voice/instance.sum (superseding util.voiceSum) under
         their stable type ids. Shared by render-cli and the Catch2 suite
         so the two hardcoded proof graphs below only need to be built once.
     */
@@ -129,7 +129,7 @@ namespace bazalt::engine
         factory.registerType ("adapt.gateLength", [] { return std::make_unique<nodes::GateLengthNode>(); });
         factory.registerType ("mix.downmix", [] { return std::make_unique<nodes::DownmixNode>(); });
         factory.registerType ("instance.allocate.voice", [] { return std::make_unique<nodes::InstanceVoiceNode>(); }); // 09-28-InstanceAllocator.3 — renamed from "instance.allocator"; 09-29-AddMenu.1 — renamed again from "instance.voice"
-        factory.registerType ("instance.mix", [] { return std::make_unique<nodes::InstanceMixNode>(); });
+        factory.registerType ("instance.sum", [] { return std::make_unique<nodes::InstanceMixNode>(); }); // DomainRedesign.md Batch 1b — renamed from "instance.mix" (C++ class name unchanged)
         factory.registerType ("io.noteIn", [] { return std::make_unique<nodes::IoNoteInNode>(); });
         // M21 Batch A, wave 1 — fixed-arity nodes needing no new infrastructure.
         factory.registerType ("math.subtract", [] { return std::make_unique<nodes::SubtractNode>(); });
@@ -198,7 +198,7 @@ namespace bazalt::engine
 
     /** M22 — the Init Patch (NODE_CATALOG.md's Part B one-liner: `io.noteIn`
         `-> instance.allocate.voice -> osc.analog x2 -> filter.ladder -> env.adsr
-        -> instance.mix -> space.reverb`), built for real and made
+        -> instance.sum -> space.reverb`), built for real and made
         `GraphEditController`'s constructor default (replacing
         `buildVoiceProofGraph()` there — that graph stays registered and
         tested, just no longer what a fresh instance opens with). Two
@@ -206,7 +206,7 @@ namespace bazalt::engine
         OWN envelope (so the tone brightens and settles independently of the
         amp envelope — what actually makes a subtractive synth feel alive,
         not just "does it compile"), key-tracked so higher notes stay
-        proportionally bright, into a VCA, into `instance.mix` — the first
+        proportionally bright, into a VCA, into `instance.sum` — the first
         time this node is exercised by a real, non-synthetic graph rather
         than a test-only one built just to exercise `hasGlobalDomain`.
 
@@ -263,7 +263,7 @@ namespace bazalt::engine
                             { "env.adsr.sustain", 0.8f }, { "env.adsr.release", 0.3f } }, {} });
         graph.addNode ({ "ampVCA", "mix.gain", { 1840.0f, 250.0f }, {}, {} });
 
-        graph.addNode ({ "voiceMix", "instance.mix", { 2140.0f, 250.0f }, {}, {} });
+        graph.addNode ({ "voiceMix", "instance.sum", { 2140.0f, 250.0f }, {}, {} });
         // Milestone 0.2 (wiki/NODES.System.md §9): a real stereo signal path
         // at last, closing archive_docs/CLEANUP.md P1 #6's long-logged gap —
         // centered/full-width by default (law defaults to constant power,

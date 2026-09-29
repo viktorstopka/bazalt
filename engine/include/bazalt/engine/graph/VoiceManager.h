@@ -200,7 +200,7 @@ namespace bazalt::engine
             sample value; `thresholdLinear`/`holdTimeSamples` come from
             whatever policy the caller applies (PluginProcessor uses fixed
             defaults for M17 — see its own comment on why per-graph
-            configurability via a real instance.mix node's parameters is a
+            configurability via a real instance.sum node's parameters is a
             later integration, not required for this mechanism to be
             correct and generic). Returns true once the hold time has been
             exceeded — caller should then call voiceFinished().

@@ -14,7 +14,7 @@ namespace bazalt::engine::nodes
         ties/fractions resolve: nearest (round), floor, or ceil — a
         discrete algorithmic choice, so it's a plain ParameterDescriptor
         (isStructural), same reasoning as osc.analog's shape or
-        instance.mix's mode, not a port.
+        instance.sum's mode, not a port.
     */
     class RoundNode : public Node
     {

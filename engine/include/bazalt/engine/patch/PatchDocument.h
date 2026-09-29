@@ -95,7 +95,13 @@ namespace bazalt::engine
         // juce::var, insert a bridge node (stereo.combine/stereo.split) for
         // a genuinely asymmetric old pair, retarget a matching pair
         // straight onto the new single port.
-        static constexpr int currentSchemaVersion = 5;
+        //
+        // Schema v6 (wiki/plans/DomainRedesign.md Batch 1b): "instance.mix"
+        // renamed to "instance.sum" (its own parameter ids too:
+        // "instance.mix.mode" etc. -> "instance.sum.mode"). Same rule-3-
+        // suspended, hygiene-only bump as v5's — see migrateV5ToV6 in
+        // PatchSerializer.cpp.
+        static constexpr int currentSchemaVersion = 6;
 
         int schemaVersion = currentSchemaVersion;
         std::vector<NodeInstance> nodes;

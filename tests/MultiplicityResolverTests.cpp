@@ -17,7 +17,7 @@ namespace
 {
     // osc -> svf -> instancesum -> masterout, WITH a real allocator feeding
     // osc's pitch — unlike the old buildSplitTestGraph(), which wired
-    // instance.mix straight off osc/svf with no allocator anywhere upstream
+    // instance.sum straight off osc/svf with no allocator anywhere upstream
     // at all. That shape compiled under DomainSplitter's purely reachability-
     // based split; under this resolver it's a real, deliberate compile error
     // (see the instance.sum-with-Scalar-input test below) — instance.sum's
@@ -30,7 +30,7 @@ namespace
         graph.addNode ({ "allocator", "instance.allocate.voice", {}, {}, {} });
         graph.addNode ({ "osc", "osc.analog", {}, {}, {} });
         graph.addNode ({ "svf", "filter.svf", {}, {}, {} });
-        graph.addNode ({ "instancesum", "instance.mix", {}, {}, {} }); // batch 1b renames this type id to "instance.sum"
+        graph.addNode ({ "instancesum", "instance.sum", {}, {}, {} }); // batch 1b renames this type id to "instance.sum"
         graph.addNode ({ "masterout", "io.output", {}, {}, {} });
 
         graph.addConnection ({ "noteIn", "notes", "allocator", "spawn" });
@@ -57,7 +57,7 @@ namespace
     }
 }
 
-TEST_CASE ("A graph with no instance.allocate.voice and no instance.mix is a mono graph",
+TEST_CASE ("A graph with no instance.allocate.voice and no instance.sum is a mono graph",
            "[engine][MultiplicityResolver]")
 {
     NodeGraph effect;
@@ -77,7 +77,7 @@ TEST_CASE ("A graph with no instance.allocate.voice and no instance.mix is a mon
 TEST_CASE ("MultiplicityResolver treats a graph with no instance.sum as entirely one origin's own voice region",
            "[engine][MultiplicityResolver]")
 {
-    auto graph = buildVoiceProofGraph(); // M2's proof graph — no instance.mix node, output IS the voice signal
+    auto graph = buildVoiceProofGraph(); // M2's proof graph — no instance.sum node, output IS the voice signal
     const auto result = MultiplicityResolver::split (graph);
 
     REQUIRE (result.success);
@@ -209,11 +209,11 @@ TEST_CASE ("Two independent origin/instance.sum pairs partition independently - 
     NodeGraph graph;
     graph.addNode ({ "allocA", "instance.allocate.voice", {}, {}, {} });
     graph.addNode ({ "oscA", "osc.analog", {}, {}, {} });
-    graph.addNode ({ "sumA", "instance.mix", {}, {}, {} });
+    graph.addNode ({ "sumA", "instance.sum", {}, {}, {} });
 
     graph.addNode ({ "allocB", "instance.allocate.voice", {}, {}, {} });
     graph.addNode ({ "oscB", "osc.analog", {}, {}, {} });
-    graph.addNode ({ "sumB", "instance.mix", {}, {}, {} });
+    graph.addNode ({ "sumB", "instance.sum", {}, {}, {} });
 
     graph.addNode ({ "mixdown", "mix.sum", {}, {}, {} });
     graph.addNode ({ "masterout", "io.output", {}, {}, {} });
@@ -255,8 +255,8 @@ TEST_CASE ("Two instance.sum nodes reducing the SAME origin is rejected", "[engi
     NodeGraph graph;
     graph.addNode ({ "alloc", "instance.allocate.voice", {}, {}, {} });
     graph.addNode ({ "osc", "osc.analog", {}, {}, {} });
-    graph.addNode ({ "sum1", "instance.mix", {}, {}, {} });
-    graph.addNode ({ "sum2", "instance.mix", {}, {}, {} });
+    graph.addNode ({ "sum1", "instance.sum", {}, {}, {} });
+    graph.addNode ({ "sum2", "instance.sum", {}, {}, {} });
     graph.addNode ({ "masterout", "io.output", {}, {}, {} });
 
     graph.addConnection ({ "alloc", "pitch", "osc", "pitch" });
@@ -278,7 +278,7 @@ TEST_CASE ("instance.sum's input must resolve Poly - Scalar (nothing to reduce) 
     // allocator anywhere in the graph) is exactly "nothing to reduce".
     NodeGraph graph;
     graph.addNode ({ "k", "util.constant", {}, {}, {} });
-    graph.addNode ({ "sum", "instance.mix", {}, {}, {} });
+    graph.addNode ({ "sum", "instance.sum", {}, {}, {} });
     graph.addNode ({ "masterout", "io.output", {}, {}, {} });
     graph.addConnection ({ "k", "out", "sum", "in" });
     graph.addConnection ({ "sum", "out", "masterout", "in" });
@@ -298,14 +298,14 @@ TEST_CASE ("An unwired instance.sum is not a domain boundary yet, not an error -
     // editor places a node, then wires it, as separate commands. Corrected
     // from DomainSplitterTests.cpp's own equivalent case: that suite
     // expected `hasGlobalDomain == false` here (an artefact of the OLD
-    // model's fallback, which treated "no WIRED instance.mix" as "the whole
+    // model's fallback, which treated "no WIRED instance.sum" as "the whole
     // graph is voiceGraph" regardless of whether any allocator existed to
     // make that framing meaningful). Under this model, with no allocator at
     // all, nothing is ever Poly — `origins` is empty and the whole
     // (currently inert) graph is ordinary global content, which is the
     // more coherent answer, not a regression.
     NodeGraph graph;
-    graph.addNode ({ "sum", "instance.mix", {}, {}, {} });
+    graph.addNode ({ "sum", "instance.sum", {}, {}, {} });
     graph.addNode ({ "masterout", "io.output", {}, {}, {} });
     graph.addConnection ({ "sum", "out", "masterout", "in" });
     graph.setOutput ("masterout", "out");
@@ -320,7 +320,7 @@ TEST_CASE ("An unwired instance.sum is not a domain boundary yet, not an error -
 TEST_CASE ("instance.sum rejects more than one connection into its input port", "[engine][MultiplicityResolver][M19]")
 {
     NodeGraph graph;
-    graph.addNode ({ "sum", "instance.mix", {}, {}, {} });
+    graph.addNode ({ "sum", "instance.sum", {}, {}, {} });
     graph.addNode ({ "src1", "util.constant", {}, {}, {} });
     graph.addNode ({ "src2", "util.constant", {}, {}, {} });
     graph.addNode ({ "masterout", "io.output", {}, {}, {} });
@@ -419,7 +419,7 @@ TEST_CASE ("A mono source that feeds only the global domain joins the global pla
     NodeGraph graph;
     graph.addNode ({ "alloc", "instance.allocate.voice", {}, {}, {} });
     graph.addNode ({ "osc", "osc.analog", {}, {}, {} });
-    graph.addNode ({ "sum", "instance.mix", {}, {}, {} });
+    graph.addNode ({ "sum", "instance.sum", {}, {}, {} });
     graph.addNode ({ "audioin", "io.audioIn", {}, {}, {} });
     graph.addNode ({ "mixdown", "mix.sum", {}, {}, {} });
     graph.addNode ({ "masterout", "io.output", {}, {}, {} });
@@ -502,7 +502,7 @@ TEST_CASE ("09-28-InstanceAllocator.1 (part 4): an unconnected node is folded in
     NodeGraph graph;
     graph.addNode ({ "alloc", "instance.allocate.voice", {}, {}, {} });
     graph.addNode ({ "osc", "osc.analog", {}, {}, {} });
-    graph.addNode ({ "sum", "instance.mix", {}, {}, {} });
+    graph.addNode ({ "sum", "instance.sum", {}, {}, {} });
     graph.addNode ({ "masterout", "io.output", {}, {}, {} });
     graph.addNode ({ "orphan", "excite.burst", {}, {}, {} }); // never connected to anything
 

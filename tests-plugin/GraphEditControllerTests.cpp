@@ -393,9 +393,9 @@ TEST_CASE ("moveNode preserves a GLOBAL-domain node's DSP object identity too, n
 {
     // Direct feedback: "moving a node's position restarts the whole
     // sound" - real, and specifically about the global domain (everything
-    // from instance.mix onward: the Init Patch's own "pan"/"masterOut").
+    // from instance.sum onward: the Init Patch's own "pan"/"masterOut").
     // The sibling test above already covers a voice-domain node via
-    // buildVoiceProofGraph(), which has no instance.mix/global domain at
+    // buildVoiceProofGraph(), which has no instance.sum/global domain at
     // all (hasGlobalDomain is false there) - this is the case it can't
     // reach.
     BazaltAudioProcessor processor;
@@ -601,7 +601,7 @@ TEST_CASE ("getNodeDomains() classifies every node as voice/global/mono after a 
 
     // The Init Patch (no longer the constructor default since the 0.x arc's
     // master-out-only default, 2026-09-29 - set explicitly here instead):
-    // its allocator + instance.mix -> everything should read "voice" or
+    // its allocator + instance.sum -> everything should read "voice" or
     // "global" once it's compiled.
     REQUIRE (controller.setGraph (bazalt::engine::buildInitPatchGraph()).success);
     REQUIRE (controller.getNodeDomains().count ("allocator") == 1);

@@ -133,7 +133,7 @@ TEST_CASE ("09-28-InstanceAllocator.3: instance.allocate.voice (renamed from ins
     CHECK (voice->title == "Voice");
     // "Domain/Allocate", not flat "Domain" - 09-29-AddMenu.1 nests Voice (and
     // its future Swarm/Trigger siblings) under an Add-menu flyout, one level
-    // deeper than instance.mix, which deliberately stays flat "Domain".
+    // deeper than instance.sum, which deliberately stays flat "Domain".
     CHECK (voice->category == "Domain/Allocate");
 
     bool sawConfiguration = false;

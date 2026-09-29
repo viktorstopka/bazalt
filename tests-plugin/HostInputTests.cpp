@@ -220,7 +220,7 @@ TEST_CASE ("A genuinely stereo graph (space.pan into io.output's stereo pair) se
     // different values, not a mono-duplicate fallback. One real stereo
     // cable from pan's single "out" port into out's single "in" port - no
     // separate left/right connections needed. Deliberately voice +
-    // global-domain shaped (allocator -> osc -> instance.mix -> pan -> out),
+    // global-domain shaped (allocator -> osc -> instance.sum -> pan -> out),
     // the same shape Init Patch itself now uses — the mono-only
     // (no-allocator) render path is a known, documented scope boundary this
     // redesign didn't extend (see wiki/NODES.System.md §9's own notes); a
@@ -230,7 +230,7 @@ TEST_CASE ("A genuinely stereo graph (space.pan into io.output's stereo pair) se
     graph.addNode ({ "noteIn", "io.noteIn", {}, {}, {} });
     graph.addNode ({ "allocator", "instance.allocate.voice", {}, {}, {} });
     graph.addNode ({ "osc", "osc.analog", {}, {}, {} });
-    graph.addNode ({ "voiceMix", "instance.mix", {}, {}, {} });
+    graph.addNode ({ "voiceMix", "instance.sum", {}, {}, {} });
     graph.addNode ({ "pan", "space.pan", {}, { { "space.pan.pan", -1.0f } }, {} }); // hard left
     graph.addNode ({ "out", "io.output", {}, {}, {} });
     graph.addConnection ({ "noteIn", "notes", "allocator", "spawn" });
@@ -277,7 +277,7 @@ TEST_CASE ("A mono source into io.output's stereo 'in' broadcasts to both host c
     // broadcast reaches all the way to the host's two physical channels,
     // matching every graph's behavior before this whole redesign started.
     // NOTE: this must be a voice + global-domain graph (allocator -> ... ->
-    // instance.mix -> out), NOT monoEffectGraph() - a no-allocator graph
+    // instance.sum -> out), NOT monoEffectGraph() - a no-allocator graph
     // takes PluginProcessor's separate renderMonoRange/monoRenderedThisBlock
     // path, which never consults finalOutputBufferIndexRight at all, so it
     // can't exercise this mechanism either way.
@@ -285,7 +285,7 @@ TEST_CASE ("A mono source into io.output's stereo 'in' broadcasts to both host c
     graph.addNode ({ "noteIn", "io.noteIn", {}, {}, {} });
     graph.addNode ({ "allocator", "instance.allocate.voice", {}, {}, {} });
     graph.addNode ({ "osc", "osc.analog", {}, {}, {} });
-    graph.addNode ({ "voiceMix", "instance.mix", {}, {}, {} });
+    graph.addNode ({ "voiceMix", "instance.sum", {}, {}, {} });
     graph.addNode ({ "out", "io.output", {}, {}, {} });
     graph.addConnection ({ "noteIn", "notes", "allocator", "spawn" });
     graph.addConnection ({ "allocator", "pitch", "osc", "pitch" });
@@ -343,7 +343,7 @@ TEST_CASE ("io.audioIn bus setting selects a sidechain aux bus", "[plugin][host-
     CHECK (processor.getAuxPeakLevel (0) == Catch::Approx (0.4f).margin (1.0e-6f));
 }
 
-TEST_CASE ("An audioIn feeding the global domain (after an instance.mix) passes through with no note held",
+TEST_CASE ("An audioIn feeding the global domain (after an instance.sum) passes through with no note held",
            "[plugin][host-input][mono]")
 {
     // The mono source does not sit upstream or downstream of the mix; before
@@ -360,7 +360,7 @@ TEST_CASE ("An audioIn feeding the global domain (after an instance.mix) passes 
     graph.addNode ({ "alloc", "instance.allocate.voice", {}, {}, {} });
     graph.addNode ({ "osc", "osc.analog", {}, {}, {} });
     graph.addNode ({ "svf", "filter.svf", {}, {}, {} });
-    graph.addNode ({ "instancemix", "instance.mix", {}, {}, {} });
+    graph.addNode ({ "instancemix", "instance.sum", {}, {}, {} });
     graph.addNode ({ "sum", "mix.sum", {}, {}, {} });
     graph.addNode ({ "audioin", "io.audioIn", {}, {}, {} });
     graph.addNode ({ "masterout", "io.output", {}, {}, {} });
@@ -594,7 +594,7 @@ TEST_CASE ("The host-input path never allocates on the audio thread",
         graph.addNode ({ "alloc", "instance.allocate.voice", {}, {}, {} });
         graph.addNode ({ "osc", "osc.analog", {}, {}, {} });
         graph.addNode ({ "svf", "filter.svf", {}, {}, {} });
-        graph.addNode ({ "instancemix", "instance.mix", {}, {}, {} });
+        graph.addNode ({ "instancemix", "instance.sum", {}, {}, {} });
         graph.addNode ({ "sum", "mix.sum", {}, {}, {} });
         graph.addNode ({ "audioin", "io.audioIn", {}, {}, {} });
         graph.addNode ({ "masterout", "io.output", {}, {}, {} });
