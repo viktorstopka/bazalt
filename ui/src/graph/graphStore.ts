@@ -354,17 +354,44 @@ export function ensureInitialized(): void {
   // after the initial fetch above except the 4 graph-EDIT call sites
   // (undo/redo/withHistory/this function) - playing a note doesn't edit
   // the graph, so the badge just showed whatever the count happened to be
-  // at the last recompile (almost always 0). Polled independently of any
-  // edit so it actually tracks voices turning on/off; 200ms is responsive
-  // enough to read as live for a small readout without hammering the
-  // native-function round trip on every animation frame the way the WebGL
-  // canvas itself runs.
-  window.setInterval(() => {
-    void fetchMultiplicity().then((result) => {
-      multiplicity = result
-      notify()
-    })
-  }, 200)
+  // at the last recompile (almost always 0).
+  //
+  // A REAL, SERIOUS REGRESSION this same fix introduced, found live
+  // (direct feedback: the app got progressively laggier over a session
+  // until text-field focus took seconds, then stopped visibly reacting to
+  // edits at all, then a fresh launch showed nothing but a blank WebView):
+  // this used to be a plain `window.setInterval(..., 200)`, which fires
+  // again every 200ms NO MATTER WHAT, even if the previous
+  // fetchMultiplicity() call hadn't resolved yet. That round trip shares
+  // the same native message-thread bridge as every other native call
+  // (edits, and - on Windows/WebView2 - the pump that lets the WebView
+  // paint a frame at all). Once a real patch made one call take longer
+  // than 200ms, calls piled up faster than they could drain: an unbounded,
+  // ever-growing backlog on that one thread - worse the longer the app
+  // stayed open and the bigger the patch got (more multiplicity data to
+  // serialize per call), eventually starving everything else that shares
+  // it, including a fresh launch's very first paint.
+  //
+  // Fixed by self-pacing instead of fixed-rate: the NEXT poll is scheduled
+  // only after THIS one's promise actually settles (success or failure,
+  // `finally`), with a flat 200ms gap measured from completion, not from
+  // start. Two calls can now never be in flight at once - if a call ever
+  // takes 500ms, the cycle becomes ~700ms, gracefully backing off exactly
+  // in proportion to real load instead of compounding.
+  const pollMultiplicity = (): void => {
+    void fetchMultiplicity()
+      .then((result) => {
+        multiplicity = result
+        notify()
+      })
+      .catch((error) => {
+        console.warn('graphGetNodeMultiplicity poll failed', error)
+      })
+      .finally(() => {
+        window.setTimeout(pollMultiplicity, 200)
+      })
+  }
+  window.setTimeout(pollMultiplicity, 200)
 }
 
 // ---- Endpoint lookup (shared by wire-drag hit-testing and rendering) ----
