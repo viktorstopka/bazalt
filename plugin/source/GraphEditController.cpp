@@ -1,7 +1,7 @@
 #include "GraphEditController.h"
 #include "PluginProcessor.h"
 #include "bazalt/engine/graph/CanConnect.h"
-#include "bazalt/engine/graph/DomainSplitter.h"
+#include "bazalt/engine/graph/MultiplicityResolver.h"
 #include "bazalt/engine/graph/GraphCompiler.h"
 #include "bazalt/engine/graph/PortGroups.h"
 #include "bazalt/engine/graph/ProofGraphs.h"
@@ -27,6 +27,49 @@ namespace bazalt
                 if (port.id == portId)
                     return &port;
             return nullptr;
+        }
+
+        // DomainRedesign.md Batch 1: MultiplicityResolver::split() always
+        // points globalGraph's own output designation at the GRAPH's real
+        // designated output — meaningful when that output resolved Scalar
+        // (split.hasGlobalDomain true, the ordinary case), but dangling
+        // when it resolved Poly instead (the origin's own voice-sum is the
+        // real audible output; globalGraph still gets compiled whenever it
+        // has OTHER, unrelated Scalar content, purely so GraphCompiler's
+        // validation runs on it — see recompileAndPublish()'s own comment).
+        // GraphCompiler requires a real node+port to compile against
+        // regardless of whether anything downstream ever reads it, so this
+        // retargets it to literally any real output port on any node
+        // globalGraph actually contains — never read by the driver in this
+        // case, exactly like DomainSplitter's own "point at the allocator's
+        // gate" fallback for an unbridged voiceGraph.
+        void ensureGlobalGraphHasAValidOutput (bazalt::engine::NodeGraph& globalGraph, const bazalt::engine::NodeFactory& factory)
+        {
+            if (globalGraph.findNode (globalGraph.getOutputNodeId()) != nullptr)
+                return; // the real output IS a member — nothing to do
+
+            for (const auto& node : globalGraph.getNodes())
+            {
+                auto instance = factory.create (node.type);
+                if (instance == nullptr)
+                    continue;
+
+                const auto ports = instance->getOutputPorts();
+                if (! ports.empty())
+                {
+                    globalGraph.setOutput (node.id, ports[0].id);
+                    return;
+                }
+            }
+
+            // Every node globalGraph contains is a pure sink (no output port
+            // at all, e.g. a lone, disconnected view.scope) — a real but
+            // extremely narrow gap: nothing here can give GraphCompiler a
+            // target, so this graph's own validation can't run this edit.
+            // Left as the resolver's own (now-dangling) designation; the
+            // compile below will fail with GraphCompiler's own clear
+            // "output node not found" message rather than silently
+            // succeeding against the wrong thing.
         }
 
         const bazalt::engine::PortDescriptor* findInputPort (const bazalt::engine::NodeFactory& factory,
@@ -441,13 +484,33 @@ namespace bazalt
         if (! isPrepared)
             return { true, {} }; // nothing to compile yet — prepare() does the first compile
 
-        auto split = bazalt::engine::DomainSplitter::split (graph);
+        auto split = bazalt::engine::MultiplicityResolver::split (graph);
         if (! split.success)
             return { false, split.errorMessage };
 
+        // Batch 1 of wiki/plans/DomainRedesign.md (§10.1): the resolver
+        // itself supports up to MultiplicityResolver::maxOrigins origins,
+        // but the RUNTIME (PluginProcessor's single VoiceManager + 8
+        // PlanSwappers) doesn't yet — that's Batch 2's real multi-origin
+        // rewrite. Enforced here, one layer up from the resolver, exactly
+        // the same way the old ">1 instance.allocate.voice" ceiling used to
+        // be enforced by DomainSplitter itself (this is a real, temporary
+        // limitation, not the resolver's own rule — MultiplicityResolverTests.cpp
+        // already exercises 2 simultaneous origins at the resolver level).
+        if (split.origins.size() > 1)
+            return { false, "Multiple simultaneous instance.allocate.voice origins aren't runtime-supported yet "
+                             "(DomainRedesign.md Batch 2) — found " + juce::String ((int) split.origins.size()) };
+
+        // A graph with a real instance.sum but no instance.allocate.voice
+        // anywhere (every one currently unwired, since a wired one with no
+        // Poly source is rejected by the resolver itself) has nothing to
+        // run per-voice at all — treated exactly like monoOnly for the
+        // runtime's purposes (one always-on global plan, no voice plans).
+        const auto effectiveMonoOnly = split.monoOnly || split.origins.empty();
+
         // 09-28-InstanceAllocator arc: computed once here, uniformly, for
-        // whichever of the three branches below split actually took, rather
-        // than duplicating "which nodes ended up where" per branch. A plain
+        // whichever of the branches below split actually took, rather than
+        // duplicating "which nodes ended up where" per branch. A plain
         // debugging aid (getNodeDomains(), the UI's DomainDot). Kept LOCAL
         // until a real publish succeeds, deliberately not written straight
         // into the `nodeDomains` member here: `split` succeeding only means
@@ -455,29 +518,39 @@ namespace bazalt
         // compile either half - several return paths below still fail
         // after this point, and CLAUDE.md rule 5's rollback contract means
         // the member must keep reflecting the last graph that ACTUALLY
-        // published, not one that was merely attempted.
+        // published, not one that was merely attempted. A node the
+        // resolver duplicated into BOTH the one origin's voiceGraph and
+        // globalGraph (DomainRedesign.md §10.2 step 6 — no longer mutually
+        // exclusive, unlike DomainSplitter) labels "voice": that's the more
+        // actionable fact to surface on the UI dot.
         std::unordered_map<juce::String, juce::String> newNodeDomains;
-        const juce::String voiceLabel = split.monoOnly ? "mono" : "voice";
-        for (const auto& node : split.voiceGraph.getNodes())
-            newNodeDomains[node.id] = voiceLabel;
-        if (split.hasGlobalDomain)
+        if (effectiveMonoOnly)
+        {
+            for (const auto& node : split.globalGraph.getNodes())
+                newNodeDomains[node.id] = "mono";
+        }
+        else
+        {
             for (const auto& node : split.globalGraph.getNodes())
                 newNodeDomains[node.id] = "global";
+            for (const auto& node : split.origins[0].voiceGraph.getNodes())
+                newNodeDomains[node.id] = "voice";
+        }
 
         const bazalt::engine::NodePrepareInfo prepareInfo { sampleRate, blockSize };
         auto& factory = processor.getNodeFactory();
 
-        // M21 (DOMAINS.md §7): a graph with no instance.allocate.voice has no poly
+        // M21 (DOMAINS.md §7): a graph with no active origin has no poly
         // region, so the whole graph compiles ONCE and is published as the one
         // global plan, which the processor runs every block. No voice plans are
         // touched: they are never run while the mono flag is set, and the next
         // non-mono edit recompiles and republishes every one of them.
-        if (split.monoOnly)
+        if (effectiveMonoOnly)
         {
             const auto* previousPlan = processor.getGlobalPlanSwapper().peekCurrentPlan();
 
             auto monoCompile = bazalt::engine::GraphCompiler::compile (
-                split.voiceGraph, factory, prepareInfo, nextGeneration(), previousPlan);
+                split.globalGraph, factory, prepareInfo, nextGeneration(), previousPlan);
 
             if (! monoCompile.success)
                 return { false, monoCompile.errorMessage };
@@ -497,10 +570,13 @@ namespace bazalt
             hasGlobalDomain = false;
             processor.setHasGlobalDomain (false);
             processor.setMonoOnly (true); // after the plan is live, so the audio thread never sees the flag first
+            instanceMixNodeId = {};
             nodeDomains = std::move (newNodeDomains);
 
             return { true, {} };
         }
+
+        const auto& origin = split.origins[0];
 
         std::vector<std::unique_ptr<bazalt::engine::ExecutionPlan>> newVoicePlans;
         newVoicePlans.reserve ((size_t) BazaltAudioProcessor::numVoices);
@@ -515,7 +591,7 @@ namespace bazalt
             const auto* previousPlan = processor.getVoicePlanSwapper (i).peekCurrentPlan();
 
             auto compileResult = bazalt::engine::GraphCompiler::compile (
-                split.voiceGraph, factory, prepareInfo, nextGeneration(), previousPlan);
+                origin.voiceGraph, factory, prepareInfo, nextGeneration(), previousPlan);
 
             if (! compileResult.success)
                 return { false, compileResult.errorMessage };
@@ -525,7 +601,25 @@ namespace bazalt
         }
 
         std::unique_ptr<bazalt::engine::ExecutionPlan> newGlobalPlan;
-        if (split.hasGlobalDomain)
+        // Compile globalGraph whenever it has real content — NOT only when
+        // split.hasGlobalDomain is true. Those are different questions
+        // under this resolver (DomainRedesign.md §10.2 step 6): hasGlobalDomain
+        // says whether the AUDIO PATH needs the global plan's own output to
+        // override the raw voice sum (unchanged meaning, still gates
+        // processor.setHasGlobalDomain() below); it says nothing about
+        // whether globalGraph is EMPTY. When the designated output itself
+        // resolved Poly (hasGlobalDomain false) there can still be real,
+        // unrelated Scalar content elsewhere in the graph (an origin's own
+        // trigger source never leaks in here — the resolver's own
+        // globalMembers rule excludes it — but an ordinary orphan node, or
+        // one mid-construction, does) that still needs to actually compile
+        // — skipping it here used to mean GraphCompiler's own validation
+        // (an invalid port, a growable-group overflow, ...) never ran on
+        // it at all, silently accepting a malformed edit. It's compiled and
+        // published regardless (harmless: the audio thread never runs it
+        // while hasGlobalDomain is false, exactly as before this fix), so
+        // that malformed content still fails the compile and rolls back.
+        if (! split.globalGraph.getNodes().empty())
         {
             // Real, found-live bug (direct feedback: "moving a node's
             // position restarts the whole sound"): unlike the per-voice
@@ -538,6 +632,8 @@ namespace bazalt
             // just never had its own matching peekCurrentPlan() call.
             const auto* previousGlobalPlan = processor.getGlobalPlanSwapper().peekCurrentPlan();
 
+            ensureGlobalGraphHasAValidOutput (split.globalGraph, factory);
+
             auto globalCompileResult = bazalt::engine::GraphCompiler::compile (
                 split.globalGraph, factory, prepareInfo, nextGeneration(), previousGlobalPlan);
 
@@ -545,7 +641,7 @@ namespace bazalt
                 return { false, globalCompileResult.errorMessage };
 
             newGlobalPlan = std::make_unique<bazalt::engine::ExecutionPlan> (std::move (globalCompileResult.plan));
-            newGlobalPlan->externalInputNodeId = split.instanceMixNodeId;
+            newGlobalPlan->externalInputNodeId = origin.instanceSumNodeId;
         }
 
         // ADR-0029: re-attach live preview taps to the new plans before any of
@@ -592,6 +688,11 @@ namespace bazalt
         hasGlobalDomain = split.hasGlobalDomain;
         processor.setHasGlobalDomain (hasGlobalDomain);
         processor.setMonoOnly (false); // after the voice (and global) plans are live
+        // Real, found-live bug fixed in passing: this field was declared and
+        // exposed via getInstanceMixNodeId() but never actually assigned —
+        // always empty, regardless of the graph. Wired up now that a real
+        // origin-shaped value (origin.instanceSumNodeId) exists to assign.
+        instanceMixNodeId = origin.instanceSumNodeId;
         nodeDomains = std::move (newNodeDomains);
 
         return { true, {} };

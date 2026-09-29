@@ -135,9 +135,12 @@ TEST_CASE ("connectWithAutoAdapt inserts adapt.pitchToFrequency for Pitch into a
     auto& controller = processor.getGraphEditController();
     REQUIRE (controller.setGraph (bazalt::engine::buildVoiceProofGraph()).success);
 
-    REQUIRE (controller.addNode ("instance.allocate.voice", "alloc", 0.0f, 0.0f).success);
-
-    const auto result = controller.connectWithAutoAdapt ("alloc", "pitch", "svf", "filter.svf.cutoff");
+    // Reuses buildVoiceProofGraph()'s own "allocator" node (already wired to
+    // osc's pitch) rather than adding a second instance.allocate.voice —
+    // DomainRedesign.md Batch 1's runtime is single-origin only for now
+    // (multi-origin lands in Batch 2), and this test's own intent is the
+    // auto-adapter insertion, not multi-origin behaviour.
+    const auto result = controller.connectWithAutoAdapt ("allocator", "pitch", "svf", "filter.svf.cutoff");
     REQUIRE (result.success);
 
     const auto& graph = controller.getGraph();
@@ -147,11 +150,11 @@ TEST_CASE ("connectWithAutoAdapt inserts adapt.pitchToFrequency for Pitch into a
             converterNode = &n;
     REQUIRE (converterNode != nullptr);
 
-    // Wired directly: alloc.pitch -> converter.pitch, converter.frequency -> svf.cutoff.
+    // Wired directly: allocator.pitch -> converter.pitch, converter.frequency -> svf.cutoff.
     bool sourceToConverter = false, converterToDestination = false;
     for (const auto& c : graph.getConnections())
     {
-        if (c.fromNodeId == "alloc" && c.fromPortId == "pitch" && c.toNodeId == converterNode->id && c.toPortId == "pitch")
+        if (c.fromNodeId == "allocator" && c.fromPortId == "pitch" && c.toNodeId == converterNode->id && c.toPortId == "pitch")
             sourceToConverter = true;
         if (c.fromNodeId == converterNode->id && c.fromPortId == "frequency" && c.toNodeId == "svf" && c.toPortId == "filter.svf.cutoff")
             converterToDestination = true;

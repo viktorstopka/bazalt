@@ -6,29 +6,33 @@
 #include <catch2/catch_test_macros.hpp>
 #include "bazalt/engine/graph/ProofGraphs.h"
 #include "bazalt/engine/graph/GraphCompiler.h"
-#include "bazalt/engine/graph/DomainSplitter.h"
+#include "bazalt/engine/graph/MultiplicityResolver.h"
 
 using namespace bazalt::engine;
 
-TEST_CASE ("buildInitPatchGraph() has a real global domain - instance.mix genuinely exercised, not a synthetic test graph",
+TEST_CASE ("buildInitPatchGraph() has a real global domain - instance.sum genuinely exercised, not a synthetic test graph",
            "[engine][InitPatch][M22]")
 {
     const auto graph = buildInitPatchGraph();
-    const auto split = DomainSplitter::split (graph);
+    const auto split = MultiplicityResolver::split (graph);
 
     REQUIRE (split.success);
-    CHECK (split.hasGlobalDomain); // instance.mix is really in this graph
+    CHECK (split.hasGlobalDomain); // instance.sum is really in this graph
     CHECK_FALSE (split.monoOnly);  // instance.allocate.voice is really in this graph too
+    REQUIRE (split.origins.size() == 1);
+    CHECK (split.origins[0].instanceSumNodeId == "voiceMix");
 }
 
 TEST_CASE ("buildInitPatchGraph() compiles, voice domain and global domain both", "[engine][InitPatch][M22]")
 {
     auto factory = buildDefaultNodeFactory();
     const auto graph = buildInitPatchGraph();
-    const auto split = DomainSplitter::split (graph);
+    const auto split = MultiplicityResolver::split (graph);
     REQUIRE (split.success);
+    REQUIRE (split.origins.size() == 1);
+    const auto& origin = split.origins[0];
 
-    const auto voiceCompile = GraphCompiler::compile (split.voiceGraph, factory, { 44100.0, 512 }, 1);
+    const auto voiceCompile = GraphCompiler::compile (origin.voiceGraph, factory, { 44100.0, 512 }, 1);
     INFO (voiceCompile.errorMessage);
     REQUIRE (voiceCompile.success);
 
@@ -39,7 +43,7 @@ TEST_CASE ("buildInitPatchGraph() compiles, voice domain and global domain both"
     // Every node the doc comment claims is really there.
     for (const auto* id : { "noteIn", "allocator", "osc1", "osc2", "oscMix", "ladder", "filterEnv", "ampEnv",
                             "ampVCA" })
-        CHECK (split.voiceGraph.findNode (id) != nullptr);
+        CHECK (origin.voiceGraph.findNode (id) != nullptr);
     for (const auto* id : { "voiceMix", "masterOut" })
         CHECK (split.globalGraph.findNode (id) != nullptr);
 }
@@ -49,13 +53,15 @@ TEST_CASE ("buildInitPatchGraph() compiles at every sample rate this project cla
 {
     auto factory = buildDefaultNodeFactory();
     const auto graph = buildInitPatchGraph();
-    const auto split = DomainSplitter::split (graph);
+    const auto split = MultiplicityResolver::split (graph);
     REQUIRE (split.success);
+    REQUIRE (split.origins.size() == 1);
+    const auto& origin = split.origins[0];
 
     for (double sampleRate : { 44100.0, 48000.0, 96000.0 })
     {
         INFO ("sample rate = " << sampleRate);
-        const auto voiceCompile = GraphCompiler::compile (split.voiceGraph, factory, { sampleRate, 512 }, 1);
+        const auto voiceCompile = GraphCompiler::compile (origin.voiceGraph, factory, { sampleRate, 512 }, 1);
         CHECK (voiceCompile.success);
         const auto globalCompile = GraphCompiler::compile (split.globalGraph, factory, { sampleRate, 512 }, 1);
         CHECK (globalCompile.success);

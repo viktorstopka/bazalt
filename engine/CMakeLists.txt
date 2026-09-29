@@ -17,7 +17,7 @@ target_sources(engine
         src/PolyBlepOscillator.cpp
         src/RtAllocationTrap.cpp
         src/graph/CanConnect.cpp
-        src/graph/DomainSplitter.cpp
+        src/graph/MultiplicityResolver.cpp
         src/graph/ExecutionPlan.cpp
         src/graph/GraphCompiler.cpp
         src/patch/PatchSerializer.cpp
@@ -41,7 +41,7 @@ target_sources(engine
             include/bazalt/engine/graph/NodeGraph.h
             include/bazalt/engine/graph/NodeFactory.h
             include/bazalt/engine/graph/NodeDescriptor.h
-            include/bazalt/engine/graph/DomainSplitter.h
+            include/bazalt/engine/graph/MultiplicityResolver.h
             include/bazalt/engine/graph/ExecutionPlan.h
             include/bazalt/engine/graph/GraphCompiler.h
             include/bazalt/engine/graph/CanConnect.h

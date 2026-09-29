@@ -16,7 +16,6 @@ add_executable(EngineTests
     DataFoundationsNodesTests.cpp
     DataTests.cpp
     DcBlockNodeTests.cpp
-    DomainSplitterTests.cpp
     EnvelopeFollowerNodeTests.cpp
     EngineVersionTests.cpp
     ExecutionPlanTapTests.cpp
@@ -32,6 +31,7 @@ add_executable(EngineTests
     MathNodeTests.cpp
     MixNodeTests.cpp
     ModulatablePortsTests.cpp
+    MultiplicityResolverTests.cpp
     NanGuardTests.cpp
     NodeDescriptorTests.cpp
     NoteEventTests.cpp

@@ -348,13 +348,24 @@ TEST_CASE ("An audioIn feeding the global domain (after an instance.mix) passes 
 {
     // The mono source does not sit upstream or downstream of the mix; before
     // M21 DomainSplitter rejected this graph outright.
+    //
+    // DomainRedesign.md Batch 1: instance.sum's input is now REQUIRED to
+    // resolve Poly (§2.4) - unlike DomainSplitter, which only cared that
+    // SOMETHING fed it. A real allocator is now part of the minimal graph
+    // this test needs, not an optional extra (noteIn/alloc added; nothing
+    // else about the test's own intent - the mono source's passthrough with
+    // no voice active - changes).
     NodeGraph graph;
+    graph.addNode ({ "noteIn", "io.noteIn", {}, {}, {} });
+    graph.addNode ({ "alloc", "instance.allocate.voice", {}, {}, {} });
     graph.addNode ({ "osc", "osc.analog", {}, {}, {} });
     graph.addNode ({ "svf", "filter.svf", {}, {}, {} });
     graph.addNode ({ "instancemix", "instance.mix", {}, {}, {} });
     graph.addNode ({ "sum", "mix.sum", {}, {}, {} });
     graph.addNode ({ "audioin", "io.audioIn", {}, {}, {} });
     graph.addNode ({ "masterout", "io.output", {}, {}, {} });
+    graph.addConnection ({ "noteIn", "notes", "alloc", "spawn" });
+    graph.addConnection ({ "alloc", "pitch", "osc", "pitch" });
     graph.addConnection ({ "osc", "out", "svf", "in" });
     graph.addConnection ({ "svf", "out", "instancemix", "in" });
     graph.addConnection ({ "instancemix", "out", "sum", "in.0" });
@@ -576,13 +587,19 @@ TEST_CASE ("The host-input path never allocates on the audio thread",
     }
 
     {
+        // DomainRedesign.md Batch 1: a real allocator, same reasoning as the
+        // sibling test above.
         NodeGraph graph;
+        graph.addNode ({ "noteIn", "io.noteIn", {}, {}, {} });
+        graph.addNode ({ "alloc", "instance.allocate.voice", {}, {}, {} });
         graph.addNode ({ "osc", "osc.analog", {}, {}, {} });
         graph.addNode ({ "svf", "filter.svf", {}, {}, {} });
         graph.addNode ({ "instancemix", "instance.mix", {}, {}, {} });
         graph.addNode ({ "sum", "mix.sum", {}, {}, {} });
         graph.addNode ({ "audioin", "io.audioIn", {}, {}, {} });
         graph.addNode ({ "masterout", "io.output", {}, {}, {} });
+        graph.addConnection ({ "noteIn", "notes", "alloc", "spawn" });
+        graph.addConnection ({ "alloc", "pitch", "osc", "pitch" });
         graph.addConnection ({ "osc", "out", "svf", "in" });
         graph.addConnection ({ "svf", "out", "instancemix", "in" });
         graph.addConnection ({ "instancemix", "out", "sum", "in.0" });
