@@ -38,3 +38,8 @@ Thumbs.db
 *.log
 .claude/
 scratchpad/
+
+# graphExportSnapshot's dev-convenience patch dump (GraphEditController::
+# exportSnapshotToFile, PluginEditor.cpp) — always the live graph as of
+# whenever it was last exported, never meant to be committed
+/exported-patch.json

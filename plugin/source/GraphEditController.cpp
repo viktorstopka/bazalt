@@ -6,6 +6,7 @@
 #include "bazalt/engine/graph/PortGroups.h"
 #include "bazalt/engine/graph/ProofGraphs.h"
 #include "bazalt/engine/nodes/InstanceVoiceNode.h"
+#include "bazalt/engine/patch/PatchSerializer.h"
 #include <algorithm>
 #include <array>
 
@@ -911,6 +912,21 @@ namespace bazalt
 
         portMultiplicity = std::move (newPortMultiplicity);
         originBundleIndexByNodeId = std::move (newOriginBundleIndexByNodeId);
+
+        return { true, {} };
+    }
+
+    GraphEditController::CommandResult GraphEditController::exportSnapshotToFile (const juce::File& file) const
+    {
+        const auto json = bazalt::engine::serializePatchToJson (
+            bazalt::engine::PatchDocument::fromNodeGraph (graph), true); // pretty-printed - a human/AI reads this file directly
+
+        const auto parentDir = file.getParentDirectory();
+        if (! parentDir.exists() && ! parentDir.createDirectory())
+            return { false, "Could not create export directory: " + parentDir.getFullPathName() };
+
+        if (! file.replaceWithText (json))
+            return { false, "Could not write export file: " + file.getFullPathName() };
 
         return { true, {} };
     }

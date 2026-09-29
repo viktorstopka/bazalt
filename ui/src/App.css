@@ -38,6 +38,20 @@
   max-width: 40vw;
 }
 
+/* Export's own transient confirmation (App.tsx's exportStatus) — same
+   shape as .top-bar-error but muted, since a successful export isn't an
+   error; a failed export sets its text through THIS class too rather than
+   .top-bar-error, since export failing is a distinct, rarer case than the
+   engine's own rejected-command banner and doesn't need red urgency. */
+.top-bar-status {
+  font-size: 12px;
+  color: var(--color-textSecondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 40vw;
+}
+
 .top-bar-spacer {
   flex: 1;
 }

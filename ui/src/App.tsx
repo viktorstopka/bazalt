@@ -1,7 +1,8 @@
-import { useRef } from 'react'
+import { useRef, useState } from 'react'
 import { InfiniteCanvas, type InfiniteCanvasHandle, type SnapSettings } from './canvas/InfiniteCanvas'
 import { AnalysisPanel } from './analysis/AnalysisPanel'
 import { redo, undo } from './graph/graphStore'
+import { graphExportSnapshot } from './graph/graphCommands'
 import { useGraphSnapshot } from './graph/useGraphSnapshot'
 import './App.css'
 
@@ -21,6 +22,18 @@ function RedoIcon() {
     <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
       <path d="M15 14l5-5-5-5" />
       <path d="M20 9H9.5a5.5 5.5 0 0 0 0 11H13" />
+    </svg>
+  )
+}
+/** A plain arrow-into-a-tray, the standard export/download glyph — same
+    "no icon library for two glyphs" reasoning as Undo/Redo above.
+*/
+function ExportIcon() {
+  return (
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M12 3v12" />
+      <path d="M7 10l5 5 5-5" />
+      <path d="M4 19h16" />
     </svg>
   )
 }
@@ -64,6 +77,19 @@ function App() {
   // most likely shortcut to be intercepted by a host DAW's own accelerators.
   const { canUndo, canRedo, lastError } = useGraphSnapshot()
 
+  // Dev-convenience export (direct instruction — see graphCommands.ts's
+  // graphExportSnapshot doc comment for the full scope). Purely local,
+  // ephemeral UI feedback for one button's own last click — not part of
+  // graphStore.ts's mirrored state, since nothing about the export itself
+  // is part of the live graph.
+  const [exportStatus, setExportStatus] = useState<string | null>(null)
+  const handleExport = () => {
+    void graphExportSnapshot().then((result) => {
+      setExportStatus(result.success ? `Exported to ${result.path}` : `Export failed: ${result.errorMessage}`)
+      window.setTimeout(() => setExportStatus(null), 4000)
+    })
+  }
+
   return (
     <div id="app-root">
       <InfiniteCanvas ref={canvasHandleRef} snapSettings={snapSettings}>
@@ -73,7 +99,11 @@ function App() {
               error banner" — the real engine's own rejection reason for the
               most recent command, cleared at the start of the next gesture. */}
           {lastError && <span className="top-bar-error">{lastError}</span>}
+          {exportStatus && <span className="top-bar-status">{exportStatus}</span>}
           <div className="top-bar-spacer" />
+          <button className="top-bar-icon-button" onClick={handleExport} title="Export patch to exported-patch.json" aria-label="Export patch">
+            <ExportIcon />
+          </button>
           <button className="top-bar-icon-button" onClick={() => undo()} disabled={!canUndo} title="Undo (Ctrl+Z)" aria-label="Undo">
             <UndoIcon />
           </button>

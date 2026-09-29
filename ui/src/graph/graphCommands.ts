@@ -86,6 +86,30 @@ export function graphRestoreSnapshot(json: string): Promise<CommandResult> {
   return callCommand('graphRestoreSnapshot', json)
 }
 
+/** Dev-convenience export (direct instruction — "does Claude have quick
+    access to the patch I'm building?" / "yes, build that"): dumps the
+    live graph to a fixed file on disk (repo root, next to the project
+    itself — `exported-patch.json`, gitignored) as pretty-printed JSON, so
+    it can be read directly without describing the patch in words every
+    time. NOT a real save/load feature — same scope as graphGetSnapshot
+    (no macro/view/meta content), not undo-tracked, overwrites the same
+    file every call. `path` is the absolute path actually written, for
+    a confirmation message; empty outside the real WebView.
+*/
+export interface ExportSnapshotResult {
+  success: boolean
+  errorMessage: string
+  path: string
+}
+
+export async function graphExportSnapshot(): Promise<ExportSnapshotResult> {
+  if (typeof window.__JUCE__ === 'undefined') {
+    return { success: false, errorMessage: 'Not running inside the plugin WebView', path: '' }
+  }
+  const result = await getNativeFunction('graphExportSnapshot')()
+  return result as ExportSnapshotResult
+}
+
 /** Which region ("voice" | "global" | "mono") each node in the current
     graph's LAST SUCCESSFUL compile landed in — a plain `{ [nodeId]: domain }`
     object, computed once per recompile by GraphEditController. Its UI

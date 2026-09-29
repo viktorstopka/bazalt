@@ -363,6 +363,50 @@ TEST_CASE ("A graph snapshot round-trips through PatchDocument/PatchSerializer a
     CHECK (controller.getGraph().getNodes().size() == 7); // noteIn, allocator, osc, svf, env, amp, extra
 }
 
+TEST_CASE ("exportSnapshotToFile writes the live graph as pretty-printed, parseable JSON",
+           "[plugin][GraphEditController][dev-export]")
+{
+    // Direct instruction ("build that", after being asked whether an
+    // external session has any quick way to see a patch as it's built) —
+    // the graphExportSnapshot native function (PluginEditor.cpp) does
+    // exactly this against a fixed path; this test drives the same method
+    // directly, no WebView involved, same convention as the snapshot
+    // round-trip test just above.
+    BazaltAudioProcessor processor;
+    processor.prepareToPlay (44100.0, 512);
+
+    auto& controller = processor.getGraphEditController();
+    REQUIRE (controller.setGraph (bazalt::engine::buildVoiceProofGraph()).success);
+
+    const auto tempDir = juce::File::getSpecialLocation (juce::File::tempDirectory)
+                              .getChildFile ("BazaltExportTests");
+    const auto file = tempDir.getChildFile ("exported-patch-test.json");
+    file.deleteFile();
+    REQUIRE_FALSE (file.existsAsFile());
+
+    const auto result = controller.exportSnapshotToFile (file);
+    INFO (result.errorMessage);
+    REQUIRE (result.success);
+    REQUIRE (file.existsAsFile());
+
+    const auto written = file.loadFileAsString();
+    CHECK (written.contains ("\n")); // pretty-printed, not minified onto one line
+
+    const auto parsed = bazalt::engine::parsePatchFromJson (written);
+    REQUIRE (parsed.success);
+    CHECK (parsed.document.toNodeGraph().getNodes().size() == controller.getGraph().getNodes().size());
+
+    // Overwrites unconditionally on a second call, not appends/rejects.
+    REQUIRE (controller.addNode ("math.add", "extra", 0.0f, 0.0f).success);
+    REQUIRE (controller.exportSnapshotToFile (file).success);
+    const auto reparsed = bazalt::engine::parsePatchFromJson (file.loadFileAsString());
+    REQUIRE (reparsed.success);
+    CHECK (reparsed.document.toNodeGraph().findNode ("extra") != nullptr);
+
+    file.deleteFile();
+    tempDir.deleteRecursively();
+}
+
 TEST_CASE ("moveNode updates position without disturbing the node's DSP object identity",
            "[plugin][GraphEditController][M19]")
 {

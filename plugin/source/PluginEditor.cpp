@@ -229,6 +229,31 @@ namespace bazalt
             completion (json);
         });
 
+        // Dev-convenience export (direct instruction, "build that" — a real
+        // fix for "does Claude have quick access to the patch I'm
+        // building" beyond describing it in words every time). Writes the
+        // SAME PatchDocument JSON graphGetSnapshot produces, pretty-printed,
+        // to a fixed file next to the project itself
+        // (juce::File::getCurrentWorkingDirectory() — this project's own
+        // documented launch convention always runs the Standalone/plugin
+        // from the repo root, CLAUDE.md's own build/test/render commands
+        // section) — never a build-time-baked absolute path. Overwrites
+        // the same file every call; not undo-tracked, not read back by
+        // anything automatically. See GraphEditController::
+        // exportSnapshotToFile's own doc comment for the full scope.
+        options = options.withNativeFunction ("graphExportSnapshot", [&processor] (Args, Completion completion)
+        {
+            auto& controller = processor.getGraphEditController();
+            const auto file = juce::File::getCurrentWorkingDirectory().getChildFile ("exported-patch.json");
+            const auto result = controller.exportSnapshotToFile (file);
+
+            auto* obj = new juce::DynamicObject();
+            obj->setProperty ("success", result.success);
+            obj->setProperty ("errorMessage", result.errorMessage);
+            obj->setProperty ("path", file.getFullPathName());
+            completion (juce::var (obj));
+        });
+
         options = options.withNativeFunction ("graphRestoreSnapshot", [&processor] (Args args, Completion completion)
         {
             const auto parsed = bazalt::engine::parsePatchFromJson (argString (args, 0));

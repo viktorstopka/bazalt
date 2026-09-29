@@ -140,6 +140,25 @@ namespace bazalt
         const bazalt::engine::NodeGraph& getGraph() const noexcept { return graph; }
         bool getHasGlobalDomain() const noexcept { return hasGlobalDomain; }
 
+        /** Dev-convenience export, direct instruction ("build that", after
+            being asked whether Claude has any quick way to see a patch as
+            it's built): dumps the live graph to `file` as pretty-printed
+            PatchDocument JSON — the same graphGetSnapshot()/
+            graphRestoreSnapshot() round-trip already proven for undo/redo,
+            just written to disk and pretty-printed (readable) instead of
+            minified and kept only in a JS-side history stack. NOT a real
+            save/load feature: no macro/view/meta content (matching
+            graphGetSnapshot's own scope exactly), not undo-tracked, and
+            never read back automatically by anything — purely so an
+            external tool (or an AI session working alongside this
+            project) can read the current patch straight off disk without
+            a live IPC channel into this process. Overwrites `file`
+            unconditionally on every call; the caller decides the path (the
+            native function wiring this up picks a fixed one — see
+            PluginEditor.cpp).
+        */
+        CommandResult exportSnapshotToFile (const juce::File& file) const;
+
         /** Which region ("voice"/"global"/"mono") each node
             id landed in as of the LAST successful recompile — a debugging
             aid (the UI's DomainDot, 09-28-InstanceAllocator arc), computed
