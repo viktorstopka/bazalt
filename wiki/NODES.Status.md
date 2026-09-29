@@ -195,17 +195,30 @@ Whole family is essential per the catalog's own framing: *"what makes arpeggios,
 chords, scales, and audio-driven instruments ordinary patching rather than built-in
 features."*
 
+**Note Stream batch — done, with a real finding.** 6 of 9 built:
+`note.gate`/`note.value`/`note.transpose`/`note.filter`/`note.humanize`/`note.quantize`.
+The other 3 hit a real, previously-unexercised engine limit — `ExecutionPlan::
+BlockStep` supports only one `Note` input and one `Note` output per node, and
+`note.chord`/`note.hold`/`note.select` all assume a multi-note signal one `Note` cable
+can't carry (the catalog's own `note.filter` hit the same wall — a real 1-output
+redesign closed that one, see its own row below). Deferred rather than forced through
+with a compromised, misleading shape — a real design for multi-note `Note` signals is
+separate, larger engine work. Full reasoning in `wiki/MILESTONES.md`'s own entry.
+
+| Node | Status | Notes |
+|---|---|---|
+| `note.gate` | Implemented | `count` (not elaborated by the catalog) is this node's own design: a running tally of note-ons since reset. |
+| `note.value` | Implemented | `pressure`/`slide` not built (`NoteEvent` doesn't carry them). `select` genuinely works via a small internal 8-note memory, not just "whatever's live this sample." |
+| `note.transpose` | Implemented | Output port id is `notesOut`, not the catalog's `notes` — same engine invariant `clock.divide`'s `tickOut` already hit. |
+| `note.filter` | Implemented | **Redesigned** from the catalog's literal `pass`/`reject` (two `Note` outputs) to one `Note` output + a plain `inRange` Boolean — see the batch note above. |
+| `note.humanize` | Implemented | Timing jitter via a small scheduled countdown (sufficient — the stream is monophonic), capped at 50ms; only note-on is jittered, not note-off. |
+| `note.quantize` | Implemented | The flagship Data Foundations consumer — real, tested `data.scale → note.quantize` round trip. `root` is a second, independent knob from `data.scale`'s own root (post-quantization offset, not a duplicate). |
+
 | Node | Status | Necessity | Batch | Notes |
 |---|---|---|---|---|
-| `note.gate` | To be implemented | **A1** | Note Stream | Trivial extraction (noteOn/off, gate, count). |
-| `note.value` | To be implemented | **A1** | Note Stream | Trivial mono-domain read (pitch/velocity/pressure/slide). |
-| `note.transpose` | To be implemented | **A1** | Note Stream | Trivial semitone/octave shift. |
-| `note.filter` | To be implemented | **A1** | Note Stream | Simple pitch/velocity range gate. |
-| `note.hold` | To be implemented | **A2** | Note Stream | Latch/memory, moderate state management. |
-| `note.select` | To be implemented | **A2** | Note Stream | Indexing into held notes — pairs with `clock.counter`. |
-| `note.chord` | To be implemented | **A2** | Note Stream | Interval generation (fixed or scale-degree mode). |
-| `note.humanize` | To be implemented | **A2** | Note Stream | Timing/velocity/pitch jitter. |
-| `note.quantize` | To be implemented | **A2** | Note Stream | Needs `data.scale`. |
+| `note.hold` | To be implemented | **A2** | *(blocked)* | Real engine limit, not just unbuilt — needs a multi-note `Note` signal the engine can't represent yet (see the batch note above). |
+| `note.select` | To be implemented | **A2** | *(blocked)* | Same real engine limit as `note.hold` — pairs with `clock.counter` once buildable. |
+| `note.chord` | To be implemented | **A2** | *(blocked)* | Same real engine limit — needs to emit several simultaneous notes from one input note. |
 | `note.assemble` | To be implemented | **A2** | Analysis+Assemble | Needs a tracked pitch — genuinely useful once `analysis.pitch` exists, though it'll accept any `pitch [audio]` source. |
 
 ### `math.*` / `logic.*` / `adapt.*` — 21/21 Implemented
@@ -296,12 +309,12 @@ building for real, not simplified.
 
 | Status | Count |
 |---|---|
-| Implemented | 62 |
+| Implemented | 68 |
 | MVP | 4 (`osc.analog`, `filter.svf`, `excite.burst`, `seq.steps`) |
-| To be implemented | 59 |
+| To be implemented | 53 |
 | **Total native node types** | **125** |
 
-By necessity, among the 59 still to build: **A** 14 · **B** 30 · **C** 9 · **D** 6.
+By necessity, among the 53 still to build: **A** 8 · **B** 30 · **C** 9 · **D** 6.
 
 **Clock+Seq batch — done.** `clock.pulse`/`clock.divide`/`clock.counter`/`seq.euclid`/
 `seq.steps` all built and tested — see their family sections above for per-node notes;
@@ -312,15 +325,23 @@ and tested, plus the new cross-cutting `Data`-publishing infrastructure they nee
 (`Node::getDataPublisher()`/`setDataInput()`, `GraphCompiler.cpp`'s Data-connection
 wiring) — see the `data.*` family section above and `wiki/MILESTONES.md`'s own entry.
 
+**Note Stream batch — done, 6 of 9 (3 blocked on a real engine limit).**
+`note.gate`/`note.value`/`note.transpose`/`note.filter`/`note.humanize`/`note.quantize`
+all built and tested; `note.hold`/`note.select`/`note.chord` deferred — a real,
+previously-unexercised limit (one `Note` input/output per node, max), not just "not
+built yet" — see the `note.*` family section above and `wiki/MILESTONES.md`'s own
+entry.
+
 ---
 
 ## Necessity buckets, explained
 
 - **A — essential, ASAP.** Everything here is graph-flow/timing/note-stream/domain
   infrastructure that unlocks broad modularity, mirroring why `logic.*`/`adapt.*`
-  already shipped early: `clock.*`/`seq.*` (**done** — see the Clock+Seq batch note
-  below), the whole `note.*` family, the three `instance.allocate.*` spawn types,
-  `util.macro`. None of these are hard
+  already shipped early: `clock.*`/`seq.*` (**done**) and 6 of 9 `note.*` (**done** —
+  see the Clock+Seq and Note Stream batch notes below; `note.hold`/`select`/`chord`
+  remain, blocked on a real engine limit, not just unbuilt), the three
+  `instance.allocate.*` spawn types, `util.macro`. None of these are hard
   *because* they're essential — several are difficulty 1 — they're essential because
   a huge amount of "ordinary patching" (arpeggios, chords, scale-snapping, swarms,
   percussive one-shots, host-automatable knobs) is blocked on them existing at all.
@@ -349,7 +370,7 @@ but sit at the top of the recommended order below because `note.quantize` (A),
 |---|---|---|
 | **Clock+Seq** — done | `clock.pulse`, `clock.divide`, `clock.counter`, `seq.steps`, `seq.euclid` | Chain into each other directly (pulse → divide → counter → steps/euclid); tested as one rhythmic pipeline (`tests/ClockSeqNodesTests.cpp`). |
 | **Data Foundations** — done | `data.scale`, `data.table`, `data.lookup` | `data.lookup` literally reads what `data.table`/`data.scale` produce — the pathfinder for the whole Data-publishing pipeline (`tests/DataFoundationsNodesTests.cpp`, 18 cases including two real compiled-graph round trips). |
-| **Note Stream** | `note.gate`, `note.value`, `note.transpose`, `note.filter`, `note.hold`, `note.select`, `note.chord`, `note.humanize`, `note.quantize` | All consume/produce `Note`, chain naturally (quantize → chord → hold → select), share test fixtures. |
+| **Note Stream** — done (6/9; `hold`/`select`/`chord` blocked on a real engine limit) | `note.gate`, `note.value`, `note.transpose`, `note.filter`, `note.humanize`, `note.quantize` | All consume/produce `Note`, tested together (`tests/NoteStreamNodesTests.cpp`, including a real compiled-graph round trip through `data.scale → note.quantize → note.value`). |
 | **Domain Extensions** | `instance.allocate.swarmPopulation`, `instance.allocate.swarmTransient`, `instance.allocate.trigger` | Share the same instance-context/lifetime runtime machinery `instance.allocate.voice` already proved out. |
 | **PM Core** | `excite.impulse`, `excite.pluck`, `excite.mallet`, `resonator.comb`, `resonator.modal`, `resonator.string`, `resonator.plate`, `excite.burst` (MVP top-off), `data.material` | The basic excite→resonate pairs (Struck Body, Karplus-Strong) — designed to plug straight into each other; `data.material` feeds `resonator.modal` directly, moved here from the now-closed Data Foundations batch (a stray tag in an earlier pass — it was never one of that batch's 3 actual members). |
 | **PM Friction/Breath** | `excite.stickSlip`, `excite.breath`, `excite.contact`, `resonator.tube` | Friction/breath-driven excitation, tested against tube/string for Bowed String / Breath-Wind. |
@@ -386,9 +407,17 @@ matters more than the letter for a couple of "C" items:
    really was the pathfinder — the whole `Data`-publishing pipeline
    (`Node::getDataPublisher()`/`setDataInput()`, `GraphCompiler.cpp`'s Data-connection
    branch) exists because of this step, not the other way around.
-3. **Note Stream** (the 9-node `note.*` batch) — now the next step, unblocked by
-   step 2's `data.scale`; this is the single biggest "ordinary patching" unlock in the
-   whole list (arpeggios, chords, scale-snapping become real).
+3. ~~**Note Stream**~~ — **done, 6 of 9.** `note.gate`/`note.value`/`note.transpose`/
+   `note.filter`/`note.humanize`/`note.quantize` all built and tested
+   (`tests/NoteStreamNodesTests.cpp`, 17 cases). Unblocked by step 2's `data.scale` as
+   planned — `note.quantize` is real, tested, and genuinely reads a live `data.scale`
+   buffer. **A real finding, not in the original plan**: `note.hold`/`note.select`/
+   `note.chord` hit a previously-unexercised engine limit (one `Note` input/output per
+   node, max — `ExecutionPlan::BlockStep`'s own fixed shape) that the catalog's literal
+   `note.filter` also hit (two `Note` outputs) — `note.filter` got a clean one-output
+   redesign; the other three were deferred outright rather than forced through with a
+   misleading shape. A real design for multi-note `Note` signals is separate, larger
+   engine work, not scoped here.
 4. **Domain Extensions** (`instance.allocate.swarmPopulation`/`swarmTransient`/
    `trigger`) — reuses proven `instance.allocate.voice` machinery; unlocks the Water/
    Cicada Field/percussive-one-shot stock groups.
@@ -438,9 +467,9 @@ not with the A/B/C/D/Batch treatment above.
 |---|---|---|
 | **Init Patch** | ✅ real hand-built graph (not yet a loadable `stock.*` asset) | Nothing for the graph itself; needs `stock.*` loading (M29) and `space.reverb` for its tail. |
 | **Karplus-Strong** | 📋 | Only `shape.clip` (Shaping batch) is missing — everything else it uses is already Implemented. |
-| **Scale Quantize** | 📋 | `data.scale` now Implemented — only `note.quantize` (step 3) remains. |
-| **Arpeggiator** | 📋 | `clock.pulse`/`clock.counter` now Implemented — only `note.hold`, `note.select` (step 3) remain. |
-| **Chord** | 📋 | `data.scale` now Implemented — only `note.chord` (step 3) remains. |
+| **Scale Quantize** | ✅ buildable now | `data.scale` and `note.quantize` both Implemented. |
+| **Arpeggiator** | 📋 — blocked | `clock.pulse`/`clock.counter` Implemented, but `note.hold`/`note.select` hit the real one-Note-port-per-node engine limit (deferred, not just unbuilt). |
+| **Chord** | 📋 — blocked | `data.scale` Implemented, but `note.chord` hits the same real engine limit as `note.hold`/`note.select`. |
 | **Bubble** | 📋 | `env.curve` (Env/LFO Shapes). |
 | **Water** | 📋 | `noise.dust`, `instance.allocate.swarmTransient` (step 4), Bubble. |
 | **Crackle** | 📋 | `noise.dust`, `excite.burst` (already MVP-usable), `resonator.modal`, `data.material` (both PM Core). |

@@ -985,3 +985,139 @@ tag (a stray leftover from an earlier pass — it was never actually one of this
 3 real members) to "PM Core" where it actually belongs, and the Scale Quantize/
 Arpeggiator/Chord/Crackle stock-group appendix rows updated to reflect their
 now-satisfied `data.scale` dependency.
+
+---
+
+# Note Stream batch — `wiki/NODES.Status.md`'s own build order, step 3 — done, with a real finding
+
+Three batches in (Clock+Seq, Data Foundations); this one is the `note.*` family:
+`note.gate`, `note.value`, `note.transpose`, `note.filter`, `note.humanize`,
+`note.quantize` — 6 of the planned 9 nodes
+(`engine/include/bazalt/engine/nodes/Note{Gate,Value,Transpose,Filter,Humanize,
+Quantize}Node.h`), registered in `ProofGraphs.h`. **`note.hold`/`note.select`/
+`note.chord` were deferred outright** — a real, previously-unexercised engine limit,
+not scope-trimming for convenience.
+
+**The limit, precisely:** `ExecutionPlan::BlockStep` has exactly one
+`noteInputBufferIndex`/`noteOutputBufferIndex` field each (singular, not a vector) — a
+node can declare at most one `Note`-typed input and one `Note`-typed output, total,
+today. This was already documented (`wiki/NODES.System.md` §1) as "a limitation
+nothing currently built runs into" — this batch is the first to actually hit it, twice:
+the catalog's own `note.filter` wants two `Note` outputs (`pass`/`reject`), and
+`note.hold`/`note.select`/`note.chord` all assume a real multi-note collection can
+travel over one `Note` cable (a chord generator turning 1 note into N; a "held notes"
+memory handed from `note.hold` to `note.select` over its own `held` port). Neither is
+representable by `NoteEvent`'s own monophonic shape (`gate`/`pitch`/`velocity`/
+`startEvent`/`stopEvent` — one note's worth of state per sample, no `id` field to
+multiplex several).
+
+**Two different resolutions for two different situations:**
+
+- **`note.filter`**: a clean redesign was possible without touching engine
+  infrastructure. Instead of `pass`/`reject` (two `Note` outputs), it ships with **one**
+  `Note` output (the note, verbatim, when in range; fully suppressed — gate false, no
+  start/stop — when out of range) plus a plain `inRange` **Boolean** carrying the
+  pass/reject *decision* as an ordinary signal. This captures the real, useful behaviour
+  (a keyboard split, a velocity gate) the two-output design would have offered, without
+  pretending the engine can carry two simultaneous note streams off one node.
+- **`note.hold`/`note.select`/`note.chord`**: no clean redesign exists that stays
+  faithful to what these nodes are *for* (a real "held notes" memory; a real chord).
+  Forcing them through the one-`Note`-port wall would mean either lying about what they
+  do (a "chord" generator that can only ever emit one note isn't a chord generator) or
+  inventing a parallel, ad hoc multi-note mechanism (e.g. a growable bank of plain
+  Control pitch outputs instead of a real `Note` list) as an uncoordinated side effect
+  of building three individual nodes — real, cross-cutting engine design deserving its
+  own pass, not something to improvise here. Deferred, with the reason named in three
+  places (`NoteFilterNode.h`'s own class comment, `wiki/NODES.md`, and this entry) so it
+  doesn't read as an oversight later.
+
+**Design decisions made while building the 6 that do fit, not pre-specified by the
+catalog:**
+
+- **The shared consume-then-produce shape**: `ExecutionPlan::process()` calls
+  `consumeNoteBlock()` → `processBlock()` → `produceNoteBlock()` in that fixed order per
+  block-rate step (confirmed by reading `ExecutionPlan.cpp` directly before designing
+  anything, not assumed) — every Note-transforming node in this batch (`transpose`,
+  `filter`, `humanize`, `quantize`) uses this precisely: `consumeNoteBlock()` stores the
+  incoming per-sample array; `processBlock()` captures that block's ordinary Control
+  inputs (`semitones`, `root`, etc.) into a small `prepare()`-sized scratch buffer, since
+  `produceNoteBlock()` (which runs last) has no access to the ordinary `float inputs[]`
+  array at all — only `NoteEvent*`. This is what makes those Control inputs genuinely
+  audio-rate-modulatable rather than only settable via `setParameter()` (contrast
+  `data.scale`'s `root`, which — for a real, different, RT-safety reason documented on
+  that node — can't be).
+- **`note.value`'s `select`** (last/lowest/highest/first) is real, not just schema —
+  this node maintains its own small internal memory (up to 8 concurrently-held notes,
+  tracked by watching the incoming stream's start/stop edges over time) rather than only
+  ever looking at "whatever's live this sample." Genuinely useful the moment a real
+  multi-note source exists, even though today's `io.noteIn` is itself strictly
+  monophonic (a separate, pre-existing, out-of-scope limitation this node doesn't need
+  fixed to behave correctly per its own contract).
+- **`note.humanize`'s timing jitter** delays a note-on by up to 50ms via a small
+  scheduled countdown, not a full ring buffer — sufficient because the stream is
+  monophonic (at most one note-on is ever pending). Only note-on is jittered,
+  deliberately — note-off timing humanization is far less musically useful for the
+  added complexity a second, independent schedule would need.
+- **`note.quantize`, the flagship Data Foundations consumer**: real, tested
+  `data.scale → note.quantize` wiring, genuinely closing reference patch #2 ("MIDI
+  remapped to a scale"). `root` here is a *second*, independent knob from `data.scale`'s
+  own `root` — not a duplicate: `data.scale.root` rotates which pitch-classes are IN the
+  published scale (a self-contained, nameable scale); this node's `root` is a plain
+  post-quantization semitone offset, the same "movable key centre without touching the
+  scale table" knob real quantizer modules commonly have on the quantizer itself.
+  Assumes a standard 12-semitone octave for pitch reconstruction — documented, not
+  silently assumed to generalize to a `data.scale` wired with `octaveSize != 12`.
+- **Port id collisions, again**: `note.transpose`/`note.filter`/`note.humanize`/
+  `note.quantize` all declare both an input and output port named `notes`, matching the
+  catalog's own literal naming — the same real engine invariant `clock.divide`'s
+  `tickOut` already hit (`ExecutionPlanTapTests.cpp`'s "no node type reuses a port id
+  across its inputs and outputs") rejected this again. Fixed the same way: the output
+  port id became `notesOut` on all four, display label stays "Notes."
+
+**Two real bugs caught during testing, both in test code, not the nodes:**
+
+- **A genuine hang, not a flaky test.** The first draft of `note.humanize`'s timing-
+  delay test called `prepare({44100.0, 512})` but then ran a single 2205-sample block
+  (the full 50ms jitter window at 44100Hz) — writing past the 512-element scratch
+  buffers `prepare()` had sized, a silent out-of-bounds `std::vector::operator[]` write.
+  In this Debug/MSVC build that manifested as a fully silent process hang (no crash, no
+  output, minimal memory growth) rather than a clean crash — almost certainly an
+  invisible modal debug-assertion dialog blocking on user input the terminal never
+  shows. Isolated by bisecting tags (`[NoteGateNode]`, `[NoteValueNode]`, ... one at a
+  time with a hard `timeout`) down to the exact test, then the exact line, in a few
+  minutes rather than guessing. Fixed by `prepare()`-ing with the actual block size the
+  test runs (`{44100.0, numSamples}`), not a smaller placeholder.
+- A quantization test injected pitch 63.0 expecting it to resolve to the major scale's
+  64, not noticing 63 is *exactly* equidistant between the major scale's 62 and 64 — a
+  real tie the node's deterministic "first-found wins" tie-break resolved to 62, not a
+  node bug. Fixed by picking an unambiguous test pitch (64.4) instead of changing the
+  node's tie-break behaviour.
+
+**Tests:** new `tests/NoteStreamNodesTests.cpp`, 17 cases — per-node coverage
+(gate/value/transpose/filter/humanize's core behaviour, `note.value`'s held-memory
+select modes and stop-event removal, `note.quantize`'s direction/strength/root/
+applyTo matrix) plus one real compiled-graph round trip: `io.noteIn → note.quantize
+(fed by data.scale) → note.value`, proving `Note` and `Data` connections cooperate
+correctly on one real node through the actual `GraphCompiler`, not just in isolated
+per-node C++ calls. `NodeDescriptorTests.cpp`'s registered-type count updated 66 → 72.
+
+**Verified:** `EngineTests.exe` 349 test cases / 2,004,480 assertions, all green (the
+17 `[NoteStream]` cases confirmed passing in isolation, including a deliberate re-run
+after fixing the hang, before the full-suite run). `ctest` (engine+plugin combined)
+434/434 green — one more already-documented recurring gotcha hit and handled the known
+way along the way: `LNK1163` on `MacroParametersTests.obj` (a corrupt incremental-link
+object, not a code regression) — deleted the `.obj`, rebuilt clean.
+`pluginval --strictness-level 10`: clean `SUCCESS` first try, no flake. Standalone app
+rebuilt, launched, and confirmed running/responsive.
+
+**Docs updated to match:** `wiki/NODES.md`'s `note.*` section (📋 → ✅ for six nodes,
+a new shared "engine limit" note explaining the three deferrals and `note.filter`'s
+redesign, so neither reads as an oversight); its own "53 of 125 catalog-only" header
+count. `wiki/NODES.System.md` §1's Note-port-limit paragraph (no longer claims "nothing
+currently built runs into" it). `wiki/NODES.Status.md`: the 6 nodes moved into the
+`note.*` family's own Implemented table, `note.hold`/`select`/`chord` re-marked
+"blocked" rather than merely "to be implemented," totals recomputed (62→68 Implemented,
+59→53 to build, A-tier 14→8), the Note Stream batch and "nodes to build next" step 3
+marked done, and the Scale Quantize/Arpeggiator/Chord stock-group appendix rows updated
+(Scale Quantize is now genuinely buildable; Arpeggiator/Chord are explicitly blocked,
+not just "next").

@@ -66,6 +66,12 @@
 #include "bazalt/engine/nodes/DataScaleNode.h"
 #include "bazalt/engine/nodes/DataTableNode.h"
 #include "bazalt/engine/nodes/DataLookupNode.h"
+#include "bazalt/engine/nodes/NoteGateNode.h"
+#include "bazalt/engine/nodes/NoteValueNode.h"
+#include "bazalt/engine/nodes/NoteTransposeNode.h"
+#include "bazalt/engine/nodes/NoteFilterNode.h"
+#include "bazalt/engine/nodes/NoteHumanizeNode.h"
+#include "bazalt/engine/nodes/NoteQuantizeNode.h"
 
 namespace bazalt::engine
 {
@@ -155,6 +161,15 @@ namespace bazalt::engine
         factory.registerType ("data.scale", [] { return std::make_unique<nodes::DataScaleNode>(); });
         factory.registerType ("data.table", [] { return std::make_unique<nodes::DataTableNode>(); });
         factory.registerType ("data.lookup", [] { return std::make_unique<nodes::DataLookupNode>(); });
+        // Note Stream batch — note.hold/note.select/note.chord deferred (a
+        // real, documented engine limit: ExecutionPlan::BlockStep supports
+        // only one Note output per node, see NoteFilterNode.h's own comment).
+        factory.registerType ("note.gate", [] { return std::make_unique<nodes::NoteGateNode>(); });
+        factory.registerType ("note.value", [] { return std::make_unique<nodes::NoteValueNode>(); });
+        factory.registerType ("note.transpose", [] { return std::make_unique<nodes::NoteTransposeNode>(); });
+        factory.registerType ("note.filter", [] { return std::make_unique<nodes::NoteFilterNode>(); });
+        factory.registerType ("note.humanize", [] { return std::make_unique<nodes::NoteHumanizeNode>(); });
+        factory.registerType ("note.quantize", [] { return std::make_unique<nodes::NoteQuantizeNode>(); });
         return factory;
     }
 

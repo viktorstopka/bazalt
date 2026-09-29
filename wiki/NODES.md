@@ -16,10 +16,10 @@ implemented.
 **✅ Implemented** — real, registered, in `engine/include/bazalt/engine/nodes/`.
 **🚧 Partial** — implemented but narrower than this spec (the gap is named).
 **📋 Catalog only** — specified here, not built yet. Most of the catalog is this today
-— **59 of the 125 node types below are catalog-only** (down from 67 before the
-Clock+Seq batch, 62 before the Data Foundations batch — `wiki/NODES.Status.md` tracks
-the build order for what's left). Don't assume a node works in the running app because
-it's in this file; check the status marker.
+— **53 of the 125 node types below are catalog-only** (down from 67 before the
+Clock+Seq batch, 62 before the Data Foundations batch, 59 before the Note Stream batch
+— `wiki/NODES.Status.md` tracks the build order for what's left). Don't assume a node
+works in the running app because it's in this file; check the status marker.
 
 ## Notation
 
@@ -54,7 +54,7 @@ are telemetry outputs for live visualization, not ports.
 | `random.*` | stepped, drift | ✅ both |
 | `clock.*` | pulse, divide, counter | ✅ all 3 |
 | `seq.*` | steps, euclid | ✅ euclid — 🚧 steps |
-| `note.*` | gate, value, quantize, transpose, chord, hold, select, humanize, filter, assemble | 📋 all 10 |
+| `note.*` | gate, value, quantize, transpose, chord, hold, select, humanize, filter, assemble | ✅ gate, value, quantize, transpose, humanize, filter — 📋 chord, hold, select (real engine limit — see the `note.filter`/`note.hold` entries below), assemble |
 | `math.*` | add, subtract, multiply, divide, abs, clamp, minmax, power, round, modulo, slew | ✅ all 11 |
 | `logic.*` | boolean, not, compare, toggle, select | ✅ all 5 |
 | `adapt.*` | map, remap, normalise, threshold, sampleHold | ✅ all 5 |
@@ -294,35 +294,50 @@ Slow, correlated, natural wander. **In:** `rate`; `amount`; `centering` (0 = fre
 ## note — the note stream
 
 This family is what makes arpeggios, chords, scales, and audio-driven instruments
-ordinary patching rather than built-in features. **Entirely catalog-only today — the
-whole `note.*` family is M25 scope.**
+ordinary patching rather than built-in features. **6 of 10 built (Note Stream batch);
+`note.chord`/`note.hold`/`note.select` deliberately deferred, `note.assemble` still
+M25 scope** — see the shared engine-limit note below.
 
-#### `note.gate` — Note Gate 📋
-**In:** `notes` — `Note`. **Out:** `noteOn`/`noteOff` — `Event`; `gate` — `bool`; `count`.
+**A real, previously-unexercised engine limit this batch was the first to hit**:
+`ExecutionPlan::BlockStep` has exactly one `noteInputBufferIndex`/`noteOutputBufferIndex`
+field each — a node can carry at most one `Note` input and one `Note` output, total,
+today. `note.chord` (needs to emit several simultaneous notes), `note.hold`/
+`note.select` (need a real multi-note list handed over one cable), and the catalog's
+literal `note.filter` (two `Note` outputs, `pass`/`reject`) all assume a multi-note
+`Note` signal the engine can't represent yet. `note.filter` got a clean one-`Note`-
+output redesign (see its own entry below); `note.chord`/`note.hold`/`note.select` were
+deferred outright rather than forced through the same wall with a compromised, misleading
+shape — a real design for multi-note `Note` signals (a growable `Note` port group? an
+id-tagged polyphonic `NoteEvent`?) is separate, larger engine work, not something to
+improvise as a side effect of three individual nodes. Full reasoning in `wiki/
+MILESTONES.md`'s own Note Stream batch entry.
 
-#### `note.value` — Note Value 📋
-**In:** `notes` — `Note`. **Out:** `pitch`; `velocity`/`pressure`/`slide`. **Structural:** `select` (enum: last, lowest, highest, first). **Behavior:** the mono-domain way to read a note stream. Inside an instanced region, the allocator's own outputs are used instead.
+#### `note.gate` — Note Gate ✅
+**In:** `notes` — `Note`. **Out:** `noteOn`/`noteOff` — `Event`; `gate` — `bool`; `count`. **Behavior:** `count` (not elaborated by the catalog) is this node's own concrete design — a running tally of note-on events seen since reset.
 
-#### `note.quantize` — Scale Quantize 📋
-**In:** `notes`; `scale` — `Data(scale)`, required; `root`; `strength`. **Out:** `notes`. **Structural:** `direction`, `applyTo`.
+#### `note.value` — Note Value ✅
+**In:** `notes` — `Note`. **Out:** `pitch`; `velocity` (`pressure`/`slide` not built — `NoteEvent` doesn't carry them, same "deliberately narrower, add a field once something drives it" reasoning `instance.allocate.voice` already established). **Structural:** `select` (enum: last, lowest, highest, first). **Behavior:** the mono-domain way to read a note stream — genuinely meaningful even against today's strictly-monophonic `io.noteIn`, since this node maintains its own small internal memory (up to 8 concurrently-held notes) by watching the incoming stream's start/stop edges over time, not just "whatever's live this sample." Inside an instanced region, the allocator's own outputs are used instead.
 
-#### `note.transpose` — Transpose 📋
-**In:** `notes`; `semitones`; `octaves`. **Out:** `notes`.
+#### `note.quantize` — Scale Quantize ✅
+**In:** `notes`; `scale` — `Data(scale)`, required; `root`; `strength`. **Out:** `notes` (engine port id `notesOut` — see `note.transpose`'s own note on this). **Structural:** `direction` (enum: nearest, up, down), `applyTo` (enum: continuous, onNoteOnOnly). **Behavior:** the flagship consumer the Data Foundations batch was built for — `io.noteIn → note.quantize ← data.scale → instance.allocate.voice` is reference patch #2 ("MIDI remapped to a scale"), genuinely buildable now. `root` here is a *second*, independent knob from `data.scale`'s own `root` — a deliberate design, not a duplicate: `data.scale.root` rotates which pitch-classes are IN the published scale; this node's `root` is a plain post-quantization semitone offset, the same "movable key centre without touching the scale table" knob real quantizer modules commonly have. Assumes a standard 12-semitone octave for pitch reconstruction — a `data.scale` wired in with `octaveSize != 12` isn't meaningfully quantizable against absolute pitch by this node.
 
-#### `note.chord` — Chord 📋
+#### `note.transpose` — Transpose ✅
+**In:** `notes`; `semitones`; `octaves`. **Out:** `notes` (engine port id `notesOut`, not the catalog's literal `notes` — the catalog names both the input and output port `notes`, but a same-id input/output pair on one node is a real, enforced engine invariant, same as `clock.divide`'s own `tickOut`; the display label stays "Notes"). This port-id note applies identically to `note.quantize`, `note.filter`'s `notes` output, and `note.humanize` below — not repeated per entry.
+
+#### `note.chord` — Chord 📋 *(deferred — see the shared engine-limit note above)*
 **In:** `notes`; `spread`; `velocityFalloff`; port group `interval.0…interval.N`. **Out:** `notes`. **Structural:** `mode` (enum: fixed intervals, scale degrees).
 
-#### `note.hold` — Hold Memory 📋
+#### `note.hold` — Hold Memory 📋 *(deferred — see the shared engine-limit note above)*
 **In:** `notes`; `hold : bool` (latch); `clear : Event`. **Out:** `held` — `Note`; `count`. **Structural:** `order`, `maxHeld`.
 
-#### `note.select` — Select Note 📋
+#### `note.select` — Select Note 📋 *(deferred — see the shared engine-limit note above)*
 **In:** `held` — `Note`; `index`; `trigger : Event`. **Out:** `notes`; `pitch`. **Structural:** `wrap`, `gateLength`.
 
-#### `note.humanize` — Humanize 📋
-**In:** `notes`; `timing`; `velocity`; `pitch`. **Out:** `notes`. **Structural:** `seed`.
+#### `note.humanize` — Humanize ✅
+**In:** `notes`; `timing`; `velocity`; `pitch`. **Out:** `notes` (engine port id `notesOut`). **Structural:** `seed`. **Behavior:** `timing` delays a note-on by up to 50ms (this node's own concrete bound), implemented as a small scheduled countdown rather than a full ring buffer — sufficient since the stream is monophonic, at most one note-on is ever pending. Only note-on timing is jittered, deliberately (note-off humanization is far less musically useful for the added complexity). `pitch` draws one detune per note (up to ±0.5 semitones), held for that note's whole duration, matching how real-world humanization plugins typically treat pitch.
 
-#### `note.filter` — Note Filter 📋
-**In:** `notes`; `lowPitch`/`highPitch`; `lowVelocity`/`highVelocity`. **Out:** `pass`/`reject` — `Note`.
+#### `note.filter` — Note Filter ✅ *(redesigned — see the shared engine-limit note above)*
+**In:** `notes`; `lowPitch`/`highPitch`; `lowVelocity`/`highVelocity`. **Out (catalog):** `pass`/`reject` — `Note`. **Out (real today):** `notes` — `Note` (engine port id `notesOut`; the note verbatim when in range, fully suppressed — gate false, no start/stop — when out of range) plus `inRange` — `Boolean`, carrying the pass/reject decision as an ordinary signal. Captures the real, useful behaviour (a keyboard split, a velocity gate) without pretending the engine can carry two simultaneous `Note` streams off one node today.
 
 #### `note.assemble` — Assemble Note 📋
 **In:** `trigger : Event`; `release : Event` (optional); `pitch [audio]`; `velocity`; `confidence`; `confidenceGate`. **Out:** `notes` — `Note`. **Behavior:** turns detected events + a tracked pitch into a real note stream — what makes an audio input playable as an instrument.

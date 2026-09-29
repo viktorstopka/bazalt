@@ -65,9 +65,14 @@ output and `instance.allocate.voice`'s `spawn` input (plus polymorphic `util.rer
 which can carry a Note cable through unchanged). A connected Note port doesn't use the
 ordinary per-sample `blockBuffers` mechanism — it gets a dedicated `NoteEvent`-typed
 buffer (`ExecutionPlan::noteBuffers`), and **only one Note input and one Note output
-per node is supported today** — a limitation nothing currently built runs into, but
-worth knowing before assuming a Note output can freely fan out to several
-destinations the way an Audio/Control output can.
+per node is supported today** (a Note OUTPUT can still fan out to several destinations
+freely — this limit is about how many Note-typed ports one node can declare, not about
+connection multiplicity). The Note Stream batch was the first real work to actually hit
+this: the catalog's own `note.filter` wants two Note outputs (`pass`/`reject`), and
+`note.chord`/`note.hold`/`note.select` all assume a multi-note signal one `Note` cable
+can't carry — `note.filter` got a clean one-output redesign, the other three were
+deferred outright rather than forced through the wall (`wiki/NODES.md`'s own `note.*`
+section and `wiki/MILESTONES.md`'s Note Stream batch entry have the full reasoning).
 
 ---
 
