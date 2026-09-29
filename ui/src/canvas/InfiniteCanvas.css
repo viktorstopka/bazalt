@@ -18,7 +18,23 @@
   overscroll-behavior: none;
 }
 
-.infinite-canvas canvas {
+/* Direct feedback, a real bug: this used to be a plain descendant selector
+   (`.infinite-canvas canvas`), which matches EVERY <canvas> anywhere
+   inside .infinite-canvas — including NodePreview.tsx's own
+   .node-preview-canvas, nested deep inside .infinite-canvas-world (a
+   SIBLING of the WebGL canvas below, not a descendant of it, but still a
+   descendant of .infinite-canvas itself). That accidentally-matched rule's
+   specificity (one class + one type selector) beat .node-preview-canvas's
+   own (one class alone), so `height: 100%; width: 100%` silently won over
+   NodeCard.css's intended `height: 48px` — a preview canvas whose parent
+   row has no definite height of its own, told to be 100% of that
+   undefined height, is exactly a circular sizing dependency: the observed
+   bug was every Waveform/Spectrum preview (osc.analog's, osc.sine's, any
+   node with a real inline preview) growing without bound toward the
+   bottom-right corner, frame after frame. `>` scopes this to the one
+   direct-child <canvas> this rule was ever meant for (the WebGL grid/
+   cable layer) and nothing nested inside the world layer. */
+.infinite-canvas > canvas {
   display: block;
   width: 100%;
   height: 100%;
