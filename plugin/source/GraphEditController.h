@@ -153,6 +153,37 @@ namespace bazalt
         */
         const std::unordered_map<juce::String, juce::String>& getNodeDomains() const noexcept { return nodeDomains; }
 
+        /** wiki/plans/DomainRedesign.md Batch 4: DomainDot's real
+            replacement — per PORT (not per node, so the two boundary node
+            types' own mixed per-port shape, §2.4, needs no UI-side special
+            casing), computed once right after the last successful
+            recompile. `kind` is "scalar" or "poly"; `originId` is set only
+            when `kind == "poly"`. A port not present here for a node that
+            IS present (a growable-group member beyond the throwaway
+            default this was computed from) shares that node's other ports'
+            kind — every ordinary node's ports resolve uniformly, so the UI
+            falls back to any listed port of the same node id.
+        */
+        struct PortMultiplicityInfo
+        {
+            juce::String kind;
+            juce::String originId;
+        };
+        const std::unordered_map<juce::String, std::unordered_map<juce::String, PortMultiplicityInfo>>& getPortMultiplicity() const noexcept
+        {
+            return portMultiplicity;
+        }
+
+        /** Every "instance.allocate.voice" node id -> the origin bundle
+            slot it currently occupies on the processor, as of the last
+            successful recompile — the instance-count badge's own LIVE
+            activeCount/maxCount are deliberately NOT cached here (they
+            change on every voice on/off, far more often than a recompile);
+            the native function reads them fresh from the processor at this
+            index instead.
+        */
+        const std::unordered_map<juce::String, int>& getOriginBundleIndices() const noexcept { return originBundleIndexByNodeId; }
+
     private:
         CommandResult recompileAndPublish();
         uint64_t nextGeneration() noexcept { return generationCounter++; }
@@ -165,6 +196,8 @@ namespace bazalt
         int blockSize = 512;
         bool hasGlobalDomain = false;
         std::unordered_map<juce::String, juce::String> nodeDomains;
+        std::unordered_map<juce::String, std::unordered_map<juce::String, PortMultiplicityInfo>> portMultiplicity;
+        std::unordered_map<juce::String, int> originBundleIndexByNodeId;
         uint64_t generationCounter = 1;
     };
 }

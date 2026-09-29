@@ -201,6 +201,29 @@ namespace bazalt
         */
         void commitOriginBundleAssignments (const std::array<juce::String, maxOrigins>& originIdBySlot) noexcept;
 
+        /** wiki/plans/DomainRedesign.md Batch 4: enforces
+            "instance.allocate.voice.maxInstances" for real (VoiceManager::
+            setMaxActiveVoices) — called once per recompile, after this
+            bundle's own voice-slot-0 plan is compiled, with whatever that
+            plan's real InstanceVoiceNode reports.
+        */
+        void setOriginMaxVoices (int bundleIndex, int maxVoices) noexcept
+        {
+            originBundles[(size_t) bundleIndex].voiceManager.setMaxActiveVoices (maxVoices);
+        }
+
+        /** The instance-count badge's own two numbers for this origin
+            bundle — message-thread safe (both are atomics on VoiceManager).
+        */
+        int getOriginActiveVoiceCount (int bundleIndex) const noexcept
+        {
+            return originBundles[(size_t) bundleIndex].voiceManager.getActiveVoiceCount();
+        }
+        int getOriginMaxVoices (int bundleIndex) const noexcept
+        {
+            return originBundles[(size_t) bundleIndex].voiceManager.getMaxActiveVoices();
+        }
+
         /** M20: subscribes a visualization tap for a real node's output
             port, resolving whether it lives in the global domain (one
             plan) or SOME origin's own voice domain (8 independent plans

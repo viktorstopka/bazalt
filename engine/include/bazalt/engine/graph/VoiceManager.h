@@ -1,5 +1,6 @@
 #pragma once
 
+#include <algorithm>
 #include <atomic>
 #include <cstdint>
 #include <vector>
@@ -62,7 +63,39 @@ namespace bazalt::engine
         {
             voices.assign ((size_t) numVoices, Voice {});
             nextAge = 0;
+            maxActiveVoices.store (numVoices, std::memory_order_relaxed);
         }
+
+        /** wiki/plans/DomainRedesign.md Batch 4: "instance.allocate.voice.
+            maxInstances" — declared since M17, read nowhere until now
+            (confirmed against the real source: this pool was always
+            hardcoded to `numVoices`, independent of it). Lanes at or past
+            this ceiling are simply never allocated or stolen — the
+            live/compiled ceiling the UI's instance-count badge shows
+            ("2/8") is exactly this value. Clamped to [1, the real pool
+            size] — a graph asking for more than this VoiceManager actually
+            has can't be granted more than physically exist; the ceiling
+            can only ever narrow the real pool, never grow it. Message-
+            thread only to call (GraphEditController, after compiling);
+            findIdleVoice()/stealVoice() read it on the audio thread, hence
+            atomic.
+        */
+        void setMaxActiveVoices (int count) noexcept
+        {
+            const auto clamped = std::max (1, std::min ((int) voices.size(), count));
+            maxActiveVoices.store (clamped, std::memory_order_relaxed);
+        }
+
+        int getMaxActiveVoices() const noexcept { return maxActiveVoices.load (std::memory_order_relaxed); }
+
+        /** How many lanes are currently NOT Idle — the live half of the
+            instance-count badge ("2/8": this value over getMaxActiveVoices()).
+            Recomputed and published (recomputeActiveVoiceCount()) on the
+            audio thread every time a lane's stage actually changes; read
+            from the message thread (GraphEditController, servicing a UI
+            poll) via this atomic.
+        */
+        int getActiveVoiceCount() const noexcept { return activeVoiceCount.load (std::memory_order_relaxed); }
 
         /** Allocates a voice for noteId (stealing if necessary) and returns
             its index. If stealing was required, the returned voice enters
@@ -82,6 +115,7 @@ namespace bazalt::engine
                 voice.age = nextAge++;
                 voice.silentSamplesAccumulated = 0;
                 mostRecentlyTriggeredVoice.store (index, std::memory_order_relaxed);
+                recomputeActiveVoiceCount();
                 return index;
             }
 
@@ -91,6 +125,7 @@ namespace bazalt::engine
             voice.stealFadeSamplesRemaining = stealFadeSamples;
             voice.stealFadeGainAtStart = 1.0f;
             mostRecentlyTriggeredVoice.store (index, std::memory_order_relaxed);
+            recomputeActiveVoiceCount(); // a stolen voice was already non-Idle; the count itself doesn't change, but stays correct either way
             return index;
         }
 
@@ -126,6 +161,7 @@ namespace bazalt::engine
             voice.noteId = voice.pendingNoteOn.noteId;
             voice.age = nextAge++;
             voice.silentSamplesAccumulated = 0;
+            recomputeActiveVoiceCount(); // Stealing -> Active either way; kept for symmetry with every other stage change
         }
 
         /** Consumes up to `numSamples` of remaining fade time, returning
@@ -176,7 +212,7 @@ namespace bazalt::engine
                 if (voice.stage == VoiceStage::Active && voice.noteId == noteId)
                 {
                     voice.stage = VoiceStage::Releasing;
-                    return i;
+                    return i; // still non-Idle (Releasing) — the active count doesn't change
                 }
             }
 
@@ -189,6 +225,7 @@ namespace bazalt::engine
         void voiceFinished (int voiceIndex) noexcept
         {
             voices[(size_t) voiceIndex].stage = VoiceStage::Idle;
+            recomputeActiveVoiceCount();
         }
 
         /** Generic silence detector (DOMAINS.md §5, RECONCILIATION.md 3.2)
@@ -237,7 +274,8 @@ namespace bazalt::engine
 
         int findIdleVoice() const noexcept
         {
-            for (int i = 0; i < (int) voices.size(); ++i)
+            const auto ceiling = std::min ((int) voices.size(), maxActiveVoices.load (std::memory_order_relaxed));
+            for (int i = 0; i < ceiling; ++i)
                 if (voices[(size_t) i].stage == VoiceStage::Idle)
                     return i;
             return -1;
@@ -245,12 +283,13 @@ namespace bazalt::engine
 
         int stealVoice() const noexcept
         {
+            const auto ceiling = std::min ((int) voices.size(), maxActiveVoices.load (std::memory_order_relaxed));
             int oldestReleasing = -1;
             uint64_t oldestReleasingAge = 0;
             int oldestOverall = -1;
             uint64_t oldestOverallAge = 0;
 
-            for (int i = 0; i < (int) voices.size(); ++i)
+            for (int i = 0; i < ceiling; ++i)
             {
                 const auto& voice = voices[(size_t) i];
 
@@ -270,10 +309,32 @@ namespace bazalt::engine
             return oldestReleasing != -1 ? oldestReleasing : oldestOverall;
         }
 
+        // wiki/plans/DomainRedesign.md Batch 4: recomputed on every stage
+        // change (noteOn/noteOff/completeSteal/voiceFinished) rather than
+        // counted lazily on read — this is a plain linear scan over an
+        // 8-ish-element vector, cheap enough to redo on every transition,
+        // and means getActiveVoiceCount() is a single atomic load with no
+        // audio-thread work at all on the READING (message-thread) side.
+        void recomputeActiveVoiceCount() noexcept
+        {
+            int count = 0;
+            for (const auto& voice : voices)
+                if (voice.stage != VoiceStage::Idle)
+                    ++count;
+            activeVoiceCount.store (count, std::memory_order_relaxed);
+        }
+
         std::vector<Voice> voices;
         uint64_t nextAge = 0;
         // Written by the audio thread (noteOn), read by the message thread when
         // it attaches preview taps (ADR-0029) - atomic so that is not a data race.
         std::atomic<int> mostRecentlyTriggeredVoice { -1 };
+        // Both written from the message thread (setMaxActiveVoices(), a real
+        // recompile) and read from the audio thread (findIdleVoice()/
+        // stealVoice(), every note-on) - or the reverse, for
+        // getActiveVoiceCount() - atomic for the same reason
+        // mostRecentlyTriggeredVoice already is.
+        std::atomic<int> maxActiveVoices { 8 };
+        std::atomic<int> activeVoiceCount { 0 };
     };
 }

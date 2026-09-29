@@ -259,6 +259,53 @@ namespace bazalt
             completion (juce::JSON::toString (juce::var (obj), true));
         });
 
+        // wiki/plans/DomainRedesign.md Batch 4: DomainDot's real
+        // replacement — same "plain debugging read" reasoning as
+        // graphGetNodeDomains above, which this is meant to eventually
+        // replace at the UI layer (graphGetNodeDomains itself stays, still
+        // real and tested, since a per-node voice/global/mono label is
+        // still meaningful, independent info). Returns
+        // { "ports": { nodeId: { portId: { "kind": "poly"|"scalar",
+        // "originId"?: string } } },
+        //   "badges": { nodeId: { "activeCount": n, "maxCount": n } } } —
+        // "badges" entries exist only for "instance.allocate.voice" nodes,
+        // and their two numbers are read FRESH off the processor's live
+        // atomics on every call (they change on every voice on/off, far
+        // more often than a recompile), not cached on the controller.
+        options = options.withNativeFunction ("graphGetNodeMultiplicity", [&processor] (Args, Completion completion)
+        {
+            auto& controller = processor.getGraphEditController();
+
+            auto* portsObj = new juce::DynamicObject();
+            for (const auto& [nodeId, ports] : controller.getPortMultiplicity())
+            {
+                auto* nodeObj = new juce::DynamicObject();
+                for (const auto& [portId, info] : ports)
+                {
+                    auto* portObj = new juce::DynamicObject();
+                    portObj->setProperty ("kind", info.kind);
+                    if (info.originId.isNotEmpty())
+                        portObj->setProperty ("originId", info.originId);
+                    nodeObj->setProperty (portId, juce::var (portObj));
+                }
+                portsObj->setProperty (nodeId, juce::var (nodeObj));
+            }
+
+            auto* badgesObj = new juce::DynamicObject();
+            for (const auto& [nodeId, bundleIndex] : controller.getOriginBundleIndices())
+            {
+                auto* badgeObj = new juce::DynamicObject();
+                badgeObj->setProperty ("activeCount", processor.getOriginActiveVoiceCount (bundleIndex));
+                badgeObj->setProperty ("maxCount", processor.getOriginMaxVoices (bundleIndex));
+                badgesObj->setProperty (nodeId, juce::var (badgeObj));
+            }
+
+            auto* root = new juce::DynamicObject();
+            root->setProperty ("ports", juce::var (portsObj));
+            root->setProperty ("badges", juce::var (badgesObj));
+            completion (juce::JSON::toString (juce::var (root), true));
+        });
+
         // M9 (NODE_EDITOR.md §3): every registered node type's descriptor,
         // fetched once at editor load — not a graph-editing command (no
         // NodeGraph mutation, no recompile), but still goes over this

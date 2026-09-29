@@ -5,6 +5,7 @@
 #include "bazalt/engine/graph/GraphCompiler.h"
 #include "bazalt/engine/graph/PortGroups.h"
 #include "bazalt/engine/graph/ProofGraphs.h"
+#include "bazalt/engine/nodes/InstanceVoiceNode.h"
 #include <array>
 
 namespace bazalt
@@ -207,6 +208,35 @@ namespace bazalt
                     return i;
 
             return -1;
+        }
+
+        // wiki/plans/DomainRedesign.md Batch 4: marks every port of every
+        // node in `subgraph` with the same (kind, originId) — a throwaway,
+        // message-thread-only instance per node (mirrors
+        // NodeFactory::describeAll()'s own "construct one throwaway
+        // instance purely to read its metadata" pattern), so a growable
+        // group's ports beyond its default count aren't enumerated here;
+        // graphStore.ts's own reader falls back to any listed port of the
+        // same node id, since ordinary nodes resolve uniformly across all
+        // their ports anyway (§2.4 — only the two boundary node types
+        // don't, and instance.sum's own "in" port is overridden separately,
+        // right after this runs).
+        void markAllPorts (std::unordered_map<juce::String, std::unordered_map<juce::String, GraphEditController::PortMultiplicityInfo>>& out,
+                            const bazalt::engine::NodeFactory& factory, const bazalt::engine::NodeGraph& subgraph,
+                            const juce::String& kind, const juce::String& originId)
+        {
+            for (const auto& node : subgraph.getNodes())
+            {
+                auto instance = factory.create (node.type);
+                if (instance == nullptr)
+                    continue;
+
+                auto& portsForNode = out[node.id];
+                for (const auto& port : instance->getInputPorts())
+                    portsForNode[port.id] = { kind, originId };
+                for (const auto& port : instance->getOutputPorts())
+                    portsForNode[port.id] = { kind, originId };
+            }
         }
     }
 
@@ -637,6 +667,11 @@ namespace bazalt
             processor.commitOriginBundleAssignments ({}); // every slot empty — no origin exists
             nodeDomains = std::move (newNodeDomains);
 
+            std::unordered_map<juce::String, std::unordered_map<juce::String, PortMultiplicityInfo>> newPortMultiplicity;
+            markAllPorts (newPortMultiplicity, factory, split.globalGraph, "scalar", {});
+            portMultiplicity = std::move (newPortMultiplicity);
+            originBundleIndexByNodeId.clear();
+
             return { true, {} };
         }
 
@@ -653,6 +688,15 @@ namespace bazalt
         // rather than one flat vector so a failure partway through never
         // needs to guess which entries belong to which origin.
         std::array<std::array<std::unique_ptr<bazalt::engine::ExecutionPlan>, BazaltAudioProcessor::numVoices>, BazaltAudioProcessor::maxOrigins> newVoicePlansBySlot;
+
+        // wiki/plans/DomainRedesign.md Batch 4: this origin's own
+        // "instance.allocate.voice.maxInstances", read off the REAL
+        // compiled node (whatever the graph's own NodeInstance::parameters
+        // actually applied, default included) — captured per-slot here
+        // and enforced (VoiceManager::setMaxActiveVoices) only once every
+        // compile below has succeeded, at the same commit point everything
+        // else in this function already waits for.
+        std::array<int, BazaltAudioProcessor::maxOrigins> maxInstancesBySlot {};
 
         for (const auto& origin : split.origins)
         {
@@ -679,6 +723,13 @@ namespace bazalt
 
                 newVoicePlansBySlot[(size_t) slot][(size_t) i] =
                     std::make_unique<bazalt::engine::ExecutionPlan> (std::move (compileResult.plan));
+
+                if (i == 0)
+                {
+                    if (auto* allocator = dynamic_cast<bazalt::engine::nodes::InstanceVoiceNode*> (
+                            newVoicePlansBySlot[(size_t) slot][0]->getNodeById (origin.originId)))
+                        maxInstancesBySlot[(size_t) slot] = allocator->getMaxInstances();
+                }
             }
         }
 
@@ -797,6 +848,39 @@ namespace bazalt
         processor.setMonoOnly (false); // after the voice (and global) plans are live
         processor.commitOriginBundleAssignments (slotForOrigin); // after everything above is live
         nodeDomains = std::move (newNodeDomains);
+
+        // wiki/plans/DomainRedesign.md Batch 4: the instance-count badge's
+        // "maxCount" half, actually enforced now (VoiceManager::
+        // setMaxActiveVoices) rather than merely read back for display.
+        for (const auto& origin : split.origins)
+        {
+            const auto slot = bundleSlotOf (slotForOrigin, origin.originId);
+            if (slot >= 0)
+                processor.setOriginMaxVoices (slot, maxInstancesBySlot[(size_t) slot]);
+        }
+
+        // DomainDot's real replacement — per-port, not per-node (§2.4's two
+        // boundary node types have real mixed per-port shapes).
+        std::unordered_map<juce::String, std::unordered_map<juce::String, PortMultiplicityInfo>> newPortMultiplicity;
+        std::unordered_map<juce::String, int> newOriginBundleIndexByNodeId;
+
+        markAllPorts (newPortMultiplicity, factory, split.globalGraph, "scalar", {});
+        for (const auto& origin : split.origins)
+        {
+            markAllPorts (newPortMultiplicity, factory, origin.voiceGraph, "poly", origin.originId);
+            const auto slot = bundleSlotOf (slotForOrigin, origin.originId);
+            if (slot >= 0)
+                newOriginBundleIndexByNodeId[origin.originId] = slot;
+
+            // instance.sum's own "in" port is the one fixed exception: the
+            // NODE lives in globalGraph (marked scalar above), but this ONE
+            // port specifically reduces a real Poly signal.
+            if (origin.instanceSumNodeId.isNotEmpty())
+                newPortMultiplicity[origin.instanceSumNodeId]["in"] = { "poly", origin.originId };
+        }
+
+        portMultiplicity = std::move (newPortMultiplicity);
+        originBundleIndexByNodeId = std::move (newOriginBundleIndexByNodeId);
 
         return { true, {} };
     }

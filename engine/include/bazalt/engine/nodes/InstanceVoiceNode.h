@@ -125,6 +125,15 @@ namespace bazalt::engine::nodes
                 maxInstances = (int) (value + 0.5f);
         }
 
+        /** wiki/plans/DomainRedesign.md Batch 4: this was declared and
+            editable but read nowhere — GraphEditController now reads it
+            straight off this node, once per recompile, to actually enforce
+            it via VoiceManager::setMaxActiveVoices() (closing the gap this
+            class's own comment used to flag) and to report the "maxCount"
+            half of the UI's instance-count badge.
+        */
+        int getMaxInstances() const noexcept { return maxInstances; }
+
         /** M18 (ADR-0024): the real end of the "spawn" input's Note-typed
             wiring — `io.noteIn`'s produceNoteBlock() feeds this per-sample
             buffer, whose start/stop edges call the SAME noteOn()/noteOff()

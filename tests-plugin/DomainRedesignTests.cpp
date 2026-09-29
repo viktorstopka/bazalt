@@ -224,3 +224,83 @@ TEST_CASE ("An origin that disappears from the graph deactivates its bundle; a n
     for (int v = 0; v < BazaltAudioProcessor::numVoices; ++v)
         CHECK (processor.getOriginBundle (0).voiceManager.getStage (v) == bazalt::engine::VoiceStage::Idle);
 }
+
+TEST_CASE ("getPortMultiplicity() reports poly for a voice-region node's ports (with the right originId), "
+           "scalar for global nodes, and instance.sum's own mixed per-port shape - "
+           "wiki/plans/DomainRedesign.md Batch 4",
+           "[plugin][DomainRedesign][GraphEditController]")
+{
+    NodeGraph graph;
+    graph.addNode ({ "alloc", "instance.allocate.voice", {}, {}, {} });
+    graph.addNode ({ "osc", "osc.analog", {}, {}, {} });
+    graph.addNode ({ "sum", "instance.sum", {}, {}, {} });
+    graph.addNode ({ "masterout", "io.output", {}, {}, {} });
+    graph.addConnection ({ "alloc", "pitch", "osc", "pitch" });
+    graph.addConnection ({ "osc", "out", "sum", "in" });
+    graph.addConnection ({ "sum", "out", "masterout", "in" });
+    graph.setOutput ("masterout", "out");
+
+    BazaltAudioProcessor processor;
+    processor.prepareToPlay (44100.0, 512);
+    auto& controller = processor.getGraphEditController();
+    REQUIRE (controller.setGraph (graph).success);
+
+    const auto& ports = controller.getPortMultiplicity();
+
+    REQUIRE (ports.count ("alloc") == 1);
+    REQUIRE (ports.at ("alloc").count ("gate") == 1);
+    CHECK (ports.at ("alloc").at ("gate").kind == "poly");
+    CHECK (ports.at ("alloc").at ("gate").originId == "alloc");
+
+    REQUIRE (ports.count ("osc") == 1);
+    REQUIRE (ports.at ("osc").count ("out") == 1);
+    CHECK (ports.at ("osc").at ("out").kind == "poly");
+    CHECK (ports.at ("osc").at ("out").originId == "alloc");
+
+    REQUIRE (ports.count ("masterout") == 1);
+    CHECK (ports.at ("masterout").at ("in").kind == "scalar");
+    CHECK (ports.at ("masterout").at ("in").originId.isEmpty());
+
+    // instance.sum: "in" reduces this origin's Poly signal; "out" is
+    // ordinary Scalar - the one real mixed-per-port shape (§2.4).
+    REQUIRE (ports.count ("sum") == 1);
+    CHECK (ports.at ("sum").at ("in").kind == "poly");
+    CHECK (ports.at ("sum").at ("in").originId == "alloc");
+    CHECK (ports.at ("sum").at ("out").kind == "scalar");
+
+    const auto& badges = controller.getOriginBundleIndices();
+    REQUIRE (badges.count ("alloc") == 1);
+    CHECK (badges.at ("alloc") == 0); // the only origin on a fresh processor lands in slot 0
+}
+
+TEST_CASE ("A recompile enforces instance.allocate.voice.maxInstances for real, and the live badge "
+           "numbers follow real voice activity - wiki/plans/DomainRedesign.md Batch 4",
+           "[plugin][DomainRedesign][GraphEditController]")
+{
+    NodeGraph graph;
+    graph.addNode ({ "noteIn", "io.noteIn", {}, {}, {} });
+    graph.addNode ({ "alloc", "instance.allocate.voice", {}, { { "instance.allocate.voice.maxInstances", 2.0f } }, {} });
+    graph.addNode ({ "osc", "osc.analog", {}, {}, {} });
+    graph.addNode ({ "masterout", "io.output", {}, {}, {} });
+    graph.addConnection ({ "noteIn", "notes", "alloc", "spawn" });
+    graph.addConnection ({ "alloc", "pitch", "osc", "pitch" });
+    graph.addConnection ({ "osc", "out", "masterout", "in" });
+    graph.setOutput ("masterout", "out");
+
+    BazaltAudioProcessor processor;
+    processor.prepareToPlay (44100.0, 512);
+    REQUIRE (processor.getGraphEditController().setGraph (graph).success);
+
+    REQUIRE (processor.isOriginBundleActive (0));
+    CHECK (processor.getOriginMaxVoices (0) == 2); // enforced, not just declared
+    CHECK (processor.getOriginActiveVoiceCount (0) == 0);
+
+    juce::AudioBuffer<float> buffer (2, 512);
+    juce::MidiBuffer chord;
+    chord.addEvent (juce::MidiMessage::noteOn (1, 60, (juce::uint8) 100), 0);
+    chord.addEvent (juce::MidiMessage::noteOn (1, 64, (juce::uint8) 100), 0);
+    chord.addEvent (juce::MidiMessage::noteOn (1, 67, (juce::uint8) 100), 0); // a 3rd note - steals, never a 3rd real lane
+    processor.processBlock (buffer, chord);
+
+    CHECK (processor.getOriginActiveVoiceCount (0) == 2); // never past the enforced ceiling
+}
