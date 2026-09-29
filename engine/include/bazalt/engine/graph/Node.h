@@ -279,7 +279,15 @@ namespace bazalt::engine
 
         /** M18 (ADR-0024) — only meaningful for a node with a connected
             output port of `SignalType::Note`. Called once per block-rate
-            schedule step, immediately before `processBlock()`, filling
+            schedule step, immediately AFTER `processBlock()` (corrected —
+            this comment said "before" until the Note Stream follow-up
+            session that added `note.assemble`; `ExecutionPlan.cpp`'s own
+            call site has always had it the other way round, which is
+            exactly what lets a node mix ordinary Event/Control inputs with
+            a Note output: `processBlock()` reads this block's ordinary
+            inputs and updates this node's own held-note state, THEN this
+            method reads that freshly-updated state — zero added latency,
+            not the one-block delay "before" would have implied), filling
             `output[0..numSamples)` with this node's per-sample Note state.
             Must not allocate, lock, log, or block, exactly like
             `processSample()`/`processBlock()`.

@@ -527,8 +527,19 @@ namespace bazalt
         std::unique_ptr<bazalt::engine::ExecutionPlan> newGlobalPlan;
         if (split.hasGlobalDomain)
         {
+            // Real, found-live bug (direct feedback: "moving a node's
+            // position restarts the whole sound"): unlike the per-voice
+            // compile above, this call never passed `previousPlan` at all -
+            // every global-domain node (everything from instance.mix
+            // onward: pan, output, any post-mix effect) got a completely
+            // fresh Node instance on EVERY recompile, discarding whatever
+            // state it held, on every single edit including a plain move.
+            // The per-voice loop above already gets this right; this branch
+            // just never had its own matching peekCurrentPlan() call.
+            const auto* previousGlobalPlan = processor.getGlobalPlanSwapper().peekCurrentPlan();
+
             auto globalCompileResult = bazalt::engine::GraphCompiler::compile (
-                split.globalGraph, factory, prepareInfo, nextGeneration());
+                split.globalGraph, factory, prepareInfo, nextGeneration(), previousGlobalPlan);
 
             if (! globalCompileResult.success)
                 return { false, globalCompileResult.errorMessage };

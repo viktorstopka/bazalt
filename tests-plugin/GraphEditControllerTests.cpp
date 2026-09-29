@@ -388,6 +388,32 @@ TEST_CASE ("moveNode updates position without disturbing the node's DSP object i
     CHECK_FALSE (controller.moveNode ("nonexistent", 0.0f, 0.0f).success);
 }
 
+TEST_CASE ("moveNode preserves a GLOBAL-domain node's DSP object identity too, not just a voice-domain one",
+           "[plugin][GraphEditController][InstanceAllocator]")
+{
+    // Direct feedback: "moving a node's position restarts the whole
+    // sound" - real, and specifically about the global domain (everything
+    // from instance.mix onward: the Init Patch's own "pan"/"masterOut").
+    // The sibling test above already covers a voice-domain node via
+    // buildVoiceProofGraph(), which has no instance.mix/global domain at
+    // all (hasGlobalDomain is false there) - this is the case it can't
+    // reach.
+    BazaltAudioProcessor processor;
+    processor.prepareToPlay (44100.0, 512);
+
+    auto& controller = processor.getGraphEditController();
+    REQUIRE (controller.setGraph (bazalt::engine::buildInitPatchGraph()).success);
+
+    auto* before = processor.getGlobalPlanSwapper().peekCurrentPlan()->getNodeById ("pan");
+    REQUIRE (before != nullptr);
+
+    REQUIRE (controller.moveNode ("pan", 111.0f, 222.0f).success);
+    CHECK (controller.getGraph().findNode ("pan")->position.x == 111.0f);
+
+    auto* after = processor.getGlobalPlanSwapper().peekCurrentPlan()->getNodeById ("pan");
+    CHECK (after == before);
+}
+
 TEST_CASE ("setProperty writes into NodeInstance::properties and round-trips through a snapshot",
            "[plugin][GraphEditController][M19]")
 {

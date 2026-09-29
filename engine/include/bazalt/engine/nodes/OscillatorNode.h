@@ -89,7 +89,21 @@ namespace bazalt::engine::nodes
         */
         std::vector<PreviewDescriptor> getPreviews() const override
         {
-            return { PreviewDescriptor { .kind = PreviewKind::Waveform, .portId = "out" } };
+            // Direct feedback: the struct default (50ms, PreviewDescriptor.h)
+            // packs ~22 cycles of this node's own 440Hz default into the
+            // node-card preview's 128 buckets - under 6 buckets per cycle,
+            // visibly faceted rather than a smooth wave, and cramped enough
+            // to read as "squashed" on top of that. 15ms shows a handful of
+            // cycles (~7 at 440Hz) with real resolution to draw each one
+            // with (~18 buckets/cycle) - short enough that a sub-audio-rate
+            // use (an LFO wired through this oscillator instead of `lfo.shape`,
+            // which doesn't exist yet) will show mostly a flat/slow line
+            // rather than a cycle, but that's an inherent trade-off of any
+            // one fixed window for a node whose actual rate isn't known
+            // ahead of time - this node's own doc comment already frames it
+            // as the audio-rate oscillator, so audio-rate is what its own
+            // preview is tuned for.
+            return { PreviewDescriptor { .kind = PreviewKind::Waveform, .portId = "out", .timeWindowSeconds = 0.015f } };
         }
 
         std::vector<ParameterDescriptor> getParameters() const override

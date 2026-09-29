@@ -311,8 +311,8 @@
 .node-preview-placeholder {
   display: block;
   width: 100%;
-  height: 32px;
-  min-width: 70px;
+  height: 48px;
+  min-width: 150px;
   background: var(--color-panel);
   -webkit-user-drag: none;
 }
@@ -321,12 +321,22 @@
    same as the placeholder it replaces so a node's layout doesn't shift
    when its preview kind gains a real producer. Also used standalone
    (StandardBody's own previews[] rows), where it gets full card width
-   instead of the horizontal variant's centre column. */
+   instead of the horizontal variant's centre column.
+
+   Bumped from 32px/70px (direct feedback: "extremely pixelated," "very
+   squashed" — a ~190px-wide Standard node card at only 32px tall gave a
+   real waveform very little vertical range to swing in, so most buckets'
+   min/max span collapsed to a couple of pixels). height:48px/min-width:150px
+   is a deliberately modest bump ("a bit wider," not full horizontal-viewer
+   size) - `.node-preview-canvas`'s own `min-width` can grow an inline-flex
+   `.node-card` past its default 190px floor (nothing else constrains the
+   card's width to less), so this also does what was asked for the
+   horizontal stretch, not just the height. */
 .node-preview-canvas {
   display: block;
   width: 100%;
-  height: 32px;
-  min-width: 70px;
+  height: 48px;
+  min-width: 150px;
 }
 
 /* Singleton layout variant: title only, typed cable stub each side,

@@ -1251,3 +1251,70 @@ NODES.System.md` §4's matrix (three new/revised `Audio -> Control` rows). `wiki
 NODES.Status.md` (`math.*`/`logic.*`/`adapt.*` 21/21 → 22/22, totals recomputed
 68→69 Implemented, 125→126 total). `archive_docs/decisions/0019-adapter-table.md`'s
 new Amendment.
+
+---
+
+# `note.assemble` — the Note Stream follow-up — done
+
+Not part of the `0.x` arc or either dated arc above — a direct design session on the
+Note Stream family's own remaining gaps (three concrete "I can't do X" reports) named
+`note.assemble` as the single highest-leverage node missing, and it was built on the
+spot rather than waiting for its originally-planned slot (`wiki/NODES.Status.md`'s
+own "Analysis+Assemble" batch, behind `analysis.pitch`).
+
+**The diagnosis, for the record:** every other `note.*` node only reshapes a `Note`
+stream that already exists (`io.noteIn`, real host MIDI, was the only thing that could
+ever produce one). Two of the three reported gaps turned out to already have a real
+answer with existing ✅ nodes, just undiscoverable: scale-quantizing a plain Control
+signal works today via `data.lookup` (mode Nearest, polarity Bipolar) fed straight from
+`data.scale`, and a fully custom scale (mixolydian ♭6, anything) works today by feeding
+`data.lookup` a hand-drawn `data.table` curve instead of `data.scale` — `data.lookup`
+already accepts either tag. The third — no way to synthesize a `Note` from clock/
+random/data primitives at all — was real, and `note.assemble` is the fix.
+
+**New node: `note.assemble`** (`NoteAssembleNode.h`) — turns a plain `trigger` Event +
+a tracked `pitch` into a real `Note` stream. Zero `Note` inputs, one `Note` output —
+comfortably inside the existing one-`Note`-port-per-node engine limit, no redesign
+needed. Own design decisions: `trigger` retriggers legato even while already held (no
+forced stop first, matching `IoNoteInNode`'s own MIDI convention); `pitch` tracks
+continuously while held (vibrato/bend, or an algorithmically modulated pitch);
+`velocity` is captured once at the trigger instant; a note ends on explicit `release`
+OR `confidence` dropping below `confidenceGate` (the audio-pitch-tracking case, which
+has no discrete note-off of its own) — with neither wired, `confidence`'s own
+unconnected fallback (1.0) never drops, so a purely generative patch holds the note
+until an explicit `release`, ordinary MIDI semantics, no invented auto-timeout.
+
+**A real, previously-latent doc bug found while implementing this**: `Node.h`'s own
+`produceNoteBlock()` doc comment said it runs "immediately before `processBlock()`" —
+backwards. `ExecutionPlan.cpp`'s actual call site has always run it AFTER, which is
+exactly what makes a node like this one possible: `processBlock()` reads this block's
+ordinary Event/Control inputs and updates held-note state, then `produceNoteBlock()`
+(right after, same block) reads that freshly-updated state — zero added latency, not
+the one-block delay "before" would have implied. Comment corrected in place.
+
+**A real bug this session's own history had already named once, hit again**: the
+first test run hung silently with no crash and no output — this codebase's own
+recurring MSVC-Debug-STL failure mode (an invisible modal assertion dialog blocking on
+user input the terminal never shows, first documented in the Note Stream batch's own
+entry above). Root cause this time: the test helper never called `NoteAssembleNode::
+prepare()` before `processBlock()`, so its preallocated scratch buffer (sized in
+`prepare()`, CLAUDE.md rule 2) was still empty — an out-of-bounds `vector::operator[]`.
+Caught by noticing ctest's own retry behavior kept spawning fresh hung `EngineTests.exe`
+processes each pointed at the next `NoteAssembleNode` test case, one per test, rather
+than by any visible error text. Fixed in the test helper, once, for every case using it.
+
+**Tests:** `tests/NoteStreamNodesTests.cpp` gained 7 new cases — 6 direct-node
+(start/stop semantics, legato retrigger, continuous-pitch/captured-velocity, the
+confidenceGate suppression, the confidence-drop auto-release, and the fully-generative
+nothing-wired case) plus one real compiled-graph integration test (`clock.pulse`'s own
+tick driving `note.assemble`, read back through `note.value`). `tests/
+NodeDescriptorTests.cpp`'s registered-type count updated 73 → 74.
+
+**Verified:** `EngineTests.exe` 365 test cases / 2,005,079 assertions, all green.
+`PluginTests.exe` 89 test cases / 60,287 assertions, all green (454 combined). Standalone
+app rebuilt and relaunched.
+
+**Docs updated to match:** `wiki/NODES.md` (`note.assemble`'s own entry, the `note.*`
+family's "7 of 10 built" count, the "52 of 126 catalog-only" header count). `wiki/
+NODES.Status.md` (`note.*` section, the Analysis batch's row, the Hex Guitar Front End
+dependency row, totals recomputed 69→70 Implemented, 53→52 to build, A-tier 8→7).

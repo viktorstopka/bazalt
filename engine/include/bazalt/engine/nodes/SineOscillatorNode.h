@@ -86,7 +86,13 @@ namespace bazalt::engine::nodes
 
         std::vector<PreviewDescriptor> getPreviews() const override
         {
-            return { PreviewDescriptor { .kind = PreviewKind::Waveform, .portId = "out" } };
+            // Same reasoning as OscillatorNode.h's own comment on this: the
+            // struct default (50ms) packs far too many cycles of a typical
+            // audio-rate tone into the node-card preview's 128 buckets to
+            // read as a smooth wave. 15ms is tuned for this node's own
+            // stated purpose (audio-rate FM/modal-excitation primitive, this
+            // file's own top comment) rather than a sub-audio LFO use.
+            return { PreviewDescriptor { .kind = PreviewKind::Waveform, .portId = "out", .timeWindowSeconds = 0.015f } };
         }
 
         void setParameter (const juce::String& parameterId, float value) override

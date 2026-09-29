@@ -19,8 +19,9 @@ import type { PreviewDescriptor } from '../graph/descriptorTypes'
 import { subscribeNodePreview, unsubscribeNodePreview, tapNameForPreview, frameTypeForPreviewKind } from '../graph/previewSubscriptions'
 import { getInterpolatedTap } from '../telemetry/telemetryClient'
 import { registerPreviewRenderer, unregisterPreviewRenderer } from '../analysis/previewRenderLoop'
-import { drawScope, drawSpectrum, drawMeter } from '../analysis/telemetryDraw'
+import { drawScopeFilled, drawSpectrum, drawMeter } from '../analysis/telemetryDraw'
 import { tokens } from '../theme/tokens'
+import { getCamera } from '../canvas/interactionStore'
 
 interface NodePreviewProps {
   nodeId: string
@@ -73,13 +74,33 @@ export function NodePreview({ nodeId, preview }: NodePreviewProps) {
     const tap = tapNameForPreview(nodeId, preview.portId)
 
     const render = () => {
-      const dpr = window.devicePixelRatio || 1
+      // This canvas is an ordinary child of InfiniteCanvas.tsx's "world" DOM
+      // layer, which gets `scale(camera.zoom)` applied to it as a plain CSS
+      // transform (InfiniteCanvas.tsx's own frame()) - a transform runs AFTER
+      // layout, so clientWidth/clientHeight (and the backing-store size we'd
+      // size from them) never reflect it. Sized from devicePixelRatio alone,
+      // the canvas keeps rasterizing at its zoom=1 resolution forever, and
+      // zooming in just has the browser stretch that fixed bitmap - the exact
+      // "still pixelated after zooming" InfiniteCanvas.tsx's own `will-change`
+      // comment already names for the DOM layer generally, just not fixable
+      // there since vector DOM content (borders/text) doesn't have this
+      // problem in the first place. A `<canvas>` genuinely is a fixed-
+      // resolution bitmap, so it needs the zoom folded into its own backing-
+      // store size instead. `Math.max(zoom, 1)` never asks for LESS than the
+      // zoom=1 baseline (a preview drawn zoomed out is already smaller
+      // on-screen than its natural size - nothing to compensate for there),
+      // and keeps this correct even where `getCamera()`'s singleton zoom
+      // isn't meaningful (the M9 Component Gallery, which doesn't live
+      // inside the zoomable "world" layer at all).
+      const dpr = (window.devicePixelRatio || 1) * Math.max(getCamera().zoom, 1)
       const width = canvas.clientWidth
       const height = canvas.clientHeight
       if (width === 0 || height === 0) return
-      if (canvas.width !== width * dpr || canvas.height !== height * dpr) {
-        canvas.width = width * dpr
-        canvas.height = height * dpr
+      const targetWidth = Math.round(width * dpr)
+      const targetHeight = Math.round(height * dpr)
+      if (canvas.width !== targetWidth || canvas.height !== targetHeight) {
+        canvas.width = targetWidth
+        canvas.height = targetHeight
       }
 
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
@@ -88,7 +109,7 @@ export function NodePreview({ nodeId, preview }: NodePreviewProps) {
 
       const tapData = getInterpolatedTap(tap, frameType)
       if (tapData) {
-        if (preview.kind === 'waveform') drawScope(ctx, width, height, tapData.payload)
+        if (preview.kind === 'waveform') drawScopeFilled(ctx, width, height, tapData.payload)
         else if (preview.kind === 'spectrum') drawSpectrum(ctx, width, height, tapData.payload)
         else if (preview.kind === 'meter') drawMeter(ctx, width, height, tapData.payload)
       }

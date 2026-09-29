@@ -589,11 +589,14 @@ TEST_CASE ("A viewer placed with saved parameters starts with them, and a previe
     CHECK (scope.scopeWindowSeconds == Catch::Approx (0.005f));
     CHECK (scope.scopeTrigger == bazalt::engine::ScopeTriggerMode::RisingEdge);
 
-    // osc.analog declares a Waveform preview with the default 50 ms window;
-    // before ADR-0029 that number was descriptive only.
+    // osc.analog declares a Waveform preview with its own explicit 15ms
+    // window (OscillatorNode.h - narrowed from the struct default 50ms:
+    // direct feedback that the default packed too many cycles of a typical
+    // audio-rate tone into the node-card preview's 128 buckets to read as a
+    // smooth wave); before ADR-0029 that number was descriptive only.
     BazaltAudioProcessor voiceProcessor;
     voiceProcessor.prepareToPlay (44100.0, 512);
     REQUIRE (voiceProcessor.getGraphEditController().setGraph (bazalt::engine::buildVoiceProofGraph()).success);
     REQUIRE (voiceProcessor.subscribeVisualizationTap ("osc", "out", bazalt::engine::PreviewKind::Waveform));
-    CHECK (settingsOf (voiceProcessor, tapFor (voiceProcessor, "osc", "out")).scopeWindowSeconds == Catch::Approx (0.05f));
+    CHECK (settingsOf (voiceProcessor, tapFor (voiceProcessor, "osc", "out")).scopeWindowSeconds == Catch::Approx (0.015f));
 }

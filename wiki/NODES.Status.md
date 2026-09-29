@@ -189,7 +189,7 @@ rather than waiting; every `factory.*` node still does want the real thing.
 | `seq.euclid` | Implemented | Standard Bjorklund-equivalent onset formula; `rotate` real. |
 | `seq.steps` | MVP | Two real, documented deviations from spec: no `Data(curve)` input (nothing in the engine produces `Data` yet — see the cross-cutting note above), and `length` capped at 16 instead of the catalog's 64 (trivial to raise later; these are plain numbered parameters, not a wire-format array size). Real per-step content editing belongs on `NodeContent` (§3) once that exists. |
 
-### `note.*` — the note stream — 10 to build (none started)
+### `note.*` — the note stream — 3 to build (all blocked on the same engine limit)
 
 Whole family is essential per the catalog's own framing: *"what makes arpeggios,
 chords, scales, and audio-driven instruments ordinary patching rather than built-in
@@ -205,6 +205,17 @@ redesign closed that one, see its own row below). Deferred rather than forced th
 with a compromised, misleading shape — a real design for multi-note `Note` signals is
 separate, larger engine work. Full reasoning in `wiki/MILESTONES.md`'s own entry.
 
+**`note.assemble` follow-up — done, out of its originally planned order.** Direct
+feedback on this family's own remaining gaps (not this file's own roadmap) named it as
+the single highest-leverage node missing — the one thing that can PRODUCE a `Note`
+stream from scratch, where every other node here only reshapes one that already
+exists. Built ahead of the **Analysis+Assemble** batch below (its planned batch-mate,
+`analysis.pitch`, is still 📋) — deliberately: this node accepts any `pitch [audio]`
+source, not only a pitch tracker's, so a `clock.*`/`random.*`/`data.lookup` chain can
+already drive it today with no analysis nodes involved at all. It'll gain its other
+intended use (an audio input playable as an instrument) once `analysis.pitch`/
+`analysis.onset` land — see that batch's own updated row.
+
 | Node | Status | Notes |
 |---|---|---|
 | `note.gate` | Implemented | `count` (not elaborated by the catalog) is this node's own design: a running tally of note-ons since reset. |
@@ -213,13 +224,13 @@ separate, larger engine work. Full reasoning in `wiki/MILESTONES.md`'s own entry
 | `note.filter` | Implemented | **Redesigned** from the catalog's literal `pass`/`reject` (two `Note` outputs) to one `Note` output + a plain `inRange` Boolean — see the batch note above. |
 | `note.humanize` | Implemented | Timing jitter via a small scheduled countdown (sufficient — the stream is monophonic), capped at 50ms; only note-on is jittered, not note-off. |
 | `note.quantize` | Implemented | The flagship Data Foundations consumer — real, tested `data.scale → note.quantize` round trip. `root` is a second, independent knob from `data.scale`'s own root (post-quantization offset, not a duplicate). |
+| `note.assemble` | Implemented | The one node that PRODUCES a `Note` stream. `trigger` retriggers legato (no forced stop first); `pitch` tracked continuously while held; `velocity` captured once at trigger; a note ends on explicit `release` OR `confidence` dropping below `confidenceGate` — neither wired (plain generative use) means it holds until an explicit `release`, ordinary MIDI semantics. |
 
 | Node | Status | Necessity | Batch | Notes |
 |---|---|---|---|---|
 | `note.hold` | To be implemented | **A2** | *(blocked)* | Real engine limit, not just unbuilt — needs a multi-note `Note` signal the engine can't represent yet (see the batch note above). |
 | `note.select` | To be implemented | **A2** | *(blocked)* | Same real engine limit as `note.hold` — pairs with `clock.counter` once buildable. |
 | `note.chord` | To be implemented | **A2** | *(blocked)* | Same real engine limit — needs to emit several simultaneous notes from one input note. |
-| `note.assemble` | To be implemented | **A2** | Analysis+Assemble | Needs a tracked pitch — genuinely useful once `analysis.pitch` exists, though it'll accept any `pitch [audio]` source. |
 
 ### `math.*` / `logic.*` / `adapt.*` — 22/22 Implemented
 
@@ -311,12 +322,12 @@ building for real, not simplified.
 
 | Status | Count |
 |---|---|
-| Implemented | 69 |
+| Implemented | 70 |
 | MVP | 4 (`osc.analog`, `filter.svf`, `excite.burst`, `seq.steps`) |
-| To be implemented | 53 |
+| To be implemented | 52 |
 | **Total native node types** | **126** |
 
-By necessity, among the 53 still to build: **A** 8 · **B** 30 · **C** 9 · **D** 6.
+By necessity, among the 52 still to build: **A** 7 · **B** 30 · **C** 9 · **D** 6.
 
 **Clock+Seq batch — done.** `clock.pulse`/`clock.divide`/`clock.counter`/`seq.euclid`/
 `seq.steps` all built and tested — see their family sections above for per-node notes;
@@ -382,7 +393,7 @@ but sit at the top of the recommended order below because `note.quantize` (A),
 | **Shaping** | `shape.clip`, `shape.rectify`, `shape.crush`, `shape.waveshaper`, `shape.fold` | All single-in/single-out nonlinear audio shapers — one shared distortion-test harness. |
 | **Space** | `space.diffuser`, `space.reverb` | Spatial effects; diffuser reuses `filter.allpass`. |
 | **Env/LFO Shapes** | `env.curve`, `lfo.shape` | Both are "`Data(curve)`-driven modulation source" nodes — same dependency, same shape. |
-| **Analysis+Assemble** | `analysis.level`, `analysis.onset`, `analysis.centroid`, `analysis.pitch`, `note.assemble`, `data.analyseModes` | Audio-input analysis nodes tested together; `note.assemble` is the capstone consuming `analysis.pitch`'s output. |
+| **Analysis** | `analysis.level`, `analysis.onset`, `analysis.centroid`, `analysis.pitch`, `data.analyseModes` | Audio-input analysis nodes tested together; `note.assemble` (its originally-planned capstone) is already built — this batch's job now is just feeding it a real tracked pitch instead of an algorithmic one. |
 | **EQ/Curve Data** | `data.record`, `data.eqToCurve` | Small utility `Data` producers, low mutual dependency but similar scope/size. |
 | **Factories** | `factory.material`, `factory.curve`, `factory.eq`, `factory.wave`, `factory.sample`, `factory.notes` | Share the Content/custom-editor infrastructure — build as one wave once that infra exists. |
 
@@ -409,17 +420,22 @@ matters more than the letter for a couple of "C" items:
    really was the pathfinder — the whole `Data`-publishing pipeline
    (`Node::getDataPublisher()`/`setDataInput()`, `GraphCompiler.cpp`'s Data-connection
    branch) exists because of this step, not the other way around.
-3. ~~**Note Stream**~~ — **done, 6 of 9.** `note.gate`/`note.value`/`note.transpose`/
-   `note.filter`/`note.humanize`/`note.quantize` all built and tested
-   (`tests/NoteStreamNodesTests.cpp`, 17 cases). Unblocked by step 2's `data.scale` as
-   planned — `note.quantize` is real, tested, and genuinely reads a live `data.scale`
-   buffer. **A real finding, not in the original plan**: `note.hold`/`note.select`/
-   `note.chord` hit a previously-unexercised engine limit (one `Note` input/output per
-   node, max — `ExecutionPlan::BlockStep`'s own fixed shape) that the catalog's literal
-   `note.filter` also hit (two `Note` outputs) — `note.filter` got a clean one-output
-   redesign; the other three were deferred outright rather than forced through with a
-   misleading shape. A real design for multi-note `Note` signals is separate, larger
-   engine work, not scoped here.
+3. ~~**Note Stream**~~ — **done, 6 of 9, plus its `note.assemble` follow-up.**
+   `note.gate`/`note.value`/`note.transpose`/`note.filter`/`note.humanize`/
+   `note.quantize` all built and tested (`tests/NoteStreamNodesTests.cpp`, 17 cases).
+   Unblocked by step 2's `data.scale` as planned — `note.quantize` is real, tested, and
+   genuinely reads a live `data.scale` buffer. **A real finding, not in the original
+   plan**: `note.hold`/`note.select`/`note.chord` hit a previously-unexercised engine
+   limit (one `Note` input/output per node, max — `ExecutionPlan::BlockStep`'s own
+   fixed shape) that the catalog's literal `note.filter` also hit (two `Note` outputs)
+   — `note.filter` got a clean one-output redesign; the other three were deferred
+   outright rather than forced through with a misleading shape. A real design for
+   multi-note `Note` signals is separate, larger engine work, not scoped here.
+   **`note.assemble`** — originally step 10's own capstone, moved up and built here
+   instead on direct feedback identifying it as the single highest-leverage gap in the
+   whole family (the only node that can PRODUCE a `Note` stream from scratch); it
+   doesn't actually need `analysis.pitch` to be useful (accepts any `pitch [audio]`),
+   so building it out of order cost nothing.
 4. **Domain Extensions** (`instance.allocate.swarmPopulation`/`swarmTransient`/
    `trigger`) — reuses proven `instance.allocate.voice` machinery; unlocks the Water/
    Cicada Field/percussive-one-shot stock groups.
@@ -435,9 +451,10 @@ matters more than the letter for a couple of "C" items:
    builds on PM Core's resonators, unlocks Bowed String / Breath-Wind.
 9. **Sampler** (`data.load` + `sampler.player`) — real file-format work, best done
    once the Data pipeline (step 2) is already proven.
-10. **Analysis+Assemble** — `analysis.level`/`onset`/`centroid` first (cheaper),
-    `analysis.pitch` next, `note.assemble` last as the capstone tying note-stream +
-    analysis together; `data.analyseModes` fits here too (shares the FFT work).
+10. **Analysis** — `analysis.level`/`onset`/`centroid` first (cheaper), `analysis.pitch`
+    next; `note.assemble`, its originally-planned capstone, is already built (step 3) —
+    this batch's remaining job is giving it a real tracked pitch to consume instead of
+    an algorithmic one. `data.analyseModes` fits here too (shares the FFT work).
 11. **Space** (`space.diffuser` → `space.reverb`) and **Env/LFO Shapes** (`env.curve`,
     `lfo.shape`) — round out modulation/effects once their `Data(curve)` dependency
     (step 2) is real.
@@ -481,5 +498,5 @@ not with the A/B/C/D/Batch treatment above.
 | **Breath / Wind** | 📋 | `excite.breath`, `resonator.tube` (PM Friction/Breath), `env.curve`. |
 | **Bowed String** | 📋 | `excite.stickSlip`, `resonator.string` (PM Friction/Breath + PM Core). |
 | **Struck Body** | 📋 | `excite.mallet`, `resonator.plate`/`modal` (PM Core). |
-| **Hex Guitar Front End** | 📋 | `analysis.onset`, `analysis.pitch` (Analysis+Assemble), `note.assemble`. |
+| **Hex Guitar Front End** | 📋 | `analysis.onset`, `analysis.pitch` (Analysis batch) — `note.assemble` itself is now Implemented. |
 | **Voiced self-oscillation (cat purr)** | 📋 | The entire PM Voice batch, plus `env.curve`/`random.drift`/`lfo.shape`/`mix.crossfade` (all either Implemented or earlier batches). Hardest reference patch in the catalog. |

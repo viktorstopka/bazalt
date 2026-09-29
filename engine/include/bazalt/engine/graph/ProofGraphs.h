@@ -72,6 +72,7 @@
 #include "bazalt/engine/nodes/NoteTransposeNode.h"
 #include "bazalt/engine/nodes/NoteFilterNode.h"
 #include "bazalt/engine/nodes/NoteHumanizeNode.h"
+#include "bazalt/engine/nodes/NoteAssembleNode.h"
 #include "bazalt/engine/nodes/NoteQuantizeNode.h"
 
 namespace bazalt::engine
@@ -173,6 +174,10 @@ namespace bazalt::engine
         factory.registerType ("note.transpose", [] { return std::make_unique<nodes::NoteTransposeNode>(); });
         factory.registerType ("note.filter", [] { return std::make_unique<nodes::NoteFilterNode>(); });
         factory.registerType ("note.humanize", [] { return std::make_unique<nodes::NoteHumanizeNode>(); });
+        // Note Stream follow-up (direct feedback: "no way to create a Note
+        // from scratch") — the one node in the family that PRODUCES a Note
+        // stream rather than reshaping an existing one.
+        factory.registerType ("note.assemble", [] { return std::make_unique<nodes::NoteAssembleNode>(); });
         factory.registerType ("note.quantize", [] { return std::make_unique<nodes::NoteQuantizeNode>(); });
         return factory;
     }

@@ -410,15 +410,24 @@ function ParameterRow({
 }
 
 /** The small before-the-title marker (see tokens.ts's domainVoice/
-    domainGlobal comment for why this and not a border/glow) — omitted
-    entirely for 'mono' or unset, so a graph with no allocator/instance.mix
-    yet (most graphs, most of the time) and the M9 gallery both render
-    exactly as before, no dot at all.
+    domainGlobal/domainMono comment for why this and not a border/glow).
+    Renders for all three real domains, including 'mono' — direct feedback:
+    hiding it for mono (every node, in most graphs, before an allocator is
+    even placed) read as the indicator not being live from the start, not as
+    "nothing to report." Still omitted for `undefined` (no live compile has
+    classified this node yet — a node not yet part of any successful
+    compile, or the M9 gallery's own static cards, which never have a real
+    domain in the first place).
 */
 function DomainDot({ domain }: { domain?: 'voice' | 'global' | 'mono' }) {
-  if (domain !== 'voice' && domain !== 'global') return null
-  const color = domain === 'voice' ? tokens.color.domainVoice : tokens.color.domainGlobal
-  const label = domain === 'voice' ? 'Voice domain — runs once per active voice' : 'Global domain — runs once, always'
+  if (domain === undefined) return null
+  const color = domain === 'voice' ? tokens.color.domainVoice : domain === 'global' ? tokens.color.domainGlobal : tokens.color.domainMono
+  const label =
+    domain === 'voice'
+      ? 'Voice domain — runs once per active voice'
+      : domain === 'global'
+        ? 'Global domain — runs once, always'
+        : 'Mono domain — plain audio-effect graph, no voice allocation'
   return <span className="node-domain-dot" style={{ background: color }} title={label} />
 }
 

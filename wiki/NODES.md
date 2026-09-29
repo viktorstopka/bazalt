@@ -16,9 +16,10 @@ implemented.
 **✅ Implemented** — real, registered, in `engine/include/bazalt/engine/nodes/`.
 **🚧 Partial** — implemented but narrower than this spec (the gap is named).
 **📋 Catalog only** — specified here, not built yet. Most of the catalog is this today
-— **53 of the 126 node types below are catalog-only** (down from 67 before the
-Clock+Seq batch, 62 before the Data Foundations batch, 59 before the Note Stream batch
-— `wiki/NODES.Status.md` tracks the build order for what's left; `adapt.audioToControl`,
+— **52 of the 126 node types below are catalog-only** (down from 67 before the
+Clock+Seq batch, 62 before the Data Foundations batch, 59 before the Note Stream batch,
+53 before the `note.assemble` follow-up — `wiki/NODES.Status.md` tracks the build order
+for what's left; `adapt.audioToControl`,
 added whole by the Audio → Control Bridge, wiki/plans/AudioControlBridge.md, is the one
 node in this file that was never catalog-only at all, real from its first commit).
 Don't assume a node works in the running app because it's in this file; check the
@@ -57,7 +58,7 @@ are telemetry outputs for live visualization, not ports.
 | `random.*` | stepped, drift | ✅ both |
 | `clock.*` | pulse, divide, counter | ✅ all 3 |
 | `seq.*` | steps, euclid | ✅ euclid — 🚧 steps |
-| `note.*` | gate, value, quantize, transpose, chord, hold, select, humanize, filter, assemble | ✅ gate, value, quantize, transpose, humanize, filter — 📋 chord, hold, select (real engine limit — see the `note.filter`/`note.hold` entries below), assemble |
+| `note.*` | gate, value, quantize, transpose, chord, hold, select, humanize, filter, assemble | ✅ gate, value, quantize, transpose, humanize, filter, assemble — 📋 chord, hold, select (real engine limit — see the `note.filter`/`note.hold` entries below) |
 | `math.*` | add, subtract, multiply, divide, abs, clamp, minmax, power, round, modulo, slew | ✅ all 11 |
 | `logic.*` | boolean, not, compare, toggle, select | ✅ all 5 |
 | `adapt.*` | map, remap, normalise, threshold, sampleHold, **audioToControl** (new, AudioControlBridge) | ✅ all 6 |
@@ -354,9 +355,15 @@ polyrhythms depending on `rotate`. **In:** `tick : Event`; `steps`; `pulses`; `r
 ## note — the note stream
 
 This family is what makes arpeggios, chords, scales, and audio-driven instruments
-ordinary patching rather than built-in features. **6 of 10 built (Note Stream batch);
-`note.chord`/`note.hold`/`note.select` deliberately deferred, `note.assemble` still
-M25 scope** — see the shared engine-limit note below.
+ordinary patching rather than built-in features. **7 of 10 built (Note Stream batch +
+the `note.assemble` follow-up); `note.chord`/`note.hold`/`note.select` deliberately
+deferred** — see the shared engine-limit note below. `note.assemble` is the ONE node
+in the family that PRODUCES a `Note` stream from scratch rather than reshaping one
+that already exists — before it, `io.noteIn` (real host MIDI) was the only way a
+`Note` signal could ever originate; direct feedback (a design session on this
+family's own gaps) named it as the single highest-leverage thing missing, since
+nothing else lets a `clock.*`/`random.*`/`data.lookup` chain — or a future
+`analysis.pitch`/`analysis.onset` pair — ever become a playable voice.
 
 **A real, previously-unexercised engine limit this batch was the first to hit**:
 `ExecutionPlan::BlockStep` has exactly one `noteInputBufferIndex`/`noteOutputBufferIndex`
@@ -410,8 +417,11 @@ and pitch, so a mechanically perfect sequence doesn't sound like one. **In:** `n
 Gates a note stream by pitch and/or velocity range — a keyboard split or
 velocity gate. **In:** `notes`; `lowPitch`/`highPitch`; `lowVelocity`/`highVelocity`. **Out (catalog):** `pass`/`reject` — `Note`. **Out (real today):** `notes` — `Note` (engine port id `notesOut`; the note verbatim when in range, fully suppressed — gate false, no start/stop — when out of range) plus `inRange` — `Boolean`, carrying the pass/reject decision as an ordinary signal. Captures the real, useful behaviour (a keyboard split, a velocity gate) without pretending the engine can carry two simultaneous `Note` streams off one node today.
 
-#### `note.assemble` — Assemble Note 📋
-**In:** `trigger : Event`; `release : Event` (optional); `pitch [audio]`; `velocity`; `confidence`; `confidenceGate`. **Out:** `notes` — `Note`. **Behavior:** turns detected events + a tracked pitch into a real note stream — what makes an audio input playable as an instrument.
+#### `note.assemble` — Assemble Note ✅ *(new — the Note Stream follow-up, direct feedback's own top pick)*
+Turns a plain trigger + a tracked pitch into a real `Note` stream from scratch —
+what makes an audio input playable as an instrument, and equally what lets a
+`clock.*`/`random.*`/`data.lookup` chain drive a synth voice with no MIDI involved
+at all. **In:** `trigger : Event`; `release : Event` (optional); `pitch [audio]`; `velocity`; `confidence`; `confidenceGate`. **Out:** `notes` — `Note`. **Behavior — this node's own concrete design** (the catalog names the ports, not their exact contract): `trigger` always starts a note, even mid-hold (a legato retrigger, no forced note-off first — the same convention `io.noteIn`'s own MIDI handling already uses), suppressed when `confidence < confidenceGate` so a low-confidence pitch-tracker reading can't spawn a bogus note. `pitch` is tracked continuously while held (vibrato/bend, or an algorithmically modulated pitch), `velocity` is captured once at the trigger instant. A note ends on an explicit `release`, or — since a monophonic pitch tracker has no discrete note-off of its own — automatically once `confidence` drops back below `confidenceGate`; with neither wired (the plain generative case), `confidence`'s own unconnected fallback (1.0) never drops, so the note holds until an explicit `release` — ordinary MIDI semantics, no invented auto-timeout.
 
 ## math — all ✅
 

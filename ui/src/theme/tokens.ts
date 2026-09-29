@@ -80,10 +80,17 @@ export const tokens = {
     // matches `textSecondary`'s value on purpose (the mundane, "just runs
     // once" side, no separate token needed for the colour itself, but kept
     // named for what it means here rather than reading as a random reuse).
-    // Mono-only graphs (no allocator, no instance.mix — most graphs before
-    // a voice/global split is even meaningful) show no dot at all.
+    // Mono-only graphs (no allocator, no instance.mix) used to show no dot
+    // at all here — direct feedback reversed that: showing nothing for the
+    // first, most common case read as the indicator not being live yet
+    // ("only appearing once you add a Voice node... they should be there
+    // from the start"), not as "nothing to report." `domainMono` is its own
+    // distinct, deliberately quiet tone — neither `domainGlobal`'s grey nor
+    // `domainVoice`'s green, so all three domains stay visually distinct
+    // rather than mono silently reusing one of the other two's meaning.
     domainVoice: '#4ade80',
     domainGlobal: '#9a9ca3',
+    domainMono: '#5f6672',
   },
   font: {
     // Design reference's specified face (loaded via Google Fonts in
