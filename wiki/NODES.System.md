@@ -245,7 +245,10 @@ should close.
 | `Boolean` | `Boolean` | Ok | — | ✅ |
 | `Control` | `Event` | NeedsAdapters | `adapt.threshold`, rising edge at 50% of range | ✅ |
 | `Event` | `Control` | — | catalog names `env.adsr`(trigger-fed)/`adapt.sampleHold`("Latch") as the manual pattern | ❌ not auto-inserted |
-| `Audio` | `Control` | — | catalog names `env.follower` | ❌ not auto-inserted — today this is a straight `reject` unless placed by hand |
+| `Audio` (mono) | `Control` (`Unipolar`/`Bipolar`/`Dimensionless`) | NeedsAdapters | `adapt.audioToControl` — reads the waveform's instantaneous value, scaled by `depth` | ✅ (`wiki/plans/AudioControlBridge.md`) |
+| `Audio` (mono) | `Control` (real quantity, e.g. `Frequency`) | NeedsAdapters | `adapt.audioToControl` → `adapt.map` (two-adapter chain, `adapt.map` seeded from the destination's range) | ✅ |
+| `Audio` (stereo) | `Control` | Reject | "Stereo source into a Control-typed port needs mix.downmix first" — a 3-adapter chain (downmix + bridge + map) would exceed the two-adapter ceiling, so this stays manual | ✅ (deliberate v1 scope limit, not a gap) |
+| `Audio` | `Control` (amplitude-tracking, not raw waveform) | — | `env.follower` (rectify + independent attack/release smoothing) is a DIFFERENT job from the row above — "how loud is this, smoothed" vs. "use the instantaneous waveform as a modulator" — and stays hand-placed only, on purpose: auto-inserting it on a bare wire-drag would silently defeat audio-rate FM/ring-mod, which needs the raw value `adapt.audioToControl` preserves. `archive_docs/decisions/0019-adapter-table.md`'s Amendment (0.x arc) has the full reasoning for why this revises the ADR's original M20 plan rather than fulfilling it. | ❌ not auto-inserted, deliberately — `env.follower` itself is real (✅), just never auto-spliced |
 | `Note` | `Event` | — | catalog names a `note.gate`-style "Note gate" adapter | ❌ `note.gate` itself isn't built yet (M25) |
 | `Note` | `Control` | — | catalog names via `instance.allocate.voice`'s own outputs, or `note.value` | ❌ `note.value` isn't built yet (M25); the instance.allocate.voice path is real but isn't a `canConnect` adapter — it's just wiring its own output ports |
 | `Data` (tag X) | `Data` (accepts tag X) | Ok | — | ✅ |

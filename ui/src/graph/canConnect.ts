@@ -98,6 +98,23 @@ export function canConnectPorts(from: PortDescriptor, to: PortDescriptor): CanCo
     return needsAdapters('A Control signal into an Event-typed port needs a Threshold')
   }
 
+  // Audio -> Control Bridge (wiki/plans/AudioControlBridge.md). Auto-inserts
+  // adapt.audioToControl (Bipolar), followed by adapt.map when the
+  // destination is a real-quantity port — mirrors CanConnect.cpp's own
+  // branch exactly. This deliberately overrides ADR-0019's original text,
+  // which named env.follower as the eventual target for this pair — see
+  // that plan's §5 and the CanConnect.cpp comment for why.
+  if (from.type === 'audio' && to.type === 'control') {
+    if (from.channels === 'stereo') {
+      return reject('Stereo source into a Control-typed port needs mix.downmix first')
+    }
+    return needsAdapters(
+      isRealQuantity(to.quantity)
+        ? 'Raw audio into a real-quantity port needs Audio to Modulation, then Map'
+        : 'A raw audio signal into a modulation port needs Audio to Modulation',
+    )
+  }
+
   return reject('Incompatible signal types with no adapter available yet')
 }
 

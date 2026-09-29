@@ -162,6 +162,48 @@ namespace bazalt::engine
             return needsAdapter (step, "A Control signal into an Event-typed port needs a Threshold");
         }
 
+        // Audio -> Control Bridge (wiki/plans/AudioControlBridge.md). This
+        // deliberately revises ADR-0019's original text (which named
+        // `env.follower` as the eventual auto-insert target for this pair,
+        // a wave that was never executed) — `env.follower` throws away the
+        // waveform on purpose and stays real, correct, and hand-placed only
+        // for sidechain/ducking-style patches; auto-inserting it here would
+        // silently defeat the actual motivating use case (FM/ring-mod/
+        // audio-rate parameter modulation, where the instantaneous waveform
+        // value IS the modulator). See the plan's §5 for the full reasoning
+        // and archive_docs/decisions/0019-adapter-table.md's Amendment.
+        if (from.type == SignalType::Audio && to.type == SignalType::Control)
+        {
+            // Stereo stays a hard reject in v1 (plan §6) — a stereo source
+            // into a real-quantity Control port would need mix.downmix +
+            // adapt.audioToControl + adapt.map, three adapters deep, over
+            // this codebase's own "at most two, or reject" ceiling
+            // (wiki/NODES.System.md §4).
+            if (from.channels == Channels::Stereo)
+                return reject ("Stereo source into a Control-typed port needs mix.downmix first");
+
+            AdapterStep first { "adapt.audioToControl", "in" };
+
+            if (isRealQuantity (to.quantity))
+            {
+                // Two-step chain: cross the type wall (Bipolar), then
+                // rescale into the destination's real quantity — mirrors
+                // connectControl()'s own Unipolar/Bipolar -> real-quantity
+                // case above, just reached from Audio instead of from an
+                // existing Control source.
+                AdapterStep second { "adapt.map", "in" };
+                second.seedFromDestinationRange = true;
+
+                CanConnectResult result;
+                result.outcome = ConnectionOutcome::NeedsAdapters;
+                result.adapterChain = { first, second };
+                result.reason = "Raw audio into a real-quantity port needs Audio to Modulation, then Map";
+                return result;
+            }
+
+            return needsAdapter (first, "A raw audio signal into a modulation port needs Audio to Modulation");
+        }
+
         return reject ("Incompatible signal types with no adapter available yet");
     }
 }

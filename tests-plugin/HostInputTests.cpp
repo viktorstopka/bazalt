@@ -478,6 +478,10 @@ TEST_CASE ("Switching between a mono graph and a voice graph and back leaves bot
     BazaltAudioProcessor processor;
     processor.prepareToPlay (44100.0, 512);
     auto& controller = processor.getGraphEditController();
+    // 0.x arc, 2026-09-29: the constructor default is a plain master-out-only
+    // graph now - start from a real voice graph explicitly instead of relying
+    // on the default having an instance.allocate.voice.
+    REQUIRE (controller.setGraph (bazalt::engine::buildVoiceProofGraph()).success);
 
     auto rmsAfterNote = [&]
     {
@@ -492,7 +496,7 @@ TEST_CASE ("Switching between a mono graph and a voice graph and back leaves bot
         return std::sqrt (sumSquares / 512.0);
     };
 
-    // The default graph has an instance.allocate.voice: a note makes sound.
+    // A voice graph with an instance.allocate.voice: a note makes sound.
     CHECK (rmsAfterNote() > 0.001);
 
     // Into a mono graph: audio passes, and a note plays nothing extra.

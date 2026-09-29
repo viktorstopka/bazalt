@@ -1121,3 +1121,133 @@ currently built runs into" it). `wiki/NODES.Status.md`: the 6 nodes moved into t
 marked done, and the Scale Quantize/Arpeggiator/Chord stock-group appendix rows updated
 (Scale Quantize is now genuinely buildable; Arpeggiator/Chord are explicitly blocked,
 not just "next").
+
+---
+
+## `09-29-DefaultGraph.1` — plain master-out-only default, and Standalone's mute-input default flipped off — done
+
+Two small, unrelated fixes made together on the user's own explicit instruction, not
+discovered by testing.
+
+**Default graph:** `GraphEditController`'s constructor default was the M22 Init Patch
+(a fully-wired two-oscillator subtractive synth) — a fresh instance now opens on
+`ProofGraphs.h::buildMasterOutOnlyGraph()` instead: one unconnected `io.output` node,
+silent until something's patched into it. `buildInitPatchGraph()` and
+`buildVoiceProofGraph()` are both untouched and stay registered/tested — neither is
+anyone's default now, same relationship the M2 proof graph already had after M22
+demoted it. This had a wider test blast radius than it looked: **13** individual
+test cases across 5 files (`InitPatchTests.cpp`, `VoiceRenderTests.cpp`,
+`HostInputTests.cpp`, `VisualizationTapTests.cpp`, `GraphEditControllerTests.cpp`)
+implicitly relied on
+a bare `BazaltAudioProcessor`'s default graph being playable (real audio from a
+note-on, an `"allocator"` node existing, etc.) without ever calling `setGraph()`
+explicitly — each now sets `buildVoiceProofGraph()`/`buildInitPatchGraph()` up front,
+same discipline CLAUDE.md's own note already asked for. `InitPatchTests.cpp` also
+gained a new first test proving the actual new default (one node, genuinely silent).
+
+**Standalone mute-input default:** JUCE's stock Standalone app
+(`juce_audio_plugin_client_Standalone.cpp` → `StandaloneFilterApp`) hardcodes "mute
+audio input to avoid a feedback loop" ON on a fresh settings file — a literal `true`
+buried in vendored JUCE (`build/_deps`, re-fetched, not ours to edit), hit constantly
+since CLAUDE.md's own testing rule is "always build+launch the Standalone app."
+Fixed via JUCE's own sanctioned escape hatch: `JUCE_USE_CUSTOM_PLUGIN_STANDALONE_APP=1`
+(`plugin/CMakeLists.txt`) plus a new `plugin/source/StandaloneApp.cpp` — a near-verbatim
+copy of the stock class (which is `final`, so can't be subclassed) that seeds
+`shouldMuteInput = false` into the settings file once, only when no prior choice is
+recorded, before JUCE ever reads it. Purely a changed *default*: a user's own later
+toggle of the app's own "Feedback Loop" checkbox is read normally afterwards and never
+overwritten here.
+
+**Tests:** no new test files; 9 existing plugin tests updated (see above) plus one new
+case in `InitPatchTests.cpp`.
+
+**Verified:** built and tested together with the Audio → Control Bridge batch below,
+not as a separate isolated run — see that entry's own Verified section for the actual
+numbers (446/446). The first combined `ctest` run after both batches landed caught
+all 9 of this batch's default-graph test fixes as real failures (proving they'd
+actually been relying on the old default, not a defensive rewrite done on guesswork)
+alongside the one real bug the other batch found; every one of those 10 failures is
+individually accounted for across this entry and the next. Standalone app rebuilt,
+launched via its own custom entry point, confirmed running (no immediate crash) and
+closed cleanly — the "mute input" checkbox's own visual state is the user's own next
+confirmation step, same computer-use caveat every entry in this file already carries.
+
+**Docs updated to match:** `CLAUDE.md`'s "A fresh plugin instance opens on the Init
+Patch" claim, corrected to describe the new default and point at both demoted graphs.
+
+---
+
+# Audio → Control Bridge — `wiki/plans/AudioControlBridge.md`, implemented — done
+
+Not part of the `0.x` arc or either dated arc above — a standing **plan**
+(`wiki/plans/AudioControlBridge.md`, written 2026-09-28) picked up and built whole on
+the user's own explicit instruction ("better to have it now, rather than later").
+Full design reasoning lives in the plan itself; this entry is the build record.
+
+**New node: `adapt.audioToControl`** ("To Modulation", `AudioToControlNode.h`) — reads
+a raw waveform's instantaneous per-sample value and hands it out as an ordinary
+Bipolar Control signal scaled by `depth` (`hasFallbackWhenUnconnected`, default 1.0 —
+the same "unpatched is just as loud as before" contract `mix.gain.gain` established).
+Deliberately not `env.follower`: that node rectifies and smooths on purpose, exactly
+wrong for the motivating use case (FM/ring-mod/audio-rate parameter modulation, where
+the instantaneous waveform value IS the modulator).
+
+**`CanConnect.cpp`:** a new `Audio -> Control` branch — mono sources auto-insert
+`adapt.audioToControl` alone (destination is a modulation-range quantity) or chained
+into `adapt.map` (destination is a real quantity, e.g. `Frequency`), seeded from the
+destination's own range exactly like every other `seedFromDestinationRange` step. This
+is the first genuinely 2-adapter chain `CanConnect.cpp` has ever assembled and had
+actually spliced+compiled end to end (the earlier "two real quantities" case collapsed
+to one node, `adapt.remap`, per ADR-0019's M20 amendment, so the 2-step splicing path
+in `connectWithAutoAdapt` had never really been exercised before this). A stereo
+source stays a hard `Reject` ("insert `mix.downmix` first") — a 3-adapter chain would
+exceed this codebase's own two-adapter ceiling. `ui/src/graph/canConnect.ts` mirrors
+the same rule for live wire-drag prediction.
+
+**This revises ADR-0019**, not fulfils it: the ADR's original M16 text named
+`env.follower` as the eventual auto-insert target for `Audio -> Control`, a wave that
+was never executed. Auto-inserting `env.follower` on a bare wire-drag would have
+silently defeated the actual motivating use case, so `archive_docs/decisions/
+0019-adapter-table.md` gained a new Amendment section recording the revision and why,
+matching the M20 amendment already living in that same file — `env.follower` itself is
+untouched, still real, correct, and hand-placed only for amplitude/sidechain tracking.
+
+**A real, previously latent bug found and fixed along the way:** `adapt.map`'s own
+"in" port was hardcoded `Quantity::Unipolar`, so `CanConnect.cpp`'s own already-written
+"Unipolar/Bipolar -> real quantity via Map" rule (M16) had been silently dead code for
+the Bipolar half specifically ever since — a genuinely Bipolar source (`random.stepped`/
+`random.drift`, or this bridge) spliced into `adapt.map.in` was rejected outright by
+`GraphCompiler`'s own re-validation of the actual compiled graph, since nothing had
+ever exercised that exact path end to end before this bridge did. Fixed by making
+`adapt.map`'s "in" polymorphic on quantity (`PortPolymorphism::Quantity`, the same
+mechanism `adapt.sampleHold` already uses) — Unipolar by default, adopting Bipolar
+when that's genuinely what's wired, with `processSample()` rescaling −1…1 into 0…1
+first in that case rather than clamping the whole negative half away.
+
+**Tests:**
+- `tests/CanConnectTests.cpp` — the new pure-function rule (1-step, 2-step, stereo
+  reject), plus the heterogeneous-pairs catch-all test repointed at `Note -> Control`
+  (the pair it originally exercised, `Audio -> Control`, is no longer a bare reject).
+- `tests/UtilityNodeTests.cpp` — `MapNode`'s new polymorphism/Bipolar-rescale behaviour.
+- `tests/AudioControlBridgeTests.cpp` (new) — `AudioToControlNode` unit behaviour
+  (depth scaling, unconnected-depth fallback, clamping) plus two real compiled-graph
+  integration tests: a raw waveform driving another oscillator's `phaseMod` through
+  the bridge produces genuine, measurable audio-rate phase modulation (compared
+  sample-for-sample against an independently-computed unmodulated reference), and
+  `depth` genuinely scales that effect (depth=0 is bit-identical to a plain sine).
+- `tests-plugin/ConnectWithAutoAdaptTests.cpp` — real end-to-end auto-insertion: the
+  1-step case, the 2-step case (with seeding verified), and the stereo reject.
+- `tests/NodeDescriptorTests.cpp` — registered-type count updated 72 → 73.
+
+**Verified:** `EngineTests.exe` 358 test cases / 2,005,036 assertions, all green.
+`ctest` (engine+plugin combined) 446/446 green. UI `npm run build` clean (`canConnect.ts`
+mirror). Standalone app rebuilt, launched, confirmed running, and closed cleanly.
+
+**Docs updated to match:** `wiki/NODES.md` (`adapt.audioToControl`'s own entry,
+`env.follower`'s entry cross-referencing it, `adapt.map`'s entry noting the Bipolar
+fix, the family status table, and the "53 of 126 catalog-only" header count — this is
+the one node in the whole catalog that was never catalog-only, added whole). `wiki/
+NODES.System.md` §4's matrix (three new/revised `Audio -> Control` rows). `wiki/
+NODES.Status.md` (`math.*`/`logic.*`/`adapt.*` 21/21 → 22/22, totals recomputed
+68→69 Implemented, 125→126 total). `archive_docs/decisions/0019-adapter-table.md`'s
+new Amendment.

@@ -125,6 +125,9 @@ TEST_CASE ("subscribeVisualizationTap on instance.allocate.voice's pitch output 
     // actually follows the most-recently-triggered voice, not a fixed one.
     BazaltAudioProcessor processor;
     processor.prepareToPlay (44100.0, 512);
+    // 0.x arc, 2026-09-29: the constructor default is a plain master-out-only
+    // graph now, with no "allocator" node - set a real voice graph explicitly.
+    REQUIRE (processor.getGraphEditController().setGraph (bazalt::engine::buildVoiceProofGraph()).success);
 
     REQUIRE (processor.subscribeVisualizationTap ("allocator", "pitch", bazalt::engine::PreviewKind::Waveform));
 
@@ -154,6 +157,7 @@ TEST_CASE ("unsubscribeVisualizationTap stops a voice-domain tap from receiving 
 {
     BazaltAudioProcessor processor;
     processor.prepareToPlay (44100.0, 512);
+    REQUIRE (processor.getGraphEditController().setGraph (bazalt::engine::buildVoiceProofGraph()).success);
 
     REQUIRE (processor.subscribeVisualizationTap ("allocator", "pitch", bazalt::engine::PreviewKind::Waveform));
     auto* tap = processor.getTelemetryHub().subscribeTap ("node:allocator:pitch");

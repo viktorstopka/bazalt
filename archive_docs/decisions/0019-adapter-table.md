@@ -60,3 +60,36 @@ Follower, Sample & Hold, Note gate/value — the later waves above); this partic
 turn out to need it. `Dimensionless` stays an unconditional free pass (no adapter, no rescaling) —
 whether *that* should also start requiring a remap when ranges differ is a separate, larger question,
 not decided here.
+
+## Amendment (0.x arc, 2026-09-29) — `Audio` → `Control` ships via a new node, not `Envelope follower`
+This ADR's original Decision text (above) named `Envelope follower` as the eventual auto-insert
+target for `Audio` → `Control` (M20's wave). That wave was never executed — `Audio` → `Control`
+stayed a straight `Reject` from M16 all the way through the 0.x gap-fixing arc, with `env.follower`
+built (M20-era work, unrelated to this ADR) but never wired into `canConnect` at all. Picking this
+back up (`wiki/plans/AudioControlBridge.md`, written from a direct conversation about audio-rate
+modulation) surfaced a real problem with the original plan: `env.follower` rectifies and smooths by
+design (independent attack/release ballistics) — exactly right for amplitude/sidechain-style tracking,
+exactly wrong for FM/ring-mod/audio-rate parameter modulation, where the point is to use the source
+waveform's *instantaneous* value as the modulator. Auto-inserting `env.follower` on a bare wire-drag
+would have silently defeated that entire use case — dragging an oscillator into a filter's cutoff to
+get FM-through-the-filter would silently become a smoothed envelope-follow instead of the raw waveform
+being reached for.
+
+This revises the original decision rather than fulfilling it: `canConnect` now auto-inserts a new,
+purpose-built node, `adapt.audioToControl` ("To Modulation") — mechanical and opinion-free like every
+other adapter this ADR governs (Map, Normalise, Threshold, Remap), never a creative DSP choice. It
+reads the source waveform's per-sample value, scales it by a `depth` parameter
+(`hasFallbackWhenUnconnected`, default 1.0 — full-strength passthrough, the same "unpatched is just as
+loud as before" contract `mix.gain.gain` established), and clamps the result into the canonical
+Bipolar range. When the destination is a real-quantity port, this is step one of the two-adapter chain
+this ADR's own ceiling already allows: `adapt.audioToControl` → `adapt.map`, the latter seeded from
+the destination's range exactly like every other `seedFromDestinationRange` step. A stereo source into
+a Control-typed port stays a hard `Reject` — `mix.downmix` + this node + `Map` would be three adapters
+deep, over the two-adapter ceiling, so it's built by hand instead, same posture stereo→mono held before
+the real stereo-cable redesign.
+
+`env.follower` itself is untouched by this amendment — real, correct, and still hand-placed only for
+amplitude/sidechain-style tracking. The two nodes now coexist permanently, answering genuinely
+different questions ("how loud is this, smoothed" vs. "use the actual waveform"); neither is a
+superseded or interim form of the other. `wiki/NODES.System.md` §4's matrix and `wiki/NODES.md`'s
+`adapt.audioToControl`/`env.follower` entries carry the day-to-day version of this same reasoning.

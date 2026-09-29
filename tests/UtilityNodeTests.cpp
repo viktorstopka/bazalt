@@ -57,6 +57,55 @@ TEST_CASE ("MapNode remaps a 0..1 input onto its min/max range, clamped", "[engi
     CHECK (mapOf (2.0f) == 8000.0f); // clamped
 }
 
+TEST_CASE ("MapNode's 'in' is polymorphic on quantity: Unipolar by default, Bipolar once resolved that way",
+           "[engine][nodes][util][AudioControlBridge]")
+{
+    // wiki/plans/AudioControlBridge.md: adapt.audioToControl's Bipolar
+    // output first caught this - CanConnect.cpp's own "Unipolar/Bipolar ->
+    // real quantity via Map" rule (M16) was silently dead for the Bipolar
+    // half until this fix, since a Bipolar source rejected outright at
+    // GraphCompiler's real re-validation of adapt.map's own "in" port.
+    MapNode node;
+    CHECK (node.hasPolymorphicPorts());
+    node.setParameter ("adapt.map.min", 0.0f);
+    node.setParameter ("adapt.map.max", 100.0f);
+
+    // Default (nothing has resolved it yet): Unipolar, unchanged behaviour.
+    REQUIRE (node.getInputPorts()[0].quantity == Quantity::Unipolar);
+    float out = 0.0f;
+    float in = -1.0f;
+    node.processSample (&in, &out);
+    CHECK (out == 0.0f); // clamped as Unipolar: -1 -> 0
+
+    // Resolved from a Bipolar source: adopts Bipolar, and rescales -1..1
+    // into 0..1 BEFORE applying min/max, instead of clamping the whole
+    // negative half away.
+    PortDescriptor bipolarSource { "out", SignalType::Control };
+    bipolarSource.quantity = Quantity::Bipolar;
+    node.resolveIncomingPort ("in", bipolarSource);
+    REQUIRE (node.getInputPorts()[0].quantity == Quantity::Bipolar);
+
+    in = -1.0f;
+    node.processSample (&in, &out);
+    CHECK (out == 0.0f); // -1 -> 0..1's 0 -> min
+
+    in = 0.0f;
+    node.processSample (&in, &out);
+    CHECK (out == 50.0f); // 0 -> 0..1's 0.5 -> midpoint
+
+    in = 1.0f;
+    node.processSample (&in, &out);
+    CHECK (out == 100.0f); // +1 -> 0..1's 1 -> max
+
+    // A source of any other SignalType (never actually reachable through a
+    // real compiled graph - canConnect only lets Control feed this port at
+    // all - but resolveIncomingPort must still ignore it defensively) leaves
+    // the already-resolved quantity untouched.
+    PortDescriptor audioSource { "out", SignalType::Audio };
+    node.resolveIncomingPort ("in", audioSource);
+    CHECK (node.getInputPorts()[0].quantity == Quantity::Bipolar);
+}
+
 TEST_CASE ("MapNode's input declares Quantity::Unipolar, so a raw real-unit value can't feed it unadapted",
            "[engine][nodes][util][CanConnect]")
 {

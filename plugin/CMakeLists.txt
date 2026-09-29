@@ -32,6 +32,7 @@ target_sources(BazaltPlugin
         source/MacroParameters.cpp
         source/GraphEditController.cpp
         source/NodeDescriptorJson.cpp
+        source/StandaloneApp.cpp
 )
 
 target_compile_definitions(BazaltPlugin
@@ -45,6 +46,11 @@ target_compile_definitions(BazaltPlugin
         # provider. See ARCHITECTURE.md §7 — full binary-embedded release
         # assets are a follow-up (tracked for M5), this is the interim path.
         BAZALT_UI_DEV_SERVER_URL="http://localhost:5173"
+        # Standalone only (JucePlugin_Build_Standalone-guarded): use our own
+        # source/StandaloneApp.cpp instead of JUCE's stock Standalone app, so
+        # we can default "mute input to avoid feedback loop" OFF instead of
+        # JUCE's hardcoded-on default — see that file's own comment.
+        JUCE_USE_CUSTOM_PLUGIN_STANDALONE_APP=1
 )
 
 target_link_libraries(BazaltPlugin

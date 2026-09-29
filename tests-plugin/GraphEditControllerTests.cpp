@@ -151,6 +151,9 @@ TEST_CASE ("An invalid command is rejected and leaves the graph and compiled aud
     processor.prepareToPlay (44100.0, 512);
 
     auto& controller = processor.getGraphEditController();
+    // 0.x arc, 2026-09-29: the constructor default is a plain master-out-only
+    // graph now, not this test's own "osc"/"amp" shape — set explicitly.
+    REQUIRE (controller.setGraph (bazalt::engine::buildVoiceProofGraph()).success);
     const auto nodesBefore = controller.getGraph().getNodes().size();
     const auto connectionsBefore = controller.getGraph().getConnections().size();
 
@@ -570,8 +573,11 @@ TEST_CASE ("getNodeDomains() classifies every node as voice/global/mono after a 
     processor.prepareToPlay (44100.0, 512);
     auto& controller = processor.getGraphEditController();
 
-    // Fresh mono graph (the default Init Patch's own allocator + instance.mix
-    // -> everything should read "voice" or "global" once it's compiled).
+    // The Init Patch (no longer the constructor default since the 0.x arc's
+    // master-out-only default, 2026-09-29 - set explicitly here instead):
+    // its allocator + instance.mix -> everything should read "voice" or
+    // "global" once it's compiled.
+    REQUIRE (controller.setGraph (bazalt::engine::buildInitPatchGraph()).success);
     REQUIRE (controller.getNodeDomains().count ("allocator") == 1);
     CHECK (controller.getNodeDomains().at ("allocator") == "voice");
     REQUIRE (controller.getNodeDomains().count ("voiceMix") == 1);

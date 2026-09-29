@@ -32,13 +32,17 @@ and M12/M13 (interaction polish, assist menu) are still open UI milestones.
 (from M21, deliberately deferred, ADR-0015 still Proposed) is the only
 thing still open in the whole M21+M22 node-batch arc — see MILESTONES.md's
 M21/M22 sections. Each milestone must build, pass its tests, and be
-committed before the next one starts. **A fresh plugin instance now opens
-playing the Init Patch** (`GraphEditController`'s constructor default,
-`ProofGraphs.h::buildInitPatchGraph()`) — the old M2 proof graph
-(`buildVoiceProofGraph()`) stays registered and tested, just isn't the
-default anymore; don't assume test code that constructs a bare
-`BazaltAudioProcessor` is exercising the simple 6-node chain without
-checking whether it calls `setGraph()` explicitly.
+committed before the next one starts. **A fresh plugin instance opens on a
+plain master-out-only graph** (`GraphEditController`'s constructor default,
+`ProofGraphs.h::buildMasterOutOnlyGraph()`) — one unconnected `io.output`
+node, silent until the user patches something into it. This replaced the
+Init Patch as the default on 2026-09-29, on the user's own explicit
+instruction ("instead of the initial patch, make a simple master out node
+the initial patch"). Both `buildInitPatchGraph()` (M22's real subtractive
+synth) and the old M2 proof graph (`buildVoiceProofGraph()`) stay registered
+and tested, just aren't the default; don't assume test code that constructs
+a bare `BazaltAudioProcessor` is exercising either one without checking
+whether it calls `setGraph()` explicitly.
 
 **A parallel `wiki/` gap-fixing arc (milestones `0.x`) started after M22** —
 hands-on testing of the running app surfaced real node-design and UI/

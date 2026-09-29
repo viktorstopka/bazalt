@@ -1,10 +1,16 @@
-// M22 wave 6: the Init Patch is now GraphEditController's constructor
-// default - a fresh instance opens already playing it. This is the real
-// proof it's playable: real MIDI through the real BazaltAudioProcessor,
-// the project's established, reliable way to verify "does it sound right"
-// (VoiceRenderTests.cpp's own approach, not GUI automation).
+// M22 wave 6 originally made the Init Patch GraphEditController's
+// constructor default. The 0.x arc replaced that default with a plain
+// master-out-only graph (2026-09-29, on the user's own explicit
+// instruction - GraphEditController.cpp's own comment has the reasoning),
+// so this file now covers two separate things: the real, current default
+// (the first test case), and the Init Patch's own playability, which still
+// matters and is still exercised the same way (real MIDI through the real
+// BazaltAudioProcessor, VoiceRenderTests.cpp's established approach) - just
+// via an explicit setGraph() now, the same pattern buildVoiceProofGraph()
+// already used even back when it was the demoted default.
 #include <catch2/catch_test_macros.hpp>
 #include "PluginProcessor.h"
+#include "bazalt/engine/graph/ProofGraphs.h"
 #include "bazalt/engine/RtAllocationTrap.h"
 #include <cmath>
 
@@ -22,19 +28,29 @@ namespace
     }
 }
 
-TEST_CASE ("A fresh BazaltAudioProcessor already IS the Init Patch", "[plugin][InitPatch][M22]")
+TEST_CASE ("A fresh BazaltAudioProcessor opens on the plain master-out-only graph, silent",
+           "[plugin][InitPatch]")
 {
     BazaltAudioProcessor processor;
     const auto& graph = processor.getGraphEditController().getGraph();
 
-    for (const auto* id : { "noteIn", "allocator", "osc1", "osc2", "ladder", "ampVCA", "voiceMix", "masterOut" })
-        CHECK (graph.findNode (id) != nullptr);
+    CHECK (graph.getNodes().size() == 1);
+    REQUIRE (graph.findNode ("masterOut") != nullptr);
+
+    processor.prepareToPlay (44100.0, 512);
+    juce::AudioBuffer<float> buffer (2, 512);
+    buffer.clear();
+    juce::MidiBuffer none;
+    processor.processBlock (buffer, none);
+
+    CHECK (rms (buffer, 0) == 0.0f); // nothing wired in - genuinely silent, not just quiet
 }
 
 TEST_CASE ("The Init Patch plays a real, finite, bounded note through real MIDI", "[plugin][InitPatch][M22]")
 {
     BazaltAudioProcessor processor;
     processor.prepareToPlay (44100.0, 512);
+    REQUIRE (processor.getGraphEditController().setGraph (bazalt::engine::buildInitPatchGraph()).success);
 
     juce::MidiBuffer noteOn;
     noteOn.addEvent (juce::MidiMessage::noteOn (1, 60, (juce::uint8) 100), 0);
@@ -67,6 +83,7 @@ TEST_CASE ("The Init Patch releases and falls silent after note-off", "[plugin][
 {
     BazaltAudioProcessor processor;
     processor.prepareToPlay (44100.0, 512);
+    REQUIRE (processor.getGraphEditController().setGraph (bazalt::engine::buildInitPatchGraph()).success);
 
     juce::MidiBuffer noteOn;
     noteOn.addEvent (juce::MidiMessage::noteOn (1, 60, (juce::uint8) 100), 0);
@@ -100,6 +117,7 @@ TEST_CASE ("The Init Patch is genuinely polyphonic: different notes sound differ
 {
     BazaltAudioProcessor processor;
     processor.prepareToPlay (44100.0, 512);
+    REQUIRE (processor.getGraphEditController().setGraph (bazalt::engine::buildInitPatchGraph()).success);
 
     juce::MidiBuffer chord;
     chord.addEvent (juce::MidiMessage::noteOn (1, 48, (juce::uint8) 100), 0);
@@ -122,6 +140,7 @@ TEST_CASE ("The Init Patch is genuinely polyphonic: different notes sound differ
 
     BazaltAudioProcessor single;
     single.prepareToPlay (44100.0, 512);
+    REQUIRE (single.getGraphEditController().setGraph (bazalt::engine::buildInitPatchGraph()).success);
     juce::MidiBuffer oneNote;
     oneNote.addEvent (juce::MidiMessage::noteOn (1, 60, (juce::uint8) 100), 0);
     juce::AudioBuffer<float> singleBuffer (2, 512);
@@ -145,6 +164,7 @@ TEST_CASE ("The Init Patch never allocates on the audio thread, held note includ
 {
     BazaltAudioProcessor processor;
     processor.prepareToPlay (44100.0, 512);
+    REQUIRE (processor.getGraphEditController().setGraph (bazalt::engine::buildInitPatchGraph()).success);
 
     juce::AudioBuffer<float> warmUp (2, 512);
     warmUp.clear();

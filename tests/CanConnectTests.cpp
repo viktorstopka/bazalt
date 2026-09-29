@@ -112,9 +112,48 @@ TEST_CASE ("canConnect: Control into Event needs Threshold, wired into 'by' not 
 TEST_CASE ("canConnect: heterogeneous pairs with no adapter yet are Reject, never a chain that can't be fulfilled",
            "[engine][CanConnect]")
 {
-    // Audio -> Control (Envelope Follower) isn't shipped until M20.
-    const auto result = canConnect (audioPort(), controlPort());
+    // Note -> Control has no adapter of any kind yet.
+    const auto result = canConnect (PortDescriptor { "n", SignalType::Note }, controlPort());
     CHECK (result.outcome == ConnectionOutcome::Reject);
+}
+
+TEST_CASE ("canConnect: mono Audio into a modulation-quantity Control needs Audio to Modulation, one step",
+           "[engine][CanConnect][AudioControlBridge]")
+{
+    const auto result = canConnect (audioPort(), controlPort (Quantity::Bipolar));
+
+    REQUIRE (result.outcome == ConnectionOutcome::NeedsAdapters);
+    REQUIRE (result.adapterChain.size() == 1);
+    CHECK (result.adapterChain[0].typeId == "adapt.audioToControl");
+    CHECK (result.adapterChain[0].inputPortId == "in");
+
+    // Dimensionless behaves the same as an explicit modulation quantity —
+    // one step only, same as connectControl()'s own Dimensionless handling.
+    CHECK (canConnect (audioPort(), controlPort()).outcome == ConnectionOutcome::NeedsAdapters);
+}
+
+TEST_CASE ("canConnect: mono Audio into a real-quantity Control needs Audio to Modulation, then Map",
+           "[engine][CanConnect][AudioControlBridge]")
+{
+    const auto to = controlPort (Quantity::Frequency, 20.0f, 20000.0f);
+    const auto result = canConnect (audioPort(), to);
+
+    REQUIRE (result.outcome == ConnectionOutcome::NeedsAdapters);
+    REQUIRE (result.adapterChain.size() == 2);
+    CHECK (result.adapterChain[0].typeId == "adapt.audioToControl");
+    CHECK (result.adapterChain[1].typeId == "adapt.map");
+    CHECK (result.adapterChain[1].seedFromDestinationRange);
+    CHECK_FALSE (result.adapterChain[1].seedFromSourceRange);
+}
+
+TEST_CASE ("canConnect: stereo Audio into Control is a hard reject, not a 3-step chain",
+           "[engine][CanConnect][AudioControlBridge][channels]")
+{
+    const auto result = canConnect (audioPort (Channels::Stereo), controlPort());
+    CHECK (result.outcome == ConnectionOutcome::Reject);
+
+    const auto realQuantity = canConnect (audioPort (Channels::Stereo), controlPort (Quantity::Frequency, 20.0f, 20000.0f));
+    CHECK (realQuantity.outcome == ConnectionOutcome::Reject);
 }
 
 TEST_CASE ("canConnect: Audio channels, mono->mono, mono->stereo (free), stereo->stereo are Ok",

@@ -221,9 +221,11 @@ separate, larger engine work. Full reasoning in `wiki/MILESTONES.md`'s own entry
 | `note.chord` | To be implemented | **A2** | *(blocked)* | Same real engine limit — needs to emit several simultaneous notes from one input note. |
 | `note.assemble` | To be implemented | **A2** | Analysis+Assemble | Needs a tracked pitch — genuinely useful once `analysis.pitch` exists, though it'll accept any `pitch [audio]` source. |
 
-### `math.*` / `logic.*` / `adapt.*` — 21/21 Implemented
+### `math.*` / `logic.*` / `adapt.*` — 22/22 Implemented
 
-All done — no rows needed.
+All done — no rows needed. `adapt.audioToControl` ("To Modulation") is the newest
+member, added whole by the Audio → Control Bridge (`wiki/plans/AudioControlBridge.md`)
+rather than moved out of the catalog-only backlog — it never was catalog-only.
 
 ### `data.*` — producing and reading buffers — 3 Implemented, 5 to build
 
@@ -309,10 +311,10 @@ building for real, not simplified.
 
 | Status | Count |
 |---|---|
-| Implemented | 68 |
+| Implemented | 69 |
 | MVP | 4 (`osc.analog`, `filter.svf`, `excite.burst`, `seq.steps`) |
 | To be implemented | 53 |
-| **Total native node types** | **125** |
+| **Total native node types** | **126** |
 
 By necessity, among the 53 still to build: **A** 8 · **B** 30 · **C** 9 · **D** 6.
 

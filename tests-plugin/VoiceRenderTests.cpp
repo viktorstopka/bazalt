@@ -23,6 +23,9 @@ TEST_CASE ("A MIDI note-on produces real, finite audio on the main output", "[pl
 {
     BazaltAudioProcessor processor;
     processor.prepareToPlay (44100.0, 512);
+    // 0.x arc, 2026-09-29: the constructor default is a plain master-out-only
+    // graph now, not a playable voice chain - set one explicitly.
+    REQUIRE (processor.getGraphEditController().setGraph (bazalt::engine::buildVoiceProofGraph()).success);
 
     juce::MidiBuffer noteOn;
     noteOn.addEvent (juce::MidiMessage::noteOn (1, 60, (juce::uint8) 100), 0);
@@ -49,6 +52,7 @@ TEST_CASE ("Note-off releases the voice and the signal decays to silence", "[plu
 {
     BazaltAudioProcessor processor;
     processor.prepareToPlay (44100.0, 512);
+    REQUIRE (processor.getGraphEditController().setGraph (bazalt::engine::buildVoiceProofGraph()).success);
 
     juce::AudioBuffer<float> buffer (2, 512);
 
@@ -85,6 +89,7 @@ TEST_CASE ("Different MIDI notes trigger different voices, playable polyphonical
 {
     BazaltAudioProcessor processor;
     processor.prepareToPlay (44100.0, 512);
+    REQUIRE (processor.getGraphEditController().setGraph (bazalt::engine::buildVoiceProofGraph()).success);
 
     juce::AudioBuffer<float> buffer (2, 512);
 
@@ -243,6 +248,7 @@ TEST_CASE ("A pitch-bend message continuously shifts pitch with no special-cased
     // resulting frequency precisely.
     BazaltAudioProcessor processor;
     processor.prepareToPlay (44100.0, 512);
+    REQUIRE (processor.getGraphEditController().setGraph (bazalt::engine::buildVoiceProofGraph()).success);
 
     juce::AudioBuffer<float> buffer (2, 512);
 

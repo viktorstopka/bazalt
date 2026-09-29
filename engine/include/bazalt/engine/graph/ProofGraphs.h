@@ -24,6 +24,7 @@
 #include "bazalt/engine/nodes/OutputNode.h"
 #include "bazalt/engine/nodes/NormaliseNode.h"
 #include "bazalt/engine/nodes/ThresholdNode.h"
+#include "bazalt/engine/nodes/AudioToControlNode.h"
 #include "bazalt/engine/nodes/DownmixNode.h"
 #include "bazalt/engine/nodes/InstanceVoiceNode.h"
 #include "bazalt/engine/nodes/InstanceMixNode.h"
@@ -108,6 +109,9 @@ namespace bazalt::engine
         factory.registerType ("io.output", [] { return std::make_unique<nodes::OutputNode>(); });
         factory.registerType ("adapt.normalise", [] { return std::make_unique<nodes::NormaliseNode>(); });
         factory.registerType ("adapt.threshold", [] { return std::make_unique<nodes::ThresholdNode>(); });
+        // Audio -> Control Bridge (wiki/plans/AudioControlBridge.md) — the
+        // mechanical adapter canConnect auto-inserts for Audio -> Control.
+        factory.registerType ("adapt.audioToControl", [] { return std::make_unique<nodes::AudioToControlNode>(); });
         factory.registerType ("mix.downmix", [] { return std::make_unique<nodes::DownmixNode>(); });
         factory.registerType ("instance.allocate.voice", [] { return std::make_unique<nodes::InstanceVoiceNode>(); }); // 09-28-InstanceAllocator.3 — renamed from "instance.allocator"; 09-29-AddMenu.1 — renamed again from "instance.voice"
         factory.registerType ("instance.mix", [] { return std::make_unique<nodes::InstanceMixNode>(); });
@@ -275,6 +279,30 @@ namespace bazalt::engine
         graph.addConnection ({ "voiceMix", "out", "pan", "in" });
         graph.addConnection ({ "pan", "out", "masterOut", "in" }); // one real stereo cable (wiki/NODES.System.md §9)
 
+        graph.setOutput ("masterOut", "out");
+
+        return graph;
+    }
+
+    /** The current `GraphEditController` constructor default (0.x arc,
+        2026-09-29 — replacing `buildInitPatchGraph()` there, on the user's
+        own explicit instruction: a fresh instance should open on an empty
+        canvas with just a real output to build onto, not a fully-wired
+        subtractive synth in the way). A single `io.output` node, wired to
+        nothing — the minimum graph `NodeGraph::setOutput()` needs a real
+        output port to point at (see `io.output`'s own doc comment on why
+        that port is compiler-only, never a wireable glyph in the editor).
+        Silent until the user patches something into it, deliberately.
+        `buildInitPatchGraph()` itself is untouched and stays registered and
+        tested (`tests/InitPatchTests.cpp`, engine-level) — it's just no
+        longer anyone's default, the same relationship `buildVoiceProofGraph()`
+        already has below since M22.
+    */
+    inline NodeGraph buildMasterOutOnlyGraph()
+    {
+        NodeGraph graph;
+
+        graph.addNode ({ "masterOut", "io.output", { 640.0f, 360.0f }, {}, {} });
         graph.setOutput ("masterOut", "out");
 
         return graph;
