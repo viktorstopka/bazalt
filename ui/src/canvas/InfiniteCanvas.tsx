@@ -45,7 +45,7 @@ const MAX_ZOOM = 8
 const RIGHT_CLICK_MOVE_THRESHOLD = 4 // px — beyond this, a right-button gesture is a pan, not an Add-menu click
 const BOX_SELECT_CLICK_THRESHOLD_PX = 4 // px — beyond this, a background mousedown-then-up is a real (if tiny) box-select drag, not a deselect-click
 const PORT_HOVER_TOLERANCE = 16 // px
-const SPLICE_HOVER_TOLERANCE = 10 // px
+const SPLICE_HOVER_TOLERANCE = 22 // px — bumped from 10 (direct feedback: too easy to miss the cable while placing a node)
 const FIT_VIEW_PADDING = 80 // px
 // Direct feedback: the initial view should just start out a bit more
 // zoomed out than 1:1 — deliberately NOT computed by fitView's own
@@ -582,6 +582,39 @@ export const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, InfiniteCanvasPro
         }
       }
 
+      // Splice-hover hit-test for ghost placement, reusing the same
+      // tessellation the renderer draws with (nodeEditorRenderer.ts export).
+      // Computed BEFORE the main cable list below, same reasoning as the
+      // wire-drag "will replace" hover above — so the targeted wire itself
+      // can be highlighted in the same pass, not just described in a text
+      // hint off to the side (direct feedback: the hint used to be the only
+      // feedback at all, always visible even with nothing nearby to insert
+      // into — see the hint-label block below for the visibility half of
+      // that fix).
+      const currentGhost = getGhost()
+      let ghostSpliceValid = false
+      if (currentGhost) {
+        let nearestWireId: string | null = null
+        let nearestDist = SPLICE_HOVER_TOLERANCE
+        for (const wire of graphNow.wires) {
+          const from = anchors.get(portKey(wire.fromNodeId, wire.fromPortId, 'output'))
+          const to = anchors.get(portKey(wire.toNodeId, wire.toPortId, 'input'))
+          if (!from || !to) continue
+          const points = tessellateCable({ from, to, color: [0, 0, 0], alpha: 1, dashed: false })
+          for (let i = 0; i < points.length - 1; i++) {
+            const d = distanceToSegment({ x: lastMouseCanvasX, y: lastMouseCanvasY }, points[i], points[i + 1])
+            if (d < nearestDist) {
+              nearestDist = d
+              nearestWireId = wire.id
+            }
+          }
+        }
+        ghostSpliceHoverWireId = nearestWireId
+        ghostSpliceValid = nearestWireId ? canSplice(nearestWireId, currentGhost.typeId) : false
+      } else {
+        ghostSpliceHoverWireId = null
+      }
+
       const cables: CableSpec[] = []
       for (const wire of graphNow.wires) {
         if (wire.id === (g?.kind === 'wireDrag' ? g.detachedWireId : undefined)) continue
@@ -593,8 +626,20 @@ export const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, InfiniteCanvasPro
         // committed drop would remove fades rather than looking identical
         // to any other settled wire — ADR-0010 governs the drag-preview
         // cable's own colouring, this only dims the about-to-change one.
-        const alpha = wire.id === replacingWireId ? 0.35 : 1
-        cables.push({ from, to, color: endpointColorRgb(endpoint), alpha, dashed: false })
+        let alpha = wire.id === replacingWireId ? 0.35 : 1
+        let color = endpointColorRgb(endpoint)
+        let dashed = false
+        // Splice-target feedback: the exact wire a placed node would insert
+        // into (or, if its type can't splice here, would leave alone) is
+        // now visibly distinct on the canvas itself, not just named in the
+        // floating hint label — same accent/error vocabulary ADR-0010
+        // already uses for wire-drag hover.
+        if (wire.id === ghostSpliceHoverWireId) {
+          color = ghostSpliceValid ? hexToRgb(tokens.color.accent) : hexToRgb(tokens.color.error)
+          alpha = 1
+          dashed = !ghostSpliceValid
+        }
+        cables.push({ from, to, color, alpha, dashed })
       }
 
       if (g?.kind === 'wireDrag') {
@@ -624,48 +669,37 @@ export const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, InfiniteCanvasPro
 
       renderer?.render({ cssWidth: size.cssWidth, cssHeight: size.cssHeight, dpr: size.dpr, zoom: camera.zoom, cables })
 
-      // Splice-hover hit-test for ghost placement, reusing the same
-      // tessellation the renderer draws with (nodeEditorRenderer.ts export).
-      const currentGhost = getGhost()
       if (currentGhost) {
-        let nearestWireId: string | null = null
-        let nearestDist = SPLICE_HOVER_TOLERANCE
-        for (const wire of graphNow.wires) {
-          const from = anchors.get(portKey(wire.fromNodeId, wire.fromPortId, 'output'))
-          const to = anchors.get(portKey(wire.toNodeId, wire.toPortId, 'input'))
-          if (!from || !to) continue
-          const points = tessellateCable({ from, to, color: [0, 0, 0], alpha: 1, dashed: false })
-          for (let i = 0; i < points.length - 1; i++) {
-            const d = distanceToSegment({ x: lastMouseCanvasX, y: lastMouseCanvasY }, points[i], points[i + 1])
-            if (d < nearestDist) {
-              nearestDist = d
-              nearestWireId = wire.id
-            }
-          }
-        }
-        ghostSpliceHoverWireId = nearestWireId
-        const spliceValid = nearestWireId ? canSplice(nearestWireId, currentGhost.typeId) : false
-
         if (ghostElRef.current) {
           const worldPos = canvasToWorld(lastMouseCanvasX, lastMouseCanvasY)
           ghostElRef.current.style.left = `${snapValue(worldPos.x, snapSettingsRef.current)}px`
           ghostElRef.current.style.top = `${snapValue(worldPos.y, snapSettingsRef.current)}px`
         }
 
-        // A wire nearby that the hovered node type can't validly splice
-        // into (no in/out ports at all, or a type mismatch) gets an
-        // explicit rejected-state hint instead of silently doing nothing —
-        // the click still places the node, just unconnected (see onClick,
-        // M10_REVIEW.md §6/§23).
-        const text = !nearestWireId ? 'click to place · Esc to cancel' : spliceValid ? 'click to insert here' : "can't splice here — click to place unconnected"
-        if (hintLabelRef.current && text !== lastHintText) {
-          hintLabelRef.current.textContent = text
-          lastHintText = text
-        }
-        if (hintLabelRef.current) {
-          hintLabelRef.current.style.display = 'block'
-          hintLabelRef.current.style.left = `${lastMouseRef.current.clientX + 16}px`
-          hintLabelRef.current.style.top = `${lastMouseRef.current.clientY + 16}px`
+        // Direct feedback: the hint used to always show "click to place"
+        // even with no wire anywhere nearby — noise for the common case.
+        // Now it only appears once a wire is actually within
+        // SPLICE_HOVER_TOLERANCE, and it agrees with the highlighted wire
+        // above: "click to insert here" when splice-able, an explicit
+        // rejected-state hint when a wire's nearby but its type can't
+        // accept this node (no in/out ports at all, or a type mismatch) —
+        // the click still places the node, just unconnected in that case
+        // (see onClick, M10_REVIEW.md §6/§23). Plain Esc-to-cancel placement
+        // needs no ongoing hint at all; that's discoverable once, not on
+        // every frame.
+        if (ghostSpliceHoverWireId) {
+          const text = ghostSpliceValid ? 'click to insert here' : "can't splice here — click to place unconnected"
+          if (hintLabelRef.current && text !== lastHintText) {
+            hintLabelRef.current.textContent = text
+            lastHintText = text
+          }
+          if (hintLabelRef.current) {
+            hintLabelRef.current.style.display = 'block'
+            hintLabelRef.current.style.left = `${lastMouseRef.current.clientX + 16}px`
+            hintLabelRef.current.style.top = `${lastMouseRef.current.clientY + 16}px`
+          }
+        } else if (hintLabelRef.current) {
+          hintLabelRef.current.style.display = 'none'
         }
       } else if (hintLabelRef.current) {
         hintLabelRef.current.style.display = 'none'
