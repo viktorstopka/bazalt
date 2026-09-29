@@ -4,7 +4,7 @@
 import type { PortDescriptor, SignalType } from './descriptorTypes'
 import { tokens } from '../theme/tokens'
 
-export type PortUiKind = 'audio' | 'modulation' | 'value' | 'integer' | 'trigger' | 'boolean' | 'note'
+export type PortUiKind = 'audio' | 'modulation' | 'value' | 'integer' | 'trigger' | 'boolean' | 'note' | 'data'
 
 /** SignalType::Control ports with no unit and a 0-1 range render as
     Modulation (orange); anything else numeric renders as Value (white),
@@ -23,7 +23,17 @@ export function classifyPortUiKind(port: Pick<PortDescriptor, 'type' | 'unit' | 
   // looked like "same colour won't connect" when the real story was a
   // genuine, correctly-rejected type mismatch wearing a borrowed colour.
   if (type === 'note') return 'note'
-  if (type !== 'control') return 'value' // Data/Spectral: no UI rendering defined yet (§5); fall back rather than crash
+  // Direct feedback, the same collision Note's own fix above already
+  // named: Data used to fall through to 'value' below, the exact white a
+  // real-quantity Control port renders as - a Data(scale)/Data(curve) port
+  // looked like an ordinary numeric control, no visible sign it needed a
+  // Data-tagged source specifically. Spectral has no real port anywhere in
+  // the catalog yet (still reserved/unimplemented, wiki/NODES.md's
+  // "Deliberately deferred" section) - nothing to fix live for it, so it
+  // stays on the 'value' fallback below rather than inventing a colour for
+  // a type nothing produces.
+  if (type === 'data') return 'data'
+  if (type !== 'control') return 'value' // Spectral: reserved, no real port exists yet (§5); fall back rather than crash
 
   if (port.isInteger) return 'integer'
 
@@ -60,6 +70,7 @@ export const PORT_UI_STYLE: Record<PortUiKind, PortUiStyle> = {
   trigger: { color: tokens.color.portTrigger, glyph: '!' },
   boolean: { color: tokens.color.portBoolean, glyph: '?' },
   note: { color: tokens.color.portNote, glyph: '♪' }, // eighth note (♪) — distinct from every arrow/!/? glyph above
+  data: { color: tokens.color.portData, glyph: '≡' }, // stacked lines — "many values", distinct from every glyph above
 }
 
 export function portUiStyle(port: Pick<PortDescriptor, 'type' | 'unit' | 'minValue' | 'maxValue' | 'isInteger'>): PortUiStyle {

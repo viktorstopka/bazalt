@@ -16,12 +16,13 @@ implemented.
 **✅ Implemented** — real, registered, in `engine/include/bazalt/engine/nodes/`.
 **🚧 Partial** — implemented but narrower than this spec (the gap is named).
 **📋 Catalog only** — specified here, not built yet. Most of the catalog is this today
-— **52 of the 126 node types below are catalog-only** (down from 67 before the
+— **52 of the 130 node types below are catalog-only** (down from 67 before the
 Clock+Seq batch, 62 before the Data Foundations batch, 59 before the Note Stream batch,
 53 before the `note.assemble` follow-up — `wiki/NODES.Status.md` tracks the build order
-for what's left; `adapt.audioToControl`,
-added whole by the Audio → Control Bridge, wiki/plans/AudioControlBridge.md, is the one
-node in this file that was never catalog-only at all, real from its first commit).
+for what's left; `adapt.audioToControl`/`boolToControl`/`pitchToFrequency`/
+`frequencyToPitch`/`gateLength` were all added whole, by the Audio → Control Bridge and
+a direct-feedback sweep session respectively — the five nodes in this file that were
+never catalog-only at all, real from their first commit).
 Don't assume a node works in the running app because it's in this file; check the
 status marker.
 
@@ -61,7 +62,7 @@ are telemetry outputs for live visualization, not ports.
 | `note.*` | gate, value, quantize, transpose, chord, hold, select, humanize, filter, assemble | ✅ gate, value, quantize, transpose, humanize, filter, assemble — 📋 chord, hold, select (real engine limit — see the `note.filter`/`note.hold` entries below) |
 | `math.*` | add, subtract, multiply, divide, abs, clamp, minmax, power, round, modulo, slew | ✅ all 11 |
 | `logic.*` | boolean, not, compare, toggle, select | ✅ all 5 |
-| `adapt.*` | map, remap, normalise, threshold, sampleHold, **audioToControl** (new, AudioControlBridge) | ✅ all 6 |
+| `adapt.*` | map, remap, normalise, threshold, sampleHold, **audioToControl** (AudioControlBridge), **boolToControl**, **pitchToFrequency**, **frequencyToPitch**, **gateLength** (all new, direct-feedback sweep) | ✅ all 10 |
 | `data.*` | load, table, scale, material, analyseModes, lookup, **record**, **eqToCurve** (Correction 2) | ✅ table, scale, lookup — 📋 load, material, analyseModes, record, eqToCurve |
 | `analysis.*` | onset, pitch, level, centroid | 📋 all 4 |
 | `instance.*` | allocator (Voice only), mix | 🚧 allocator (Voice ✅, Swarm/Trigger 📋 — M28) — ✅ mix |
@@ -417,11 +418,16 @@ and pitch, so a mechanically perfect sequence doesn't sound like one. **In:** `n
 Gates a note stream by pitch and/or velocity range — a keyboard split or
 velocity gate. **In:** `notes`; `lowPitch`/`highPitch`; `lowVelocity`/`highVelocity`. **Out (catalog):** `pass`/`reject` — `Note`. **Out (real today):** `notes` — `Note` (engine port id `notesOut`; the note verbatim when in range, fully suppressed — gate false, no start/stop — when out of range) plus `inRange` — `Boolean`, carrying the pass/reject decision as an ordinary signal. Captures the real, useful behaviour (a keyboard split, a velocity gate) without pretending the engine can carry two simultaneous `Note` streams off one node today.
 
-#### `note.assemble` — Assemble Note ✅ *(new — the Note Stream follow-up, direct feedback's own top pick)*
-Turns a plain trigger + a tracked pitch into a real `Note` stream from scratch —
+#### `note.assemble` — Assemble Note ✅ *(new — the Note Stream follow-up, direct feedback's own top pick; revised same session — see below)*
+Turns a plain gate + a tracked pitch into a real `Note` stream from scratch —
 what makes an audio input playable as an instrument, and equally what lets a
 `clock.*`/`random.*`/`data.lookup` chain drive a synth voice with no MIDI involved
-at all. **In:** `trigger : Event`; `release : Event` (optional); `pitch [audio]`; `velocity`; `confidence`; `confidenceGate`. **Out:** `notes` — `Note`. **Behavior — this node's own concrete design** (the catalog names the ports, not their exact contract): `trigger` always starts a note, even mid-hold (a legato retrigger, no forced note-off first — the same convention `io.noteIn`'s own MIDI handling already uses), suppressed when `confidence < confidenceGate` so a low-confidence pitch-tracker reading can't spawn a bogus note. `pitch` is tracked continuously while held (vibrato/bend, or an algorithmically modulated pitch), `velocity` is captured once at the trigger instant. A note ends on an explicit `release`, or — since a monophonic pitch tracker has no discrete note-off of its own — automatically once `confidence` drops back below `confidenceGate`; with neither wired (the plain generative case), `confidence`'s own unconnected fallback (1.0) never drops, so the note holds until an explicit `release` — ordinary MIDI semantics, no invented auto-timeout.
+at all. **Revised from its first cut, same session**: the catalog's own
+`trigger : Event`/`release : Event` pair fought the grain — `gate` (Boolean) is the
+convention every other note-adjacent thing here uses (`env.adsr`, `io.noteIn`'s own
+translated MIDI, `note.gate`'s own "gate" output) — so this node now takes one `gate`
+input instead of two Events; `adapt.gateLength` (new, below) turns a bare trigger into
+a timed gate for whoever needs one. **In:** `gate : bool`; `pitch [audio]`; `velocity`; `confidence`; `confidenceGate`. **Out:** `notes` — `Note`. **Behavior — this node's own concrete design** (the catalog names the ports, not their exact contract): a note starts on `gate`'s rising edge, re-checked every sample the gate stays high (not just once, at the edge) — so a note whose confidence hasn't stabilized yet still starts the moment it becomes confident, without needing the gate to re-open — suppressed entirely while `confidence < confidenceGate`, so a low-confidence pitch-tracker reading can't spawn a bogus note. `pitch` is tracked continuously while held (vibrato/bend, or an algorithmically modulated pitch), `velocity` is captured once at the start instant. A note ends on `gate`'s falling edge, or — since a monophonic pitch tracker has no discrete note-off of its own — automatically once `confidence` drops back below `confidenceGate` while `gate` is still high; with neither wired (the plain generative case), `confidence`'s own unconnected fallback (1.0) never drops, so `gate` alone drives everything — ordinary MIDI semantics, no invented auto-timeout.
 
 ## math — all ✅
 
@@ -503,6 +509,33 @@ needs `mix.downmix` first — a 3-adapter chain would exceed the two-adapter
 ceiling); `depth : float·Unipolar·0–1·linear·1.0` (unpatched = full-strength
 passthrough, the same "just as loud as before" contract `mix.gain.gain`
 established). **Out:** `out` — `float·Bipolar` (clamped to −1…1).
+
+#### `adapt.boolToControl` — From Bool ✅ *(new — direct feedback: "bool not being pluggable into control and ints... annoying")*
+Maps a Boolean to either of two editable numbers — the mechanical Boolean → Control
+bridge `canConnect` auto-inserts, replacing the `logic.select` + two `util.constant`
+workaround outright rather than just easing it. **In:** `in` — `Boolean`. **Out:** `out` — `Control` (Dimensionless — a free pass into any destination, since the two edited values are what actually target it). **Structural:** `whenFalse` (default 0), `whenTrue` (default 1) — plain numbers, not wireable ports, matching `adapt.map`/`adapt.normalise`'s own `min`/`max` convention.
+
+#### `adapt.pitchToFrequency` — Pitch to Frequency ✅ *(new — a real correctness fix, see below)*
+#### `adapt.frequencyToPitch` — Frequency to Pitch ✅ *(new, the inverse)*
+The exact exponential MIDI-pitch↔Hz conversion (A4 = pitch 69 = 440Hz) — `canConnect`
+now prefers these over the generic `adapt.remap` specifically for a `Pitch ↔
+Frequency` connection. Direct feedback surfaced a real, previously undiscovered
+correctness gap: `adapt.remap` is a plain *linear* interpolation between two seeded
+endpoints, but pitch-to-Hz is exponential (each semitone is ×2^(1/12)) — the old
+auto-inserted remap was quietly wrong for every pitch value between its two seed
+points. **In:** `pitch : float·Pitch·0–127·60` / **In:** `frequency : float·Frequency·0.01–20000Hz·440`.
+**Out:** `frequency` / **Out:** `pitch` respectively. No seeding needed at all — the
+formula is fixed, not range-dependent.
+
+#### `adapt.gateLength` — Gate Length ✅ *(new — direct feedback: "duration for the note held... using 2 clocks... too complicated")*
+A monostable trigger-to-gate — opens a Boolean gate for a set number of seconds from
+an incoming trigger, the standard "Gate Length" utility every modular rack has one of.
+**In:** `trigger : Event`; `length : float·Time·0–10s·0.2s`. **Out:** `gate` —
+`Boolean`. **Behavior:** a new `trigger` arriving before the gate closes retriggers —
+restarts the countdown from the full `length` rather than queuing or extending
+additively. Deliberately not auto-inserted by `canConnect` for a plain `Event →
+Boolean` wire-drag — `length` is a real timing choice, not a mechanical, opinion-free
+crossing (the same bar `env.follower` failed for `Audio → Control` auto-insertion).
 
 ## data — producing and reading buffers
 

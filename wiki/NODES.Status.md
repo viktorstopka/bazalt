@@ -232,11 +232,15 @@ intended use (an audio input playable as an instrument) once `analysis.pitch`/
 | `note.select` | To be implemented | **A2** | *(blocked)* | Same real engine limit as `note.hold` — pairs with `clock.counter` once buildable. |
 | `note.chord` | To be implemented | **A2** | *(blocked)* | Same real engine limit — needs to emit several simultaneous notes from one input note. |
 
-### `math.*` / `logic.*` / `adapt.*` — 22/22 Implemented
+### `math.*` / `logic.*` / `adapt.*` — 26/26 Implemented
 
-All done — no rows needed. `adapt.audioToControl` ("To Modulation") is the newest
-member, added whole by the Audio → Control Bridge (`wiki/plans/AudioControlBridge.md`)
-rather than moved out of the catalog-only backlog — it never was catalog-only.
+All done — no rows needed. `adapt.audioToControl` ("To Modulation") was added whole by
+the Audio → Control Bridge (`wiki/plans/AudioControlBridge.md`); `adapt.boolToControl`
+("From Bool"), `adapt.pitchToFrequency`/`adapt.frequencyToPitch`, and
+`adapt.gateLength` were all added whole in a direct-feedback sweep the same session
+(a real, previously-wrong linear-remap-for-Pitch↔Frequency correctness fix among
+them) — none of the five were ever moved out of the catalog-only backlog; they never
+were catalog-only.
 
 ### `data.*` — producing and reading buffers — 3 Implemented, 5 to build
 

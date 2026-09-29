@@ -25,6 +25,9 @@
 #include "bazalt/engine/nodes/NormaliseNode.h"
 #include "bazalt/engine/nodes/ThresholdNode.h"
 #include "bazalt/engine/nodes/AudioToControlNode.h"
+#include "bazalt/engine/nodes/BoolToControlNode.h"
+#include "bazalt/engine/nodes/PitchFrequencyNodes.h"
+#include "bazalt/engine/nodes/GateLengthNode.h"
 #include "bazalt/engine/nodes/DownmixNode.h"
 #include "bazalt/engine/nodes/InstanceVoiceNode.h"
 #include "bazalt/engine/nodes/InstanceMixNode.h"
@@ -113,6 +116,17 @@ namespace bazalt::engine
         // Audio -> Control Bridge (wiki/plans/AudioControlBridge.md) — the
         // mechanical adapter canConnect auto-inserts for Audio -> Control.
         factory.registerType ("adapt.audioToControl", [] { return std::make_unique<nodes::AudioToControlNode>(); });
+        // Boolean -> Control (direct feedback: "bool not being pluggable
+        // into control and ints... annoying").
+        factory.registerType ("adapt.boolToControl", [] { return std::make_unique<nodes::BoolToControlNode>(); });
+        // Exact Pitch<->Frequency conversion (direct feedback found the
+        // generic adapt.remap fallback was quietly wrong for this pair —
+        // linear where the real relationship is exponential).
+        factory.registerType ("adapt.pitchToFrequency", [] { return std::make_unique<nodes::PitchToFrequencyNode>(); });
+        factory.registerType ("adapt.frequencyToPitch", [] { return std::make_unique<nodes::FrequencyToPitchNode>(); });
+        // Trigger -> timed Boolean gate (direct feedback: "duration for the
+        // note held... using 2 clocks... too complicated").
+        factory.registerType ("adapt.gateLength", [] { return std::make_unique<nodes::GateLengthNode>(); });
         factory.registerType ("mix.downmix", [] { return std::make_unique<nodes::DownmixNode>(); });
         factory.registerType ("instance.allocate.voice", [] { return std::make_unique<nodes::InstanceVoiceNode>(); }); // 09-28-InstanceAllocator.3 — renamed from "instance.allocator"; 09-29-AddMenu.1 — renamed again from "instance.voice"
         factory.registerType ("instance.mix", [] { return std::make_unique<nodes::InstanceMixNode>(); });

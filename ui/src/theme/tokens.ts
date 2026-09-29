@@ -48,6 +48,15 @@ export const tokens = {
     // genuine same-colour-but-incompatible collision, not a connection bug.
     // A distinct teal/cyan, unused anywhere else in this palette.
     portNote: '#3ecfc0',
+    // Direct feedback, the same real collision Note's own comment above
+    // already names and fixes: portUiKind.ts's classifyPortUiKind() fell
+    // Data through to 'value' (`type !== 'control' -> 'value'`) - the exact
+    // white a real-quantity Control port renders as, so a Data(scale)/
+    // Data(curve) port looked like an ordinary numeric control, with no way
+    // to tell it needed a Data-tagged source, not just any cable. A muted
+    // rust/terracotta, distinct from every hue above (pink, orange, white,
+    // yellow, purple, sky-blue, teal).
+    portData: '#c1665a',
 
     // Node-body surface (M9 component gallery; NODE_EDITOR.md §10 — DOM
     // node bodies until the hybrid WebGL-background sync is proven in M10,

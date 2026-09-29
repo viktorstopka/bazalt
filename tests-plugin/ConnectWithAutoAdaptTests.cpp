@@ -118,14 +118,18 @@ TEST_CASE ("connectWithAutoAdapt rejects a connection to an unknown port with no
     CHECK (controller.getGraph().getConnections().size() == connectionsBefore);
 }
 
-TEST_CASE ("connectWithAutoAdapt inserts adapt.remap for two different real quantities (M20: Pitch into a filter's Cutoff)",
-           "[plugin][GraphEditController][CanConnect][M20]")
+TEST_CASE ("connectWithAutoAdapt inserts adapt.pitchToFrequency for Pitch into a filter's Cutoff, not the generic remap",
+           "[plugin][GraphEditController][CanConnect][AudioControlBridge]")
 {
-    // Voice's "pitch" output (Quantity::Pitch, 0-127) into SVF
-    // Filter's "cutoff" input (Quantity::Frequency, 20-20000) — pitch-
-    // tracking a filter cutoff, a standard synthesis technique, and exactly
-    // the pair that used to be a bare Reject before M20 (adapt.remap, the
-    // MVP of NODE_CATALOG.md's own remap node) fixed it.
+    // Voice's "pitch" output (Quantity::Pitch, 0-127) into SVF Filter's
+    // "cutoff" input (Quantity::Frequency, 20-20000) — pitch-tracking a
+    // filter cutoff, a standard synthesis technique. Revised, same session
+    // as this test's own original M20 case: Pitch<->Frequency is
+    // exponential, not linear, so this pair no longer falls into the
+    // generic adapt.remap path (tests/CanConnectTests.cpp covers that path
+    // still applying to OTHER real-quantity pairs, e.g. Pitch<->Time) — it
+    // gets the exact conversion instead, no seeding needed at all (the
+    // formula is fixed, not range-dependent).
     BazaltAudioProcessor processor;
     processor.prepareToPlay (44100.0, 512);
     auto& controller = processor.getGraphEditController();
@@ -137,34 +141,23 @@ TEST_CASE ("connectWithAutoAdapt inserts adapt.remap for two different real quan
     REQUIRE (result.success);
 
     const auto& graph = controller.getGraph();
-    const bazalt::engine::NodeInstance* remapNode = nullptr;
+    const bazalt::engine::NodeInstance* converterNode = nullptr;
     for (const auto& n : graph.getNodes())
-        if (n.type == "adapt.remap")
-            remapNode = &n;
-    REQUIRE (remapNode != nullptr);
+        if (n.type == "adapt.pitchToFrequency")
+            converterNode = &n;
+    REQUIRE (converterNode != nullptr);
 
-    // Seeded from BOTH ends at once: inMin/inMax from the source's range
-    // (pitch: 0-127), outMin/outMax from the destination's (cutoff: 20-20000).
-    REQUIRE (remapNode->parameters.count ("adapt.remap.inMin") == 1);
-    CHECK (remapNode->parameters.at ("adapt.remap.inMin") == 0.0f);
-    REQUIRE (remapNode->parameters.count ("adapt.remap.inMax") == 1);
-    CHECK (remapNode->parameters.at ("adapt.remap.inMax") == 127.0f);
-    REQUIRE (remapNode->parameters.count ("adapt.remap.outMin") == 1);
-    CHECK (remapNode->parameters.at ("adapt.remap.outMin") == 20.0f);
-    REQUIRE (remapNode->parameters.count ("adapt.remap.outMax") == 1);
-    CHECK (remapNode->parameters.at ("adapt.remap.outMax") == 20000.0f);
-
-    // Wired directly: alloc.pitch -> remap.in, remap.out -> svf.cutoff.
-    bool sourceToRemap = false, remapToDestination = false;
+    // Wired directly: alloc.pitch -> converter.pitch, converter.frequency -> svf.cutoff.
+    bool sourceToConverter = false, converterToDestination = false;
     for (const auto& c : graph.getConnections())
     {
-        if (c.fromNodeId == "alloc" && c.fromPortId == "pitch" && c.toNodeId == remapNode->id && c.toPortId == "in")
-            sourceToRemap = true;
-        if (c.fromNodeId == remapNode->id && c.fromPortId == "out" && c.toNodeId == "svf" && c.toPortId == "filter.svf.cutoff")
-            remapToDestination = true;
+        if (c.fromNodeId == "alloc" && c.fromPortId == "pitch" && c.toNodeId == converterNode->id && c.toPortId == "pitch")
+            sourceToConverter = true;
+        if (c.fromNodeId == converterNode->id && c.fromPortId == "frequency" && c.toNodeId == "svf" && c.toPortId == "filter.svf.cutoff")
+            converterToDestination = true;
     }
-    CHECK (sourceToRemap);
-    CHECK (remapToDestination);
+    CHECK (sourceToConverter);
+    CHECK (converterToDestination);
 }
 
 TEST_CASE ("connectWithAutoAdapt auto-inserts mix.downmix for a Stereo source into a mono-only port",

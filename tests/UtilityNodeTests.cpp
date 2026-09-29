@@ -12,6 +12,9 @@
 #include "bazalt/engine/nodes/ListenNode.h"
 #include "bazalt/engine/nodes/OutputNode.h"
 #include "bazalt/engine/nodes/InstanceMixNode.h"
+#include "bazalt/engine/nodes/BoolToControlNode.h"
+#include "bazalt/engine/nodes/PitchFrequencyNodes.h"
+#include "bazalt/engine/nodes/GateLengthNode.h"
 #include <algorithm>
 #include <limits>
 
@@ -371,4 +374,156 @@ TEST_CASE ("RemapNode's range ports live-modulate independently of setParameter'
     float inputs[5] = { 5.0f, 0.0f, 10.0f, 100.0f, 200.0f };
     node.processSample (inputs, &out);
     CHECK (out == 150.0f);
+}
+
+// ---- adapt.boolToControl ----
+// Direct feedback: "bool not being pluggable into control and ints...
+// annoying... via select node... doesn't even have editable props."
+
+TEST_CASE ("BoolToControlNode maps false/true to 0/1 by default, and to any two edited values",
+           "[engine][nodes][BoolToControlNode]")
+{
+    BoolToControlNode node;
+    float out = 0.0f;
+
+    float falseIn = 0.0f, trueIn = 1.0f;
+    node.processSample (&falseIn, &out);
+    CHECK (out == 0.0f);
+    node.processSample (&trueIn, &out);
+    CHECK (out == 1.0f);
+
+    node.setParameter ("adapt.boolToControl.whenFalse", -1.0f);
+    node.setParameter ("adapt.boolToControl.whenTrue", 5.0f);
+    node.processSample (&falseIn, &out);
+    CHECK (out == -1.0f);
+    node.processSample (&trueIn, &out);
+    CHECK (out == 5.0f);
+}
+
+TEST_CASE ("canConnect auto-inserts adapt.boolToControl for Boolean -> Control",
+           "[engine][CanConnect][BoolToControlNode]")
+{
+    PortDescriptor boolPort { "in", SignalType::Boolean };
+    PortDescriptor controlPort { "out", SignalType::Control };
+
+    const auto result = canConnect (boolPort, controlPort);
+    REQUIRE (result.outcome == ConnectionOutcome::NeedsAdapters);
+    REQUIRE (result.adapterChain.size() == 1);
+    CHECK (result.adapterChain[0].typeId == "adapt.boolToControl");
+}
+
+// ---- adapt.pitchToFrequency / adapt.frequencyToPitch ----
+// Direct feedback: canConnect was auto-inserting adapt.remap (linear) for
+// Pitch -> Frequency, which is quietly wrong - the real relationship is
+// exponential.
+
+TEST_CASE ("PitchToFrequencyNode converts MIDI pitch to Hz exactly (A4 = 69 = 440Hz)",
+           "[engine][nodes][PitchToFrequencyNode]")
+{
+    PitchToFrequencyNode node;
+    float out = 0.0f;
+
+    float a4 = 69.0f;
+    node.processSample (&a4, &out);
+    CHECK (out == Catch::Approx (440.0f));
+
+    float aUp = 81.0f; // A5, one octave above A4
+    node.processSample (&aUp, &out);
+    CHECK (out == Catch::Approx (880.0f));
+
+    float aDown = 57.0f; // A3, one octave below A4
+    node.processSample (&aDown, &out);
+    CHECK (out == Catch::Approx (220.0f));
+}
+
+TEST_CASE ("FrequencyToPitchNode is the exact inverse of PitchToFrequencyNode",
+           "[engine][nodes][FrequencyToPitchNode]")
+{
+    FrequencyToPitchNode node;
+    float out = 0.0f;
+
+    float freq440 = 440.0f;
+    node.processSample (&freq440, &out);
+    CHECK (out == Catch::Approx (69.0f));
+
+    float freq880 = 880.0f;
+    node.processSample (&freq880, &out);
+    CHECK (out == Catch::Approx (81.0f));
+}
+
+TEST_CASE ("canConnect prefers the exact converter over the generic linear remap for Pitch<->Frequency",
+           "[engine][CanConnect][PitchToFrequencyNode]")
+{
+    PortDescriptor pitchPort { "p", SignalType::Control };
+    pitchPort.quantity = Quantity::Pitch;
+    PortDescriptor freqPort { "f", SignalType::Control };
+    freqPort.quantity = Quantity::Frequency;
+
+    const auto toFreq = canConnect (pitchPort, freqPort);
+    REQUIRE (toFreq.outcome == ConnectionOutcome::NeedsAdapters);
+    REQUIRE (toFreq.adapterChain.size() == 1);
+    CHECK (toFreq.adapterChain[0].typeId == "adapt.pitchToFrequency");
+
+    const auto toPitch = canConnect (freqPort, pitchPort);
+    REQUIRE (toPitch.outcome == ConnectionOutcome::NeedsAdapters);
+    REQUIRE (toPitch.adapterChain.size() == 1);
+    CHECK (toPitch.adapterChain[0].typeId == "adapt.frequencyToPitch");
+
+    // A different real-quantity pair still falls through to the generic
+    // remap - this override is scoped to Pitch<->Frequency specifically.
+    PortDescriptor timePort { "t", SignalType::Control };
+    timePort.quantity = Quantity::Time;
+    const auto pitchToTime = canConnect (pitchPort, timePort);
+    REQUIRE (pitchToTime.outcome == ConnectionOutcome::NeedsAdapters);
+    CHECK (pitchToTime.adapterChain[0].typeId == "adapt.remap");
+}
+
+// ---- adapt.gateLength ----
+// Direct feedback: "a simple way to set the duration for the note held...
+// using 2 clocks... too complicated."
+
+TEST_CASE ("GateLengthNode opens the gate for exactly `length` seconds from a trigger, sample-accurately",
+           "[engine][nodes][GateLengthNode]")
+{
+    GateLengthNode node;
+    node.prepare ({ 10.0, 16 }); // 10Hz sample rate - 1 sample = 0.1s, easy to reason about
+    node.reset();
+    node.setParameter ("length", 0.3f); // 3 samples at 10Hz
+
+    auto step = [&] (float trigger)
+    {
+        float inputs[2] = { trigger, 0.3f };
+        float out = 0.0f;
+        node.processSample (inputs, &out);
+        return out;
+    };
+
+    CHECK (step (1.0f) == 1.0f); // sample 0: trigger - gate opens
+    CHECK (step (0.0f) == 1.0f); // sample 1: still open
+    CHECK (step (0.0f) == 1.0f); // sample 2: still open (3rd sample of the 3-sample window)
+    CHECK (step (0.0f) == 0.0f); // sample 3: closed
+}
+
+TEST_CASE ("GateLengthNode retriggers: a new trigger before the gate closes restarts the countdown",
+           "[engine][nodes][GateLengthNode]")
+{
+    GateLengthNode node;
+    node.prepare ({ 10.0, 16 });
+    node.reset();
+    node.setParameter ("length", 0.3f); // 3 samples
+
+    auto step = [&] (float trigger)
+    {
+        float inputs[2] = { trigger, 0.3f };
+        float out = 0.0f;
+        node.processSample (inputs, &out);
+        return out;
+    };
+
+    CHECK (step (1.0f) == 1.0f); // opens, 3-sample countdown starts
+    CHECK (step (0.0f) == 1.0f); // 1 sample in
+    CHECK (step (1.0f) == 1.0f); // retriggered - countdown restarts to 3, not extended additively from where it was
+    CHECK (step (0.0f) == 1.0f);
+    CHECK (step (0.0f) == 1.0f);
+    CHECK (step (0.0f) == 0.0f); // closes exactly 3 samples after the retrigger, not the original trigger
 }

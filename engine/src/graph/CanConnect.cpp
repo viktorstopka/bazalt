@@ -99,22 +99,44 @@ namespace bazalt::engine
                 return needsAdapter (step, "Real-quantity value into a modulation-range port needs a Normalise");
             }
 
-            // Two different real quantities (e.g. Frequency and Pitch, or
-            // Frequency and Time) — not in SIGNAL_TYPES.md §5's original
-            // ten-pair table, but both sides are still real numeric ranges,
-            // so insert `adapt.remap` (NODE_CATALOG.md's own node — this is
-            // its MVP linear form, curve support grows it later rather than
-            // replacing it), seeded from BOTH ends at once: inMin/inMax
-            // from the source's own range, outMin/outMax from the
-            // destination's. A real, generic real-to-real rescale — not a
-            // guessed conversion between the two quantities' meanings, and
-            // not hidden inside the wire: the adapter is an ordinary,
-            // visible, editable node once auto-inserted
-            // (GraphEditController::connectWithAutoAdapt), exactly like
-            // every other adapter here. Direct feedback: rejecting this
-            // pair (e.g. Pitch into a filter's Cutoff — pitch-tracking, a
-            // standard synthesis technique) was an unfinished case, not a
-            // deliberate design choice.
+            // Pitch <-> Frequency specifically: NOT the generic linear remap
+            // below. The two are exponentially related (each semitone is
+            // ×2^(1/12)), so a linear interpolation between two seeded
+            // endpoints is quietly wrong for every pitch in between — a
+            // real correctness gap in the "MVP, linear-only for now" remap
+            // path (direct feedback caught this; it revises this function's
+            // own long-standing Pitch-into-Cutoff example, not just adds a
+            // new case). `adapt.pitchToFrequency`/`adapt.frequencyToPitch`
+            // are the actual, exact conversion — one step, no seeding
+            // needed at all (the formula is fixed, not range-dependent).
+            if (from.quantity == Quantity::Pitch && to.quantity == Quantity::Frequency)
+            {
+                AdapterStep step { "adapt.pitchToFrequency", "pitch" };
+                step.outputPortId = "frequency";
+                return needsAdapter (step, "Pitch into a Frequency-typed port needs an exact conversion, not a linear remap");
+            }
+            if (from.quantity == Quantity::Frequency && to.quantity == Quantity::Pitch)
+            {
+                AdapterStep step { "adapt.frequencyToPitch", "frequency" };
+                step.outputPortId = "pitch";
+                return needsAdapter (step, "Frequency into a Pitch-typed port needs an exact conversion, not a linear remap");
+            }
+
+            // Two different real quantities (e.g. Frequency and Time) — not
+            // in SIGNAL_TYPES.md §5's original ten-pair table, but both
+            // sides are still real numeric ranges, so insert `adapt.remap`
+            // (NODE_CATALOG.md's own node — this is its MVP linear form,
+            // curve support grows it later rather than replacing it),
+            // seeded from BOTH ends at once: inMin/inMax from the source's
+            // own range, outMin/outMax from the destination's. A real,
+            // generic real-to-real rescale — not a guessed conversion
+            // between the two quantities' meanings, and not hidden inside
+            // the wire: the adapter is an ordinary, visible, editable node
+            // once auto-inserted (GraphEditController::connectWithAutoAdapt),
+            // exactly like every other adapter here. Direct feedback:
+            // rejecting this pair outright was an unfinished case, not a
+            // deliberate design choice — Pitch<->Frequency specifically no
+            // longer falls through to here, see above.
             AdapterStep step { "adapt.remap", "in" };
             step.seedFromSourceRange = true;
             step.seedFromDestinationRange = true;
@@ -202,6 +224,16 @@ namespace bazalt::engine
             }
 
             return needsAdapter (first, "A raw audio signal into a modulation port needs Audio to Modulation");
+        }
+
+        // Direct feedback: "bool not being pluggable into control and
+        // ints... annoying." Exactly as mechanical/opinion-free as every
+        // other adapter above — a plain two-value lookup, never a creative
+        // choice — so it gets the same auto-insertion treatment.
+        if (from.type == SignalType::Boolean && to.type == SignalType::Control)
+        {
+            AdapterStep step { "adapt.boolToControl", "in" };
+            return needsAdapter (step, "A Boolean signal into a Control-typed port needs a From Bool");
         }
 
         return reject ("Incompatible signal types with no adapter available yet");

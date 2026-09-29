@@ -10,7 +10,7 @@ namespace bazalt::engine::nodes
         `note.*` node (gate/value/quantize/transpose/filter/humanize) only
         RESHAPES a `Note` stream that already exists; `io.noteIn` (real host
         MIDI) has been the only thing that can PRODUCE one at all. This is
-        the other half: turns a plain trigger + a tracked pitch into a real
+        the other half: turns a plain gate + a tracked pitch into a real
         `Note` stream from scratch — the piece that was missing to make a
         `clock.*`/`random.*`/`data.lookup` chain able to play a synth voice,
         or a pitch-tracked audio input (`analysis.pitch`/`analysis.onset`,
@@ -23,33 +23,41 @@ namespace bazalt::engine::nodes
         one-`Note`-port-per-node engine limit (`NoteFilterNode.h`'s own
         shared comment), no redesign needed to build this one.
 
+        **A real revision from this node's first cut, same session**: the
+        original design used two Event ports, `trigger`/`release`. Direct
+        feedback: this fights the grain — `gate` (Boolean) is the convention
+        every other note-adjacent thing in this catalog already uses
+        (`env.adsr`, `io.noteIn`'s own translated MIDI, `note.gate`'s own
+        "gate" output). One `gate` input replaces both; a monostable
+        primitive (`adapt.gateLength`, new alongside this fix) turns a bare
+        trigger into a timed gate for whoever needs one, rather than baking
+        duration into this node itself.
+
         **Behavior, this node's own concrete design** (the catalog names the
         ports, not their exact contract):
-        - `trigger` always starts a note, even while one is already held —
-          a legato retrigger with no forced note-off first, the same
-          convention `IoNoteInNode::injectNoteOn` already establishes (a
-          real MIDI keyboard's overlapping notes work the same way).
-          Suppressed when `confidence < confidenceGate`, so a low-confidence
-          pitch-tracker reading (noise, silence) can't spawn a bogus note.
+        - A note starts on `gate`'s rising edge, but only while
+          `!held` — checked every sample the gate is high, not just once at
+          the instant of the edge, so a note whose confidence hasn't
+          stabilized yet (an onset detector opening the gate slightly before
+          pitch-tracking settles) still starts the moment it becomes
+          confident, without needing the gate to re-open.  Suppressed
+          entirely while `confidence < confidenceGate`, so a low-confidence
+          reading (noise, silence) can't spawn a bogus note.
         - `pitch` is tracked CONTINUOUSLY while a note is held, not just
-          captured at the trigger instant — matching `[audio]` in the
-          catalog notation, and needed for both an audio-tracked
-          instrument's natural vibrato/bend and an algorithmically
-          modulated pitch feeding this node.
-        - `velocity` is captured once, at the trigger instant, and held for
+          captured at the start instant — matching `[audio]` in the catalog
+          notation, and needed for both an audio-tracked instrument's
+          natural vibrato/bend and an algorithmically modulated pitch
+          feeding this node.
+        - `velocity` is captured once, at the start instant, and held for
           the rest of the note — ordinary MIDI velocity semantics, not a
           continuously-tracked signal.
-        - A note ends on an explicit `release` event, OR — since a
-          monophonic pitch tracker has no natural discrete "note off" of its
-          own — automatically once `confidence` drops back below
-          `confidenceGate`. Neither wired (the plain generative case: a
-          clock/random chain with no pitch-tracking involved at all) means
-          `confidence`'s own unconnected fallback (1.0, "fully confident")
-          never drops, so the note is held until an explicit `release`
-          arrives — ordinary MIDI note-on/note-off semantics, no invented
-          auto-timeout. `confidence`/`confidenceGate` both default such
-          that an entirely generative patch with neither wired behaves
-          exactly as if the gate didn't exist at all.
+        - A note ends on `gate`'s falling edge, OR — since a monophonic
+          pitch tracker has no natural discrete "note off" of its own —
+          automatically once `confidence` drops back below
+          `confidenceGate` while `gate` is still high. `confidence`/
+          `confidenceGate` both default such that an entirely generative
+          patch with neither wired behaves exactly as if the check didn't
+          exist at all — `gate` alone drives everything.
     */
     class NoteAssembleNode : public Node
     {
@@ -58,7 +66,7 @@ namespace bazalt::engine::nodes
         static constexpr float defaultVelocity = 1.0f;
         static constexpr float defaultConfidence = 1.0f;
         static constexpr float defaultConfidenceGate = 0.5f;
-        static constexpr int numInputs = 6;  // trigger, release, pitch, velocity, confidence, confidenceGate
+        static constexpr int numInputs = 5;  // gate, pitch, velocity, confidence, confidenceGate
         static constexpr int numOutputs = 1; // notes, Note
 
         void prepare (const NodePrepareInfo& info) override
@@ -82,8 +90,7 @@ namespace bazalt::engine::nodes
         std::vector<PortDescriptor> getInputPorts() const override
         {
             return {
-                PortDescriptor { .id = "trigger", .type = SignalType::Event, .label = "Trigger" },
-                PortDescriptor { .id = "release", .type = SignalType::Event, .label = "Release" },
+                PortDescriptor { .id = "gate", .type = SignalType::Boolean, .label = "Gate", .kind = ValueKind::Bool },
                 PortDescriptor { .id = "pitch", .type = SignalType::Control, .label = "Pitch",
                                   .unit = "st", .minValue = 0.0f, .maxValue = 127.0f, .defaultValue = defaultPitch,
                                   .hasFallbackWhenUnconnected = true, .quantity = Quantity::Pitch },
@@ -116,7 +123,7 @@ namespace bazalt::engine::nodes
                 storedConfidenceGate = juce::jlimit (0.0f, 1.0f, value);
         }
 
-        // Mixes a Note output with several ordinary Event/Control inputs -
+        // Mixes a Note output with several ordinary Boolean/Control inputs -
         // the same reason NoteGateNode/IoNoteInNode both hand-write
         // processBlock() rather than delegating to the base per-sample
         // loop: processSample()'s signature has no room for Note data, and
@@ -126,31 +133,30 @@ namespace bazalt::engine::nodes
         {
             for (int i = 0; i < numSamples; ++i)
             {
-                const auto triggerFired = std::fabs (inputs[0][i]) > 0.0f;
-                const auto releaseFired = std::fabs (inputs[1][i]) > 0.0f;
-                const auto pitchIn = inputs[2][i];
-                const auto velocityIn = inputs[3][i];
-                const auto confidenceIn = inputs[4][i];
-                const auto gateIn = inputs[5][i];
+                const auto gateHigh = inputs[0][i] > 0.5f;
+                const auto pitchIn = inputs[1][i];
+                const auto velocityIn = inputs[2][i];
+                const auto confidenceIn = inputs[3][i];
+                const auto gateThresholdIn = inputs[4][i];
 
                 const auto pitch = std::isnan (pitchIn) ? storedPitch : pitchIn;
                 const auto velocity = std::isnan (velocityIn) ? storedVelocity : velocityIn;
                 const auto confidence = std::isnan (confidenceIn) ? storedConfidence : confidenceIn;
-                const auto confidenceGate = std::isnan (gateIn) ? storedConfidenceGate : gateIn;
+                const auto confidenceGate = std::isnan (gateThresholdIn) ? storedConfidenceGate : gateThresholdIn;
                 const auto confident = confidence >= confidenceGate;
 
                 auto& ev = scratch[(size_t) i];
                 ev.startEvent = false;
                 ev.stopEvent = false;
 
-                if (triggerFired && confident)
+                if (gateHigh && ! held && confident)
                 {
                     held = true;
                     heldPitch = pitch;
                     heldVelocity = velocity;
                     ev.startEvent = true;
                 }
-                else if (held && (releaseFired || ! confident))
+                else if (held && (! gateHigh || ! confident))
                 {
                     held = false;
                     ev.stopEvent = true;

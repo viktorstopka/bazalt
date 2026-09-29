@@ -54,17 +54,17 @@ namespace
         return n;
     }
 
-    // note.assemble's own 6-input shape: trigger, release, pitch, velocity,
+    // note.assemble's own 5-input shape (revised, same session: trigger +
+    // release Events merged into one gate Boolean): gate, pitch, velocity,
     // confidence, confidenceGate, one float per sample per input.
     std::vector<NoteEvent> assembleBlock (NoteAssembleNode& node,
-                                           const std::vector<float>& trigger,
-                                           const std::vector<float>& release,
+                                           const std::vector<float>& gate,
                                            const std::vector<float>& pitch,
                                            const std::vector<float>& velocity,
                                            const std::vector<float>& confidence,
                                            const std::vector<float>& confidenceGate)
     {
-        const auto n = (int) trigger.size();
+        const auto n = (int) gate.size();
         // NoteAssembleNode preallocates its own scratch buffer in prepare()
         // (CLAUDE.md rule 2: no allocation on the audio thread) - skipping
         // this call is exactly the out-of-bounds-vector hang this
@@ -72,8 +72,7 @@ namespace
         // batch entry): MSVC's Debug STL blocks on an invisible assertion
         // dialog rather than a visible crash, silently hanging the test.
         node.prepare ({ 44100.0, n });
-        const float* const inputs[6] = { trigger.data(), release.data(), pitch.data(),
-                                          velocity.data(), confidence.data(), confidenceGate.data() };
+        const float* const inputs[5] = { gate.data(), pitch.data(), velocity.data(), confidence.data(), confidenceGate.data() };
         node.processBlock (inputs, nullptr, n);
         std::vector<NoteEvent> out ((size_t) n);
         node.produceNoteBlock (out.data(), n);
@@ -561,21 +560,20 @@ TEST_CASE ("A real compiled graph quantizes io.noteIn through data.scale via not
 // whole node exists to close), rather than reshaping one that already
 // exists. Zero Note inputs, one Note output - no engine-limit concerns.
 
-TEST_CASE ("NoteAssembleNode starts and ends a note on trigger/release, ordinary MIDI semantics",
+TEST_CASE ("NoteAssembleNode starts and ends a note on gate's rising/falling edge, ordinary MIDI semantics",
            "[engine][nodes][NoteAssembleNode][NoteStream]")
 {
     NoteAssembleNode node;
     node.reset();
 
-    // sample 0: trigger. samples 1-2: held. sample 3: release.
-    const auto trigger = std::vector<float> { 1.0f, 0.0f, 0.0f, 0.0f };
-    const auto release = std::vector<float> { 0.0f, 0.0f, 0.0f, 1.0f };
+    // sample 0: gate rises. samples 1-2: held. sample 3: gate falls.
+    const auto gate = std::vector<float> { 1.0f, 1.0f, 1.0f, 0.0f };
     const auto pitch = constBlock (4, 67.0f);
     const auto velocity = constBlock (4, 0.9f);
     const auto confidence = constBlock (4, 1.0f);
-    const auto gate = constBlock (4, 0.5f);
+    const auto confidenceGate = constBlock (4, 0.5f);
 
-    const auto out = assembleBlock (node, trigger, release, pitch, velocity, confidence, gate);
+    const auto out = assembleBlock (node, gate, pitch, velocity, confidence, confidenceGate);
 
     CHECK (out[0].startEvent);
     CHECK (out[0].gate);
@@ -591,88 +589,89 @@ TEST_CASE ("NoteAssembleNode starts and ends a note on trigger/release, ordinary
     CHECK_FALSE (out[3].gate);
 }
 
-TEST_CASE ("NoteAssembleNode retriggers legato: a new trigger while already held starts fresh, no forced stop first",
+TEST_CASE ("NoteAssembleNode: a full low-then-high gate cycle stops the old note before starting the new one",
            "[engine][nodes][NoteAssembleNode][NoteStream]")
 {
+    // Revised, same session: trigger/release Events merged into one gate
+    // Boolean (direct feedback: "use gate for notes everywhere else"). A
+    // level-based gate can't express "retrigger while still held" the way
+    // two separate Events could - it needs a real low-then-high cycle
+    // instead, which is exactly ordinary sequential-note MIDI semantics.
     NoteAssembleNode node;
     node.reset();
 
-    const auto trigger = std::vector<float> { 1.0f, 0.0f, 1.0f };
-    const auto release = constBlock (3, 0.0f);
+    const auto gate = std::vector<float> { 1.0f, 0.0f, 1.0f };
     const auto pitch = std::vector<float> { 60.0f, 60.0f, 72.0f };
     const auto velocity = constBlock (3, 1.0f);
     const auto confidence = constBlock (3, 1.0f);
-    const auto gate = constBlock (3, 0.5f);
+    const auto confidenceGate = constBlock (3, 0.5f);
 
-    const auto out = assembleBlock (node, trigger, release, pitch, velocity, confidence, gate);
+    const auto out = assembleBlock (node, gate, pitch, velocity, confidence, confidenceGate);
 
     CHECK (out[0].startEvent);
-    CHECK_FALSE (out[1].stopEvent); // still held, no note-off between the two triggers
-    CHECK (out[2].startEvent);      // the second trigger starts fresh (legato), same as IoNoteInNode's own convention
-    CHECK_FALSE (out[2].stopEvent);
+    CHECK (out[1].stopEvent); // gate fell - the first note ends
+    CHECK_FALSE (out[1].gate);
+    CHECK (out[2].startEvent); // gate rose again - a fresh note starts
     CHECK (out[2].pitch == Catch::Approx (72.0f));
 }
 
-TEST_CASE ("NoteAssembleNode tracks pitch continuously while held, but captures velocity only at the trigger",
+TEST_CASE ("NoteAssembleNode tracks pitch continuously while held, but captures velocity only at the start",
            "[engine][nodes][NoteAssembleNode][NoteStream]")
 {
     NoteAssembleNode node;
     node.reset();
 
-    const auto trigger = std::vector<float> { 1.0f, 0.0f, 0.0f };
-    const auto release = constBlock (3, 0.0f);
+    const auto gate = constBlock (3, 1.0f); // rises on sample 0, stays high throughout
     const auto pitch = std::vector<float> { 60.0f, 61.0f, 62.5f }; // a live bend/vibrato while held
-    const auto velocity = std::vector<float> { 0.5f, 0.9f, 0.1f }; // changes after the trigger - must be ignored
+    const auto velocity = std::vector<float> { 0.5f, 0.9f, 0.1f }; // changes after the start - must be ignored
     const auto confidence = constBlock (3, 1.0f);
-    const auto gate = constBlock (3, 0.5f);
+    const auto confidenceGate = constBlock (3, 0.5f);
 
-    const auto out = assembleBlock (node, trigger, release, pitch, velocity, confidence, gate);
+    const auto out = assembleBlock (node, gate, pitch, velocity, confidence, confidenceGate);
 
     CHECK (out[0].pitch == Catch::Approx (60.0f));
     CHECK (out[1].pitch == Catch::Approx (61.0f));
     CHECK (out[2].pitch == Catch::Approx (62.5f));
 
     CHECK (out[0].velocity == Catch::Approx (0.5f));
-    CHECK (out[1].velocity == Catch::Approx (0.5f)); // held from the trigger, NOT re-read
+    CHECK (out[1].velocity == Catch::Approx (0.5f)); // held from the start, NOT re-read
     CHECK (out[2].velocity == Catch::Approx (0.5f));
 }
 
-TEST_CASE ("NoteAssembleNode suppresses a trigger below confidenceGate, so a low-confidence reading can't spawn a note",
+TEST_CASE ("NoteAssembleNode suppresses a gate rise below confidenceGate, so a low-confidence reading can't spawn a note",
            "[engine][nodes][NoteAssembleNode][NoteStream]")
 {
     NoteAssembleNode node;
     node.reset();
 
-    const auto trigger = constBlock (1, 1.0f);
-    const auto release = constBlock (1, 0.0f);
+    const auto gate = constBlock (1, 1.0f);
     const auto pitch = constBlock (1, 60.0f);
     const auto velocity = constBlock (1, 1.0f);
     const auto confidence = constBlock (1, 0.2f); // below the gate
-    const auto gate = constBlock (1, 0.5f);
+    const auto confidenceGate = constBlock (1, 0.5f);
 
-    const auto out = assembleBlock (node, trigger, release, pitch, velocity, confidence, gate);
+    const auto out = assembleBlock (node, gate, pitch, velocity, confidence, confidenceGate);
 
     CHECK_FALSE (out[0].startEvent);
     CHECK_FALSE (out[0].gate);
 }
 
-TEST_CASE ("NoteAssembleNode auto-releases when confidence drops below gate, with no explicit release wired",
+TEST_CASE ("NoteAssembleNode auto-releases when confidence drops below gate, even while the gate input stays high",
            "[engine][nodes][NoteAssembleNode][NoteStream]")
 {
     // The audio-pitch-tracking use case: a monophonic tracker has no
     // discrete note-off of its own, so a note ends when confidence drops
-    // instead - `release` stays silent (0) for the whole block.
+    // instead - the gate INPUT stays high for the whole block on purpose.
     NoteAssembleNode node;
     node.reset();
 
-    const auto trigger = std::vector<float> { 1.0f, 0.0f, 0.0f };
-    const auto release = constBlock (3, 0.0f);
+    const auto gate = constBlock (3, 1.0f);
     const auto pitch = constBlock (3, 60.0f);
     const auto velocity = constBlock (3, 1.0f);
     const auto confidence = std::vector<float> { 0.9f, 0.9f, 0.1f }; // drops below gate on sample 2
-    const auto gate = constBlock (3, 0.5f);
+    const auto confidenceGate = constBlock (3, 0.5f);
 
-    const auto out = assembleBlock (node, trigger, release, pitch, velocity, confidence, gate);
+    const auto out = assembleBlock (node, gate, pitch, velocity, confidence, confidenceGate);
 
     CHECK (out[0].gate);
     CHECK (out[1].gate);
@@ -680,40 +679,45 @@ TEST_CASE ("NoteAssembleNode auto-releases when confidence drops below gate, wit
     CHECK (out[2].stopEvent);
 }
 
-TEST_CASE ("NoteAssembleNode with nothing wired (NaN) behaves as a plain generative trigger+pitch source",
+TEST_CASE ("NoteAssembleNode with nothing wired but gate (NaN confidence) behaves as a plain generative gate+pitch source",
            "[engine][nodes][NoteAssembleNode][NoteStream]")
 {
     // The purely generative use case: confidence/confidenceGate are never
     // wired at all (NaN, hasFallbackWhenUnconnected) - their defaults (1.0
-    // confidence, 0.5 gate) must never block a plain trigger.
+    // confidence, 0.5 gate) must never block a plain gate.
     NoteAssembleNode node;
     node.reset();
 
-    const auto trigger = std::vector<float> { 1.0f, 0.0f };
-    const auto release = constBlock (2, 0.0f);
+    const auto gate = constBlock (2, 1.0f);
     const auto pitch = constBlock (2, 65.0f);
     const auto velocity = constBlock (2, 1.0f);
     const auto confidence = constBlock (2, kNaN);
-    const auto gate = constBlock (2, kNaN);
+    const auto confidenceGate = constBlock (2, kNaN);
 
-    const auto out = assembleBlock (node, trigger, release, pitch, velocity, confidence, gate);
+    const auto out = assembleBlock (node, gate, pitch, velocity, confidence, confidenceGate);
 
     CHECK (out[0].startEvent);
     CHECK (out[0].gate);
     CHECK (out[1].gate); // still held - nothing auto-released it
 }
 
-TEST_CASE ("A real compiled graph assembles a Note from clock.pulse's own tick, read back through note.value",
+TEST_CASE ("A real compiled graph assembles a Note from clock.pulse via adapt.gateLength, read back through note.value",
            "[engine][GraphCompiler][NoteAssembleNode][NoteStream]")
 {
+    // Also the real end-to-end proof of adapt.gateLength itself: a bare
+    // Event tick turned into a timed Boolean gate, exactly the primitive
+    // direct feedback asked for instead of "2 clocks, one retriggering the
+    // other."
     auto factory = buildDefaultNodeFactory();
 
     NodeGraph graph;
     graph.addNode ({ "clk", "clock.pulse", {}, { { "clock.pulse.rate", 1000.0f } }, {} });
+    graph.addNode ({ "gateLen", "adapt.gateLength", {}, { { "length", 0.05f } }, {} });
     graph.addNode ({ "pitchConst", "util.constant", {}, { { "util.constant.value", 67.0f } }, {} });
     graph.addNode ({ "assemble", "note.assemble", {}, {}, {} });
     graph.addNode ({ "value", "note.value", {}, {}, {} });
-    graph.addConnection ({ "clk", "tick", "assemble", "trigger" });
+    graph.addConnection ({ "clk", "tick", "gateLen", "trigger" });
+    graph.addConnection ({ "gateLen", "gate", "assemble", "gate" });
     graph.addConnection ({ "pitchConst", "out", "assemble", "pitch" });
     graph.addConnection ({ "assemble", "notes", "value", "notes" });
     graph.setOutput ("value", "pitch");
@@ -724,7 +728,7 @@ TEST_CASE ("A real compiled graph assembles a Note from clock.pulse's own tick, 
     const auto* outputPtr = result.plan.blockBuffers[(size_t) result.plan.finalOutputBufferIndex].getBlock().getChannelPointer (0);
 
     float lastSample = 0.0f;
-    for (int block = 0; block < 8; ++block) // ~11.6ms @44.1kHz - clock.pulse@1000Hz ticks well within this
+    for (int block = 0; block < 8; ++block) // ~11.6ms @44.1kHz - clock.pulse@1000Hz ticks and gateLen's 50ms gate both comfortably span this
     {
         result.plan.process (64);
         lastSample = outputPtr[63];

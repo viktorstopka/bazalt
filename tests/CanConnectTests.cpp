@@ -87,8 +87,13 @@ TEST_CASE ("canConnect: a real quantity into Unipolar/Bipolar needs Normalise, s
 TEST_CASE ("canConnect: two different real quantities insert adapt.remap, seeded from both sides at once",
            "[engine][CanConnect][M20]")
 {
-    const auto from = controlPort (Quantity::Pitch, 0.0f, 127.0f);
-    const auto to = controlPort (Quantity::Frequency, 20.0f, 20000.0f);
+    // Time<->Gain, not Pitch<->Frequency (this test's own original M20
+    // example) - direct feedback caught that Pitch<->Frequency specifically
+    // needs an exact exponential conversion, not a linear remap, so that
+    // pair now has its own dedicated branch (see the AudioControlBridge
+    // test group below) and no longer reaches this generic fallback.
+    const auto from = controlPort (Quantity::Time, 0.0f, 10.0f);
+    const auto to = controlPort (Quantity::Gain, 0.0f, 4.0f);
     const auto result = canConnect (from, to);
 
     REQUIRE (result.outcome == ConnectionOutcome::NeedsAdapters);
@@ -98,6 +103,39 @@ TEST_CASE ("canConnect: two different real quantities insert adapt.remap, seeded
     CHECK (result.adapterChain[0].seedFromSourceRange);
     CHECK (result.adapterChain[0].seedFromDestinationRange);
     CHECK (result.reason.isNotEmpty());
+}
+
+TEST_CASE ("canConnect: Pitch<->Frequency gets the exact converter, not the generic linear remap",
+           "[engine][CanConnect][AudioControlBridge]")
+{
+    const auto pitch = controlPort (Quantity::Pitch, 0.0f, 127.0f);
+    const auto frequency = controlPort (Quantity::Frequency, 20.0f, 20000.0f);
+
+    const auto toFrequency = canConnect (pitch, frequency);
+    REQUIRE (toFrequency.outcome == ConnectionOutcome::NeedsAdapters);
+    REQUIRE (toFrequency.adapterChain.size() == 1);
+    CHECK (toFrequency.adapterChain[0].typeId == "adapt.pitchToFrequency");
+    CHECK (toFrequency.adapterChain[0].inputPortId == "pitch");
+    CHECK (toFrequency.adapterChain[0].outputPortId == "frequency");
+    // No seeding at all - the conversion is a fixed formula, not range-dependent.
+    CHECK_FALSE (toFrequency.adapterChain[0].seedFromSourceRange);
+    CHECK_FALSE (toFrequency.adapterChain[0].seedFromDestinationRange);
+
+    const auto toPitch = canConnect (frequency, pitch);
+    REQUIRE (toPitch.outcome == ConnectionOutcome::NeedsAdapters);
+    REQUIRE (toPitch.adapterChain.size() == 1);
+    CHECK (toPitch.adapterChain[0].typeId == "adapt.frequencyToPitch");
+}
+
+TEST_CASE ("canConnect: Boolean into Control needs a From Bool adapter",
+           "[engine][CanConnect][AudioControlBridge]")
+{
+    PortDescriptor boolPort { "b", SignalType::Boolean };
+    const auto result = canConnect (boolPort, controlPort());
+
+    REQUIRE (result.outcome == ConnectionOutcome::NeedsAdapters);
+    REQUIRE (result.adapterChain.size() == 1);
+    CHECK (result.adapterChain[0].typeId == "adapt.boolToControl");
 }
 
 TEST_CASE ("canConnect: Control into Event needs Threshold, wired into 'by' not 'in'", "[engine][CanConnect]")

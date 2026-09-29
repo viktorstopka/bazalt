@@ -55,7 +55,16 @@ function connectControl(from: PortDescriptor, to: PortDescriptor): CanConnectRes
   if (isRealQuantity(from.quantity) && isNormalisedQuantity(to.quantity)) {
     return needsAdapters('Real-quantity value into a modulation-range port needs a Normalise')
   }
-  // Two different real quantities (e.g. Frequency and Pitch) — composed via
+  // Pitch <-> Frequency: an exact conversion, not the generic linear remap
+  // below (mirrors CanConnect.cpp's own revision of this exact case).
+  if (from.quantity === 'pitch' && to.quantity === 'frequency') {
+    return needsAdapters('Pitch into a Frequency-typed port needs an exact conversion, not a linear remap')
+  }
+  if (from.quantity === 'frequency' && to.quantity === 'pitch') {
+    return needsAdapters('Frequency into a Pitch-typed port needs an exact conversion, not a linear remap')
+  }
+
+  // Two different real quantities (e.g. Frequency and Time) — composed via
   // Normalise then Map, same as CanConnect.cpp's mirrored case. Live
   // wire-drag prediction only needs the outcome (NeedsAdapters renders
   // identically to Ok during a drag, per this file's own header comment);
@@ -113,6 +122,11 @@ export function canConnectPorts(from: PortDescriptor, to: PortDescriptor): CanCo
         ? 'Raw audio into a real-quantity port needs Audio to Modulation, then Map'
         : 'A raw audio signal into a modulation port needs Audio to Modulation',
     )
+  }
+
+  // Direct feedback: "bool not being pluggable into control and ints."
+  if (from.type === 'boolean' && to.type === 'control') {
+    return needsAdapters('A Boolean signal into a Control-typed port needs a From Bool')
   }
 
   return reject('Incompatible signal types with no adapter available yet')
