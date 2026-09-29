@@ -328,6 +328,53 @@ Two different things share this complaint, worth telling apart:
 
 ---
 
+## Part 4 — found live during `wiki/plans/DomainRedesign.md`'s implementation
+
+Not from your review pass — these two were real defects this redesign's own batches
+ran into and fixed along the way, tracked here per this doc's stated job (found-defect
+tracking for existing behavior), not folded into Parts 1-3 above since they postdate
+that original 55-node scan.
+
+### `maxInstances-never-enforced` — FIXED (Batch 4)
+*A node's own Structural parameter is declared and editable in the UI but never
+actually read anywhere in the audio path.*
+
+**Confirmed:** `instance.allocate.voice`'s `maxInstances` (`InstanceAllocatorNode.h`)
+has been settable since M17, but the voice pool it should cap (`VoiceManager`) always
+hardcoded its ceiling to the full physical `numVoices` regardless of what this
+parameter said — dialing it down to, say, 2 did nothing; every voice lane above
+whatever number you typed kept allocating exactly as before.
+
+**Fix applied:** `VoiceManager::setMaxActiveVoices()`/`getMaxActiveVoices()` now
+actually enforce the ceiling — `findIdleVoice()`/`stealVoice()` both respect it,
+clamped to `[1, numVoices]` so it can never ask for more lanes than physically exist
+or drop to zero. `getActiveVoiceCount()` (a relaxed atomic, recomputed on every stage
+change) backs the instance-count badge's live numerator. `tests/VoiceManagerTests.cpp`
+covers enforcement end to end.
+
+### MIDI-independence dispatch — FIXED (Batch 2)
+*Two coexisting note sources feeding one origin — a real `io.noteIn` wiring, and an
+internal `clock`→`seq`→`note.assemble` chain triggering the same allocator's note-in
+mechanism — must never be conflated into a single trigger detector, or an ordinary
+incoming MIDI note phantom-spawns a duplicate, phase-offset voice at the same pitch.*
+
+**Confirmed, found live:** `spawnEventsThisBlock` increments on every noteOn/noteOff
+regardless of source, by design (one counter for both directions) — including an
+ordinary note arriving through real `io.noteIn` wiring one render call after
+`triggerVoiceNote()`'s own internal poke. The first cut of the internal-trigger
+detection misread this as an internal trigger and spawned a phantom extra voice at
+the same pitch, caught by `InitPatchTests.cpp`'s polyphony RMS test showing the
+resulting chord QUIETER than expected (destructive phase interference from the
+duplicate, phase-offset oscillator — not louder, the naive expectation).
+
+**Fix applied:** the internal-trigger detection block is now gated on
+`voicePlans[0] != nullptr && voicePlans[0]->noteInNodeId.isEmpty()` — only an origin
+with NO real `io.noteIn` wired runs the internal-trigger mechanism at all, so a real
+MIDI-driven origin and an internally-triggered one never cross wires even when both
+exist in the same graph simultaneously (up to `MultiplicityResolver::maxOrigins`, 4).
+
+---
+
 ## Full node list checked (55 files, `engine/include/bazalt/engine/nodes/`)
 
 ConstantNode, OutputNode, DelayNode, ListenNode, NoiseBurstNode, NormaliseNode,

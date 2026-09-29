@@ -282,8 +282,16 @@ a crossover so bass stays mono and phase-coherent. **In:** `in` — `Audio` (`Ch
 
 ## mix
 
-#### `mix.sum` — Mix ✅ *(fixed — wiki/NODES_Gaps.md's `redundant-composable-param`)*
-**In:** port group `in.0…in.N` — `Audio` (growable, min 2, max 16). **Out:** `out` — `Audio`. **Behavior:** a plain `out = sum(in.i)` — the per-input `level.N` this used to bake in is gone; place a real `mix.gain` node in front of an input for that instead. Patch schema v4 + `PatchSerializer`'s v3→v4 migration preserve an old patch's non-default/connected `level.N` values as a real, spliced-in `mix.gain` node — never silently dropped.
+`mix.sum` (fixed at Milestone 0.5 — `wiki/NODES_Gaps.md`'s `redundant-composable-param`)
+is gone as of `wiki/plans/DomainRedesign.md` Batch 3 — folded straight into `math.add`
+(see the `math` section below): the two were almost line-for-line the same node once
+`level.N` was removed, the only real differences being Audio-vs-Control ports and a
+stored-fallback convenience an unwired Audio input never needed (silence is already
+the sum identity). `math.add` is now genuinely polymorphic and does everything
+`mix.sum` did, plus Control. Patch schema migration for a pre-Batch-3 patch's literal
+`mix.sum` nodes is intentionally NOT provided — CLAUDE.md's Rule 3 (never-rename-ids)
+is suspended for this codebase; a saved graph naming `mix.sum` fails to load with a
+plain "Unknown node type" today, not a silent reinterpretation.
 
 #### `mix.crossfade` — Crossfade ✅
 Blends continuously between two signals by position — from a discrete A/B switch
@@ -431,14 +439,16 @@ a timed gate for whoever needs one. **In:** `gate : bool`; `pitch [audio]`; `vel
 
 ## math — all ✅
 
-All take and return `Control`; quantity is inherited from the first connected input;
-mismatched quantities are rejected by `canConnect`.
+Every node here is Control-typed and quantity-inherits from its first connected
+input, EXCEPT `math.add`/`math.multiply` — see their own rows below,
+`wiki/plans/DomainRedesign.md` Batch 3. For the rest: mismatched quantities are
+rejected by `canConnect`.
 
 | Node | Ports | Notes |
 |---|---|---|
-| `math.add` | `in.0…in.N` (growable, min 2) | sums every connected input |
+| `math.add` | `in.0…in.N` (growable, min 2) | sums every connected input — genuinely polymorphic (`PortPolymorphism::SignalAndQuantity`, same mechanism as `util.reroute`/`logic.select`): Audio or Control, whichever's wired (SignalType follows the lowest-numbered still-wired input's priority); Quantity is LENIENT, not the same priority rule — only resolves to a specific quantity when every quantity-declaring input unanimously agrees, any disagreement (or nothing declared) falls back to Dimensionless, so summing genuinely different real quantities (a pitch offset + a raw modulation amount, say — `buildInitPatchGraph()`'s own detuneSum/cutoffSum do exactly this) still works. `mix.sum` (see the `mix` section above) folded into this node outright at the same time. |
 | `math.subtract` | `a`, `b` | `a − b` |
-| `math.multiply` | `in.0…in.N` (growable) | multiplies every connected input together — ring modulation when both are audio-rate |
+| `math.multiply` | `in.0…in.N` (growable) | multiplies every connected input together — same polymorphism as `math.add` above (this doc previously claimed audio-rate ring-mod already worked here; verified false against the real source and fixed at the same time, Batch 3 — its ports were fixed Control until then). Two Poly Audio signals from the SAME voice-allocator origin into this node's growable ports is exactly detuned self-ring-mod per note, no special case needed. |
 | `math.divide` | `a`, `b`, `safeZero : bool·true` | division by zero returns 0, not NaN |
 | `math.abs` | `in` | absolute value — rectifies a bipolar signal into unipolar |
 | `math.clamp` | `in`, `low`, `high` | hard-limits a signal to a `[low, high]` range |
@@ -614,11 +624,14 @@ Swarm/Trigger runtime machinery exists — not empty shells bolted onto this one
 `instanceAge`, `random1`, `random2`, `start`, `stop` — 9 ports. **Structural:**
 `maxInstances`.
 
-#### `instance.mix` — Voice Mix ✅
+#### `instance.sum` — Voice Sum ✅ *(renamed from `instance.mix`, wiki/plans/DomainRedesign.md Batch 1b — C++ class name (`InstanceMixNode`) unchanged)*
 Closes an instanced region. **In:** `in` — `Audio`, `polyOnly`. **Out:** `out` —
-`Audio` (mono domain). **Structural:** `mode` (enum: sum, average). Placeable
-anywhere, more than once — though `DomainSplitter` allows only one allocator/one mix
-region per graph today.
+`Audio` (Scalar). **Structural:** `mode` (enum: sum, average). `DomainSplitter` (one
+allocator/one mix region per graph, full stop) is gone — `MultiplicityResolver`
+(DomainRedesign.md) supports up to `maxOrigins` (4) simultaneous, independent
+allocator/sum pairs per graph, each its own physical `ExecutionPlan`, each either
+driven by real MIDI (`io.noteIn`) or an internal `clock`→`seq`→`note.assemble` chain
+with no MIDI involved at all — never both at once for the same origin.
 
 ## util
 
@@ -705,7 +718,7 @@ group).
 | **Arpeggiator** | Cycles held notes | `note.hold` → `clock.pulse` → `clock.counter` → `note.select` | 📋 |
 | **Chord** | One note becomes several | `note.chord` with `data.scale` | 📋 |
 | **Bubble** | A single water bubble | `osc.sine` with pitch from `env.curve` (rising chirp) × `env.adsr` (short decay) | 📋 |
-| **Water** | Rain, a stream, a boil | `noise.dust` → a future `instance.allocate.swarmTransient` (09-28-InstanceAllocator.3: Swarm modes are no longer a config on `instance.allocate.voice` — they'll be their own node type once built) → Bubble per instance, radius from `random` → `instance.mix` | 📋 |
+| **Water** | Rain, a stream, a boil | `noise.dust` → a future `instance.allocate.swarmTransient` (09-28-InstanceAllocator.3: Swarm modes are no longer a config on `instance.allocate.voice` — they'll be their own node type once built) → Bubble per instance, radius from `random` → `instance.sum` | 📋 |
 | **Crackle** | Fire, static, ice | `noise.dust` → `excite.burst` → `resonator.modal` with a small stone/ceramic set | 📋 |
 | **Scrape** | Stone dragged across asphalt | `excite.contact` → `resonator.modal` with `data.material` (stone, irregular) → `space.reverb` | 📋 |
 | **Cicada** | One insect | `clock.pulse` with jitter → `excite.burst` → `filter.formant` → body from `resonator.modal` | 📋 |
@@ -714,7 +727,7 @@ group).
 | **Bowed String** | Violin-like | `excite.stickSlip` ↔ `resonator.string`, coupling loop closed through `motion` | 📋 |
 | **Struck Body** | Drum, bell, plate | `excite.mallet` ↔ `resonator.plate` or `resonator.modal` | 📋 |
 | **Hex Guitar Front End** | Six strings to six note streams | six `io.audioIn` channels → `analysis.onset` + `analysis.pitch` → `note.assemble` per string | 📋 |
-| **Init Patch** | Ordinary subtractive synth | `io.noteIn` → `instance.allocate.voice` → `osc.analog` ×2 → `filter.ladder` → `env.adsr` (×2: amp + filter cutoff) → `instance.mix` → `space.pan` → `io.output` (one real stereo cable, `pan.out` → `masterOut.in`) | ✅ real hand-built graph, genuinely stereo; 📋 not yet a loadable `stock.*` asset — no `space.reverb` tail yet (M28) |
+| **Init Patch** | Ordinary subtractive synth | `io.noteIn` → `instance.allocate.voice` → `osc.analog` ×2 → `filter.ladder` → `env.adsr` (×2: amp + filter cutoff) → `instance.sum` → `space.pan` → `io.output` (one real stereo cable, `pan.out` → `masterOut.in`) | ✅ real hand-built graph, genuinely stereo; 📋 not yet a loadable `stock.*` asset — no `space.reverb` tail yet (M28) |
 | **Voiced self-oscillation (cat purr)** *(Correction 1's new coverage item)* | The hardest test in the set | `env.curve` (breath pressure) → `random.drift` (stiffness jitter) + `lfo.shape` (~26Hz stiffness modulation, for entrainment) → `excite.vocalFolds` → `flow` gates `noise.colored` through `mix.gain` (aspiration) → `resonator.junction` splits `resonator.tract` (nasal route) vs. a closed branch (antiresonances) vs. `resonator.modal` (body conduction) → `mix.crossfade` (microphone position) | 📋 — exercises audio-rate physical-parameter modulation, emergent oscillation thresholds, source–resonator coupling, branched waveguides, `Data` as a geometric profile, flow-gated noise, two sources sharing one tract, sub-30Hz fundamentals. **Testing note:** self-oscillating/chaotic models are deterministic but rounding-sensitive — two compilers or an enabled FMA path diverge within seconds, so bit-exact golden renders don't work here; verify statistically (measured f₀/spectral envelope/jitter/shimmer within tolerance, oscillation threshold within a pressure window) or CI failures become indistinguishable from physics. |
 
 # Reference patches: coverage
@@ -729,7 +742,7 @@ missing primitives (once M23–M29 land):
 5. **Stone on asphalt** — `excite.contact` → `resonator.modal`, `util.macro` driving speed/pressure.
 6. **Transient and persistent swarms** — future `instance.allocate.swarmTransient`/`instance.allocate.swarmPopulation` node types (09-28-InstanceAllocator.3: no longer configurations of `instance.allocate.voice` — see the Water/Cicada Field rows above).
 7. **Ordinary subtractive patch** — `osc.analog`, `filter.ladder`, `env.adsr` — **built, playable today** as Init Patch.
-8. **Per-voice effects** — `shape.waveshaper`, `delay.line`, `space.reverb` placed before `instance.mix`.
+8. **Per-voice effects** — `shape.waveshaper`, `delay.line`, `space.reverb` placed before `instance.sum`.
 9. **Hexaphonic guitar** — `io.audioIn` per channel → `analysis.onset` + `analysis.pitch` → `note.assemble` → `instance.allocate.voice` (each string gets its own voice/mix pair, not a shared one — avoids needing a Note-stream-merge node).
 10. **Voiced self-oscillation (cat purr)** — see Part B, above.
 

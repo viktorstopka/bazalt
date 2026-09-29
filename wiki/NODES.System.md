@@ -256,7 +256,8 @@ should close.
 | `Data` (tag X) | anything non-`Data` | Reject | "Data never converts implicitly" | ✅ |
 | anything non-`Data` | `Data` | Reject | same | ✅ |
 | `Data(eq-curve)` | `Data(curve)` | — | catalog names `data.eqToCurve` (Correction 2) as an **explicit, one-way** node — never automatic, since the two tags mean genuinely different things (bands-in-dB-across-log-frequency vs. values-across-normalised-axis) | 📋 catalog only |
-| `Audio` (poly-domain) | `Audio` (mono-domain, no mix in between) | Reject at compile time | — insert `instance.mix` by hand | ✅ (`DomainSplitter`) |
+| `Audio` (Poly) | `Audio` (Scalar-only destination, no `instance.sum` in between) | Reject at compile time | — insert `instance.sum` by hand | ✅ (`MultiplicityResolver`) |
+| `Audio` (`Poly`, `originId=X`) | `Audio` (`Poly`, `originId=Y ≠ X`), combined directly | Reject at compile time | "fed by two different voice allocators... reduce one to Scalar first" — reduce one side through its own `instance.sum` first | ✅ (`MultiplicityResolver`; mirrored at wire-drag-prediction time by `canConnect.ts`) |
 | `Spectral` | anything | Reject | "Spectral is reserved, not yet implemented" | ✅ |
 | type mismatch, no rule above applies | | Reject | "Incompatible signal types with no adapter available yet" | ✅ (the catch-all) |
 
@@ -276,12 +277,77 @@ empty port once the last one is wired, never below `min` or above `max`.
 
 ---
 
-## 5. Domains: mono ↔ poly
+## 5. Multiplicity: Scalar ↔ Poly (`wiki/plans/DomainRedesign.md`, superseding `DomainSplitter`)
 
-A graph is mono everywhere by default. An **Instance Allocator** opens a poly
-(instanced) region; a **Voice Mix** closes it back to mono. Everything between the two
-runs once *per instance*, with its own state — this is how per-voice distortion,
-per-voice delay, and per-voice resonators work.
+**This section replaced its own previous "domains: mono ↔ poly" framing wholesale**
+(`wiki/plans/DomainRedesign.md`, all 5 batches landed) — not a tweak to it. The old
+model treated "domain" as a single fact about the *whole graph*: every node was
+whole-graph-classified `voice`, `global`, or `mono` by `DomainSplitter`'s reachability
+pass, which folded outward from wherever `instance.allocate.voice`/`instance.sum`
+happened to sit and — the actual bug this redesign fixes — got a **different answer
+depending on compile order**: `env.adsr` → `instance.sum` compiled fine if
+`instance.sum` was already wired to the output first, and was rejected otherwise,
+for the exact same graph shape. `instance.sum` itself was also capped at **exactly
+one per graph**, full stop — a second allocator/sum pair was a hard reject, not a
+resource limit.
+
+**The new model: Multiplicity is a per-PORT resolved fact, not a whole-graph
+partition.** A `PortDescriptor` doesn't declare it statically (there's no new
+`PortDescriptor` field) — `MultiplicityResolver::split()` resolves it fresh on every
+compile, the same way `GraphCompiler` already resolves `PortPolymorphism`'s
+`SignalType`/`Quantity` for `util.reroute`/`logic.select`, just as its own separate
+pass (§10.1 of the plan: gated by node type id, not `hasPolymorphicPorts()` — every
+node needs this resolved, not just the opt-in few):
+
+```cpp
+enum class Multiplicity { Scalar, Poly };  // one value/stream, vs. one PER ACTIVE VOICE LANE
+```
+
+A `Poly` port isn't a bare tag — it carries **which allocator it came from**
+(`originId`, the producing `instance.allocate.voice` node's own id). This is what
+makes multiple independent voice regions fall out for free instead of needing their
+own bookkeeping: two different allocators each produce their own
+`Poly(originId=X)`/`Poly(originId=Y)`, nothing forces them to pair, and each gets
+reduced by its own `instance.sum` independently, whenever the graph actually wires
+one — up to `MultiplicityResolver::maxOrigins` (4) simultaneous origins per graph,
+each its own physical plan, each either MIDI-driven (`io.noteIn`) or internally
+triggered (a `clock`→`seq`→`note.assemble` chain), never both for the same origin
+(the real bug Batch 2 found and fixed — see `wiki/NODES_Gaps.md`'s "MIDI-independence
+dispatch" entry).
+
+**Resolution rule, per ordinary node, per compile** (everything except the two
+boundary nodes below):
+- Every input `Scalar` → the node resolves `Scalar`. Runs once — exactly today's
+  behavior for anything outside a voice region.
+- Any `Poly(originId=X)` input, with every other `Poly` input among them also
+  `originId=X` (a `Scalar` input broadcasts into every lane, no conflict) → the node
+  resolves `Poly(originId=X)`.
+- Two `Poly` inputs with *different* `originId`s, combined directly → `Reject` at
+  compile time ("Node 'X' is fed by two different voice allocators ('Y', 'Z') — reduce
+  one to Scalar first"), never a silent/arbitrary pairing. `canConnect.ts` mirrors this
+  exact rule at the wire-drag-prediction level (an outcome-only guard, since
+  `CanConnect.cpp` itself has no notion of multiplicity — that's a separate whole-graph
+  pass, not a per-port type/quantity rule).
+
+**Not symmetric to `Channels`.** `Channels::Mono`/`Stereo` is a *static* per-port
+declaration, fixed at descriptor-authoring time — that's exactly why `Mono→Stereo`
+and `Stereo→Mono` are two different, asymmetric operations (free broadcast vs. lossy
+reduce via `mix.downmix`), and why direction matters. `Multiplicity` isn't that: an
+ordinary node's ports don't declare a fixed `Multiplicity` at all, so there's no such
+thing as "plugging a `Poly` signal into a `Scalar` port" — an ordinary port doesn't
+have a fixed one to plug into. Feeding a 2-input node one `Poly`-sourced signal and
+one `Scalar`-sourced one is one case, not two, and it's direction-agnostic: the node
+resolves `Poly` overall, the `Scalar` input broadcasts into every lane. The real,
+Channels-style asymmetry is confined to exactly the two boundary nodes below, which
+fix their multiplicity *by declaration* rather than resolving it dynamically.
+
+**Compile-time reclassification, not a runtime rewrite.** The physical runtime shape
+is unchanged from before this redesign: still N=8 independent physical
+`ExecutionPlan`s per voice-origin, driven by `PlanSwapper`+`VoiceManager`. What
+changed is only how nodes get sorted into a voice-bucket vs. the global-bucket graph
+*before* compile — `DomainSplitter`'s whole-graph reachability+fold replaced by this
+local, per-node fixed-point pass, generalized from exactly one origin to up to
+`maxOrigins`. `ExecutionPlan`'s buffer/scheduling internals were never touched.
 
 ### `instance.allocate.voice` — the region-opening node (renamed from `instance.allocator`, 09-28-InstanceAllocator.3; renamed again from `instance.voice`, 09-29-AddMenu.1)
 
@@ -305,13 +371,19 @@ of them equally), each built as its own milestone once its real spawn/lifecycle
 behavior actually exists — not as empty shells on `instance.allocate.voice` now, which would
 just recreate the same dead-surface problem this rename fixed.
 
+**Multiplicity terms, mapped onto this node:** its Poly-typed outputs (below) are the
+one place in the whole catalog that produce `Poly`, unconditionally, by construction
+— nothing resolves this dynamically, exactly the way `io.output`'s `hidden` flag is a
+fixed property of that one node rather than something resolved per compile. Every
+`Poly` value this node produces is tagged `originId = this node's own id`.
+
 **Namespace note (09-29-AddMenu.1):** the type id itself carries an `allocate` segment
 (`instance.allocate.voice`, not `instance.voice`) specifically so the Add menu's
 category tree — derived from `getCategory()`'s own `/`-separated path, §4-equivalent
 mechanism, see `wiki/MILESTONES.md`'s `09-29-AddMenu.1` entry — can nest all the
 spawn-mechanism siblings (Voice, and eventually Swarm-population/Swarm-transient/
 Trigger below) under one "Domain > Allocate" flyout instead of leaving them
-indistinguishable from `instance.mix` under a flat "Domain" list. `instance.mix`
+indistinguishable from `instance.sum` under a flat "Domain" list. `instance.sum`
 deliberately keeps its plain two-segment id and flat "Domain" category — it isn't one
 of the spawn-mechanism siblings, it's the region-closing node, so it doesn't belong in
 the same subcategory.
@@ -343,9 +415,15 @@ Velocity**, **Unison Index**/**Unison Detune**.
   lifetime expires.
 - An instance is **freed only when its per-instance chain is silent**, not when an
   envelope finishes — per-voice reverbs/delays must be allowed to ring out. Silence
-  detection sits at Voice Mix's input, with a threshold and hold time.
+  detection sits at Voice Sum's input, with a threshold and hold time.
 - Live instance count can therefore exceed held-note count. `maxInstances` bounds the
-  live count, not the note count.
+  live count, not the note count — and, as of `wiki/plans/DomainRedesign.md` Batch 4,
+  actually enforced (`VoiceManager::setMaxActiveVoices()`); before that it was
+  declared and editable since M17 but read nowhere, a real found-live gap (see
+  `wiki/NODES_Gaps.md`). The same live count backs the node-editor's instance-count
+  badge (§5.5-equivalent, `NodeCard.tsx`'s `InstanceCountBadge` — `DomainDot`'s real
+  replacement, since "this node's domain" stopped being a single fact a dot could show
+  once Multiplicity became per-port).
 - **Stealing** applies to live instances, fades a stolen instance out over a short
   ramp rather than cutting it.
 - Buffers are preallocated for `maxInstances`.
@@ -357,23 +435,34 @@ Velocity**, **Unison Index**/**Unison Detune**.
   — the correct default (a global clock ticking all swarm members).
 - To fire in one instance only, the event must go through the allocator (a note-on is
   exactly this).
-- Events generated *inside* an instance never leave it, except through Voice Mix
+- Events generated *inside* an instance never leave it, except through Voice Sum
   (audio only) or an explicit aggregation node (later feature).
 - `Data` is read-only and shared across instances — never copied per instance.
 
-### `instance.mix` — closing the region
+### `instance.sum` — closing the region (renamed from `instance.mix`, `wiki/plans/DomainRedesign.md` Batch 1b — C++ class name `InstanceMixNode` unchanged)
 
-Sums or averages live instances back to mono, placeable anywhere, more than one
-allowed. Reports per-instance silence back to the allocator, which is what actually
-frees a slot. `DomainSplitter` currently supports **exactly one** allocator region and
-**exactly one** mix per graph — a second of either is rejected, documented in the
-compiler rather than silently assumed.
+Sums or averages live instances back to Scalar, placeable anywhere, more than one
+allowed. Reports per-instance silence back to its own origin's allocator, which is
+what actually frees a slot. Its own per-port shape is the OTHER real asymmetry
+Multiplicity carries (§2.4 of the plan): `instance.sum`'s `in` port is the one port
+in the whole catalog **required** to be `Poly` — `MultiplicityResolver` rejects it
+outright ("instance.sum '...' input must be a Poly signal — nothing to reduce") if
+nothing Poly feeds it, rather than treating a Scalar input as a harmless no-op
+passthrough. Its `out` port is ordinary Scalar, ordinary priority resolution, nothing
+special. `DomainSplitter`'s old **exactly one allocator, exactly one mix, full stop**
+ceiling is gone — up to `maxOrigins` (4) allocator/sum pairs now coexist in one
+graph, each independent, each still individually capped at one `instance.sum` per
+origin (a *second* sum reducing the SAME origin's Poly signal is still rejected —
+that part of the old rule was never the bug).
 
 ### Nested allocators
 
 Architecturally natural (a swarm inside a voice) but multiply cost. Supported by the
 model; requires explicit opt-in per allocator and the UI showing the multiplied
-worst-case instance count. Not built.
+worst-case instance count. Not built — and genuinely distinct from the "up to 4
+independent, sibling origins" this redesign already ships: nesting is one origin's
+voice-bucket containing *another* allocator, not two allocators sitting side by side
+in the global bucket.
 
 ---
 
@@ -392,7 +481,7 @@ is derived from the value contract:
 | violet, `!` glyph | `Event` |
 | teal, `♪` glyph | `Note` (Milestone 0.7 — this was the actual cause of the "same colour won't connect" report in `NODES_Gaps.md`: Note fell through to white, colliding with real-quantity Control) |
 | *(open)* | `Data` — no colour assigned yet; no real node produces one, so there's nothing to observe against |
-| line style | domain (mono vs. poly, §5) |
+| bright green (`#40FF69`), Audio only | `Multiplicity = Poly` (§5, `wiki/plans/DomainRedesign.md` Batch 4) — Scalar Audio keeps the ordinary pink/magenta above. This is a real, decided REVERSAL of this table's own previous entry here ("line style | domain (mono vs. poly)" — never actually implemented, and superseded before it was): a direct, explicit user call that Poly/Scalar Audio are "very tricky in plugging each other," worth a dedicated hue despite the colour-budget cost, explicitly reversible later. Multiplicity is Audio-only for now — Control/other types don't get this treatment (still open, §8 of the plan). |
 
 ---
 
@@ -623,8 +712,9 @@ the template to copy if a real migration is ever needed once rule 3's suspension
   regardless of channel count. A visually distinct stereo cable (thicker line, doubled
   glyph, a small indicator) is optional polish, not built.
 - **The mono-only render path is untouched.** A graph with no `instance.allocate.voice`
-  (`DomainSplitter::monoOnly`, `PluginProcessor::renderMonoRange`) still only ever
-  tracks one mono buffer.
+  (`MultiplicityResolver`'s own `MultiplicityResult::monoOnly` field, replacing
+  `DomainSplitter::monoOnly` — `wiki/plans/DomainRedesign.md`; `PluginProcessor::
+  renderMonoRange`) still only ever tracks one mono buffer.
 - **Per-sample feedback regions** got the same flat-slot generalization for
   structural correctness, but no per-sample-region-capable node (delay/onepole/mix)
   is ever Stereo today, so this path is unexercised by any real node — proven only

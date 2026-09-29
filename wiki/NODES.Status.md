@@ -4,9 +4,17 @@ Tracks, per node, **what's actually built** vs. **what's left**, and for what's 
 **how badly we need it** and **what order to build it in**. Derived from
 `wiki/NODES.md` (the catalog — read that for what each node actually does) and
 `wiki/NODES.System.md` (architecture). Cross-checked directly against
-`engine/include/bazalt/engine/nodes/*.h` (58 registered node types across 56 files,
-`GrowableGroupNode`/`InheritingPortsNode` excluded as shared base classes, `ViewNodes.h`
-holding 3 node types) — every ✅/🚧 claim below is a real, compiled, registered node,
+`engine/include/bazalt/engine/nodes/*.h` (77 registered node types across 74 files as
+of `wiki/plans/DomainRedesign.md` Batch 3 — the authoritative running count
+`tests/NodeDescriptorTests.cpp`'s own `NodeDescriptorTests` case tracks and narrates
+per batch; was 78/75 before that batch folded `mix.sum` (`MixNode.h`, its own
+dedicated file/type) straight into `math.add`, with no replacement type added.
+`GrowableGroupNode`/`InheritingPortsNode` excluded as shared base classes;
+`ViewNodes.h` holds 3 node types and `PitchFrequencyNodes.h` holds 2, which is why the
+type count exceeds the file count. This file's own header count had drifted stale
+before DomainRedesign even started, from same-day batches that landed after it was
+last written — corrected here against the authoritative source rather than
+incrementally patched) — every ✅/🚧 claim below is a real, compiled, registered node,
 not aspirational.
 
 This file doesn't replace `wiki/NODES_Gaps.md` (found-defect tracking for nodes that
@@ -152,9 +160,11 @@ rather than waiting; every `factory.*` node still does want the real thing.
 | `space.diffuser` | To be implemented | **B2** | Space | Allpass chain — reuses `filter.allpass`. |
 | `space.reverb` | To be implemented | **B3** | Space | FDN reverb — the hardest effect node; cheap enough at low quality to run per-voice. |
 
-### `mix.*` — 4/4 Implemented
+### `mix.*` — 3/3 Implemented
 
-`mix.sum`, `mix.crossfade`, `mix.gain`, `mix.downmix` — all Implemented.
+`mix.crossfade`, `mix.gain`, `mix.downmix` — all Implemented. `mix.sum` is gone as of
+`wiki/plans/DomainRedesign.md` Batch 3 — folded into `math.add` (see the `math.*`
+family below), not a fourth entry here anymore.
 
 ### `env.*` — 2 Implemented, 1 to build
 
@@ -234,7 +244,9 @@ intended use (an audio input playable as an instrument) once `analysis.pitch`/
 
 ### `math.*` / `logic.*` / `adapt.*` — 26/26 Implemented
 
-All done — no rows needed. `adapt.audioToControl` ("To Modulation") was added whole by
+All done — no rows needed (count unaffected by `wiki/plans/DomainRedesign.md` Batch 3:
+`math.add`/`math.multiply` gained real Audio/Poly polymorphism and absorbed
+`mix.sum`'s job, but neither is a new or removed row here). `adapt.audioToControl` ("To Modulation") was added whole by
 the Audio → Control Bridge (`wiki/plans/AudioControlBridge.md`); `adapt.boolToControl`
 ("From Bool"), `adapt.pitchToFrequency`/`adapt.frequencyToPitch`, and
 `adapt.gateLength` were all added whole in a direct-feedback sweep the same session
@@ -286,7 +298,7 @@ edit. Every later `data.*`/`osc.wavetable`/`sampler.*` node rides on this for fr
 | Node | Status | Necessity | Batch | Notes |
 |---|---|---|---|---|
 | `instance.allocate.voice` | Implemented | | | |
-| `instance.mix` | Implemented | | | |
+| `instance.sum` | Implemented | | | renamed from `instance.mix`, `wiki/plans/DomainRedesign.md` Batch 1b |
 | `instance.allocate.swarmPopulation` | To be implemented | **A1** | Domain Extensions | Fixed count, always live — simplest of the three (no spawn logic). |
 | `instance.allocate.swarmTransient` | To be implemented | **A2** | Domain Extensions | Event-triggered spawn, closest to Voice's own shape. |
 | `instance.allocate.trigger` | To be implemented | **A2** | Domain Extensions | Event-triggered, one instance at a time. |

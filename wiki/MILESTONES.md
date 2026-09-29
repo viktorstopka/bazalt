@@ -1318,3 +1318,154 @@ app rebuilt and relaunched.
 family's "7 of 10 built" count, the "52 of 126 catalog-only" header count). `wiki/
 NODES.Status.md` (`note.*` section, the Analysis batch's row, the Hex Guitar Front End
 dependency row, totals recomputed 69→70 Implemented, 53→52 to build, A-tier 8→7).
+
+---
+
+# Domain redesign — `wiki/plans/DomainRedesign.md`, implemented whole — done
+
+Not part of the `0.x` arc or either dated arc above — a standing **plan**
+(`wiki/plans/DomainRedesign.md`, written 2026-09-29) picked up and built whole on the
+user's own explicit instruction ("I want you to launch the full implementation of
+DomainRedesign.md"), following the plan's own §10 "approved via plan mode" 5-batch
+sequence exactly. Full design reasoning (why the old model actually failed, the
+`Multiplicity` type, the origin-tagging, the unison/ring-mod questions) lives in the
+plan itself; this entry is the build record. `wiki/NODES.System.md` §5 was rewritten
+wholesale to match (not left as a stale description of the old model) — read that for
+the settled architecture, this entry for what changed and what broke along the way.
+
+**The one-line summary:** `DomainSplitter` (whole-graph reachability, order-dependent,
+exactly-one-allocator) is gone, replaced by `MultiplicityResolver` (per-node,
+per-compile Scalar/Poly resolution, up to 4 simultaneous independent voice regions).
+Physically, nothing about `ExecutionPlan`'s runtime shape changed — still N=8
+independent plans per voice-origin via `PlanSwapper`+`VoiceManager` — only how nodes
+get sorted into buckets before compile changed (§10.1's own "compile-time
+reclassification, not a runtime rewrite" framing).
+
+**Batch 1 — `MultiplicityResolver` replaces `DomainSplitter`.** New
+`engine/include/bazalt/engine/graph/MultiplicityResolver.h`/`.cpp`: origin detection,
+fixed-point forward propagation (origin-mismatch → reject with a real, named-node
+error message), `instance.sum` input-must-be-Poly validation, backward-inclusion (an
+origin's own Scalar upstream trigger source gets duplicated into that origin's own
+voice-bucket graph, since two independently-scheduled `ExecutionPlan`s share no
+buffers), and a `globalMembers` heuristic (output node, OR disconnected, OR has ≥1
+Scalar-Scalar edge — not simply "every unresolved node"). `DomainSplitter.h`/`.cpp`
+deleted outright. Two real bugs found and fixed while building this: (1) an origin's
+voice-bucket output was always retargeted to the allocator's own raw gate signal even
+when the graph's REAL designated output already lived inside that same bucket (e.g.
+`buildVoiceProofGraph()`'s "amp" node) — silently swapping the compiled plan's real
+audible signal for a Boolean gate; (2) when the designated output resolved Poly, the
+global-bucket graph was never compiled at all, so `GraphCompiler`'s own validation
+(invalid ports, growable-group overflow) silently never ran against newly-added
+orphan nodes — fixed by decoupling "should this compile" from "should this be the
+audible output" (`ensureGlobalGraphHasAValidOutput()`, new).
+
+**Batch 1b — `instance.mix` → `instance.sum`, plus a real MIDI-independence bug.**
+Rule 3 (never-rename-ids) is suspended for this codebase, so the rename needed no
+migration — just `PatchDocument::currentSchemaVersion` bumped to 6 for hygiene (C++
+class name `InstanceMixNode` deliberately unchanged). **A critical, previously-latent
+bug found here, not before**: `spawnEventsThisBlock` increments on every noteOn/
+noteOff regardless of source (one counter for both directions, by design), including
+an ORDINARY note arriving via real `io.noteIn` wiring one render call after
+`triggerVoiceNote()`'s own internal poke — the first cut of internal-trigger detection
+misread this as an internal trigger and spawned a phantom extra voice at the same
+pitch. Caught by `InitPatchTests.cpp`'s polyphony RMS test showing the resulting chord
+QUIETER than expected (destructive phase interference from a duplicate, phase-offset
+oscillator — not louder, the naive expectation). Fixed by gating the whole
+internal-trigger mechanism on `voicePlans[0] != nullptr &&
+voicePlans[0]->noteInNodeId.isEmpty()` — only an origin with NO real `io.noteIn`
+wired ever runs it.
+
+**Batch 2 — real multi-origin runtime.** `PluginProcessor`/`ExecutionPlan` generalized
+from one hardcoded external-input slot to a map, so up to `MultiplicityResolver::
+maxOrigins` (4) allocator/sum pairs can coexist and run simultaneously in one graph,
+each its own independent physical plan bundle, each either MIDI-dispatched or
+internally-triggered (never both — the Batch 1b fix is what makes this safe).
+
+**Batch 3 — `mix.sum` folded into `math.add`; `math.multiply` actually fixed.**
+`mix.sum` (`MixNode.h`) and `math.add` (`AddNode.h`) were almost line-for-line the
+same node once `mix.sum`'s `level.N` was already removed (Milestone 0.5) — the only
+real differences were Audio-vs-Control ports and a stored-fallback convenience an
+unwired Audio input never needed. `MixNode.h` deleted; `math.add`/`math.multiply` both
+gained real `PortPolymorphism::SignalAndQuantity` (same mechanism `util.reroute`/
+`logic.select` already use). SignalType keeps `InheritingPortsNode`'s strict
+lowest-priority-wins rule; **Quantity is deliberately lenient** — a real design bug
+caught by `HostInputTests.cpp`'s own "combine io.control + io.transport through
+math.add" case: giving Quantity the same strict rule broke a legitimate pre-existing
+graph, since `canConnect`'s strict real-quantity matching had never actually been
+enforced on `math.add`'s inputs before it became polymorphic. Fixed with a
+per-port-index "unanimous agreement or fall back to Dimensionless" rule instead,
+recomputed fresh on every `resolveIncomingPort()` call. **A real documentation bug
+also found and fixed here**: `wiki/NODES.md` had claimed `math.multiply` "already
+doubles as ring-mod" for audio-rate signals — verified false against the real source;
+its ports were fixed Control until this batch.
+
+**Batch 4 — engine/plugin: `maxInstances` enforced; per-port multiplicity + badge
+data.** `VoiceManager::setMaxActiveVoices()`/`getMaxActiveVoices()` now actually
+enforce `instance.allocate.voice.maxInstances` (`findIdleVoice()`/`stealVoice()`
+respect it) — closing a real, confirmed gap: this parameter was declared and editable
+since M17 but read nowhere, the pool always hardcoded to the full `numVoices`
+regardless of it. `VoiceManager::getActiveVoiceCount()` (a relaxed atomic, recomputed
+on every stage change) backs the badge's live numerator with zero audio-thread work
+on the reading side. `GraphEditController` gains `getPortMultiplicity()` (per PORT,
+not per node — `instance.sum`'s own mixed shape needs no UI-side special casing this
+way) and `getOriginBundleIndices()` (read fresh every call, since the badge's numbers
+change on every voice on/off, far more often than a recompile). New native function
+`graphGetNodeMultiplicity` (alongside the existing `graphGetNodeDomains`, kept —
+still real, tested, complementary info).
+
+**Batch 4 — UI: colour split, instance-count badge, `DomainDot` removed.**
+`tokens.ts`: `portAudioPoly` (`#40FF69`) added as a real, decided reversal of this same
+file's own earlier "don't give Multiplicity its own hue" stance — a direct, explicit
+user call ("very tricky in plugging each other... we can revert back later");
+`portPoly` (the old mock-only placeholder) and `domainVoice`/`domainGlobal`/
+`domainMono` all retired. `portUiKind.ts`: `PortUiKind`'s `'audio'` splits into
+`'audio-scalar'`/`'audio-poly'`, both real `PORT_UI_STYLE` entries; new
+`resolvePortIsPoly()` (live per-port data first, the mock-only `isPolyPlaceholder`
+fallback second) replaces the ad-hoc override that used to sit outside the classifier
+at 7 call sites across `NodeCard.tsx`/`ComponentGallery.tsx`/`InfiniteCanvas.tsx`.
+`graphStore.ts`: `GraphSnapshot.domains` → `GraphSnapshot.multiplicity`, full
+prop-chain rename through `GraphSurface.tsx`. `NodeCard.tsx`/`NodeCard.css`:
+`DomainDot` (a title-bar dot) deleted outright; new `InstanceCountBadge` renders as a
+real top-right corner badge (`position: absolute` off `.node-card` itself — a
+correction against the plan's own "same corner" framing, since `DomainDot` never
+actually sat in a corner). `canConnect.ts`: new `hasOriginMismatch()` guard in
+`canConnect()` — the wire-drag-prediction mirror of `MultiplicityResolver`'s real
+"fed by two different voice allocators" rejection, living here as an extra guard
+rather than inside `canConnectPorts()` (which stays a pure `CanConnect.cpp` mirror,
+since multiplicity is a separate whole-graph pass `CanConnect.cpp` has no notion of).
+
+**Batch 5 — docs.** `wiki/NODES.md` (`instance.sum` rename, `math.add`/
+`math.multiply` polymorphism notes, `mix.sum` entry removed). `wiki/NODES.System.md`
+§5 rewritten wholesale around per-node resolution (a genuine duplicate leftover
+sub-section from an earlier, incomplete edit pass was found and removed while doing
+this — pre-existing, not introduced by this batch, confirmed by diffing against the
+last commit). `wiki/NODES_Gaps.md` gained a new Part 4 documenting the
+`maxInstances-never-enforced` and MIDI-independence-dispatch findings as closed.
+`wiki/NODES.Status.md`'s node-count header was corrected against
+`tests/NodeDescriptorTests.cpp`'s own authoritative running count (77 types/74 files,
+not the stale 58/56 it had drifted to independently of this redesign) while fixing
+the `instance.sum` rename and `mix.sum` removal. `CLAUDE.md`'s "Known interim
+simplifications" bullets naming `instance.mix`/`DomainSplitter`/the one-allocator
+ceiling rewritten to describe the new model, not left stale.
+
+**Tests:** `tests/MultiplicityResolverTests.cpp` (new, ~20 cases, replacing
+`DomainSplitterTests.cpp` — including the exact §0 motivating repro: `env.adsr` →
+`mix.gain` connects regardless of compile order now). `tests/VoiceManagerTests.cpp`
+(new cases: `maxInstances` enforcement + live count). `tests-plugin/
+DomainRedesignTests.cpp` (new: per-port multiplicity including `instance.sum`'s mixed
+shape, end-to-end `maxInstances` enforcement through a real 3-note chord, two
+independent MIDI-independent origins both audibly playing). Several existing test
+files updated for the rename/removal (`InitPatchTests.cpp`, `HostInputTests.cpp`,
+`ConnectWithAutoAdaptTests.cpp`, `GrowablePortsTests.cpp`'s migration tests now
+correctly assert a literal `"mix.sum"` fails to load, matching Rule 3's suspension).
+
+**Verified:** `ctest` (both suites) 471/471 green — 376 engine + 95 plugin test
+cases, reconfirmed at the end of the whole 5-batch sequence, not just per-batch. UI
+`npm run build` (`tsc -b && vite build`) clean, no errors. Manual Standalone
+verification (badge only on Poly nodes with a correct live count, Poly Audio cables
+`#40FF69`, Scalar Audio cables pink, `DomainDot` gone everywhere) is the user's own
+next step — same computer-use caveat every entry in this file already carries.
+
+**Docs updated to match:** see the Batch 5 paragraph above — this entry itself,
+`wiki/NODES.md`, `wiki/NODES.System.md`, `wiki/NODES_Gaps.md`, `wiki/NODES.Status.md`,
+and `CLAUDE.md` were all updated in the same pass as this record.

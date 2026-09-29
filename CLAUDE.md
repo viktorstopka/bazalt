@@ -237,9 +237,10 @@ ctest --test-dir build -C Debug -R PluginTests --output-on-failure
   (`ExecutionPlan::applyHostInputs`), never JUCE types. `io.noteIn` is NOT on
   that mechanism — it's still poked by the hardcoded id `"noteIn"`
   (`BazaltAudioProcessor::findNoteIn`), so a note-in placed under another id is
-  silently ignored. A graph with no `instance.allocate.voice` (`DomainSplitter::
-  monoOnly`) is one plan run every block, so audio effects work but it plays no
-  notes. **Never call `ExecutionPlan::getNodeById ("literal")` on the audio
+  silently ignored. A graph with no `instance.allocate.voice` (`MultiplicityResolver`'s
+  own `MultiplicityResult::monoOnly` field, replacing `DomainSplitter::monoOnly` as of
+  `wiki/plans/DomainRedesign.md`) is one plan run every block, so audio effects work
+  but it plays no notes. **Never call `ExecutionPlan::getNodeById ("literal")` on the audio
   thread** — the literal becomes a heap-allocated `juce::String`; pass one built
   beforehand. That exact mistake was in the M18 note path until M21.
 - The patch format (`engine/patch/PatchDocument.h`) has no `ui` (view state)
@@ -325,20 +326,25 @@ ctest --test-dir build -C Debug -R PluginTests --output-on-failure
   ADR-0007) was the first native function the UI ever called and is still
   the only read-only one (fetched once by both the canvas and the component
   gallery, each independently).
-- `instance.mix`/`instance.allocator`/`DomainSplitter` (NODE_EDITOR.md §7,
-  ADR pending for the domain-partitioning design) are real and tested at
-  the engine level (`tests/DomainSplitterTests.cpp`), but `PluginProcessor`'s
-  starting graph (`buildVoiceProofGraph()`) has neither node — the
-  global-domain code path (`BazaltAudioProcessor::finalizeInstanceMixIntoOutput`,
-  `hasGlobalDomain`) is real but dormant until a graph actually adds an
-  `instance.mix` node via a command. M17 renamed the original
-  `util.voiceSum` (deleted `VoiceSumNode.h`) to `instance.mix`
-  (`InstanceMixNode.h`) and added `instance.allocator`
-  (`InstanceAllocatorNode.h`, voice-config ports only for M17 — its `spawn`
-  Note input is inert until M18 wires Note-typed ports through). Still only
-  a single allocator/single mix per graph is supported — `DomainSplitter`
-  rejects a second one of either, documented in its own header rather than
-  silently assumed.
+- `instance.sum`/`instance.allocate.voice`/`MultiplicityResolver`
+  (`wiki/NODES.System.md` §5, `wiki/plans/DomainRedesign.md`) are real and
+  tested at the engine level (`tests/MultiplicityResolverTests.cpp`), and
+  `PluginProcessor`'s starting graph (`buildVoiceProofGraph()`) has both.
+  `MultiplicityResolver` replaced `DomainSplitter` outright
+  (`wiki/plans/DomainRedesign.md`, all 5 batches landed): the old
+  whole-graph reachability pass gave a different answer depending on
+  compile order for the exact same graph shape (the redesign's own
+  motivating bug) and capped the graph at exactly one allocator/one sum,
+  full stop. The new model resolves Scalar-vs-Poly per PORT, per compile,
+  tagging each `Poly` value with the producing allocator's own node id
+  (`originId`) — up to `MultiplicityResolver::maxOrigins` (4) independent
+  allocator/sum pairs now coexist in one graph, each its own physical
+  `ExecutionPlan` bundle, each either MIDI-dispatched (`io.noteIn`) or
+  internally triggered, never both for the same origin. `instance.sum` was
+  renamed from `instance.mix` in the same redesign (Batch 1b, C++ class
+  name `InstanceMixNode` unchanged) — a second `instance.sum` reducing the
+  SAME origin's Poly signal is still rejected, the one part of the old
+  ceiling that was never the bug.
 - `GraphEditController::recompileAndPublish()` does a full recompile (8
   voice plans + up to 1 global plan) on **every single command**, even ones
   that are conceptually one user gesture made of several calls (e.g. a
