@@ -84,15 +84,38 @@ function getOrCreateState(key: string): TapState {
   return state
 }
 
+// Direct feedback, a real and severe bug ("extremely glitchy... waiting
+// half a second for the Add Menu to pop up"): this loop used to fire a
+// real fetch() for EVERY active tap on EVERY animation frame with no
+// overlap guard at all — not even the self-pacing already applied to
+// graphStore.ts's multiplicity poll after the same class of bug there.
+// The M4 baseline alone (5 taps x 3 frame types = 15) fires 60 times a
+// second from app start, even with the M5 analysis panel completely
+// hidden (App.tsx's `analysisOpen` is a hardcoded false right now); every
+// visible node preview adds more on top. Once any single fetch took
+// longer than one frame - trivially likely under any real load - calls
+// piled up per tap with nothing to stop them, saturating the main thread
+// that also has to service ordinary UI events (a click opening the Add
+// Menu, in this report). Fixed the same way as the multiplicity poll:
+// never let a SPECIFIC tap's next fetch fire while its previous one is
+// still in flight. Tracked per tap (not one global flag) since these are
+// independent local resource fetches - a slow tap shouldn't hold up
+// every other one's own cadence.
+const inFlightPolls = new Set<string>()
+
 async function pollOne(tap: TapName, frameType: TelemetryFrameType): Promise<void> {
-  const path = `tap/${tap}/${FRAME_TYPE_PATH[frameType]}`
+  const key = tapKey(tap, frameType)
+  if (inFlightPolls.has(key)) return
+  inFlightPolls.add(key)
+
   try {
+    const path = `tap/${tap}/${FRAME_TYPE_PATH[frameType]}`
     const response = await fetch(getBackendResourceAddress(path))
     const buffer = await response.arrayBuffer()
     const frame = parseTelemetryFrame(buffer)
     if (!frame) return
 
-    const state = getOrCreateState(tapKey(tap, frameType))
+    const state = getOrCreateState(key)
     if (state.latest && state.latest.sequenceNumber === frame.sequenceNumber) return // nothing new
 
     state.previous = state.latest
@@ -101,6 +124,8 @@ async function pollOne(tap: TapName, frameType: TelemetryFrameType): Promise<voi
     state.latestReceivedAtMs = performance.now()
   } catch {
     // Transient fetch failure (editor tearing down, etc.) — the next poll retries.
+  } finally {
+    inFlightPolls.delete(key)
   }
 }
 
