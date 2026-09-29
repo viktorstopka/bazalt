@@ -15,14 +15,25 @@
   border-radius: var(--radius-sm);
   background: var(--color-panel);
   overflow: hidden;
-  /* Drag adjusts on both axes (horizontal AND vertical, direct feedback) —
-     a plain "grab" hand reads as draggable without implying only one
-     direction, unlike a directional resize cursor. */
-  cursor: grab;
+  /* Direct feedback: hovering should read as "you can type here" first,
+     the same I-beam a plain HTML text input shows at rest — a click with
+     no drag enters type-to-edit mode immediately (see the header comment),
+     so that's the more common single-click outcome than a drag is.
+     Dragging is still real and still gets its own affordance, just only
+     once a gesture is actually underway (:active below), not pre-emptively
+     on hover. */
+  cursor: text;
   user-select: none;
 }
 
 .value-slider:active {
+  /* Drag adjusts on both axes (horizontal AND vertical, direct feedback) —
+     a plain "grab" hand reads as draggable without implying only one
+     direction, unlike a directional resize cursor. Shown from mousedown,
+     not only once the drag threshold is crossed — a plain click-to-edit
+     still passes through this cursor for the instant between press and
+     release, same trade-off ValueSlider.tsx's own header comment already
+     accepts for the dblclick-vs-click-to-edit race. */
   cursor: grabbing;
 }
 
