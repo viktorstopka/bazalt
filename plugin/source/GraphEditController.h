@@ -11,13 +11,16 @@ namespace bazalt
 
     /** Owns the live, editable NodeGraph and applies commands to it
         (NODE_EDITOR.md §6) — message-thread only. Every graph-shaped
-        command recompiles and republishes fresh plans (voice ×numVoices,
-        plus one global plan if an instance.mix node is present,
-        DOMAINS.md §2, M17 — supersedes the original util.voiceSum
-        boundary, RECONCILIATION.md 3.1); a command that would produce a graph that
-        doesn't compile is rejected and the live graph/plans are rolled
-        back to exactly what they were before the attempt (CLAUDE.md rule
-        5 — a bad edit never reaches the audio thread).
+        command recompiles and republishes fresh plans: 8 voice plans per
+        active "instance.allocate.voice" origin (up to
+        MultiplicityResolver::maxOrigins simultaneously,
+        wiki/plans/DomainRedesign.md Batch 2), plus one shared global plan
+        whenever the graph has real Scalar-resolved content (supersedes the
+        original util.voiceSum boundary, RECONCILIATION.md 3.1); a command
+        that would produce a graph that doesn't compile is rejected and the
+        live graph/plans are rolled back to exactly what they were before
+        the attempt (CLAUDE.md rule 5 — a bad edit never reaches the audio
+        thread).
 
         This is the M7 implementation of the command list; the transport
         that calls these methods from the WebView (JUCE's
@@ -137,14 +140,7 @@ namespace bazalt
         const bazalt::engine::NodeGraph& getGraph() const noexcept { return graph; }
         bool getHasGlobalDomain() const noexcept { return hasGlobalDomain; }
 
-        /** The instance.mix node's id in the current graph — valid only
-            when getHasGlobalDomain() is true. This is what the audio
-            thread looks up via the global ExecutionPlan's getNodeById() to
-            call setExternalBlock() each block (InstanceMixNode.h).
-        */
-        const juce::String& getInstanceMixNodeId() const noexcept { return instanceMixNodeId; }
-
-        /** Which DomainSplitter region ("voice"/"global"/"mono") each node
+        /** Which region ("voice"/"global"/"mono") each node
             id landed in as of the LAST successful recompile — a debugging
             aid (the UI's DomainDot, 09-28-InstanceAllocator arc), computed
             once right after `DomainSplitter::split()` succeeds and reused
@@ -168,7 +164,6 @@ namespace bazalt
         double sampleRate = 44100.0;
         int blockSize = 512;
         bool hasGlobalDomain = false;
-        juce::String instanceMixNodeId;
         std::unordered_map<juce::String, juce::String> nodeDomains;
         uint64_t generationCounter = 1;
     };

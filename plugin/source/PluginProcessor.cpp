@@ -4,6 +4,7 @@
 #include "bazalt/engine/graph/GraphCompiler.h"
 #include "bazalt/engine/patch/PatchSerializer.h"
 #include "bazalt/engine/nodes/InstanceMixNode.h"
+#include "bazalt/engine/nodes/InstanceVoiceNode.h"
 #include "bazalt/engine/nodes/IoNoteInNode.h"
 #include <algorithm>
 #include <array>
@@ -20,6 +21,14 @@ namespace bazalt
         // has aux-typed ports — this is the interim "proof" the milestone
         // asks for, not the final behaviour.
         constexpr float sidechainPassthroughGain = 0.0316f;
+
+        // DomainRedesign.md Batch 2's MIDI-independence mechanism: a
+        // sentinel NoteId for a voice triggered by an origin's own internal
+        // graph wiring (clock -> seq -> note.assemble -> spawn) rather than
+        // real host MIDI. Real MIDI NoteIds are (channel << 8) | noteNumber,
+        // channel 1-16 and note 0-127, so the largest real value is
+        // (16 << 8) | 127 = 4223 — nowhere near this.
+        constexpr bazalt::engine::VoiceManager::NoteId internalTriggerNoteId = 0xFFFFFFFFu;
     }
 
     BazaltAudioProcessor::BusesProperties BazaltAudioProcessor::makeBusLayout()
@@ -62,8 +71,9 @@ namespace bazalt
 
     void BazaltAudioProcessor::timerCallback()
     {
-        for (auto& swapper : voicePlanSwappers)
-            swapper.reclaim();
+        for (auto& bundle : originBundles)
+            for (auto& swapper : bundle.voicePlanSwappers)
+                swapper.reclaim();
 
         globalPlanSwapper.reclaim();
     }
@@ -83,12 +93,52 @@ namespace bazalt
         macroParameters.setMappings (macroMappings);
     }
 
+    void BazaltAudioProcessor::commitOriginBundleAssignments (const std::array<juce::String, maxOrigins>& originIdBySlot) noexcept
+    {
+        for (int i = 0; i < maxOrigins; ++i)
+        {
+            auto& bundle = originBundles[(size_t) i];
+            const auto& newId = originIdBySlot[(size_t) i];
+
+            if (newId.isEmpty())
+            {
+                bundle.active = false;
+                bundle.originNodeId = {};
+                continue;
+            }
+
+            if (bundle.originNodeId != newId)
+            {
+                // A different origin now occupies this slot — its
+                // predecessor's voice state (which lanes are Active/Idle)
+                // means nothing here; start fresh, exactly like a brand-new
+                // origin would.
+                bundle.voiceManager.prepare (numVoices);
+                bundle.originNodeId = newId;
+            }
+            // else: the SAME origin persists across this edit — its
+            // VoiceManager is untouched, same principle as GraphCompiler's
+            // own per-node DSP-state reuse, just one level up (which voices
+            // are sounding, not a single node's own internal state).
+
+            bundle.active = true;
+        }
+    }
+
     void BazaltAudioProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
     {
         currentSampleRate = sampleRate;
         currentBlockSize = samplesPerBlock;
 
-        instanceMixScratchBuffer.setSize (1, samplesPerBlock);
+        monoRenderScratchBuffer.setSize (1, samplesPerBlock);
+
+        for (auto& bundle : originBundles)
+        {
+            bundle.instanceMixScratchBuffer.setSize (1, samplesPerBlock);
+            bundle.voiceManager.prepare (numVoices);
+            bundle.active = false;
+            bundle.originNodeId = {};
+        }
 
         // M21: room to snapshot every host input channel (main + 4 aux, stereo)
         // once per block, allocated here so processBlock never allocates.
@@ -109,7 +159,6 @@ namespace bazalt
         // command edits the graph (NODE_EDITOR.md §6/§7).
         graphEditController.prepare (sampleRate, samplesPerBlock);
 
-        voiceManager.prepare (numVoices);
         macroParameters.prepare (sampleRate);
 
         // Always stop before re-preparing: prepareToPlay can be called
@@ -165,11 +214,28 @@ namespace bazalt
 
         plan->reset(); // fresh phase/envelope/filter state for the (possibly stolen) voice
 
-        // M18 (ADR-0024): the one remaining direct C++ poke — everything
-        // downstream (instance.allocate.voice's outputs into osc's "pitch" and
-        // env's "gate") is now real graph wiring, not further pokes.
+        // M18 (ADR-0024): the one remaining direct C++ poke for real host
+        // MIDI — everything downstream (instance.allocate.voice's outputs
+        // into osc's "pitch" and env's "gate") is now real graph wiring,
+        // not further pokes.
         if (auto* noteIn = findNoteIn (plan))
             noteIn->injectNoteOn (pitch, velocity);
+    }
+
+    void BazaltAudioProcessor::triggerVoiceNoteViaAllocator (bazalt::engine::ExecutionPlan* plan, const juce::String& originNodeId, float pitch, float velocity) noexcept
+    {
+        if (plan == nullptr)
+            return;
+
+        plan->reset();
+
+        // DomainRedesign.md Batch 2: pokes the allocator DIRECTLY instead of
+        // via io.noteIn — this origin may have no io.noteIn at all (a purely
+        // internally-sequenced region), and the allocator's own noteOn()
+        // already does everything a real trigger needs (gate/pitch/velocity,
+        // instanceIndex, a fresh random1/random2 draw).
+        if (auto* allocator = findAllocatorNode (plan, originNodeId))
+            allocator->noteOn (pitch, velocity);
     }
 
     bazalt::engine::nodes::IoNoteInNode* BazaltAudioProcessor::findNoteIn (bazalt::engine::ExecutionPlan* plan) const noexcept
@@ -182,9 +248,14 @@ namespace bazalt
         return plan == nullptr ? nullptr : dynamic_cast<bazalt::engine::nodes::IoNoteInNode*> (plan->getNodeById (plan->noteInNodeId));
     }
 
-    void BazaltAudioProcessor::pointVoiceTapsAtCurrentVoice (const VoicePlanPtrs& voicePlans) noexcept
+    bazalt::engine::nodes::InstanceVoiceNode* BazaltAudioProcessor::findAllocatorNode (bazalt::engine::ExecutionPlan* plan, const juce::String& originNodeId) const noexcept
     {
-        const auto mostRecent = voiceManager.getMostRecentlyTriggeredVoice();
+        return plan == nullptr ? nullptr : dynamic_cast<bazalt::engine::nodes::InstanceVoiceNode*> (plan->getNodeById (originNodeId));
+    }
+
+    void BazaltAudioProcessor::pointVoiceTapsAtCurrentVoice (OriginBundle& bundle, const VoicePlanPtrs& voicePlans) noexcept
+    {
+        const auto mostRecent = bundle.voiceManager.getMostRecentlyTriggeredVoice();
         const auto target = mostRecent >= 0 ? mostRecent : 0;
 
         for (int i = 0; i < numVoices; ++i)
@@ -197,7 +268,7 @@ namespace bazalt
         }
     }
 
-    void BazaltAudioProcessor::handleMidiEvent (const juce::MidiMessage& message, const VoicePlanPtrs& voicePlans)
+    void BazaltAudioProcessor::handleMidiEvent (const juce::MidiMessage& message, const std::array<VoicePlanPtrs, maxOrigins>& originVoicePlanPtrs)
     {
         // M21: MIDI controller state for io.control - tracked in every mode,
         // omni (the latest value on any channel), so a node placed later still
@@ -217,60 +288,87 @@ namespace bazalt
             hostInputs.pitchBend = juce::jlimit (-1.0f, 1.0f, ((float) message.getPitchWheelValue() - 8192.0f) / 8192.0f);
         }
 
-        // A mono graph (no instance.allocate.voice) has no voices: nothing below -
+        // A mono graph (no active origin) has no voices: nothing below -
         // allocating one, poking its note-in - applies.
         if (monoOnlyGraph.load (std::memory_order_acquire))
             return;
 
+        // Real host MIDI broadcasts identically to EVERY active origin —
+        // an internally-sequenced origin simply has no io.noteIn to receive
+        // it, and a real MIDI-driven one gets a voice allocated in its OWN
+        // VoiceManager, exactly as a single-origin graph always did.
         if (message.isNoteOn())
         {
             const auto noteId = (bazalt::engine::VoiceManager::NoteId) ((message.getChannel() << 8) | message.getNoteNumber());
-            const auto voiceIndex = voiceManager.noteOn (noteId);
             const auto pitch = (float) message.getNoteNumber();
             const auto velocity = message.getFloatVelocity();
 
-            // M20: the preview tap follows whichever voice was just played,
-            // whether it went straight to Active or is still fading out its
-            // stolen predecessor — same "most recently triggered" value
-            // VoiceManager itself now tracks.
-            pointVoiceTapsAtCurrentVoice (voicePlans);
-
-            // M17: a stolen voice defers its actual retrigger until its
-            // fade-out completes (renderVoiceRange) — DOMAINS.md §5's
-            // "faded out over a ramp rather than cut". An idle-voice
-            // allocation retriggers immediately, exactly as before.
-            if (voiceManager.getStage (voiceIndex) == bazalt::engine::VoiceStage::Stealing)
+            for (int b = 0; b < maxOrigins; ++b)
             {
-                voiceManager.setPendingNoteOn (voiceIndex, { noteId, pitch, velocity });
-                return;
-            }
+                auto& bundle = originBundles[(size_t) b];
+                if (! bundle.active)
+                    continue;
 
-            triggerVoiceNote (voicePlans[(size_t) voiceIndex], pitch, velocity);
+                const auto& voicePlans = originVoicePlanPtrs[(size_t) b];
+                const auto voiceIndex = bundle.voiceManager.noteOn (noteId);
+
+                // M20: the preview tap follows whichever voice was just played,
+                // whether it went straight to Active or is still fading out its
+                // stolen predecessor — same "most recently triggered" value
+                // VoiceManager itself now tracks.
+                pointVoiceTapsAtCurrentVoice (bundle, voicePlans);
+
+                // M17: a stolen voice defers its actual retrigger until its
+                // fade-out completes (renderOriginVoiceRange) — DOMAINS.md §5's
+                // "faded out over a ramp rather than cut". An idle-voice
+                // allocation retriggers immediately, exactly as before.
+                if (bundle.voiceManager.getStage (voiceIndex) == bazalt::engine::VoiceStage::Stealing)
+                {
+                    bundle.voiceManager.setPendingNoteOn (voiceIndex, { noteId, pitch, velocity });
+                    continue;
+                }
+
+                triggerVoiceNote (voicePlans[(size_t) voiceIndex], pitch, velocity);
+            }
         }
         else if (message.isNoteOff())
         {
             const auto noteId = (bazalt::engine::VoiceManager::NoteId) ((message.getChannel() << 8) | message.getNoteNumber());
-            const auto voiceIndex = voiceManager.noteOff (noteId);
 
-            if (voiceIndex >= 0)
-                if (auto* noteIn = findNoteIn (voicePlans[(size_t) voiceIndex]))
-                    noteIn->injectNoteOff();
+            for (int b = 0; b < maxOrigins; ++b)
+            {
+                auto& bundle = originBundles[(size_t) b];
+                if (! bundle.active)
+                    continue;
+
+                const auto voiceIndex = bundle.voiceManager.noteOff (noteId);
+
+                if (voiceIndex >= 0)
+                    if (auto* noteIn = findNoteIn (originVoicePlanPtrs[(size_t) b][(size_t) voiceIndex]))
+                        noteIn->injectNoteOff();
+            }
         }
         else if (message.isPitchWheel())
         {
             // M18 exit criterion: a pitch-bend render confirms continuous
             // Pitch needs no special-cased path — folded straight into
             // io.noteIn's continuous "pitch" output (ADR-0024), applied to
-            // every voice (pitch bend is channel-wide, not per-note, so it
-            // isn't routed through VoiceManager's single-target allocation
-            // the way note-on/off are).
+            // every voice of every active origin (pitch bend is channel-wide,
+            // not per-note, so it isn't routed through VoiceManager's
+            // single-target allocation the way note-on/off are).
             constexpr float pitchBendRangeSemitones = 2.0f; // standard default MIDI pitch bend range
             const auto normalized = ((float) message.getPitchWheelValue() - 8192.0f) / 8192.0f; // -1..~1
             const auto bendSemitones = normalized * pitchBendRangeSemitones;
 
-            for (auto* plan : voicePlans)
-                if (auto* noteIn = findNoteIn (plan))
-                    noteIn->injectPitchBend (bendSemitones);
+            for (int b = 0; b < maxOrigins; ++b)
+            {
+                if (! originBundles[(size_t) b].active)
+                    continue;
+
+                for (auto* plan : originVoicePlanPtrs[(size_t) b])
+                    if (auto* noteIn = findNoteIn (plan))
+                        noteIn->injectPitchBend (bendSemitones);
+            }
         }
     }
 
@@ -336,9 +434,8 @@ namespace bazalt
 
         telemetryHub.setTapSettings (tapName, settings);
 
-        // A node lives in exactly one domain (DomainSplitter's own
-        // invariant), so the global plan - when there is one - is checked
-        // first and is the simpler case: one plan, one tap.
+        // The global plan - when there is one - is checked first and is the
+        // simpler case: one plan, one tap.
         if (globalPlan != nullptr)
         {
             // findTappableBufferIndex: an output port's own buffer, or - for a
@@ -349,9 +446,12 @@ namespace bazalt
                 return globalPlan->addTapForBufferIndex (bufferIndex, subscription.tap);
         }
 
-        // Voice domain: every voice plan shares one topology, and every one
-        // carries the tap; pointVoiceTapsAtCurrentVoice() decides which one
-        // actually pushes.
+        // Every origin's own voice plans: a node normally lives in exactly one
+        // origin, but an origin's own trigger source CAN be duplicated into
+        // several origins (DomainRedesign.md's backward-inclusion rule) - a
+        // tap on that specific node simply attaches to every plan that
+        // resolves it, no different in spirit from attaching to several
+        // voice plans of the SAME origin already.
         auto attached = false;
         for (auto* plan : voicePlans)
         {
@@ -390,15 +490,23 @@ namespace bazalt
             return false;
         }
 
-        // The plans currently live in a swapper, as raw pointers, in the shape
-        // attachPreviewSubscription() wants.
-        std::vector<bazalt::engine::ExecutionPlan*> peekVoicePlans (
-            std::array<bazalt::engine::PlanSwapper, BazaltAudioProcessor::numVoices>& swappers)
+        // Every ACTIVE origin's own plans, as raw pointers, concatenated in
+        // bundle-slot order — the shape attachPreviewSubscription()/
+        // planHasPort() want. An inactive bundle contributes nothing (its
+        // swappers hold whatever plan they last did, but nothing keeps it
+        // current, so it's simply skipped rather than peeked).
+        std::vector<bazalt::engine::ExecutionPlan*> peekActiveOriginVoicePlans (
+            std::array<BazaltAudioProcessor::OriginBundle, BazaltAudioProcessor::maxOrigins>& bundles)
         {
             std::vector<bazalt::engine::ExecutionPlan*> plans;
-            plans.reserve (swappers.size());
-            for (auto& swapper : swappers)
-                plans.push_back (swapper.peekCurrentPlan());
+            plans.reserve (bundles.size() * (size_t) BazaltAudioProcessor::numVoices);
+            for (auto& bundle : bundles)
+            {
+                if (! bundle.active)
+                    continue;
+                for (auto& swapper : bundle.voicePlanSwappers)
+                    plans.push_back (swapper.peekCurrentPlan());
+            }
             return plans;
         }
     }
@@ -409,7 +517,7 @@ namespace bazalt
         // shape, so it only counts while the graph actually has one.
         const auto hasGlobal = hasGlobalDomain.load (std::memory_order_acquire) || monoOnlyGraph.load (std::memory_order_acquire);
         auto* globalPlan = hasGlobal ? globalPlanSwapper.peekCurrentPlan() : nullptr;
-        const auto voicePlans = peekVoicePlans (voicePlanSwappers);
+        const auto voicePlans = peekActiveOriginVoicePlans (originBundles);
 
         // The port has to exist on the node. Whether anything is wired to it
         // yet is a separate question (below): a viewer is placed before it is
@@ -461,7 +569,7 @@ namespace bazalt
             if (auto* plan = globalPlanSwapper.peekCurrentPlan())
                 plan->removeTap (removedTap);
 
-            for (auto* plan : peekVoicePlans (voicePlanSwappers))
+            for (auto* plan : peekActiveOriginVoicePlans (originBundles))
                 if (plan != nullptr)
                     plan->removeTap (removedTap);
         }
@@ -475,27 +583,99 @@ namespace bazalt
         for (auto& subscription : previewSubscriptions)
             attachPreviewSubscription (subscription, globalPlan, voicePlans);
 
-        // Point the voice taps at the current voice before the plans go live.
-        // A default-on plan would otherwise push from every voice until the
-        // audio thread's next block start corrects it.
-        VoicePlanPtrs pointers {};
-        for (size_t i = 0; i < pointers.size() && i < voicePlans.size(); ++i)
-            pointers[i] = voicePlans[i];
+        // Point each active origin's own voice taps at ITS current voice
+        // before the plans go live. A default-on plan would otherwise push
+        // from every voice until the audio thread's next block start
+        // corrects it. `voicePlans` is every active origin's 8 plans
+        // concatenated in bundle-slot order (see peekActiveOriginVoicePlans);
+        // slice it back apart per bundle here.
+        size_t offset = 0;
+        for (auto& bundle : originBundles)
+        {
+            if (! bundle.active)
+                continue;
 
-        pointVoiceTapsAtCurrentVoice (pointers);
+            VoicePlanPtrs pointers {};
+            for (int i = 0; i < numVoices && offset + (size_t) i < voicePlans.size(); ++i)
+                pointers[(size_t) i] = voicePlans[offset + (size_t) i];
+
+            pointVoiceTapsAtCurrentVoice (bundle, pointers);
+            offset += (size_t) numVoices;
+        }
     }
 
-    void BazaltAudioProcessor::renderVoiceRange (int startSample, int numSamples, const VoicePlanPtrs& voicePlans) noexcept
+    void BazaltAudioProcessor::renderOriginVoiceRange (OriginBundle& bundle, int startSample, int numSamples, const VoicePlanPtrs& voicePlans) noexcept
     {
         if (numSamples <= 0)
             return;
 
-        auto* sum = instanceMixScratchBuffer.getWritePointer (0) + startSample;
+        // DomainRedesign.md Batch 2 (InstanceVoiceNode::consumeSpawnEventsThisBlock's
+        // own doc comment has the full story): detect + dispatch an internal
+        // trigger from whatever happened on voice slot 0's own plan the LAST
+        // time it ran — checked FIRST, before this range even runs, so a
+        // trigger contributes audio starting THIS sub-range, the same
+        // sample-accuracy real MIDI splitting already gives note-on/off.
+        //
+        // Real, found-live bug fixed here: spawnEventsThisBlock increments on
+        // EVERY noteOn()/noteOff(), regardless of source (that's the whole
+        // point — one counter for both directions) — including an ordinary
+        // note arriving via real MIDI's own io.noteIn -> allocator.spawn
+        // wiring, one render call after triggerVoiceNote() pokes it. Reading
+        // it unconditionally misread that completely ordinary event as an
+        // internal trigger and spawned a genuinely phantom extra voice at
+        // the SAME pitch (caught by InitPatchTests.cpp's own polyphony RMS
+        // check, a chord measuring QUIETER than expected — two same-pitch,
+        // phase-offset oscillators summing destructively, not the
+        // "obviously louder" bug this might suggest). Gated on this origin
+        // having NO io.noteIn at all (voicePlans[0]->noteInNodeId, already
+        // resolved once at compile time by type — ExecutionPlan.h's own
+        // comment): a real MIDI-driven origin has no other way to reach
+        // this counter at all once this guard is in place, and a purely
+        // internally-sequenced one (this fix's actual target) never has an
+        // io.noteIn to begin with.
+        if (voicePlans[0] != nullptr && voicePlans[0]->noteInNodeId.isEmpty())
+        {
+            if (auto* allocator = findAllocatorNode (voicePlans[0], bundle.originNodeId))
+            {
+                const auto spawnCount = allocator->consumeSpawnEventsThisBlock();
+                if (spawnCount > 0)
+                {
+                    if (allocator->getGate())
+                    {
+                        const auto pitch = allocator->getPitch();
+                        const auto velocity = allocator->getVelocity();
+                        const auto voiceIndex = bundle.voiceManager.noteOn (internalTriggerNoteId);
+
+                        if (bundle.voiceManager.getStage (voiceIndex) == bazalt::engine::VoiceStage::Stealing)
+                            bundle.voiceManager.setPendingNoteOn (voiceIndex, { internalTriggerNoteId, pitch, velocity });
+                        else if (voiceIndex != 0) // slot 0's own state already reflects this trigger - nothing more to poke
+                            triggerVoiceNoteViaAllocator (voicePlans[(size_t) voiceIndex], bundle.originNodeId, pitch, velocity);
+                    }
+                    else
+                    {
+                        const auto voiceIndex = bundle.voiceManager.noteOff (internalTriggerNoteId);
+                        if (voiceIndex >= 0 && voiceIndex != 0)
+                            if (auto* other = findAllocatorNode (voicePlans[(size_t) voiceIndex], bundle.originNodeId))
+                                other->noteOff();
+                    }
+                }
+            }
+        }
+
+        // Ensure slot 0 (the "template") runs THIS range even while
+        // nominally Idle, purely so its own graph-wired trigger (if any)
+        // can be detected next time — an Idle voice's plan otherwise never
+        // runs at all (the loop below skips it), so nothing would ever
+        // observe an internally-sequenced origin's own spawn signal.
+        if (bundle.voiceManager.getStage (0) == bazalt::engine::VoiceStage::Idle && voicePlans[0] != nullptr)
+            processPlanRange (voicePlans[0], startSample, numSamples);
+
+        auto* sum = bundle.instanceMixScratchBuffer.getWritePointer (0) + startSample;
         int activeCount = 0;
 
         for (int voiceIndex = 0; voiceIndex < numVoices; ++voiceIndex)
         {
-            const auto stage = voiceManager.getStage (voiceIndex);
+            const auto stage = bundle.voiceManager.getStage (voiceIndex);
             if (stage == bazalt::engine::VoiceStage::Idle)
                 continue;
 
@@ -511,15 +691,15 @@ namespace bazalt
                 // (DOMAINS.md §5) — any samples past that are already
                 // fully faded (gain 0), not rendered content leaking
                 // through.
-                const auto fadeSamplesRemainingBefore = voiceManager.getStealFadeSamplesRemaining (voiceIndex);
+                const auto fadeSamplesRemainingBefore = bundle.voiceManager.getStealFadeSamplesRemaining (voiceIndex);
                 const auto fadingSamples = juce::jmin (numSamples, fadeSamplesRemainingBefore);
 
                 processPlanRange (plan, startSample, numSamples);
                 const auto* voiceOut = plan->blockBuffers[(size_t) plan->finalOutputBufferIndex].getBlock().getChannelPointer (0);
 
-                const auto startGain = voiceManager.getStealFadeGain (voiceIndex);
-                const auto completed = voiceManager.advanceStealFade (voiceIndex, numSamples);
-                const auto endGain = voiceManager.getStealFadeGain (voiceIndex);
+                const auto startGain = bundle.voiceManager.getStealFadeGain (voiceIndex);
+                const auto completed = bundle.voiceManager.advanceStealFade (voiceIndex, numSamples);
+                const auto endGain = bundle.voiceManager.getStealFadeGain (voiceIndex);
 
                 for (int i = 0; i < fadingSamples; ++i)
                 {
@@ -533,9 +713,12 @@ namespace bazalt
 
                 if (completed)
                 {
-                    const auto pending = voiceManager.getPendingNoteOn (voiceIndex);
-                    triggerVoiceNote (plan, pending.pitch, pending.velocity);
-                    voiceManager.completeSteal (voiceIndex);
+                    const auto pending = bundle.voiceManager.getPendingNoteOn (voiceIndex);
+                    if (pending.noteId == internalTriggerNoteId)
+                        triggerVoiceNoteViaAllocator (plan, bundle.originNodeId, pending.pitch, pending.velocity);
+                    else
+                        triggerVoiceNote (plan, pending.pitch, pending.velocity);
+                    bundle.voiceManager.completeSteal (voiceIndex);
 
                     // The new note starts right where the fade left off,
                     // within this SAME render call — sample-accurate to
@@ -574,13 +757,13 @@ namespace bazalt
                 for (int i = 0; i < numSamples; ++i)
                     peak = juce::jmax (peak, std::abs (voiceOut[i]));
 
-                if (voiceManager.updateSilenceAndCheckFinished (voiceIndex, peak, numSamples,
-                                                                 silenceThresholdLinear, silenceHoldTimeSamples))
-                    voiceManager.voiceFinished (voiceIndex);
+                if (bundle.voiceManager.updateSilenceAndCheckFinished (voiceIndex, peak, numSamples,
+                                                                        silenceThresholdLinear, silenceHoldTimeSamples))
+                    bundle.voiceManager.voiceFinished (voiceIndex);
             }
         }
 
-        activeVoiceCountThisBlock = activeCount;
+        bundle.activeVoiceCountThisBlock = activeCount;
     }
 
     // ---- M21 host boundary ------------------------------------------------
@@ -683,10 +866,11 @@ namespace bazalt
         plan->process (numSamples);
     }
 
-    // A graph with no instance.allocate.voice (DomainSplitter's monoOnly) is one
-    // plan, run over every range of the block whether or not any note is
-    // held. Its output lands in the same scratch buffer the voice sum uses,
-    // so finalizeInstanceMixIntoOutput needs no special case.
+    // A graph with no active origin (MultiplicityResolver's monoOnly, or a
+    // real instance.sum with nothing to reduce) is one plan, run over every
+    // range of the block whether or not any note is held. Its output lands
+    // in monoRenderScratchBuffer, so finalizeInstanceMixIntoOutput needs no
+    // special case beyond checking monoRenderedThisBlock first.
     void BazaltAudioProcessor::renderMonoRange (bazalt::engine::ExecutionPlan* plan, int startSample, int numSamples) noexcept
     {
         if (plan == nullptr || numSamples <= 0)
@@ -695,24 +879,25 @@ namespace bazalt
         processPlanRange (plan, startSample, numSamples);
 
         const auto* out = plan->blockBuffers[(size_t) plan->finalOutputBufferIndex].getBlock().getChannelPointer (0);
-        auto* scratch = instanceMixScratchBuffer.getWritePointer (0) + startSample;
+        auto* scratch = monoRenderScratchBuffer.getWritePointer (0) + startSample;
 
         for (int i = 0; i < numSamples; ++i)
             scratch[i] = out[i];
-
-        activeVoiceCountThisBlock = 0;
     }
 
-    // ARCHITECTURE.md/DOMAINS.md §2: with no instance.mix node in the
-    // graph (every M2-M6 patch, and the common case even after M7), the
-    // voice sum IS the final output — copied straight to both channels,
-    // identical to pre-M7 behaviour. When an instance.mix node exists, the
-    // sum (or average, per its mode parameter) is instead handed to it
-    // (setExternalBlock) and the GLOBAL plan's own output — not the raw
-    // voice sum — reaches the speakers.
+    // ARCHITECTURE.md/DOMAINS.md §2, generalized by DomainRedesign.md Batch 2
+    // to N independent origins: with no real global content (every origin's
+    // own instance.sum, if any, isn't what's audible), whichever origin's
+    // own voice sum resolved as the designated output (outputOriginBundleIndex)
+    // is copied straight to both channels, identical to pre-M7 behaviour for
+    // the single-origin case. When the designated output resolved Scalar
+    // instead (hasGlobalDomain), every active origin's own instance.sum node
+    // (if it has one) is fed that origin's own voice sum before the ONE
+    // shared global plan runs once, and ITS output — not any single origin's
+    // raw sum — reaches the speakers.
     void BazaltAudioProcessor::finalizeInstanceMixIntoOutput (juce::AudioBuffer<float>& output, int numSamples) noexcept
     {
-        const float* finalMono = instanceMixScratchBuffer.getReadPointer (0);
+        const float* finalMono = nullptr;
         // Real stereo cable redesign (wiki/NODES.System.md §9): set below
         // only when the plan that actually reaches the speakers resolved a
         // real second (right) channel for its designated output — a graph
@@ -720,63 +905,70 @@ namespace bazalt
         // duplicate path at the bottom is unchanged, byte for byte.
         const float* finalRight = nullptr;
 
-        if (! monoRenderedThisBlock && hasGlobalDomain.load (std::memory_order_acquire))
+        if (monoRenderedThisBlock)
         {
-            if (auto* globalPlan = globalPlanSwapper.getCurrentPlanForAudioThread())
-            {
-                if (globalPlan->externalInputNodeId.isNotEmpty())
-                {
-                    auto* instanceMixNode = dynamic_cast<bazalt::engine::nodes::InstanceMixNode*> (
-                        globalPlan->getNodeById (globalPlan->externalInputNodeId));
-
-                    if (instanceMixNode != nullptr)
-                    {
-                        if (instanceMixNode->getMode() == bazalt::engine::nodes::InstanceMixNode::Mode::Average
-                            && activeVoiceCountThisBlock > 1)
-                        {
-                            auto* writableMono = instanceMixScratchBuffer.getWritePointer (0);
-                            const auto scale = 1.0f / (float) activeVoiceCountThisBlock;
-                            for (int i = 0; i < numSamples; ++i)
-                                writableMono[i] *= scale;
-                        }
-
-                        instanceMixNode->setExternalBlock (finalMono, numSamples);
-                        processPlanRange (globalPlan, 0, numSamples); // the global plan runs once over the whole block
-                        finalMono = globalPlan->blockBuffers[(size_t) globalPlan->finalOutputBufferIndex]
-                                        .getBlock()
-                                        .getChannelPointer (0);
-
-                        if (globalPlan->finalOutputBufferIndexRight >= 0)
-                            finalRight = globalPlan->blockBuffers[(size_t) globalPlan->finalOutputBufferIndexRight]
-                                             .getBlock()
-                                             .getChannelPointer (0);
-                    }
-                }
-                else
-                {
-                    // 09-28-InstanceAllocator.1: DomainSplitter's
-                    // independent-global-region case (DomainSplitter.h's own
-                    // comment on hasGlobalDomain) — an allocator exists and
-                    // is running real per-voice plans, but the graph's
-                    // designated output lives entirely OUTSIDE the voice
-                    // domain, with no instance.mix bridging the two. This
-                    // plan is never fed a voice sum (nothing to set
-                    // externally) — it just runs every block on its own,
-                    // exactly like the monoOnly path does, and its own
-                    // output replaces the (irrelevant, unused) voice sum
-                    // entirely.
-                    processPlanRange (globalPlan, 0, numSamples);
-                    finalMono = globalPlan->blockBuffers[(size_t) globalPlan->finalOutputBufferIndex]
-                                    .getBlock()
-                                    .getChannelPointer (0);
-
-                    if (globalPlan->finalOutputBufferIndexRight >= 0)
-                        finalRight = globalPlan->blockBuffers[(size_t) globalPlan->finalOutputBufferIndexRight]
-                                         .getBlock()
-                                         .getChannelPointer (0);
-                }
-            }
+            finalMono = monoRenderScratchBuffer.getReadPointer (0);
         }
+        else if (! hasGlobalDomain.load (std::memory_order_acquire))
+        {
+            // The designated output itself resolved Poly — this origin's own
+            // voice sum IS the final output, with no global plan involved at
+            // all (DomainRedesign.md §10.1's "voice sum is final output"
+            // case, now keyed to a specific origin instead of assumed
+            // singular). -1 means no active origin resolves this (shouldn't
+            // happen while hasGlobalDomain is false and monoOnly isn't set,
+            // but a graph-mode switch landing mid-block is exactly what
+            // monoRenderedThisBlock's own comment already guards against —
+            // treat it the same way: leave the output as whatever it already
+            // is, silence after the earlier clear).
+            const auto index = outputOriginBundleIndex.load (std::memory_order_acquire);
+            if (index >= 0 && index < maxOrigins)
+                finalMono = originBundles[(size_t) index].instanceMixScratchBuffer.getReadPointer (0);
+        }
+        else if (auto* globalPlan = globalPlanSwapper.getCurrentPlanForAudioThread())
+        {
+            // Feed every active origin's own instance.sum node (if it has
+            // one) with that origin's own voice sum before running the
+            // shared global plan once.
+            for (int b = 0; b < maxOrigins; ++b)
+            {
+                auto& bundle = originBundles[(size_t) b];
+                if (! bundle.active)
+                    continue;
+
+                const auto& sumNodeId = globalPlan->externalInputNodeIds[(size_t) b];
+                if (sumNodeId.isEmpty())
+                    continue; // 09-28-InstanceAllocator.1's independent-region case: this origin runs, unbridged
+
+                auto* instanceSumNode = dynamic_cast<bazalt::engine::nodes::InstanceMixNode*> (globalPlan->getNodeById (sumNodeId));
+                if (instanceSumNode == nullptr)
+                    continue;
+
+                if (instanceSumNode->getMode() == bazalt::engine::nodes::InstanceMixNode::Mode::Average
+                    && bundle.activeVoiceCountThisBlock > 1)
+                {
+                    auto* writableMono = bundle.instanceMixScratchBuffer.getWritePointer (0);
+                    const auto scale = 1.0f / (float) bundle.activeVoiceCountThisBlock;
+                    for (int i = 0; i < numSamples; ++i)
+                        writableMono[i] *= scale;
+                }
+
+                instanceSumNode->setExternalBlock (bundle.instanceMixScratchBuffer.getReadPointer (0), numSamples);
+            }
+
+            processPlanRange (globalPlan, 0, numSamples); // the global plan runs once over the whole block
+            finalMono = globalPlan->blockBuffers[(size_t) globalPlan->finalOutputBufferIndex]
+                            .getBlock()
+                            .getChannelPointer (0);
+
+            if (globalPlan->finalOutputBufferIndexRight >= 0)
+                finalRight = globalPlan->blockBuffers[(size_t) globalPlan->finalOutputBufferIndexRight]
+                                 .getBlock()
+                                 .getChannelPointer (0);
+        }
+
+        if (finalMono == nullptr)
+            return; // nothing resolved this block (see the outputOriginBundleIndex branch's own comment) - leave output at silence
 
         auto* left = output.getWritePointer (0);
         auto* right = output.getNumChannels() > 1 ? output.getWritePointer (1) : left;
@@ -850,20 +1042,18 @@ namespace bazalt
         for (int ch = 0; ch < getTotalNumOutputChannels() && ch < buffer.getNumChannels(); ++ch)
             buffer.clear (ch, 0, numSamples);
 
-        instanceMixScratchBuffer.clear (0, numSamples);
-
         // Fetched exactly once per process() call, per PlanSwapper's own
-        // contract (PlanSwapper.h) — handleMidiEvent/renderVoiceRange below
-        // both read from this same cached array rather than re-querying
-        // the swappers mid-block.
-        // M21: a graph with no instance.allocate.voice is ONE plan in the global
-        // swapper, run every block (see renderMonoRange). Fetched once, like the
-        // voice plans, per PlanSwapper's contract.
+        // contract (PlanSwapper.h) — handleMidiEvent/renderOriginVoiceRange
+        // below both read from this same cached data rather than
+        // re-querying the swappers mid-block.
+        // M21: a graph with no active origin is ONE plan in the global
+        // swapper, run every block (see renderMonoRange). Fetched once, like
+        // every origin's own voice plans, per PlanSwapper's contract.
         const auto monoOnly = monoOnlyGraph.load (std::memory_order_acquire);
         monoRenderedThisBlock = monoOnly;
 
-        VoicePlanPtrs voicePlanPtrs {};
         bazalt::engine::ExecutionPlan* monoPlan = nullptr;
+        std::array<VoicePlanPtrs, maxOrigins> originVoicePlanPtrs {};
 
         if (monoOnly)
         {
@@ -873,23 +1063,42 @@ namespace bazalt
         }
         else
         {
-            for (int i = 0; i < numVoices; ++i)
-                voicePlanPtrs[(size_t) i] = voicePlanSwappers[(size_t) i].getCurrentPlanForAudioThread();
+            for (int b = 0; b < maxOrigins; ++b)
+            {
+                auto& bundle = originBundles[(size_t) b];
+                bundle.instanceMixScratchBuffer.clear (0, numSamples);
 
-            macroParameters.applyToPlans (voicePlanPtrs.data(), numVoices, numSamples);
+                if (! bundle.active)
+                    continue;
 
-            // ADR-0029: switch the preview taps on for exactly one voice plan. Cheap
-            // (8 relaxed loads), and it also corrects the fresh plans a publish just
-            // made live, so it is not enough to rely on the note-on path alone.
-            pointVoiceTapsAtCurrentVoice (voicePlanPtrs);
+                auto& plans = originVoicePlanPtrs[(size_t) b];
+                for (int i = 0; i < numVoices; ++i)
+                    plans[(size_t) i] = bundle.voicePlanSwappers[(size_t) i].getCurrentPlanForAudioThread();
+
+                macroParameters.applyToPlans (plans.data(), numVoices, numSamples);
+
+                // ADR-0029: switch the preview taps on for exactly one voice plan
+                // per origin. Cheap (8 relaxed loads), and it also corrects the
+                // fresh plans a publish just made live, so it is not enough to
+                // rely on the note-on path alone.
+                pointVoiceTapsAtCurrentVoice (bundle, plans);
+            }
         }
 
         auto renderRange = [&] (int start, int count)
         {
             if (monoOnly)
+            {
                 renderMonoRange (monoPlan, start, count);
-            else
-                renderVoiceRange (start, count, voicePlanPtrs);
+                return;
+            }
+
+            for (int b = 0; b < maxOrigins; ++b)
+            {
+                auto& bundle = originBundles[(size_t) b];
+                if (bundle.active)
+                    renderOriginVoiceRange (bundle, start, count, originVoicePlanPtrs[(size_t) b]);
+            }
         };
 
         int previousSample = 0;
@@ -901,7 +1110,7 @@ namespace bazalt
             if (eventSample > previousSample)
                 renderRange (previousSample, eventSample - previousSample);
 
-            handleMidiEvent (metadata.getMessage(), voicePlanPtrs);
+            handleMidiEvent (metadata.getMessage(), originVoicePlanPtrs);
             previousSample = eventSample;
         }
 

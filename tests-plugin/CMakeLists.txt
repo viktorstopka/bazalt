@@ -29,6 +29,7 @@ target_sources(PluginTests
         ${CMAKE_SOURCE_DIR}/plugin/source/NodeDescriptorJson.cpp
         BusLayoutTests.cpp
         ConnectWithAutoAdaptTests.cpp
+        DomainRedesignTests.cpp
         GraphEditControllerTests.cpp
         HostInputTests.cpp
         InitPatchTests.cpp

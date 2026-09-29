@@ -372,7 +372,7 @@ TEST_CASE ("moveNode updates position without disturbing the node's DSP object i
     auto& controller = processor.getGraphEditController();
     REQUIRE (controller.setGraph (bazalt::engine::buildVoiceProofGraph()).success);
 
-    auto* before = processor.getVoicePlanSwapper (0).peekCurrentPlan()->getNodeById ("osc");
+    auto* before = processor.getOriginVoicePlanSwapper (0, 0).peekCurrentPlan()->getNodeById ("osc");
     REQUIRE (before != nullptr);
 
     REQUIRE (controller.moveNode ("osc", 123.0f, 456.0f).success);
@@ -382,7 +382,7 @@ TEST_CASE ("moveNode updates position without disturbing the node's DSP object i
     // M17's state pool: a position-only edit doesn't change (id, type,
     // parameters), so the exact same compiled Node object survives —
     // moving a node mid-note must not reset its DSP state.
-    auto* after = processor.getVoicePlanSwapper (0).peekCurrentPlan()->getNodeById ("osc");
+    auto* after = processor.getOriginVoicePlanSwapper (0, 0).peekCurrentPlan()->getNodeById ("osc");
     CHECK (after == before);
 
     CHECK_FALSE (controller.moveNode ("nonexistent", 0.0f, 0.0f).success);

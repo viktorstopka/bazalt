@@ -6,6 +6,7 @@
 #include "bazalt/engine/telemetry/Tap.h"
 #include <juce_core/juce_core.h>
 #include <algorithm>
+#include <array>
 #include <atomic>
 #include <memory>
 #include <unordered_map>
@@ -185,17 +186,31 @@ namespace bazalt::engine
         // up a real within-block discontinuity — this field is the fix.
         std::unordered_map<juce::String, std::unordered_map<juce::String, float>> nodeIdToAppliedParameters;
 
-        // Empty for an ordinary plan. Set once, by whoever compiles this
-        // plan, before it's ever published (PlanSwapper) — never mutated
-        // after, so reading it from the audio thread via a published
-        // pointer is exactly as safe as reading anything else on this
-        // otherwise-immutable object. Generic on purpose (not
-        // "instanceMixNodeId"): any future node type that needs a per-block
+        // Empty (each entry) for an ordinary plan. Set once, by whoever
+        // compiles this plan, before it's ever published (PlanSwapper) —
+        // never mutated after, so reading it from the audio thread via a
+        // published pointer is exactly as safe as reading anything else on
+        // this otherwise-immutable object. Generic on purpose (not
+        // "instanceSumNodeId"): any future node type that needs a per-block
         // value supplied from outside its own graph (InstanceMixNode.h is
         // the first, superseding the original VoiceSumNode.h — M17) can reuse this
-        // same field rather than each inventing its own thread-safe
+        // same mechanism rather than each inventing its own thread-safe
         // driver-to-audio-thread handoff.
-        juce::String externalInputNodeId;
+        //
+        // wiki/plans/DomainRedesign.md Batch 2: generalized from a single
+        // juce::String to one entry per possible origin — the ONE shared
+        // global plan can now contain several "instance.sum" nodes at once
+        // (one per origin bridging into it, DomainRedesign.md §4's multiple
+        // independent voice regions), each needing its own driver hand-off.
+        // Indexed by origin BUNDLE slot (BazaltAudioProcessor::OriginBundle),
+        // the same stable index GraphEditController assigns when compiling —
+        // not by any property of the node graph itself. Sized to
+        // MultiplicityResolver::maxOrigins's own value (4) directly rather
+        // than by including that header here — ExecutionPlan is GraphCompiler's
+        // OWN output type and shouldn't need to know about the resolver that
+        // runs before it; keep the two numbers in sync if either changes.
+        static constexpr int maxOrigins = 4;
+        std::array<juce::String, maxOrigins> externalInputNodeIds;
 
         // Real bug found live (09-28-InstanceAllocator arc): PluginProcessor
         // used to find the plan's io.noteIn node by a HARDCODED instance id
@@ -207,7 +222,7 @@ namespace bazalt::engine
         // never moved, and nothing anywhere said why. Resolved here instead
         // — the id of whichever node has type "io.noteIn" in this graph
         // (empty if none), exactly once at compile time, the same pattern
-        // externalInputNodeId above already established for "the driver
+        // externalInputNodeIds above already established for "the driver
         // needs to find one well-known node by a property of the graph,
         // not by asking the user to type the right id." Only the first
         // io.noteIn found (graph declaration order) is used — today's real
