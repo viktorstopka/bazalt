@@ -215,7 +215,7 @@ TEST_CASE ("Two independent origin/instance.sum pairs partition independently - 
     graph.addNode ({ "oscB", "osc.analog", {}, {}, {} });
     graph.addNode ({ "sumB", "instance.sum", {}, {}, {} });
 
-    graph.addNode ({ "mixdown", "mix.sum", {}, {}, {} });
+    graph.addNode ({ "mixdown", "math.add", {}, {}, {} });
     graph.addNode ({ "masterout", "io.output", {}, {}, {} });
 
     graph.addConnection ({ "allocA", "pitch", "oscA", "pitch" });
@@ -421,7 +421,7 @@ TEST_CASE ("A mono source that feeds only the global domain joins the global pla
     graph.addNode ({ "osc", "osc.analog", {}, {}, {} });
     graph.addNode ({ "sum", "instance.sum", {}, {}, {} });
     graph.addNode ({ "audioin", "io.audioIn", {}, {}, {} });
-    graph.addNode ({ "mixdown", "mix.sum", {}, {}, {} });
+    graph.addNode ({ "mixdown", "math.add", {}, {}, {} });
     graph.addNode ({ "masterout", "io.output", {}, {}, {} });
 
     graph.addConnection ({ "alloc", "pitch", "osc", "pitch" });

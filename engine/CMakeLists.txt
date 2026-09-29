@@ -54,7 +54,6 @@ target_sources(engine
             include/bazalt/engine/nodes/AdsrNode.h
             include/bazalt/engine/nodes/GainNode.h
             include/bazalt/engine/nodes/NoiseBurstNode.h
-            include/bazalt/engine/nodes/MixNode.h
             include/bazalt/engine/nodes/DelayNode.h
             include/bazalt/engine/nodes/OnePoleFilterNode.h
             include/bazalt/engine/nodes/ConstantNode.h

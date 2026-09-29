@@ -104,7 +104,7 @@ TEST_CASE ("Two independent origin/sum pairs, each driven by its own internal cl
     addInternallySequencedOrigin (graph, "a", 47.0f, 60.0f);
     addInternallySequencedOrigin (graph, "b", 83.0f, 72.0f); // a deliberately different, co-prime-ish rate
 
-    graph.addNode ({ "mixdown", "mix.sum", {}, {}, {} });
+    graph.addNode ({ "mixdown", "math.add", {}, {}, {} });
     graph.addNode ({ "masterout", "io.output", {}, {}, {} });
     graph.addConnection ({ "asum", "out", "mixdown", "in.0" });
     graph.addConnection ({ "bsum", "out", "mixdown", "in.1" });
@@ -158,7 +158,7 @@ TEST_CASE ("getNodeDomains() labels nodes correctly across two simultaneous orig
     graph.addNode ({ "allocB", "instance.allocate.voice", {}, {}, {} });
     graph.addNode ({ "oscB", "osc.analog", {}, {}, {} });
     graph.addNode ({ "sumB", "instance.sum", {}, {}, {} });
-    graph.addNode ({ "mixdown", "mix.sum", {}, {}, {} });
+    graph.addNode ({ "mixdown", "math.add", {}, {}, {} });
     graph.addNode ({ "masterout", "io.output", {}, {}, {} });
 
     graph.addConnection ({ "allocA", "pitch", "oscA", "pitch" });

@@ -137,7 +137,7 @@ TEST_CASE ("Only the host-boundary nodes ask for host inputs", "[engine][nodes][
     for (const auto* typeId : { "io.audioIn", "io.control", "io.transport" })
         CHECK (factory.create (typeId)->wantsHostInputs());
 
-    for (const auto* typeId : { "osc.analog", "io.noteIn", "io.output", "math.add", "mix.sum" })
+    for (const auto* typeId : { "osc.analog", "io.noteIn", "io.output", "math.add", "math.multiply" })
         CHECK_FALSE (factory.create (typeId)->wantsHostInputs());
 }
 

@@ -7,7 +7,6 @@
 #include "bazalt/engine/nodes/AdsrNode.h"
 #include "bazalt/engine/nodes/GainNode.h"
 #include "bazalt/engine/nodes/NoiseBurstNode.h"
-#include "bazalt/engine/nodes/MixNode.h"
 #include "bazalt/engine/nodes/DelayNode.h"
 #include "bazalt/engine/nodes/OnePoleFilterNode.h"
 #include "bazalt/engine/nodes/ConstantNode.h"
@@ -94,7 +93,6 @@ namespace bazalt::engine
         factory.registerType ("env.adsr", [] { return std::make_unique<nodes::AdsrNode>(); });
         factory.registerType ("mix.gain", [] { return std::make_unique<nodes::GainNode>(); });
         factory.registerType ("excite.burst", [] { return std::make_unique<nodes::NoiseBurstNode>(); });
-        factory.registerType ("mix.sum", [] { return std::make_unique<nodes::MixNode>(); });
         factory.registerType ("delay.line", [] { return std::make_unique<nodes::DelayNode>(); });
         factory.registerType ("filter.onepole", [] { return std::make_unique<nodes::OnePoleFilterNode>(); });
         factory.registerType ("util.constant", [] { return std::make_unique<nodes::ConstantNode>(); });
@@ -245,7 +243,7 @@ namespace bazalt::engine
         graph.addNode ({ "detuneConst", "util.constant", { 340.0f, 460.0f }, { { "util.constant.value", 0.07f } }, {} });
         graph.addNode ({ "detuneSum", "math.add", { 640.0f, 460.0f }, {}, {} });
         graph.addNode ({ "osc2", "osc.analog", { 940.0f, 460.0f }, { { "osc.analog.shape", 1.0f } }, {} }); // saw, detuned
-        graph.addNode ({ "oscMix", "mix.sum", { 1240.0f, 250.0f }, {}, {} });
+        graph.addNode ({ "oscMix", "math.add", { 1240.0f, 250.0f }, {}, {} });
 
         graph.addNode ({ "filterEnv", "env.adsr", { 640.0f, 640.0f },
                           { { "env.adsr.attack", 0.005f }, { "env.adsr.decay", 0.3f },
@@ -383,7 +381,7 @@ namespace bazalt::engine
         NodeGraph graph;
 
         graph.addNode ({ "excite", "excite.burst", {}, {}, {} });
-        graph.addNode ({ "mix", "mix.sum", {}, {}, {} });
+        graph.addNode ({ "mix", "math.add", {}, {}, {} });
         graph.addNode ({ "delay", "delay.line", {}, { { "delay.line.samples", 200.0f } }, {} });
         graph.addNode ({ "damp", "filter.onepole", {}, { { "filter.onepole.coefficient", 0.5f } }, {} });
 

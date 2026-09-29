@@ -4,19 +4,44 @@
 #include "bazalt/engine/graph/PortGroups.h"
 #include "bazalt/engine/graph/ProofGraphs.h"
 #include "bazalt/engine/patch/PatchSerializer.h"
+#include "bazalt/engine/nodes/AddNode.h"
 #include <unordered_map>
 
 using namespace bazalt::engine;
 
 namespace
 {
-    // An Audio-typed constant, so mix.sum's Audio inputs have a legal source.
+    // An Audio-typed constant, so a polymorphic node's Audio inputs (math.add
+    // resolved to Audio, since DomainRedesign.md Batch 3 folded mix.sum into it)
+    // have a legal source.
     class AudioConstantNode : public Node
     {
     public:
         int getNumInputPorts() const noexcept override { return 0; }
         int getNumOutputPorts() const noexcept override { return 1; }
         std::vector<PortDescriptor> getOutputPorts() const override { return { { "out", SignalType::Audio } }; }
+
+        void setParameter (const juce::String& id, float value) override
+        {
+            if (id == "value")
+                constantValue = value;
+        }
+
+        void processSample (const float*, float* outputs) noexcept override { outputs[0] = constantValue; }
+
+    private:
+        float constantValue = 0.0f;
+    };
+
+    // A Boolean-typed constant — logic.boolean's own inputs are fixed
+    // Boolean (never polymorphic, unlike math.add/math.multiply since
+    // DomainRedesign.md Batch 3), so it needs a plain source of that type.
+    class BoolConstantNode : public Node
+    {
+    public:
+        int getNumInputPorts() const noexcept override { return 0; }
+        int getNumOutputPorts() const noexcept override { return 1; }
+        std::vector<PortDescriptor> getOutputPorts() const override { return { { "out", SignalType::Boolean } }; }
 
         void setParameter (const juce::String& id, float value) override
         {
@@ -51,6 +76,7 @@ namespace
     {
         auto factory = buildDefaultNodeFactory();
         factory.registerType ("test.audioConstant", [] { return std::make_unique<AudioConstantNode>(); });
+        factory.registerType ("test.boolConstant", [] { return std::make_unique<BoolConstantNode>(); });
         factory.registerType ("test.tooManyPorts", [] { return std::make_unique<TooManyPortsNode>(); });
         return factory;
     }
@@ -93,7 +119,7 @@ TEST_CASE ("Growable nodes start at their minimum and describe their group on ev
 {
     const auto factory = makeFactory();
 
-    for (const auto* typeId : { "math.add", "math.multiply", "mix.sum", "logic.boolean" })
+    for (const auto* typeId : { "math.add", "math.multiply", "logic.boolean" })
     {
         DYNAMIC_SECTION (typeId)
         {
@@ -212,14 +238,18 @@ TEST_CASE ("The last valid group index is accepted and one past the maximum is r
     CHECK_FALSE (compileWithPort ("in.01").success); // non-canonical ids name no port
 }
 
-TEST_CASE ("mix.sum sums a growable group, holes and all", "[engine][PortGroups][GraphCompiler]")
+TEST_CASE ("math.add sums a growable group of Audio inputs, holes and all - DomainRedesign.md Batch 3",
+           "[engine][PortGroups][GraphCompiler]")
 {
-    // Since Schema v4 (wiki/NODES_Gaps.md's `redundant-composable-param`
-    // finding), mix.sum no longer carries a per-input level.N gain — that's
-    // a real mix.gain node's job now, spliced in by hand or, for an old
-    // patch, by PatchSerializer's v3->v4 migration (see
-    // PatchSerializerMigrationTests.cpp). This node's own job shrinks back
-    // to a plain sum.
+    // wiki/plans/DomainRedesign.md Batch 3: mix.sum (Audio-only, no
+    // stored-value fallback) folded straight into math.add outright - the
+    // two were almost line-for-line the same node once Schema v4
+    // (wiki/NODES_Gaps.md's `redundant-composable-param` finding) removed
+    // mix.sum's own per-input level.N gain (that's a real mix.gain node's
+    // job now, spliced in by hand or, for an old patch, by PatchSerializer's
+    // v3->v4 migration - see PatchSerializerMigrationTests.cpp). math.add
+    // now resolves Audio dynamically (PortPolymorphism::SignalAndQuantity)
+    // instead of mix.sum declaring it statically.
     const auto factory = makeFactory();
 
     auto mixWith = [&] (int highestInput)
@@ -227,7 +257,7 @@ TEST_CASE ("mix.sum sums a growable group, holes and all", "[engine][PortGroups]
         NodeGraph graph;
         graph.addNode ({ "a", "test.audioConstant", {}, { { "value", 0.5f } }, {} });
         graph.addNode ({ "b", "test.audioConstant", {}, { { "value", 0.25f } }, {} });
-        graph.addNode ({ "mix", "mix.sum", {}, {}, {} });
+        graph.addNode ({ "mix", "math.add", {}, {}, {} });
         graph.addConnection ({ "a", "out", "mix", "in.0" });
         graph.addConnection ({ "b", "out", "mix", "in." + juce::String (highestInput) });
         graph.setOutput ("mix", "out");
@@ -245,16 +275,167 @@ TEST_CASE ("mix.sum sums a growable group, holes and all", "[engine][PortGroups]
     CHECK (mixWith (2) == Catch::Approx (0.75f)); // 0.5 + 0 + 0.25
 }
 
-TEST_CASE ("Recompiling reuses a growable node while its size is unchanged and replaces it once it grows",
-           "[engine][PortGroups][GraphCompiler]")
+TEST_CASE ("math.add's ports report Audio + the source's quantity once an Audio source resolves them, "
+           "the same PortPolymorphism::SignalAndQuantity mechanism util.reroute already uses",
+           "[engine][PortGroups][inheriting][DomainRedesign]")
 {
     const auto factory = makeFactory();
 
     NodeGraph graph;
-    addConstant (graph, "c0", 1.0f);
-    addConstant (graph, "c1", 2.0f);
-    addConstant (graph, "c2", 4.0f);
+    graph.addNode ({ "a", "test.audioConstant", {}, { { "value", 0.5f } }, {} });
+    graph.addNode ({ "b", "test.audioConstant", {}, { { "value", 0.25f } }, {} });
     graph.addNode ({ "add", "math.add", {}, {}, {} });
+    graph.addConnection ({ "a", "out", "add", "in.0" });
+    graph.addConnection ({ "b", "out", "add", "in.1" });
+    graph.setOutput ("add", "out");
+
+    auto result = GraphCompiler::compile (graph, factory, { 44100.0, 64 }, 1);
+    REQUIRE (result.success);
+
+    const auto& node = nodeOf (result, "add");
+    for (const auto& port : node.getInputPorts())
+    {
+        CHECK (port.type == SignalType::Audio);
+        CHECK (port.polymorphism == PortPolymorphism::SignalAndQuantity);
+    }
+    REQUIRE (node.getOutputPorts().size() == 1);
+    CHECK (node.getOutputPorts()[0].type == SignalType::Audio);
+    CHECK (node.getOutputPorts()[0].polymorphism == PortPolymorphism::SignalAndQuantity);
+}
+
+TEST_CASE ("math.add's SIGNAL TYPE still resolves by declaration order when wired members disagree, "
+           "same rule InheritingPortsNode::offer() already establishes",
+           "[engine][PortGroups][inheriting][DomainRedesign]")
+{
+    // Calls resolveIncomingPort() directly, the same way
+    // InheritingPortsTests.cpp's own "logic.select resolves by port
+    // priority..." test does — GraphCompiler's real canConnect validation
+    // would (correctly) reject two DIFFERENT SignalTypes disagreeing on one
+    // node's single resolved type as a genuine mismatch (Audio -> a
+    // Control-resolved port needs adapt.audioToControl, not a free wire),
+    // so this tests the resolution rule in isolation. SignalType keeps the
+    // strict priority rule (mixing Audio and Control on one sum is rare,
+    // and if it happens one of them IS the odd one out) — QUANTITY does
+    // NOT, see the sibling test below for why.
+    for (const auto in1First : { true, false })
+    {
+        DYNAMIC_SECTION ("in.1 offered " << (in1First ? "first" : "second"))
+        {
+            nodes::AddNode node;
+            const PortDescriptor audioSource { "src", SignalType::Audio };
+            const PortDescriptor controlSource { "src", SignalType::Control };
+
+            if (in1First)
+            {
+                node.resolveIncomingPort ("in.1", controlSource);
+                node.resolveIncomingPort ("in.0", audioSource);
+            }
+            else
+            {
+                node.resolveIncomingPort ("in.0", audioSource);
+                node.resolveIncomingPort ("in.1", controlSource);
+            }
+
+            // in.0 declared first wins, regardless of offer order.
+            for (const auto& port : node.getInputPorts())
+                CHECK (port.type == SignalType::Audio);
+            CHECK (node.getOutputPorts()[0].type == SignalType::Audio);
+        }
+    }
+}
+
+TEST_CASE ("math.add's QUANTITY only resolves when every wired member unanimously agrees; any real "
+           "disagreement falls back to Dimensionless, canConnect's own universal wildcard",
+           "[engine][PortGroups][inheriting][DomainRedesign]")
+{
+    // Real, found-live design bug (HostInputTests.cpp's own "combine
+    // io.control + io.transport through math.add" case, a pre-existing,
+    // legitimate graph): io.control's Unipolar "value" and io.transport's
+    // Time "position" have never had any reason to agree, and summing them
+    // through math.add always worked, because math.add never declared a
+    // real quantity before this redesign. A first cut of this fix used
+    // InheritingPortsNode's own "lowest priority wins" rule for quantity
+    // too — that made the LOSING port's own real source spuriously fail
+    // canConnect's strict real-quantity matching against the node's now-
+    // different resolved quantity, breaking exactly that graph. Unlike
+    // SignalType, quantity has no "one of them is obviously the odd one
+    // out" reading for a sum: it needs unanimous agreement, not priority.
+    nodes::AddNode node;
+    PortDescriptor frequencySource { "src", SignalType::Control };
+    frequencySource.quantity = Quantity::Frequency;
+    PortDescriptor pitchSource { "src", SignalType::Control };
+    pitchSource.quantity = Quantity::Pitch;
+    PortDescriptor dimensionlessSource { "src", SignalType::Control };
+
+    // Disagreement (Frequency vs Pitch) -> Dimensionless, not either one.
+    node.resolveIncomingPort ("in.0", frequencySource);
+    node.resolveIncomingPort ("in.1", pitchSource);
+    for (const auto& port : node.getInputPorts())
+        CHECK (port.quantity == Quantity::Dimensionless);
+
+    // A THIRD input, unwired/Dimensionless, never counts as "disagreement" —
+    // matches canConnect's own two-sided Dimensionless wildcard.
+    nodes::AddNode agreeing;
+    agreeing.resolveIncomingPort ("in.0", frequencySource);
+    agreeing.resolveIncomingPort ("in.1", dimensionlessSource);
+    for (const auto& port : agreeing.getInputPorts())
+        CHECK (port.quantity == Quantity::Frequency);
+
+    // A later re-offer that resolves the disagreement (a Reroute chain
+    // upstream settling on a fixed point) un-sticks it — recomputed fresh
+    // from every port's current state, not accumulated permanently.
+    node.resolveIncomingPort ("in.1", frequencySource);
+    for (const auto& port : node.getInputPorts())
+        CHECK (port.quantity == Quantity::Frequency);
+}
+
+TEST_CASE ("math.multiply resolves Audio dynamically too - the real ring-mod case, "
+           "correcting wiki/NODES.md's documentation-level claim this already worked",
+           "[engine][PortGroups][inheriting][DomainRedesign]")
+{
+    // wiki/plans/DomainRedesign.md §10 (the plan-mode Explore pass): "wiki/
+    // NODES.md's claim that math.multiply already doubles as ring-mod for
+    // audio-rate signals was documentation-level, not real - its ports were
+    // fixed Control." Verified and fixed here directly against the real node.
+    const auto factory = makeFactory();
+
+    NodeGraph graph;
+    graph.addNode ({ "a", "test.audioConstant", {}, { { "value", 2.0f } }, {} });
+    graph.addNode ({ "b", "test.audioConstant", {}, { { "value", 3.0f } }, {} });
+    graph.addNode ({ "mul", "math.multiply", {}, {}, {} });
+    graph.addConnection ({ "a", "out", "mul", "in.0" });
+    graph.addConnection ({ "b", "out", "mul", "in.1" });
+    graph.setOutput ("mul", "out");
+
+    auto result = GraphCompiler::compile (graph, factory, { 44100.0, 64 }, 1);
+    REQUIRE (result.success);
+
+    const auto& node = nodeOf (result, "mul");
+    CHECK (node.getInputPorts()[0].type == SignalType::Audio);
+    CHECK (node.getOutputPorts()[0].type == SignalType::Audio);
+    CHECK (finalOutput (result) == 6.0f);
+}
+
+TEST_CASE ("Recompiling reuses a growable node while its size is unchanged and replaces it once it grows",
+           "[engine][PortGroups][GraphCompiler]")
+{
+    // logic.boolean, not math.add: DomainRedesign.md Batch 3 made math.add
+    // genuinely polymorphic (PortPolymorphism::SignalAndQuantity), and
+    // GraphCompiler's own reuse check already excludes ANY
+    // hasPolymorphicPorts() node from reuse outright, regardless of group
+    // size (GraphCompiler.cpp's own comment: "such a node holds no DSP
+    // state worth carrying forward") — the exact same rule util.reroute's
+    // node has always lived under. math.add now lives under it too; a
+    // dedicated test for that is below. logic.boolean is a growable node
+    // that stays fixed-Boolean (never polymorphic), so it's what still
+    // demonstrates the group-size-driven half of this rule in isolation.
+    const auto factory = makeFactory();
+
+    NodeGraph graph;
+    graph.addNode ({ "c0", "test.boolConstant", {}, { { "value", 1.0f } }, {} });
+    graph.addNode ({ "c1", "test.boolConstant", {}, { { "value", 1.0f } }, {} });
+    graph.addNode ({ "c2", "test.boolConstant", {}, { { "value", 1.0f } }, {} });
+    graph.addNode ({ "add", "logic.boolean", {}, {}, {} });
     graph.addConnection ({ "c0", "out", "add", "in.0" });
     graph.addConnection ({ "c1", "out", "add", "in.1" });
     graph.setOutput ("add", "out");
@@ -274,7 +455,30 @@ TEST_CASE ("Recompiling reuses a growable node while its size is unchanged and r
     CHECK (&nodeOf (third, "add") != &nodeOf (second, "add"));
     CHECK (nodeOf (third, "add").getGroupPortCount() == 3);
     CHECK (nodeOf (second, "add").getGroupPortCount() == 2); // the live plan's node was not touched
-    CHECK (finalOutput (third) == 7.0f);
+    CHECK (finalOutput (third) == 1.0f); // AND of three trues
+}
+
+TEST_CASE ("math.add is never reused across a recompile, even at an unchanged group size - "
+           "PortPolymorphism::SignalAndQuantity makes it a polymorphic node like util.reroute",
+           "[engine][PortGroups][GraphCompiler][DomainRedesign]")
+{
+    const auto factory = makeFactory();
+
+    NodeGraph graph;
+    addConstant (graph, "c0", 1.0f);
+    addConstant (graph, "c1", 2.0f);
+    graph.addNode ({ "add", "math.add", {}, {}, {} });
+    graph.addConnection ({ "c0", "out", "add", "in.0" });
+    graph.addConnection ({ "c1", "out", "add", "in.1" });
+    graph.setOutput ("add", "out");
+
+    auto first = GraphCompiler::compile (graph, factory, { 44100.0, 64 }, 1);
+    REQUIRE (first.success);
+
+    auto second = GraphCompiler::compile (graph, factory, { 44100.0, 64 }, 2, &first.plan);
+    REQUIRE (second.success);
+    CHECK (&nodeOf (second, "add") != &nodeOf (first, "add")); // same group size, still a fresh node
+    CHECK (finalOutput (second) == 3.0f); // harmless: math.add holds no DSP state worth preserving anyway
 }
 
 TEST_CASE ("A node declaring more than maxPortsPerNode ports is a compile error, not a stack overrun",
@@ -373,7 +577,15 @@ TEST_CASE ("A schema v1 patch migrates through v2 to v3, landing mix.sum's index
     CHECK (result.document.connections[1].toPortId == "in.1");
     CHECK (result.document.schemaVersion == PatchDocument::currentSchemaVersion);
 
-    // ...and the migrated document really compiles against the current node.
+    // wiki/plans/DomainRedesign.md Batch 3 deleted "mix.sum" outright
+    // (folded into math.add) — CLAUDE.md's Rule 3 suspension means this
+    // node's own type id, unlike its ports here, is NOT migrated forward:
+    // "nothing real depends on today's ids yet... no migration required".
+    // A patch old enough to still say "mix.sum" no longer compiles at all
+    // (a real, accepted, documented consequence of the suspension, not a
+    // silent drop) — the port-id migration this test actually exists to
+    // verify (toPortIndex -> in.0/in.1) still ran correctly above; only the
+    // OLD type name itself doesn't resolve any more.
     const auto factory = makeFactory();
     NodeGraph graph;
     for (const auto& node : result.document.nodes)
@@ -381,7 +593,9 @@ TEST_CASE ("A schema v1 patch migrates through v2 to v3, landing mix.sum's index
     for (const auto& connection : result.document.connections)
         graph.addConnection (connection);
     graph.setOutput (result.document.outputNodeId, result.document.outputPortId);
-    CHECK (GraphCompiler::compile (graph, factory, { 44100.0, 64 }, 1).success);
+    const auto compiled = GraphCompiler::compile (graph, factory, { 44100.0, 64 }, 1);
+    CHECK_FALSE (compiled.success);
+    CHECK (compiled.errorMessage.contains ("mix.sum"));
 }
 
 TEST_CASE ("Schema v3 -> v4 preserves mix.sum's level.N as a spliced mix.gain node, or drops it if it was a no-op",
@@ -466,9 +680,16 @@ TEST_CASE ("Schema v3 -> v4 preserves mix.sum's level.N as a spliced mix.gain no
     CHECK_FALSE (findConnection ("lfo", "out", "mix", "level.2"));
     CHECK_FALSE (findConnection ("c", "out", "mix", "in.2")); // replaced, not left dangling alongside the new one
 
-    // ...and the migrated document really compiles and sums correctly:
-    // 1 (a, no gain) + 1*2 (b through gain1) + 0.5*1 (c through gain2,
-    // itself gained by lfo's constant 0.5 value) = 3.5.
+    // The structural migration this test exists to verify (level.N ->
+    // a real, spliced mix.gain node) is fully checked above. It no longer
+    // compiles past that: wiki/plans/DomainRedesign.md Batch 3 deleted
+    // "mix.sum" outright (folded into math.add), and CLAUDE.md's Rule 3
+    // suspension deliberately does NOT migrate a node's own type id
+    // forward ("nothing real depends on today's ids yet... no migration
+    // required") — only its ports/parameters, which the checks above
+    // already confirm landed correctly. Replaces the old "1 (a, no gain) +
+    // 1*2 (b through gain1) + 0.5*1 (c through gain2) = 3.5" sum proof,
+    // which needed a real compile to run at all.
     const auto factory = makeFactory(); // registers test.audioConstant, same as the sibling test above
     NodeGraph graph;
     for (const auto& node : result.document.nodes)
@@ -477,10 +698,7 @@ TEST_CASE ("Schema v3 -> v4 preserves mix.sum's level.N as a spliced mix.gain no
         graph.addConnection (connection);
     graph.setOutput (result.document.outputNodeId, result.document.outputPortId);
 
-    auto compiled = GraphCompiler::compile (graph, factory, { 44100.0, 64 }, 1);
-    INFO (compiled.errorMessage);
-    REQUIRE (compiled.success);
-    compiled.plan.process (8);
-    const auto out = compiled.plan.blockBuffers[(size_t) compiled.plan.finalOutputBufferIndex].getBlock().getChannelPointer (0)[7];
-    CHECK (out == Catch::Approx (3.5f));
+    const auto compiled = GraphCompiler::compile (graph, factory, { 44100.0, 64 }, 1);
+    CHECK_FALSE (compiled.success);
+    CHECK (compiled.errorMessage.contains ("mix.sum"));
 }

@@ -361,7 +361,7 @@ TEST_CASE ("An audioIn feeding the global domain (after an instance.sum) passes 
     graph.addNode ({ "osc", "osc.analog", {}, {}, {} });
     graph.addNode ({ "svf", "filter.svf", {}, {}, {} });
     graph.addNode ({ "instancemix", "instance.sum", {}, {}, {} });
-    graph.addNode ({ "sum", "mix.sum", {}, {}, {} });
+    graph.addNode ({ "sum", "math.add", {}, {}, {} });
     graph.addNode ({ "audioin", "io.audioIn", {}, {}, {} });
     graph.addNode ({ "masterout", "io.output", {}, {}, {} });
     graph.addConnection ({ "noteIn", "notes", "alloc", "spawn" });
@@ -595,7 +595,7 @@ TEST_CASE ("The host-input path never allocates on the audio thread",
         graph.addNode ({ "osc", "osc.analog", {}, {}, {} });
         graph.addNode ({ "svf", "filter.svf", {}, {}, {} });
         graph.addNode ({ "instancemix", "instance.sum", {}, {}, {} });
-        graph.addNode ({ "sum", "mix.sum", {}, {}, {} });
+        graph.addNode ({ "sum", "math.add", {}, {}, {} });
         graph.addNode ({ "audioin", "io.audioIn", {}, {}, {} });
         graph.addNode ({ "masterout", "io.output", {}, {}, {} });
         graph.addConnection ({ "noteIn", "notes", "alloc", "spawn" });
