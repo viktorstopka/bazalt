@@ -773,3 +773,95 @@ Standalone app rebuilt and relaunched (category strings are baked into the compi
 the native bridge serves, unlike `.2`'s pure-TS fix, so this one genuinely needed a rebuild+relaunch,
 not just Vite HMR) — visual confirmation that "IO" now renders as one flat category is the user's own
 next step, same computer-use-capability caveat as every earlier entry in this arc.
+
+---
+
+# Clock+Seq batch — `wiki/NODES.Status.md`'s own build order, step 1 — done
+
+Not part of the `0.x` arc or either dated arc above — the first real node-building work
+driven directly by `wiki/NODES.Status.md` (written 2026-09-29), which named this exact
+5-node cluster as the top of its own "nodes to build next" order: zero dependencies,
+essential (**A**-tier) modularity infra, highest leverage. Five new node types:
+`clock.pulse`, `clock.divide`, `clock.counter`, `seq.steps`, `seq.euclid`
+(`engine/include/bazalt/engine/nodes/Clock{Pulse,Divide,Counter}Node.h`,
+`Seq{Steps,Euclid}Node.h`), registered in `ProofGraphs.h::buildDefaultNodeFactory()`
+— not wired into either proof graph or the Init Patch (nothing yet consumes them; they
+exist to be placed by hand in the editor, same as every other freshly-built node
+before its own stock-group/reference-patch lands).
+
+**Design decisions made while building, not pre-specified by the catalog:**
+
+- **`clock.pulse`'s swing/jitter** are a concrete, testable contract the catalog named
+  but didn't pin down: ticks fire at successive integer thresholds `k = 0, 1, 2, ...`;
+  swing delays every odd-numbered tick's threshold by `swing*0.5` periods, which
+  automatically preserves the pair's average period (the next even threshold is always
+  the next plain integer — no separate compensation step needed); jitter perturbs each
+  threshold by a random offset redrawn once per tick, not resampled every sample.
+  `rateMode = Division` reads `rate` as beats/sec (wire `io.transport.tempo` straight
+  in) scaled by the selected note division.
+- **`clock.pulse`/`clock.counter` both gained a `seed`** structural parameter beyond
+  the catalog's own port list — the same convention `random.stepped`/`random.drift`
+  already established for any node with internal randomness (jitter; `random` mode),
+  needed for deterministic, reproducible renders.
+- **`clock.divide`'s output port id is `tickOut`, not `tick`.** The catalog names both
+  the input and the output `tick` — a real, previously-untested engine invariant
+  (`ExecutionPlanTapTests.cpp`'s "no node type reuses a port id across its inputs and
+  outputs") rejects that at compile time. Caught by the build, not by inspection: the
+  full test suite was already green before this node existed, and adding it was the
+  first thing in 58 prior node types to ever exercise that specific check. Display
+  label stays "Tick" — id/label divergence is already normal throughout this codebase.
+- **`seq.steps` shipped as MVP, two deliberate, documented deviations from spec**, both
+  flagged in `wiki/NODES.Status.md` before this session started: no `Data(curve)`
+  input (no node in the engine produces a real `Data` value yet — a cross-cutting
+  prerequisite, not specific to this node), and `length` capped at 16 rather than the
+  catalog's 64 (a classic 16-step sequencer covers the overwhelming common case;
+  raising the cap later is trivial — these are plain, individually-numbered
+  `ParameterDescriptor`s, `seq.steps.step.0`..`.15`, not a wire-format array size).
+  `gate` is defined as `abs(currentStepValue) > epsilon` (a step storing exactly 0.0 is
+  a rest) since this data model has no separate per-step enable flag.
+- **`seq.euclid`** uses the standard `floor(i·pulses/steps) != floor((i-1)·pulses/steps)`
+  onset formula (Bjorklund-equivalent, no recursion needed) — hand-verified against the
+  textbook `steps=8, pulses=3` tresillo pattern (hits at 0, 3, 6) before writing the
+  corresponding test.
+- **`seq.steps`/`seq.euclid` both hold at step 0 until the first tick**, which advances
+  to step 1 — the classic hardware step-sequencer "power-on shows step 1 active, first
+  clock advances to step 2" convention, chosen deliberately and documented in both
+  nodes' own header comments so it doesn't read as an off-by-one bug later.
+- **`clock.counter`'s `random` mode never fires `wrapped`** — there's no meaningful
+  "reached the end and came back to start" for an independent uniform draw each tick,
+  so this node doesn't invent one; every other mode (`up`/`down`/`pingPong`) fires it
+  exactly once per lap.
+
+**Tests:** new `tests/ClockSeqNodesTests.cpp`, 21 cases covering every node (free-run
+timing, swing/jitter determinism, division-mode arithmetic, run/reset for
+`clock.pulse`; passthrough/N-division/reset for `clock.divide`; all 4 modes + wrap
+behaviour + normalised output for `clock.counter`; advance/hold/wrap/gate/range/reset
+for `seq.steps`; the tresillo pattern, `pulses=0`/`pulses>=steps` edge cases, rotate,
+and trigger-vs-gate timing for `seq.euclid`). A real dangling-pointer bug in an early
+draft of the `seq.steps` test (a lambda returning a raw pointer to its own local
+stack array) was caught by the compiler's own `C4172` warning during the first build
+attempt, not found live — fixed by returning `std::array<float, 4>` by value instead.
+`NodeDescriptorTests.cpp`'s registered-type count updated 58 → 63.
+
+**Verified:** `ctest` (engine+plugin combined) 399/399 green; `EngineTests.exe` alone
+314 test cases / 2,004,319 assertions, all passing, of which the 21 new `[ClockSeq]`
+cases (93,257 assertions) were run and confirmed green in isolation first, before the
+full-suite run. `pluginval --strictness-level 10`: the recurring "Parameter thread
+safety" timeout hit again on the first run — the same known-environmental symptom
+this project has isolated via full `git stash` A/B comparison several times before
+(`09-28-InstanceAllocator.1`'s part 3/4/5, `09-29-AddMenu` entries); not re-isolated
+from scratch here given that standing track record, but passed clean (`SUCCESS`) on a
+plain retry, consistent with every prior occurrence. Standalone app rebuilt, launched,
+screenshotted (confirmed no crash, the WebView rendered the user's own saved graph
+correctly), and closed — no UI code changes were needed for the new nodes to become
+placeable (the Add menu is entirely descriptor-driven), so this was a sanity check,
+not a feature verification.
+
+**Docs updated to match:** `wiki/NODES.md`'s `clock.*`/`seq.*` entries and status-index
+row (📋 → ✅ for four nodes, 🚧 for `seq.steps`, with each deviation from the literal
+catalog spec named inline, not silently narrower); its own "62 of 125 catalog-only"
+header count. `wiki/NODES.Status.md`: all 5 nodes moved out of their "to build" tables
+into the family sections above (Implemented/MVP), totals recomputed (55→59 Implemented,
+3→4 MVP, 67→62 to build, A-tier 19→14), the Clock+Seq batch and "nodes to build next"
+step 1 marked done, and the Arpeggiator/Cicada stock-group appendix rows updated to
+reflect their now-satisfied `clock.*` dependencies.

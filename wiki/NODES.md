@@ -16,8 +16,10 @@ implemented.
 **✅ Implemented** — real, registered, in `engine/include/bazalt/engine/nodes/`.
 **🚧 Partial** — implemented but narrower than this spec (the gap is named).
 **📋 Catalog only** — specified here, not built yet. Most of the catalog is this today
-— **57 of the ~100+ node types below are catalog-only.** Don't assume a node works in
-the running app because it's in this file; check the status marker.
+— **62 of the 125 node types below are catalog-only** (down from 67 after the
+Clock+Seq batch — `wiki/NODES.Status.md` tracks the build order for what's left). Don't
+assume a node works in the running app because it's in this file; check the status
+marker.
 
 ## Notation
 
@@ -50,8 +52,8 @@ are telemetry outputs for live visualization, not ports.
 | `env.*` | adsr, curve, follower | ✅ adsr, follower — 📋 curve |
 | `lfo.*` | shape | 📋 |
 | `random.*` | stepped, drift | ✅ both |
-| `clock.*` | pulse, divide, counter | 📋 all 3 |
-| `seq.*` | steps, euclid | 📋 both |
+| `clock.*` | pulse, divide, counter | ✅ all 3 |
+| `seq.*` | steps, euclid | ✅ euclid — 🚧 steps |
 | `note.*` | gate, value, quantize, transpose, chord, hold, select, humanize, filter, assemble | 📋 all 10 |
 | `math.*` | add, subtract, multiply, divide, abs, clamp, minmax, power, round, modulo, slew | ✅ all 11 |
 | `logic.*` | boolean, not, compare, toggle, select | ✅ all 5 |
@@ -274,20 +276,20 @@ Slow, correlated, natural wander. **In:** `rate`; `amount`; `centering` (0 = fre
 
 ## clock and seq
 
-#### `clock.pulse` — Clock 📋
-**In:** `rate [audio]`; `swing`; `jitter`; `run : bool·true`; `reset : Event`. **Out:** `tick` — `Event`; `phase`. **Structural:** `rateMode`, `division`. **M24.**
+#### `clock.pulse` — Clock ✅
+**In:** `rate [audio]`; `swing`; `jitter`; `run : bool·true`; `reset : Event`. **Out:** `tick` — `Event`; `phase`. **Structural:** `rateMode` (enum: free, division), `division` (enum: 1/1…1/32), `seed` (not in the original catalog spec — added for the same reason `random.stepped`/`random.drift` have one: `jitter`'s randomness needs to be reproducible for a deterministic render, matching this codebase's universal convention for any node with internal randomness). **Behavior:** a phase accumulator that fires ticks at successive integer thresholds `k = 0, 1, 2, ...`; `swing` delays every odd-numbered tick's threshold by up to half a period (`k + swing*0.5`), which — because the next even threshold is always the next plain integer — preserves the pair's average period automatically, no separate compensation needed. `jitter` perturbs each threshold by a random offset redrawn once per tick (stable for the whole upcoming interval, not resampled every sample). In `division` mode, `rate` is read as beats/sec (wire `io.transport.tempo` straight in) scaled by the selected division — this node's own concrete design choice for a tempo-sync contract the catalog named but didn't pin down.
 
-#### `clock.divide` — Divide 📋
-**In:** `tick : Event`; `divide`; `reset : Event`. **Out:** `tick` — `Event`. **M24.**
+#### `clock.divide` — Divide ✅
+**In:** `tick : Event`; `divide`; `reset : Event`. **Out:** `tick` — `Event` (engine port id `tickOut` — the catalog names both ports `tick`, but a same-id input/output pair on one node is a real, enforced engine invariant; the display label stays "Tick"). **Behavior:** fires every Nth incoming tick; `divide = 1` is a plain passthrough.
 
-#### `clock.counter` — Counter 📋
-**In:** `tick : Event`; `reset : Event`; `length`; `step`. **Out:** `index`; `normalised`; `wrapped` — `Event`. **Structural:** `mode` (enum: up, down, ping-pong, random). **Behavior:** the generic sequencer engine — with `note.select`, an arpeggiator; with `data.lookup`, a step sequencer. **M24.**
+#### `clock.counter` — Counter ✅
+**In:** `tick : Event`; `reset : Event`; `length`; `step`. **Out:** `index`; `normalised`; `wrapped` — `Event`. **Structural:** `mode` (enum: up, down, ping-pong, random), `seed` (same reasoning as `clock.pulse`'s — needed for `random` mode's determinism, not in the original catalog spec). **Behavior:** the generic sequencer engine — with `note.select`, an arpeggiator; with `data.lookup`, a step sequencer. `wrapped` fires once per lap in `up`/`down`/`pingPong` (crossing the boundary / bouncing off either end); it never fires in `random` mode — there's no meaningful "wrapped" for an independent uniform draw each tick, so this node doesn't invent one.
 
-#### `seq.steps` — Step Sequencer 📋
-**In:** `tick : Event`; `reset : Event`; `steps` — `Data(curve)` (optional, otherwise the node's own editable step data — see `NODES.System.md` §3's content-category note on this). **Out:** `value` — `float·Bipolar [audio]`; `gate`; `trigger` — `Event`; `index`. **Structural:** `length` (1–64), `range`. **M24.**
+#### `seq.steps` — Step Sequencer 🚧
+**In:** `tick : Event`; `reset : Event`. **Out:** `value` — `float·Bipolar [audio]`; `gate`; `trigger` — `Event`; `index`. **Structural:** `length` (1–**16**, not the catalog's 1–64 — see below), `range` (enum: bipolar, unipolar), plus `step.0`…`step.15` (the node's own editable step bank). **Two deliberate, documented deviations from the catalog spec** (not silently narrower): the catalog's `steps` input (`Data(curve)`, optional) isn't built — no node in the engine produces a real `Data` value yet (`wiki/NODES.Status.md`'s cross-cutting prerequisite note) — so this node only has the fallback the catalog itself names, "the node's own editable step data," as fixed `ParameterDescriptor`s rather than a real `NodeContent`-backed bank; and `length` is capped at 16 instead of 64 (trivial to raise later — these are plain, individually-numbered parameters, not a wire-format array size). **Behavior:** `gate` is `abs(currentStepValue) > epsilon` — a step storing exactly 0.0 is a rest, since this data model has no separate per-step enable flag. Holds at step 0 until the first tick (which advances to step 1) — classic hardware step-sequencer "power-on shows step 1" behaviour, not an off-by-one bug.
 
-#### `seq.euclid` — Euclidean 📋
-**In:** `tick : Event`; `steps`; `pulses`; `rotate`; `reset : Event`. **Out:** `trigger` — `Event`; `gate`. **M24.**
+#### `seq.euclid` — Euclidean ✅
+**In:** `tick : Event`; `steps`; `pulses`; `rotate`; `reset : Event`. **Out:** `trigger` — `Event`; `gate` (Boolean — the catalog leaves this port's type unmarked; every other "gate" port in the catalog is Boolean, so this follows that convention). **Behavior:** the standard `floor(i·pulses/steps) != floor((i-1)·pulses/steps)` construction (Bjorklund-equivalent onset pattern, no recursion needed); `rotate` shifts which step of the fixed pattern is read without moving the sequencer's own advancing index.
 
 ## note — the note stream
 

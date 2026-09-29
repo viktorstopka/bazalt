@@ -58,6 +58,11 @@
 #include "bazalt/engine/nodes/WidthNode.h"
 #include "bazalt/engine/nodes/StereoSplitNode.h"
 #include "bazalt/engine/nodes/StereoCombineNode.h"
+#include "bazalt/engine/nodes/ClockPulseNode.h"
+#include "bazalt/engine/nodes/ClockDivideNode.h"
+#include "bazalt/engine/nodes/ClockCounterNode.h"
+#include "bazalt/engine/nodes/SeqStepsNode.h"
+#include "bazalt/engine/nodes/SeqEuclidNode.h"
 
 namespace bazalt::engine
 {
@@ -137,6 +142,12 @@ namespace bazalt::engine
         factory.registerType ("space.width", [] { return std::make_unique<nodes::WidthNode>(); });
         factory.registerType ("stereo.split", [] { return std::make_unique<nodes::StereoSplitNode>(); });
         factory.registerType ("stereo.combine", [] { return std::make_unique<nodes::StereoCombineNode>(); });
+        // Clock+Seq batch (wiki/NODES.Status.md's own build-next order, step 1).
+        factory.registerType ("clock.pulse", [] { return std::make_unique<nodes::ClockPulseNode>(); });
+        factory.registerType ("clock.divide", [] { return std::make_unique<nodes::ClockDivideNode>(); });
+        factory.registerType ("clock.counter", [] { return std::make_unique<nodes::ClockCounterNode>(); });
+        factory.registerType ("seq.steps", [] { return std::make_unique<nodes::SeqStepsNode>(); });
+        factory.registerType ("seq.euclid", [] { return std::make_unique<nodes::SeqEuclidNode>(); });
         return factory;
     }
 

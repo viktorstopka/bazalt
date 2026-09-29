@@ -174,20 +174,20 @@ first cut (a plain structural array works until something demands live editing).
 
 `random.stepped`, `random.drift` — both Implemented.
 
-### `clock.*` — 3 to build (none started)
+### `clock.*` — 3/3 Implemented
 
-| Node | Status | Necessity | Batch | Notes |
-|---|---|---|---|---|
-| `clock.pulse` | To be implemented | **A1** | Clock+Seq | Core timing source — no dependencies, high leverage. |
-| `clock.divide` | To be implemented | **A1** | Clock+Seq | Trivial counter/divider. |
-| `clock.counter` | To be implemented | **A2** | Clock+Seq | Generic sequencer engine (up/down/ping-pong/random modes) — pairs with `note.select`/`data.lookup` per the catalog's own framing. |
+| Node | Status | Notes |
+|---|---|---|
+| `clock.pulse` | Implemented | Phase-accumulator clock; swing/jitter/division mode all real. Gained a `seed` param beyond the catalog spec (jitter determinism), same convention `random.stepped`/`random.drift` already established. |
+| `clock.divide` | Implemented | Output port id is `tickOut` (not catalog's `tick`) — a real engine invariant (no node may reuse a port id across its own inputs/outputs) forced this; display label is still "Tick". |
+| `clock.counter` | Implemented | All 4 modes (up/down/pingPong/random) real; `wrapped` deliberately never fires in `random` mode (documented, not an oversight). Gained a `seed` param, same reasoning as `clock.pulse`. |
 
-### `seq.*` — 2 to build
+### `seq.*` — 1 Implemented, 1 MVP
 
-| Node | Status | Necessity | Batch | Notes |
-|---|---|---|---|---|
-| `seq.euclid` | To be implemented | **A2** | Clock+Seq | Well-known algorithm, moderate. |
-| `seq.steps` | To be implemented | **A2** | Clock+Seq | Needs some form of editable step-data storage (simplified content, ahead of full `NodeContent`). |
+| Node | Status | Notes |
+|---|---|---|
+| `seq.euclid` | Implemented | Standard Bjorklund-equivalent onset formula; `rotate` real. |
+| `seq.steps` | MVP | Two real, documented deviations from spec: no `Data(curve)` input (nothing in the engine produces `Data` yet — see the cross-cutting note above), and `length` capped at 16 instead of the catalog's 64 (trivial to raise later; these are plain numbered parameters, not a wire-format array size). Real per-step content editing belongs on `NodeContent` (§3) once that exists. |
 
 ### `note.*` — the note stream — 10 to build (none started)
 
@@ -283,12 +283,16 @@ building for real, not simplified.
 
 | Status | Count |
 |---|---|
-| Implemented | 55 |
-| MVP | 3 (`osc.analog`, `filter.svf`, `excite.burst`) |
-| To be implemented | 67 |
+| Implemented | 59 |
+| MVP | 4 (`osc.analog`, `filter.svf`, `excite.burst`, `seq.steps`) |
+| To be implemented | 62 |
 | **Total native node types** | **125** |
 
-By necessity, among the 67: **A** 19 · **B** 30 · **C** 12 · **D** 6.
+By necessity, among the 62 still to build: **A** 14 · **B** 30 · **C** 12 · **D** 6.
+
+**Clock+Seq batch — done.** `clock.pulse`/`clock.divide`/`clock.counter`/`seq.euclid`/
+`seq.steps` all built and tested — see their family sections above for per-node notes;
+`wiki/MILESTONES.md`'s own entry has the full build record.
 
 ---
 
@@ -296,8 +300,9 @@ By necessity, among the 67: **A** 19 · **B** 30 · **C** 12 · **D** 6.
 
 - **A — essential, ASAP.** Everything here is graph-flow/timing/note-stream/domain
   infrastructure that unlocks broad modularity, mirroring why `logic.*`/`adapt.*`
-  already shipped early: `clock.*`, `seq.*`, the whole `note.*` family, the two
-  remaining `instance.allocate.*` spawn types, `util.macro`. None of these are hard
+  already shipped early: `clock.*`/`seq.*` (**done** — see the Clock+Seq batch note
+  below), the whole `note.*` family, the three `instance.allocate.*` spawn types,
+  `util.macro`. None of these are hard
   *because* they're essential — several are difficulty 1 — they're essential because
   a huge amount of "ordinary patching" (arpeggios, chords, scale-snapping, swarms,
   percussive one-shots, host-automatable knobs) is blocked on them existing at all.
@@ -324,7 +329,7 @@ but sit at the top of the recommended order below because `note.quantize` (A),
 
 | Batch | Members | Why batched |
 |---|---|---|
-| **Clock+Seq** | `clock.pulse`, `clock.divide`, `clock.counter`, `seq.steps`, `seq.euclid` | Chain into each other directly (pulse → divide → counter → steps/euclid); test as one rhythmic pipeline. |
+| **Clock+Seq** — done | `clock.pulse`, `clock.divide`, `clock.counter`, `seq.steps`, `seq.euclid` | Chain into each other directly (pulse → divide → counter → steps/euclid); tested as one rhythmic pipeline (`tests/ClockSeqNodesTests.cpp`). |
 | **Data Foundations** | `data.scale`, `data.table`, `data.lookup` | `data.lookup` literally reads what `data.table`/`data.scale` produce — the pathfinder for the whole Data-publishing pipeline. |
 | **Note Stream** | `note.gate`, `note.value`, `note.transpose`, `note.filter`, `note.hold`, `note.select`, `note.chord`, `note.humanize`, `note.quantize` | All consume/produce `Note`, chain naturally (quantize → chord → hold → select), share test fixtures. |
 | **Domain Extensions** | `instance.allocate.swarmPopulation`, `instance.allocate.swarmTransient`, `instance.allocate.trigger` | Share the same instance-context/lifetime runtime machinery `instance.allocate.voice` already proved out. |
@@ -350,10 +355,12 @@ enough that batching them buys nothing.
 Ordered recommendation — not a strict necessity-letter sort, because dependency order
 matters more than the letter for a couple of "C" items:
 
-1. **Clock+Seq** (`clock.pulse` → `clock.divide` → `clock.counter` → `seq.euclid` →
-   `seq.steps`) — zero dependencies, immediate high-leverage payoff for modularity,
-   mostly difficulty 1–2.
-2. **Data Foundations** (`data.scale` → `data.table` → `data.lookup`) — pulled forward
+1. ~~**Clock+Seq**~~ — **done.** `clock.pulse`/`clock.divide`/`clock.counter`/
+   `seq.euclid`/`seq.steps` all built and tested (`tests/ClockSeqNodesTests.cpp`, 21
+   cases). `seq.steps` shipped as MVP (two documented, deliberate spec deviations —
+   see its own row above); the other four fully match the catalog.
+2. **Data Foundations** (`data.scale` → `data.table` → `data.lookup`) — now the next
+   step. Pulled forward
    ahead of its "C" letter specifically because `note.quantize`, `env.curve`,
    `lfo.shape`, and `shape.waveshaper`'s custom-curve mode all block on it. Build
    `data.scale` first as the Data-pipeline pathfinder (see the prerequisite note up
@@ -411,13 +418,13 @@ not with the A/B/C/D/Batch treatment above.
 | **Init Patch** | ✅ real hand-built graph (not yet a loadable `stock.*` asset) | Nothing for the graph itself; needs `stock.*` loading (M29) and `space.reverb` for its tail. |
 | **Karplus-Strong** | 📋 | Only `shape.clip` (Shaping batch) is missing — everything else it uses is already Implemented. |
 | **Scale Quantize** | 📋 | `data.scale`, `note.quantize` (steps 2–3 above). |
-| **Arpeggiator** | 📋 | `note.hold`, `clock.pulse`, `clock.counter`, `note.select` (steps 1+3). |
+| **Arpeggiator** | 📋 | `clock.pulse`/`clock.counter` now Implemented — only `note.hold`, `note.select` (step 3) remain. |
 | **Chord** | 📋 | `note.chord`, `data.scale` (step 3). |
 | **Bubble** | 📋 | `env.curve` (Env/LFO Shapes). |
 | **Water** | 📋 | `noise.dust`, `instance.allocate.swarmTransient` (step 4), Bubble. |
 | **Crackle** | 📋 | `noise.dust`, `excite.burst` (already MVP-usable), `resonator.modal` (PM Core), `data.material` (Data Foundations). |
 | **Scrape** | 📋 | `excite.contact` (PM Friction/Breath), `resonator.modal`, `data.material`, `space.reverb`. |
-| **Cicada** | 📋 | `clock.pulse`, `excite.burst`, `filter.formant` (PM Voice), `resonator.modal`. |
+| **Cicada** | 📋 | `clock.pulse` now Implemented — `excite.burst` already MVP-usable; still needs `filter.formant` (PM Voice), `resonator.modal` (PM Core). |
 | **Cicada Field** | 📋 | `instance.allocate.swarmPopulation` (step 4), `random.drift` (already Implemented), Cicada. |
 | **Breath / Wind** | 📋 | `excite.breath`, `resonator.tube` (PM Friction/Breath), `env.curve`. |
 | **Bowed String** | 📋 | `excite.stickSlip`, `resonator.string` (PM Friction/Breath + PM Core). |
