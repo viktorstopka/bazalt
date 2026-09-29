@@ -7,6 +7,7 @@
 #include <catch2/catch_test_macros.hpp>
 #include "PluginProcessor.h"
 #include "bazalt/engine/graph/NodeGraph.h"
+#include "bazalt/engine/nodes/InstanceVoiceNode.h"
 #include <cmath>
 
 using namespace bazalt;
@@ -303,4 +304,71 @@ TEST_CASE ("A recompile enforces instance.allocate.voice.maxInstances for real, 
     processor.processBlock (buffer, chord);
 
     CHECK (processor.getOriginActiveVoiceCount (0) == 2); // never past the enforced ceiling
+}
+
+TEST_CASE ("Disconnecting a Note source from instance.allocate.voice.spawn WHILE a note is held "
+           "releases the gate instead of leaving it stuck at 1 forever",
+           "[plugin][DomainRedesign][GraphEditController][NoteStream]")
+{
+    // Real, found-live bug: io.noteIn -> note.quantize -> alloc.spawn, held
+    // note, then disconnect note.quantize's output from spawn (exactly the
+    // user's own reported repro - "when I disconnect scale quantize from
+    // Voice it sometimes gets stuck on gate being 1"). InstanceVoiceNode's
+    // own gate/pitch/velocity state only ever changes on a Note-block
+    // start/stop edge (consumeNoteBlock -> noteOn()/noteOff()) - once
+    // nothing feeds "spawn" at all, consumeNoteBlock() is never called
+    // again, so a gate that was true the instant the wire disappeared
+    // stays true forever. GraphCompiler's own state-pool reuse (M17) then
+    // carries that exact stuck C++ object forward across every later
+    // recompile too, since removing an unrelated incoming connection never
+    // changes this node's own (id, type, parameters) - the same mechanism
+    // that correctly preserves a filter's memory across an edit was, for
+    // this ONE node, preserving a stuck "note held forever" instead.
+    NodeGraph graph;
+    graph.addNode ({ "noteIn", "io.noteIn", {}, {}, {} });
+    graph.addNode ({ "scale", "data.scale", {}, {}, {} });
+    graph.addNode ({ "quantize", "note.quantize", {}, {}, {} });
+    graph.addNode ({ "alloc", "instance.allocate.voice", {}, {}, {} });
+    graph.addNode ({ "osc", "osc.analog", {}, {}, {} });
+    graph.addNode ({ "masterout", "io.output", {}, {}, {} });
+    graph.addConnection ({ "noteIn", "notes", "quantize", "notes" });
+    graph.addConnection ({ "scale", "data", "quantize", "scale" });
+    graph.addConnection ({ "quantize", "notesOut", "alloc", "spawn" });
+    graph.addConnection ({ "alloc", "pitch", "osc", "pitch" });
+    graph.addConnection ({ "osc", "out", "masterout", "in" });
+    graph.setOutput ("masterout", "out");
+
+    BazaltAudioProcessor processor;
+    processor.prepareToPlay (44100.0, 512);
+    REQUIRE (processor.getGraphEditController().setGraph (graph).success);
+
+    juce::AudioBuffer<float> buffer (2, 512);
+    juce::MidiBuffer noteOn;
+    noteOn.addEvent (juce::MidiMessage::noteOn (1, 60, (juce::uint8) 100), 0);
+    processor.processBlock (buffer, noteOn);
+
+    auto* voiceNode = dynamic_cast<bazalt::engine::nodes::InstanceVoiceNode*> (
+        processor.getOriginVoicePlanSwapper (0, 0).peekCurrentPlan()->getNodeById ("alloc"));
+    REQUIRE (voiceNode != nullptr);
+    REQUIRE (voiceNode->getGate()); // held, exactly as expected before the disconnect
+
+    const auto disconnectResult = processor.getGraphEditController().disconnect ("quantize", "notesOut", "alloc", "spawn");
+    INFO (disconnectResult.errorMessage);
+    REQUIRE (disconnectResult.success);
+
+    // The recompile may or may not have reused the exact same C++ object
+    // (irrelevant to this test either way - re-fetch whatever is live now,
+    // same as the real UI/audio path would see it).
+    voiceNode = dynamic_cast<bazalt::engine::nodes::InstanceVoiceNode*> (
+        processor.getOriginVoicePlanSwapper (0, 0).peekCurrentPlan()->getNodeById ("alloc"));
+    REQUIRE (voiceNode != nullptr);
+    CHECK_FALSE (voiceNode->getGate()); // the actual fix - not stuck at 1 forever
+
+    // A real note-off arriving after the disconnect must not crash or
+    // resurrect anything (there is no longer any wired path to spawn) -
+    // silence, not a leftover drone, is what the master bus should show.
+    juce::MidiBuffer noteOff;
+    noteOff.addEvent (juce::MidiMessage::noteOff (1, 60), 0);
+    processor.processBlock (buffer, noteOff);
+    CHECK_FALSE (voiceNode->getGate());
 }

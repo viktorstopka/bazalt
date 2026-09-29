@@ -6,6 +6,7 @@
 #include "bazalt/engine/graph/PortGroups.h"
 #include "bazalt/engine/graph/ProofGraphs.h"
 #include "bazalt/engine/nodes/InstanceVoiceNode.h"
+#include <algorithm>
 #include <array>
 
 namespace bazalt
@@ -703,6 +704,25 @@ namespace bazalt
             const auto slot = bundleSlotOf (slotForOrigin, origin.originId);
             jassert (slot >= 0); // assignOriginBundleSlots() always places every origin it's given
 
+            // Real, found-live bug (direct feedback: "when I disconnect
+            // scale quantize from Voice it sometimes gets stuck on gate
+            // being 1"): InstanceVoiceNode's own gate/pitch/velocity state
+            // only ever changes on a Note-block start/stop edge
+            // (consumeNoteBlock() -> noteOn()/noteOff(), InstanceVoiceNode.h).
+            // Once nothing feeds "spawn" at all, consumeNoteBlock() is
+            // never called again, so a gate that was true the instant the
+            // wire disappeared stays true forever — and M17's own
+            // state-pool reuse then carries that exact stuck object
+            // forward across every LATER recompile too, since removing an
+            // unrelated incoming connection never changes this node's own
+            // (id, type, parameters). Computed once per origin (a static
+            // fact about origin.voiceGraph's own connection list, the same
+            // for every voice lane's compiled copy below), not per lane.
+            const auto spawnConnected = std::any_of (
+                origin.voiceGraph.getConnections().begin(), origin.voiceGraph.getConnections().end(),
+                [&origin] (const bazalt::engine::Connection& c)
+                { return c.toNodeId == origin.originId && c.toPortId == "spawn"; });
+
             for (int i = 0; i < BazaltAudioProcessor::numVoices; ++i)
             {
                 // M17 state pool: this voice's currently-published plan (if
@@ -724,11 +744,21 @@ namespace bazalt
                 newVoicePlansBySlot[(size_t) slot][(size_t) i] =
                     std::make_unique<bazalt::engine::ExecutionPlan> (std::move (compileResult.plan));
 
-                if (i == 0)
+                if (auto* allocator = dynamic_cast<bazalt::engine::nodes::InstanceVoiceNode*> (
+                        newVoicePlansBySlot[(size_t) slot][(size_t) i]->getNodeById (origin.originId)))
                 {
-                    if (auto* allocator = dynamic_cast<bazalt::engine::nodes::InstanceVoiceNode*> (
-                            newVoicePlansBySlot[(size_t) slot][0]->getNodeById (origin.originId)))
+                    if (i == 0)
                         maxInstancesBySlot[(size_t) slot] = allocator->getMaxInstances();
+
+                    // Only when genuinely stuck (still gated, with no way
+                    // left to ever hear a stop edge) — never spam a
+                    // spurious noteOff on every recompile of an ordinary,
+                    // never-wired-up allocator, which would incorrectly
+                    // read as a real transition to PluginProcessor's own
+                    // internal-trigger detection (InstanceVoiceNode.h's
+                    // consumeSpawnEventsThisBlock() doc comment).
+                    if (! spawnConnected && allocator->getGate())
+                        allocator->noteOff();
                 }
             }
         }
