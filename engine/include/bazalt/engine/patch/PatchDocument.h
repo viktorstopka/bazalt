@@ -101,14 +101,29 @@ namespace bazalt::engine
         // "instance.mix.mode" etc. -> "instance.sum.mode"). Same rule-3-
         // suspended, hygiene-only bump as v5's — see migrateV5ToV6 in
         // PatchSerializer.cpp.
-        static constexpr int currentSchemaVersion = 6;
+        //
+        // Schema v7 (wiki/plans/UtilMacro.md, archive_docs/decisions/
+        // 0030-util-macro-is-a-real-wireable-node.md): `macroMappings`
+        // dropped from this struct entirely. A real `util.macro` node now
+        // claims its own host slot via an ordinary structural parameter
+        // ("util.macro.slot", on the node itself) and is wired into the
+        // graph like any other node — `GraphEditController::
+        // recompileAndPublish()` derives the runtime `MacroMapping` table
+        // fresh, every compile, from whichever util.macro nodes exist and
+        // what slot each claims. There is nothing left for this field to
+        // persist: it was never node-derived before this, so a v6 (or
+        // earlier) patch's own macroMappings content is silently dropped
+        // on migration — see migrateV6ToV7 in PatchSerializer.cpp.
+        // `macroValues` stays: each of the 32 AudioParameterFloats' own
+        // current automated value is real, independent state, unrelated
+        // to which nodes claim which slot.
+        static constexpr int currentSchemaVersion = 7;
 
         int schemaVersion = currentSchemaVersion;
         std::vector<NodeInstance> nodes;
         std::vector<Connection> connections;
         juce::String outputNodeId;
         juce::String outputPortId;
-        std::vector<MacroMapping> macroMappings;
         std::vector<float> macroValues; // index-aligned with the macro pool
         PatchViewState view;
         PatchMeta meta;

@@ -119,28 +119,6 @@ namespace bazalt::engine
             return view;
         }
 
-        juce::var macroMappingToVar (const MacroMapping& mapping)
-        {
-            auto* obj = new juce::DynamicObject();
-            obj->setProperty ("macroIndex", mapping.macroIndex);
-            obj->setProperty ("targetNodeId", mapping.targetNodeId);
-            obj->setProperty ("targetParameterId", mapping.targetParameterId);
-            obj->setProperty ("rangeMin", mapping.rangeMin);
-            obj->setProperty ("rangeMax", mapping.rangeMax);
-            return juce::var (obj);
-        }
-
-        MacroMapping macroMappingFromVar (const juce::var& value)
-        {
-            MacroMapping mapping;
-            mapping.macroIndex = (int) value["macroIndex"];
-            mapping.targetNodeId = value["targetNodeId"].toString();
-            mapping.targetParameterId = value["targetParameterId"].toString();
-            mapping.rangeMin = (float) value["rangeMin"];
-            mapping.rangeMax = (float) value["rangeMax"];
-            return mapping;
-        }
-
         juce::var metaToVar (const PatchMeta& meta)
         {
             auto* obj = new juce::DynamicObject();
@@ -287,7 +265,6 @@ namespace bazalt::engine
             root->setProperty ("outputPortId",
                 v1ResolvePortId (v1OutputPortOrderByType(), nodeTypeById[v1Root["outputNodeId"].toString()],
                                   (int) v1Root["outputPortIndex"]));
-            root->setProperty ("macroMappings", v1Root["macroMappings"]);
             root->setProperty ("macroValues", v1Root["macroValues"]);
             root->setProperty ("view", viewToVar ({})); // v1 had no view state — default pan/zoom (zoom = 1)
             root->setProperty ("meta", v1Root["meta"]);
@@ -536,6 +513,27 @@ namespace bazalt::engine
             return root;
         }
 
+        // wiki/plans/UtilMacro.md, archive_docs/decisions/
+        // 0030-util-macro-is-a-real-wireable-node.md: `macroMappings` is
+        // dropped from PatchDocument entirely — a real util.macro node now
+        // claims its own slot via an ordinary structural parameter and is
+        // wired in like any other node, so the mapping table is derived
+        // fresh from the graph every compile (GraphEditController.cpp),
+        // never persisted. A version-number bump ONLY, same shape as
+        // migrateV4ToV5/migrateV5ToV6: a v6 document's own "macroMappings"
+        // property (never node-derived in the first place, and — per
+        // PluginProcessor's own setDefaultMacroMappings(), removed in the
+        // same change — dead even in the one shipping build that still
+        // wrote it) is simply not carried forward; documentFromVar() below
+        // no longer reads that key at all, so its presence or absence in
+        // the incoming JSON is equally harmless.
+        juce::var migrateV6ToV7 (juce::var v6Root)
+        {
+            auto root = v6Root.clone();
+            root.getDynamicObject()->setProperty ("schemaVersion", 7);
+            return root;
+        }
+
         // vN -> vN+1 migrations, keyed by the version they migrate FROM.
         using Migration = std::function<juce::var (juce::var)>;
 
@@ -547,6 +545,7 @@ namespace bazalt::engine
                 { 3, migrateV3ToV4 },
                 { 4, migrateV4ToV5 },
                 { 5, migrateV5ToV6 },
+                { 6, migrateV6ToV7 },
             };
             return migrations;
         }
@@ -559,7 +558,6 @@ namespace bazalt::engine
             doc.connections = listFromVar<Connection> (root["connections"], connectionFromVar);
             doc.outputNodeId = root["outputNodeId"].toString();
             doc.outputPortId = root["outputPortId"].toString();
-            doc.macroMappings = listFromVar<MacroMapping> (root["macroMappings"], macroMappingFromVar);
 
             if (auto* array = root["macroValues"].getArray())
                 for (const auto& v : *array)
@@ -579,7 +577,6 @@ namespace bazalt::engine
         obj->setProperty ("connections", listToVar (doc.connections, connectionToVar));
         obj->setProperty ("outputNodeId", doc.outputNodeId);
         obj->setProperty ("outputPortId", doc.outputPortId);
-        obj->setProperty ("macroMappings", listToVar (doc.macroMappings, macroMappingToVar));
 
         juce::Array<juce::var> macroValuesArray;
         for (auto v : doc.macroValues)

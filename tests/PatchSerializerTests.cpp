@@ -28,10 +28,6 @@ namespace
 
         doc.view = { 12.5f, -8.0f, 1.75f };
 
-        doc.macroMappings = { { 0, "svf", "filter.svf.cutoff", 200.0f, 8000.0f },
-                              { 0, "svf", "filter.svf.resonance", 0.5f, 4.0f },
-                              { 3, "env", "env.adsr.release", 0.05f, 2.0f } };
-
         doc.macroValues.assign (32, 0.0f);
         doc.macroValues[0] = 0.35f;
         doc.macroValues[3] = 0.812345f;
@@ -93,16 +89,6 @@ TEST_CASE ("Patch save/reload round-trips exactly", "[engine][patch]")
         CHECK (doc.connections[i].fromPortId == original.connections[i].fromPortId);
         CHECK (doc.connections[i].toNodeId == original.connections[i].toNodeId);
         CHECK (doc.connections[i].toPortId == original.connections[i].toPortId);
-    }
-
-    REQUIRE (doc.macroMappings.size() == original.macroMappings.size());
-    for (size_t i = 0; i < doc.macroMappings.size(); ++i)
-    {
-        CHECK (doc.macroMappings[i].macroIndex == original.macroMappings[i].macroIndex);
-        CHECK (doc.macroMappings[i].targetNodeId == original.macroMappings[i].targetNodeId);
-        CHECK (doc.macroMappings[i].targetParameterId == original.macroMappings[i].targetParameterId);
-        CHECK (doc.macroMappings[i].rangeMin == original.macroMappings[i].rangeMin);
-        CHECK (doc.macroMappings[i].rangeMax == original.macroMappings[i].rangeMax);
     }
 
     REQUIRE (doc.macroValues.size() == original.macroValues.size());
@@ -192,6 +178,41 @@ TEST_CASE ("A hand-written schema v1 patch migrates to v2 with resolved port ids
 
     // The migrated graph must still actually compile — not just parse.
     auto graph = doc.toNodeGraph();
+    auto factory = buildDefaultNodeFactory();
+    auto compileResult = GraphCompiler::compile (graph, factory, { 44100.0, 64 }, 1);
+    REQUIRE (compileResult.success);
+}
+
+TEST_CASE ("A hand-written schema v6 patch's macroMappings content migrates away cleanly, not a parse failure",
+           "[engine][patch][migration]")
+{
+    // wiki/plans/UtilMacro.md: macroMappings is dropped from PatchDocument
+    // entirely (a real util.macro node derives it from the live graph now,
+    // never persists it) — a v6 file that still has real macroMappings
+    // content (the only shape any v6 file could ever have, since nothing
+    // before this ever wrote it any other way) must still parse and
+    // compile, with that content simply not carried forward.
+    const juce::String v6Json = R"json({
+        "schemaVersion": 6,
+        "nodes": [
+            { "id": "osc", "type": "osc.analog", "position": { "x": 0.0, "y": 0.0 }, "parameters": {}, "properties": {} }
+        ],
+        "connections": [],
+        "outputNodeId": "osc",
+        "outputPortId": "out",
+        "macroMappings": [ { "macroIndex": 0, "targetNodeId": "osc", "targetParameterId": "osc.analog.shape", "rangeMin": 0.0, "rangeMax": 3.0 } ],
+        "macroValues": [],
+        "view": { "panX": 0.0, "panY": 0.0, "zoom": 1.0 },
+        "meta": { "name": "", "author": "", "createdAtMs": 0, "modifiedAtMs": 0 }
+    })json";
+
+    const auto result = parsePatchFromJson (v6Json);
+    REQUIRE (result.success);
+    REQUIRE (result.errorMessage.isEmpty());
+    CHECK (result.document.schemaVersion == PatchDocument::currentSchemaVersion);
+    CHECK (result.document.outputNodeId == "osc");
+
+    auto graph = result.document.toNodeGraph();
     auto factory = buildDefaultNodeFactory();
     auto compileResult = GraphCompiler::compile (graph, factory, { 44100.0, 64 }, 1);
     REQUIRE (compileResult.success);

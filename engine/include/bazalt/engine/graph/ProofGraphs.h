@@ -10,6 +10,7 @@
 #include "bazalt/engine/nodes/DelayNode.h"
 #include "bazalt/engine/nodes/OnePoleFilterNode.h"
 #include "bazalt/engine/nodes/ConstantNode.h"
+#include "bazalt/engine/nodes/MacroNode.h"
 #include "bazalt/engine/nodes/RerouteNode.h"
 #include "bazalt/engine/nodes/MapNode.h"
 #include "bazalt/engine/nodes/AddNode.h"
@@ -96,6 +97,7 @@ namespace bazalt::engine
         factory.registerType ("delay.line", [] { return std::make_unique<nodes::DelayNode>(); });
         factory.registerType ("filter.onepole", [] { return std::make_unique<nodes::OnePoleFilterNode>(); });
         factory.registerType ("util.constant", [] { return std::make_unique<nodes::ConstantNode>(); });
+        factory.registerType ("util.macro", [] { return std::make_unique<nodes::MacroNode>(); });
         factory.registerType ("util.reroute", [] { return std::make_unique<nodes::RerouteNode>(); });
         factory.registerType ("adapt.map", [] { return std::make_unique<nodes::MapNode>(); });
         factory.registerType ("math.add", [] { return std::make_unique<nodes::AddNode>(); });

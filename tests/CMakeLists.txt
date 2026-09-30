@@ -28,6 +28,7 @@ add_executable(EngineTests
     LadderFilterNodeTests.cpp
     LadderFilterTests.cpp
     LogicNodeTests.cpp
+    MacroNodeTests.cpp
     MathNodeTests.cpp
     MixNodeTests.cpp
     ModulatablePortsTests.cpp
