@@ -80,7 +80,11 @@ TEST_CASE ("Plugin state's graph/macro content round-trips exactly (meta.modifie
         CHECK (restored.connections[i].toNodeId == original.connections[i].toNodeId);
     }
 
-    REQUIRE (restored.macroMappings.size() == original.macroMappings.size());
+    // macroMappings is no longer a persisted PatchDocument field
+    // (wiki/plans/UtilMacro.md, schema v7) — it's derived fresh from the
+    // graph's own util.macro nodes on every recompile, already covered by
+    // the nodes/connections round-trip above. Only the raw per-slot values
+    // still need their own check.
     REQUIRE (restored.macroValues.size() == original.macroValues.size());
     for (size_t i = 0; i < original.macroValues.size(); ++i)
         CHECK (restored.macroValues[i] == original.macroValues[i]);

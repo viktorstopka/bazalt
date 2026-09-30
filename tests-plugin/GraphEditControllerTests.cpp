@@ -690,3 +690,170 @@ TEST_CASE ("getNodeDomains() classifies every node as voice/global/mono after a 
     CHECK (controller.getNodeDomains() == domainsBefore);
     CHECK (controller.getNodeDomains().at ("orphanOsc") == "global"); // still, not "voice"
 }
+
+// wiki/plans/UtilMacro.md, Batch 2 — deriveMacroMappings()/macroSlotCollisionError()
+// (GraphEditController.cpp) and setMacroMappings() (PluginProcessor).
+
+TEST_CASE ("Placing a util.macro node, claiming a slot, and wiring it into a real Control "
+           "input makes host automation reach that target through a real processBlock",
+           "[plugin][GraphEditController][macro]")
+{
+    BazaltAudioProcessor processor;
+    processor.prepareToPlay (44100.0, 512);
+
+    auto& controller = processor.getGraphEditController();
+    REQUIRE (controller.setGraph (bazalt::engine::buildVoiceProofGraph()).success);
+
+    REQUIRE (controller.addNode ("util.macro", "macro1", 0.0f, 0.0f).success);
+    REQUIRE (controller.setParameterValue ("macro1", "util.macro.slot", 5.0f).success);
+    REQUIRE (controller.setParameterValue ("macro1", "util.macro.min", 200.0f).success);
+    REQUIRE (controller.setParameterValue ("macro1", "util.macro.max", 12000.0f).success);
+    // svf already has a wired-free default (3000Hz, set on the node itself) -
+    // wiring the macro in REPLACES that with the live mapped value, same
+    // "dropping a new cable onto an occupied jack" rule any other cable
+    // follows (see the "already-wired input" test above).
+    REQUIRE (controller.connectWithAutoAdapt ("macro1", "out", "svf", "filter.svf.cutoff").success);
+
+    juce::MidiBuffer noteOn;
+    noteOn.addEvent (juce::MidiMessage::noteOn (1, 60, (juce::uint8) 100), 0);
+    juce::AudioBuffer<float> buffer (2, 512);
+    buffer.clear();
+    processor.processBlock (buffer, noteOn);
+
+    auto settleAndMeasure = [&] (float macroRawValue)
+    {
+        processor.getMacroParameter (5).setValueNotifyingHost (macroRawValue);
+
+        juce::AudioBuffer<float> settled (2, 512);
+        for (int block = 0; block < 10; ++block) // >> the 20ms smoothing ramp
+        {
+            settled.clear();
+            juce::MidiBuffer empty;
+            processor.processBlock (settled, empty);
+        }
+        return rms (settled, 0);
+    };
+
+    // A low cutoff (macro raw 0.0 -> mapped to 200Hz) attenuates a saw wave
+    // through a resonant SVF far more than a high one (raw 1.0 -> 12000Hz) -
+    // if the mapping never reached the real compiled node (Finding A's own
+    // failure mode, or any other break in the add -> slot -> connect chain),
+    // both would measure identically instead.
+    const auto rmsLowCutoff = settleAndMeasure (0.0f);
+    const auto rmsHighCutoff = settleAndMeasure (1.0f);
+
+    CHECK (rmsHighCutoff > rmsLowCutoff * 1.5f);
+}
+
+TEST_CASE ("Two util.macro nodes claiming the same slot are rejected with both node ids named, "
+           "and the graph is left exactly as it was",
+           "[plugin][GraphEditController][macro]")
+{
+    BazaltAudioProcessor processor;
+    processor.prepareToPlay (44100.0, 512);
+
+    auto& controller = processor.getGraphEditController();
+    REQUIRE (controller.setGraph (bazalt::engine::buildMasterOutOnlyGraph()).success);
+
+    REQUIRE (controller.addNode ("util.macro", "m1", 0.0f, 0.0f).success);
+    REQUIRE (controller.setParameterValue ("m1", "util.macro.slot", 3.0f).success);
+
+    REQUIRE (controller.addNode ("util.macro", "m2", 100.0f, 0.0f).success); // still unclaimed (-1) - no collision yet (Finding B)
+
+    const auto graphBeforeRejection = controller.getGraph();
+    const auto rejected = controller.setParameterValue ("m2", "util.macro.slot", 3.0f);
+
+    CHECK_FALSE (rejected.success);
+    CHECK (rejected.errorMessage.contains ("m1"));
+    CHECK (rejected.errorMessage.contains ("m2"));
+    CHECK (rejected.errorMessage.contains ("3"));
+
+    // CLAUDE.md rule 5: a rejected compile leaves the previous valid plan
+    // (and graph) live - m2 never actually got its "util.macro.slot" write
+    // (setParameterValue rolls the whole NodeGraph back to previousGraph on
+    // rejection, same as every other command), so the key is still simply
+    // absent - which macroSlotOf() itself already treats as "unclaimed".
+    const auto& graphAfter = controller.getGraph();
+    REQUIRE (graphAfter.getNodes().size() == graphBeforeRejection.getNodes().size());
+    for (const auto& node : graphAfter.getNodes())
+    {
+        if (node.id != "m2")
+            continue;
+        CHECK (node.parameters.count ("util.macro.slot") == 0);
+    }
+}
+
+TEST_CASE ("Deleting a util.macro node frees its slot for a fresh claim on the very next recompile",
+           "[plugin][GraphEditController][macro]")
+{
+    BazaltAudioProcessor processor;
+    processor.prepareToPlay (44100.0, 512);
+
+    auto& controller = processor.getGraphEditController();
+    REQUIRE (controller.setGraph (bazalt::engine::buildMasterOutOnlyGraph()).success);
+
+    REQUIRE (controller.addNode ("util.macro", "m1", 0.0f, 0.0f).success);
+    REQUIRE (controller.setParameterValue ("m1", "util.macro.slot", 7.0f).success);
+
+    REQUIRE (controller.addNode ("util.macro", "m2", 100.0f, 0.0f).success);
+    CHECK_FALSE (controller.setParameterValue ("m2", "util.macro.slot", 7.0f).success); // still claimed by m1
+
+    REQUIRE (controller.deleteNode ("m1").success);
+    CHECK (controller.setParameterValue ("m2", "util.macro.slot", 7.0f).success); // slot 7 is free now
+}
+
+TEST_CASE ("Finding A: a macro wired into GLOBAL-domain content is still applied while voices are "
+           "active, not just in the monoOnly case",
+           "[plugin][GraphEditController][macro]")
+{
+    // buildInitPatchGraph() has both a real active origin (allocator) AND
+    // real global-domain content downstream of its own instance.sum
+    // ("voiceMix" -> "pan" -> "masterOut") - exactly the shape
+    // PluginProcessor::processBlock's non-monoOnly branch used to never run
+    // MacroParameters::applyToPlans over (the global plan was only ever
+    // fetched later, inside finalizeInstanceMixIntoOutput, after
+    // applyToPlans had already returned). Wiring a macro into "pan"'s own
+    // Control input - real global-domain content - and checking that
+    // sweeping the macro's raw value actually swings the stereo balance is
+    // a direct, audible proof the mapping reaches it.
+    BazaltAudioProcessor processor;
+    processor.prepareToPlay (44100.0, 512);
+
+    auto& controller = processor.getGraphEditController();
+    REQUIRE (controller.setGraph (bazalt::engine::buildInitPatchGraph()).success);
+
+    REQUIRE (controller.addNode ("util.macro", "panMacro", 0.0f, 0.0f).success);
+    REQUIRE (controller.setParameterValue ("panMacro", "util.macro.slot", 9.0f).success);
+    REQUIRE (controller.setParameterValue ("panMacro", "util.macro.min", -1.0f).success);
+    REQUIRE (controller.setParameterValue ("panMacro", "util.macro.max", 1.0f).success);
+    REQUIRE (controller.connectWithAutoAdapt ("panMacro", "out", "pan", "space.pan.pan").success);
+
+    juce::MidiBuffer noteOn;
+    noteOn.addEvent (juce::MidiMessage::noteOn (1, 60, (juce::uint8) 100), 0);
+    juce::AudioBuffer<float> buffer (2, 512);
+    buffer.clear();
+    processor.processBlock (buffer, noteOn);
+
+    auto settleAndMeasureBalance = [&] (float macroRawValue)
+    {
+        processor.getMacroParameter (9).setValueNotifyingHost (macroRawValue);
+
+        juce::AudioBuffer<float> settled (2, 512);
+        for (int block = 0; block < 10; ++block)
+        {
+            settled.clear();
+            juce::MidiBuffer empty;
+            processor.processBlock (settled, empty);
+        }
+        return rms (settled, 0) - rms (settled, 1); // left-minus-right: sign flips with pan side
+    };
+
+    const auto balanceFullLeft = settleAndMeasureBalance (0.0f);  // mapped to pan = -1.0
+    const auto balanceFullRight = settleAndMeasureBalance (1.0f); // mapped to pan = +1.0
+
+    // If the mapping never reached the global plan, both would measure the
+    // same (whatever pan's own unconnected-port default already gave it) -
+    // the sign must flip between the two extremes.
+    CHECK (balanceFullLeft > 0.01f);
+    CHECK (balanceFullRight < -0.01f);
+}

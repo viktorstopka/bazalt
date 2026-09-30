@@ -2,6 +2,8 @@
 
 #include <juce_gui_extra/juce_gui_extra.h>
 #include "PluginProcessor.h"
+#include <memory>
+#include <vector>
 
 namespace bazalt
 {
@@ -25,11 +27,9 @@ namespace bazalt
         void resized() override;
 
     private:
-        static juce::WebBrowserComponent::Options makeWebViewOptions (BazaltAudioProcessor& processor,
-                                                                       juce::WebSliderRelay& oscShapeRelay,
-                                                                       juce::WebSliderRelay& filterCutoffRelay,
-                                                                       juce::WebSliderRelay& filterResonanceRelay,
-                                                                       juce::WebSliderRelay& envReleaseRelay);
+        static juce::WebBrowserComponent::Options makeWebViewOptions (
+            BazaltAudioProcessor& processor,
+            std::vector<std::unique_ptr<juce::WebSliderRelay>>& macroRelays);
 
         // M7 command bridge (NODE_EDITOR.md §6): registers addNode/
         // deleteNode/connect/disconnect/setParameterValue as native
@@ -41,30 +41,37 @@ namespace bazalt
         static juce::WebBrowserComponent::Options withGraphCommands (juce::WebBrowserComponent::Options options,
                                                                       BazaltAudioProcessor& processor);
 
+        // wiki/plans/UtilMacro.md: one relay/attachment per MacroParameters::
+        // numMacros (32) slot, not just the 4 ARCHITECTURE.md §4.3/M3
+        // originally hardcoded — a real util.macro node can claim any of
+        // the 32, so the editor needs a live WebView binding for all of
+        // them, not just the first 4. Built via the static helpers below
+        // (WebSliderRelay isn't default-constructible, so a plain
+        // std::vector<WebSliderRelay> can't be declared+resized in the
+        // constructor body the way a POD vector could) rather than 32
+        // hand-written named members.
+        static std::vector<std::unique_ptr<juce::WebSliderRelay>> makeMacroRelays();
+        static std::vector<std::unique_ptr<juce::WebSliderParameterAttachment>> makeMacroAttachments (
+            BazaltAudioProcessor& processor, std::vector<std::unique_ptr<juce::WebSliderRelay>>& relays);
+
         BazaltAudioProcessor& processorRef;
 
-        // M5: the 4 macros ARCHITECTURE.md §4.3/M3 already maps to the
-        // hardcoded voice graph (osc shape, filter cutoff/resonance, env
-        // release) exposed as real host-automatable controls, via JUCE's
-        // built-in Web*Relay/Web*ParameterAttachment mechanism rather than
-        // the M7+ command bridge (NODE_EDITOR.md §6) — that bridge is for
-        // graph-editing commands; a plain parameter round-trip already has
-        // a first-party JUCE mechanism and doesn't need a custom one.
-        // Relays must outlive webView (constructed first, referenced by
-        // makeWebViewOptions' withOptionsFrom chain); attachments must be
-        // constructed after webView so their initial update has a live
-        // browser to reach — declaration order below is deliberate.
-        juce::WebSliderRelay oscShapeRelay { "oscShape" };
-        juce::WebSliderRelay filterCutoffRelay { "filterCutoff" };
-        juce::WebSliderRelay filterResonanceRelay { "filterResonance" };
-        juce::WebSliderRelay envReleaseRelay { "envRelease" };
+        // M5/wiki/plans/UtilMacro.md: exposed as real host-automatable
+        // controls via JUCE's built-in Web*Relay/Web*ParameterAttachment
+        // mechanism rather than the M7+ command bridge (NODE_EDITOR.md §6)
+        // — that bridge is for graph-editing commands; a plain parameter
+        // round-trip already has a first-party JUCE mechanism and doesn't
+        // need a custom one. macroRelays must outlive AND precede webView
+        // in declaration order (constructed first, referenced by
+        // makeWebViewOptions' withOptionsFrom chain); macroAttachments must
+        // be declared after webView so their initial update has a live
+        // browser to reach — declaration order below is deliberate, same
+        // requirement the old 4 named members had.
+        std::vector<std::unique_ptr<juce::WebSliderRelay>> macroRelays;
 
         juce::WebBrowserComponent webView;
 
-        juce::WebSliderParameterAttachment oscShapeAttachment;
-        juce::WebSliderParameterAttachment filterCutoffAttachment;
-        juce::WebSliderParameterAttachment filterResonanceAttachment;
-        juce::WebSliderParameterAttachment envReleaseAttachment;
+        std::vector<std::unique_ptr<juce::WebSliderParameterAttachment>> macroAttachments;
 
         JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (BazaltAudioProcessorEditor)
     };

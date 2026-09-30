@@ -48,7 +48,13 @@ namespace bazalt
     {
         nodeFactory = bazalt::engine::buildDefaultNodeFactory();
         macroParameters.addParametersTo (*this);
-        setDefaultMacroMappings();
+        // No default mappings seeded here any more (wiki/plans/UtilMacro.md)
+        // — the starting graph (ProofGraphs.h::buildMasterOutOnlyGraph()) has
+        // no util.macro nodes, so the very first recompileAndPublish() that
+        // runs on construction derives an empty mapping list, same effect as
+        // the old setDefaultMacroMappings() had once the default graph
+        // stopped being buildVoiceProofGraph() (its 4 fixed entries targeted
+        // node ids that graph no longer has).
 
         // ~50ms period per ARCHITECTURE.md §3.2 / PlanSwapper.h — engine/
         // has no Timer (headless by design), so the plugin layer is
@@ -76,21 +82,6 @@ namespace bazalt
                 swapper.reclaim();
 
         globalPlanSwapper.reclaim();
-    }
-
-    void BazaltAudioProcessor::setDefaultMacroMappings()
-    {
-        // Macro 1 -> oscillator shape, 2 -> filter cutoff, 3 -> filter
-        // resonance, 4 -> envelope release (ARCHITECTURE.md §4.3's
-        // "oscillator shape, filter cutoff/resonance, and envelope").
-        // Macros 5-32 are left unmapped — inert automatable floats until
-        // something needs them, per "arbitrary, cheap to change" sizing.
-        macroMappings = { { 0, "osc", "osc.analog.shape", 0.0f, 3.0f },
-                          { 1, "svf", "filter.svf.cutoff", 200.0f, 12000.0f },
-                          { 2, "svf", "filter.svf.resonance", 0.3f, 4.0f },
-                          { 3, "env", "env.adsr.release", 0.02f, 3.0f } };
-
-        macroParameters.setMappings (macroMappings);
     }
 
     void BazaltAudioProcessor::commitOriginBundleAssignments (const std::array<juce::String, maxOrigins>& originIdBySlot) noexcept
@@ -895,7 +886,8 @@ namespace bazalt
     // (if it has one) is fed that origin's own voice sum before the ONE
     // shared global plan runs once, and ITS output — not any single origin's
     // raw sum — reaches the speakers.
-    void BazaltAudioProcessor::finalizeInstanceMixIntoOutput (juce::AudioBuffer<float>& output, int numSamples) noexcept
+    void BazaltAudioProcessor::finalizeInstanceMixIntoOutput (juce::AudioBuffer<float>& output, int numSamples,
+                                                               bazalt::engine::ExecutionPlan* globalPlan) noexcept
     {
         const float* finalMono = nullptr;
         // Real stereo cable redesign (wiki/NODES.System.md §9): set below
@@ -925,7 +917,7 @@ namespace bazalt
             if (index >= 0 && index < maxOrigins)
                 finalMono = originBundles[(size_t) index].instanceMixScratchBuffer.getReadPointer (0);
         }
-        else if (auto* globalPlan = globalPlanSwapper.getCurrentPlanForAudioThread())
+        else if (globalPlan != nullptr)
         {
             // Feed every active origin's own instance.sum node (if it has
             // one) with that origin's own voice sum before running the
@@ -1053,6 +1045,7 @@ namespace bazalt
         monoRenderedThisBlock = monoOnly;
 
         bazalt::engine::ExecutionPlan* monoPlan = nullptr;
+        bazalt::engine::ExecutionPlan* globalPlanForThisBlock = nullptr;
         std::array<VoicePlanPtrs, maxOrigins> originVoicePlanPtrs {};
 
         if (monoOnly)
@@ -1082,6 +1075,23 @@ namespace bazalt
                 // fresh plans a publish just made live, so it is not enough to
                 // rely on the note-on path alone.
                 pointVoiceTapsAtCurrentVoice (bundle, plans);
+            }
+
+            // wiki/plans/UtilMacro.md Finding A: this used to be fetched only
+            // inside finalizeInstanceMixIntoOutput, AFTER every applyToPlans
+            // call above already ran — a macro (or any future mapping)
+            // targeting global-domain content (an entirely ordinary patch
+            // shape: per-voice synths feeding a shared master filter) never
+            // saw its value applied. Fetched here instead, alongside every
+            // other plan this block already fetches exactly once
+            // (PlanSwapper.h's own audio-thread contract), then handed
+            // straight to finalizeInstanceMixIntoOutput below rather than
+            // letting it call getCurrentPlanForAudioThread() a second time.
+            if (hasGlobalDomain.load (std::memory_order_acquire))
+            {
+                globalPlanForThisBlock = globalPlanSwapper.getCurrentPlanForAudioThread();
+                bazalt::engine::ExecutionPlan* globalPlans[1] = { globalPlanForThisBlock };
+                macroParameters.applyToPlans (globalPlans, 1, numSamples);
             }
         }
 
@@ -1117,7 +1127,7 @@ namespace bazalt
         if (previousSample < numSamples)
             renderRange (previousSample, numSamples - previousSample);
 
-        finalizeInstanceMixIntoOutput (buffer, numSamples);
+        finalizeInstanceMixIntoOutput (buffer, numSamples, globalPlanForThisBlock);
 
         updateAuxLevelsAndPassthrough (buffer, numSamples);
 
@@ -1141,7 +1151,11 @@ namespace bazalt
     {
         auto doc = bazalt::engine::PatchDocument::fromNodeGraph (graphEditController.getGraph());
 
-        doc.macroMappings = macroMappings;
+        // wiki/plans/UtilMacro.md: macroMappings is no longer a persisted
+        // field (schema v7) — it's derived from the graph's own util.macro
+        // nodes on every recompile, so fromNodeGraph()'s node/connection
+        // content already carries everything needed to reconstruct it on
+        // load. Only the raw per-slot values still need to be saved.
         doc.macroValues = macroParameters.getCurrentValues();
         doc.meta.name = "Bazalt Init";
         doc.meta.modifiedAtMs = juce::Time::getCurrentTime().toMilliseconds();
@@ -1169,8 +1183,11 @@ namespace bazalt
         if (! graphResult.success)
             return false;
 
-        macroMappings = result.document.macroMappings;
-        macroParameters.setMappings (macroMappings);
+        // Mappings themselves aren't loaded here — setGraph() above already
+        // ran a real recompileAndPublish(), which derived them fresh from
+        // the loaded graph's own util.macro nodes (GraphEditController.cpp)
+        // and called setMacroMappings(). Only the raw per-slot values,
+        // which the graph can't carry, are applied here.
         macroParameters.setValuesForLoadedPatch (result.document.macroValues);
 
         return true;

@@ -365,11 +365,30 @@ namespace bazalt
         return options;
     }
 
-    juce::WebBrowserComponent::Options BazaltAudioProcessorEditor::makeWebViewOptions (BazaltAudioProcessor& processor,
-                                                                                       juce::WebSliderRelay& oscShapeRelay,
-                                                                                       juce::WebSliderRelay& filterCutoffRelay,
-                                                                                       juce::WebSliderRelay& filterResonanceRelay,
-                                                                                       juce::WebSliderRelay& envReleaseRelay)
+    std::vector<std::unique_ptr<juce::WebSliderRelay>> BazaltAudioProcessorEditor::makeMacroRelays()
+    {
+        // "macro1".."macro32" — the JS side binds via getSliderState('macro'
+        // + (slot+1)), matching MacroKnob.tsx (wiki/plans/UtilMacro.md).
+        std::vector<std::unique_ptr<juce::WebSliderRelay>> relays;
+        relays.reserve ((size_t) MacroParameters::numMacros);
+        for (int i = 0; i < MacroParameters::numMacros; ++i)
+            relays.push_back (std::make_unique<juce::WebSliderRelay> ("macro" + juce::String (i + 1)));
+        return relays;
+    }
+
+    std::vector<std::unique_ptr<juce::WebSliderParameterAttachment>> BazaltAudioProcessorEditor::makeMacroAttachments (
+        BazaltAudioProcessor& processor, std::vector<std::unique_ptr<juce::WebSliderRelay>>& relays)
+    {
+        std::vector<std::unique_ptr<juce::WebSliderParameterAttachment>> attachments;
+        attachments.reserve ((size_t) MacroParameters::numMacros);
+        for (int i = 0; i < MacroParameters::numMacros; ++i)
+            attachments.push_back (std::make_unique<juce::WebSliderParameterAttachment> (
+                processor.getMacroParameter (i), *relays[(size_t) i]));
+        return attachments;
+    }
+
+    juce::WebBrowserComponent::Options BazaltAudioProcessorEditor::makeWebViewOptions (
+        BazaltAudioProcessor& processor, std::vector<std::unique_ptr<juce::WebSliderRelay>>& macroRelays)
     {
         using Options = juce::WebBrowserComponent::Options;
 
@@ -380,11 +399,10 @@ namespace bazalt
                                     juce::File::getSpecialLocation (juce::File::tempDirectory)
                                         .getChildFile ("Bazalt")
                                         .getChildFile ("WebView2")))
-                            .withNativeIntegrationEnabled()
-                            .withOptionsFrom (oscShapeRelay)
-                            .withOptionsFrom (filterCutoffRelay)
-                            .withOptionsFrom (filterResonanceRelay)
-                            .withOptionsFrom (envReleaseRelay);
+                            .withNativeIntegrationEnabled();
+
+        for (auto& relay : macroRelays)
+            options = options.withOptionsFrom (*relay);
 
         options = withGraphCommands (std::move (options), processor);
 
@@ -402,11 +420,9 @@ namespace bazalt
     BazaltAudioProcessorEditor::BazaltAudioProcessorEditor (BazaltAudioProcessor& p)
         : juce::AudioProcessorEditor (&p),
           processorRef (p),
-          webView (makeWebViewOptions (p, oscShapeRelay, filterCutoffRelay, filterResonanceRelay, envReleaseRelay)),
-          oscShapeAttachment (p.getMacroParameter (0), oscShapeRelay),
-          filterCutoffAttachment (p.getMacroParameter (1), filterCutoffRelay),
-          filterResonanceAttachment (p.getMacroParameter (2), filterResonanceRelay),
-          envReleaseAttachment (p.getMacroParameter (3), envReleaseRelay)
+          macroRelays (makeMacroRelays()),
+          webView (makeWebViewOptions (p, macroRelays)),
+          macroAttachments (makeMacroAttachments (p, macroRelays))
     {
         addAndMakeVisible (webView);
         setResizable (true, true);

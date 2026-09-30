@@ -76,6 +76,71 @@ namespace bazalt
             // succeeding against the wrong thing.
         }
 
+        // wiki/plans/UtilMacro.md Batch 2: which numbered host slot (0-31)
+        // a "util.macro" node claims, or -1 if it's the unclaimed sentinel
+        // (MacroNode.h's own doc comment on why -1, not a real slot
+        // number, is the declared default) or the parameter is somehow
+        // missing entirely — both treated identically to "unclaimed".
+        int macroSlotOf (const bazalt::engine::NodeInstance& node)
+        {
+            const auto it = node.parameters.find ("util.macro.slot");
+            if (it == node.parameters.end())
+                return -1;
+            const auto slot = (int) std::lround (it->second);
+            return (slot >= 0 && slot < 32) ? slot : -1;
+        }
+
+        // Real, found-live hazard (wiki/plans/UtilMacro.md's own Finding
+        // B): checked BEFORE any compile work below, so a collision is
+        // rejected with a clear message naming both nodes, rather than
+        // MultiplicityResolver/GraphCompiler running first and failing
+        // confusingly somewhere unrelated. An unclaimed macro (slot
+        // outside [0,31]) is exempt — the ordinary state for a brand-new,
+        // not-yet-slotted node between its own addNode and
+        // setParameterValue(slot, N) commands.
+        juce::String macroSlotCollisionError (const bazalt::engine::NodeGraph& graphToCheck)
+        {
+            std::unordered_map<int, juce::String> nodeIdBySlot;
+            for (const auto& node : graphToCheck.getNodes())
+            {
+                if (node.type != "util.macro")
+                    continue;
+                const auto slot = macroSlotOf (node);
+                if (slot < 0)
+                    continue;
+                if (const auto existing = nodeIdBySlot.find (slot); existing != nodeIdBySlot.end())
+                    return "Macro slot " + juce::String (slot) + " is claimed by two nodes ('" + existing->second
+                           + "', '" + node.id + "') - reassign one to a different slot before this graph will compile";
+                nodeIdBySlot[slot] = node.id;
+            }
+            return {};
+        }
+
+        // wiki/plans/UtilMacro.md Batch 2: the whole replacement for
+        // PluginProcessor's old hardcoded setDefaultMacroMappings() — the
+        // MacroMapping table is now a pure function of the graph's own
+        // util.macro nodes, rebuilt fresh on every successful compile,
+        // never hand-curated. Each claimed node becomes its OWN mapping
+        // target (MacroNode.h has the full reasoning for why
+        // "util.macro.value", 0..1, is the right target rather than the
+        // old {arbitrary foreign node, arbitrary foreign param} pair) —
+        // MacroParameters::applyToPlans() itself needs no changes at all
+        // to support this, it was always generic over the target address.
+        std::vector<bazalt::engine::MacroMapping> deriveMacroMappings (const bazalt::engine::NodeGraph& graphToScan)
+        {
+            std::vector<bazalt::engine::MacroMapping> mappings;
+            for (const auto& node : graphToScan.getNodes())
+            {
+                if (node.type != "util.macro")
+                    continue;
+                const auto slot = macroSlotOf (node);
+                if (slot < 0)
+                    continue;
+                mappings.push_back ({ slot, node.id, "util.macro.value", 0.0f, 1.0f });
+            }
+            return mappings;
+        }
+
         const bazalt::engine::PortDescriptor* findInputPort (const bazalt::engine::NodeFactory& factory,
                                                                const juce::String& typeId, const juce::String& portId,
                                                                std::vector<bazalt::engine::PortDescriptor>& storage)
@@ -586,6 +651,11 @@ namespace bazalt
         if (! isPrepared)
             return { true, {} }; // nothing to compile yet — prepare() does the first compile
 
+        // wiki/plans/UtilMacro.md Batch 2: checked first, before any real
+        // compile work — see macroSlotCollisionError()'s own comment.
+        if (const auto collisionError = macroSlotCollisionError (graph); collisionError.isNotEmpty())
+            return { false, collisionError };
+
         auto split = bazalt::engine::MultiplicityResolver::split (graph);
         if (! split.success)
             return { false, split.errorMessage };
@@ -673,6 +743,8 @@ namespace bazalt
             markAllPorts (newPortMultiplicity, factory, split.globalGraph, "scalar", {});
             portMultiplicity = std::move (newPortMultiplicity);
             originBundleIndexByNodeId.clear();
+
+            processor.setMacroMappings (deriveMacroMappings (graph));
 
             return { true, {} };
         }
@@ -912,6 +984,8 @@ namespace bazalt
 
         portMultiplicity = std::move (newPortMultiplicity);
         originBundleIndexByNodeId = std::move (newOriginBundleIndexByNodeId);
+
+        processor.setMacroMappings (deriveMacroMappings (graph));
 
         return { true, {} };
     }

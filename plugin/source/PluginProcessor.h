@@ -144,6 +144,22 @@ namespace bazalt
         */
         juce::AudioParameterFloat& getMacroParameter (int macroIndex) noexcept { return macroParameters.getParameter (macroIndex); }
 
+        /** wiki/plans/UtilMacro.md: GraphEditController::recompileAndPublish()
+            calls this after every successful compile, with the mappings it
+            just derived by scanning the live graph for util.macro nodes and
+            their claimed slots (never hand-curated, never persisted - see
+            PatchDocument's dropped macroMappings field, schema v7). Replaces
+            the old setDefaultMacroMappings()'s fixed 4-entry table, which
+            targeted node ids ("osc"/"svf"/"env") that only ever existed in
+            buildVoiceProofGraph() - dead since the master-out-only graph
+            became the default. Message-thread only, same as
+            recompileAndPublish() itself.
+        */
+        void setMacroMappings (std::vector<bazalt::engine::MacroMapping> mappings) noexcept
+        {
+            macroParameters.setMappings (std::move (mappings));
+        }
+
         /** M7: the command bridge (GraphEditController, PluginEditor's
             withNativeFunction wiring) mutates the live graph through this.
             Message-thread only.
@@ -303,9 +319,14 @@ namespace bazalt
         bazalt::engine::nodes::InstanceVoiceNode* findAllocatorNode (bazalt::engine::ExecutionPlan* plan, const juce::String& originNodeId) const noexcept;
         void triggerVoiceNoteViaAllocator (bazalt::engine::ExecutionPlan* plan, const juce::String& originNodeId, float pitch, float velocity) noexcept;
 
-        void finalizeInstanceMixIntoOutput (juce::AudioBuffer<float>& output, int numSamples) noexcept;
+        // wiki/plans/UtilMacro.md Finding A: globalPlan is fetched exactly
+        // once per process() call, in processBlock, alongside every other
+        // plan fetch (PlanSwapper.h's own audio-thread contract) - never
+        // re-fetched in here. nullptr whenever hasGlobalDomain is false (the
+        // designated output resolved Poly, or this block ran monoOnly).
+        void finalizeInstanceMixIntoOutput (juce::AudioBuffer<float>& output, int numSamples,
+                                             bazalt::engine::ExecutionPlan* globalPlan) noexcept;
         void updateAuxLevelsAndPassthrough (juce::AudioBuffer<float>& mainOutput, int numSamples);
-        void setDefaultMacroMappings();
 
         // juce::Timer — periodic (~50ms, ARCHITECTURE.md §3.2) reclaim() on
         // every PlanSwapper below, message-thread only. engine/ has no
@@ -331,7 +352,6 @@ namespace bazalt
         std::atomic<int> outputOriginBundleIndex { -1 };
 
         MacroParameters macroParameters;
-        std::vector<bazalt::engine::MacroMapping> macroMappings;
         bazalt::engine::NanGuard outputGuard;
 
         // M17: fixed, sensible defaults for the generic per-voice silence
