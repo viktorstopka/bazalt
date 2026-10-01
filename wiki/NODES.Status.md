@@ -303,13 +303,13 @@ edit. Every later `data.*`/`osc.wavetable`/`sampler.*` node rides on this for fr
 | `instance.allocate.swarmTransient` | To be implemented | **A2** | Domain Extensions | Event-triggered spawn, closest to Voice's own shape. |
 | `instance.allocate.trigger` | To be implemented | **A2** | Domain Extensions | Event-triggered, one instance at a time. |
 
-### `util.*` — 2 Implemented, 1 to build
+### `util.*` — 3/3 Implemented
 
 | Node | Status | Necessity | Batch | Notes |
 |---|---|---|---|---|
 | `util.constant` | Implemented | | | |
 | `util.reroute` | Implemented | | | |
-| `util.macro` | To be implemented | **A1** | (standalone) | ADR-0015, deliberately deferred — "identical to Constant, plus host-bound and smoothed." Genuinely easy whenever it's picked up; no batch dependency. |
+| `util.macro` | Implemented | | | `wiki/plans/UtilMacro.md` — ADR-0030 amends ADR-0015 (the 32-fixed-slot pool stays; the macro node becomes its own mapping target with a real wireable output, instead of a side-channel poke onto a foreign node). |
 
 ### `view.*` — 5/5 Implemented
 
@@ -370,7 +370,7 @@ entry.
   already shipped early: `clock.*`/`seq.*` (**done**) and 6 of 9 `note.*` (**done** —
   see the Clock+Seq and Note Stream batch notes below; `note.hold`/`select`/`chord`
   remain, blocked on a real engine limit, not just unbuilt), the three
-  `instance.allocate.*` spawn types, `util.macro`. None of these are hard
+  `instance.allocate.*` spawn types, `util.macro` (**done**). None of these are hard
   *because* they're essential — several are difficulty 1 — they're essential because
   a huge amount of "ordinary patching" (arpeggios, chords, scale-snapping, swarms,
   percussive one-shots, host-automatable knobs) is blocked on them existing at all.
@@ -413,8 +413,9 @@ but sit at the top of the recommended order below because `note.quantize` (A),
 | **EQ/Curve Data** | `data.record`, `data.eqToCurve` | Small utility `Data` producers, low mutual dependency but similar scope/size. |
 | **Factories** | `factory.material`, `factory.curve`, `factory.eq`, `factory.wave`, `factory.sample`, `factory.notes` | Share the Content/custom-editor infrastructure — build as one wave once that infra exists. |
 
-Nodes without a batch (`filter.svf`'s redesign, `util.macro`) are self-contained
-enough that batching them buys nothing.
+Nodes without a batch (`filter.svf`'s redesign) are self-contained enough that
+batching them buys nothing (`util.macro`, the other former member of this list,
+is done — `wiki/plans/UtilMacro.md`).
 
 ---
 
@@ -455,8 +456,10 @@ matters more than the letter for a couple of "C" items:
 4. **Domain Extensions** (`instance.allocate.swarmPopulation`/`swarmTransient`/
    `trigger`) — reuses proven `instance.allocate.voice` machinery; unlocks the Water/
    Cicada Field/percussive-one-shot stock groups.
-5. **`util.macro`** — cheap, standalone, closes out the ADR-0015 deferral whenever
-   convenient; doesn't need to wait for anything above.
+5. ~~**`util.macro`**~~ — **done.** `wiki/plans/UtilMacro.md`/ADR-0030: a real,
+   wireable node (not the hand-curated side-table ADR-0015 originally rejected),
+   plus the drag-a-port-out-to-create-a-macro UI gesture and the top-bar knob
+   panel.
 6. **PM Core** (`excite.impulse`/`pluck`/`mallet` + `resonator.comb`/`modal`/`string`/
    `plate`, plus topping off `excite.burst`'s MVP gap with `tone`/`shape`) — delivers
    the first real "personality" sounds (Struck Body, Karplus-Strong) and is the

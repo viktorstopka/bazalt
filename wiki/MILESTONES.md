@@ -1469,3 +1469,105 @@ next step — same computer-use caveat every entry in this file already carries.
 **Docs updated to match:** see the Batch 5 paragraph above — this entry itself,
 `wiki/NODES.md`, `wiki/NODES.System.md`, `wiki/NODES_Gaps.md`, `wiki/NODES.Status.md`,
 and `CLAUDE.md` were all updated in the same pass as this record.
+
+# `10-01-UtilMacro` — a real, wireable `util.macro` node — done
+
+Not part of the `0.x` arc above — a self-contained arc, same "numbered by date +
+feature name" convention `09-28-InstanceAllocator`/`09-29-AddMenu` already established.
+Direct instruction: a real macro feature, with (1) a real, graph-native macro node,
+(2) a drag-a-port-out-to-create-a-macro gesture, (3) an automatic top-bar knob panel.
+Full reasoning, the ADR-0015 reconciliation, and both findings below:
+`wiki/plans/UtilMacro.md`; formal decision record: `archive_docs/decisions/
+0030-util-macro-is-a-real-wireable-node.md`.
+
+**The reconciliation:** `archive_docs/decisions/0015-macro-binding-migration.md`
+("Proposed (M14). Not implemented") had declined a wireable Macro-node model over
+VST3 `restartComponent` cross-host risk — but that risk only applies if the host
+PARAMETER LIST itself grows/shrinks. `MacroParameters` already creates exactly 32
+`AudioParameterFloat`s once, unconditionally; a placed `util.macro` just claims one of
+them via its own `slot` parameter. ADR-0030 amends ADR-0015's application mechanism
+(a hand-curated side-table poking a foreign node), not its real 32-fixed-slot
+constraint.
+
+**Two real bugs found and fixed, not left as footnotes:**
+- **Finding A** — `PluginProcessor::processBlock`'s non-`monoOnly` branch never ran
+  `MacroParameters::applyToPlans` over the global-domain plan (only fetched later,
+  inside `finalizeInstanceMixIntoOutput`, after `applyToPlans` had already run) — a
+  macro wired into anything downstream of `instance.sum` would have silently never
+  applied. Fixed by fetching the global plan once, alongside every other plan the
+  block already fetches exactly once per `PlanSwapper.h`'s own contract, and
+  threading that pointer into `finalizeInstanceMixIntoOutput` instead of letting it
+  re-fetch.
+- **Finding B** — `addNode` + a separate `setParameterValue(slot, N)` are two
+  independent recompiles; a real default slot number on `util.macro.slot` would let
+  the bare `addNode` step alone collide with an already-placed macro and reject the
+  whole creation gesture. Fixed: `slot` defaults to **-1** (unclaimed), excluded from
+  the collision check.
+
+**Batch 1 — engine.** New `engine/include/bazalt/engine/nodes/MacroNode.h`: zero
+inputs, one `Control` output, structural `slot`/`min`/`max`/`isInteger`/`quantity`, no
+listed `value` parameter (written only by the direct `MacroParameters::applyToPlans`
+poke, never the command bridge). `PatchDocument::macroMappings` dropped — schema
+v6→v7, since the mapping is graph-derived now, never a second persisted source of
+truth. New `tests/MacroNodeTests.cpp`. Commit `a78b53d`.
+
+**Batch 2 — plugin.** `GraphEditController::recompileAndPublish()` derives
+`macroMappings` from the live graph's own `util.macro` nodes on every successful
+compile, and rejects two nodes claiming the same in-range slot (naming both ids).
+`setDefaultMacroMappings()`'s old fixed 4-entry table (dead since the master-out-only
+graph became the constructor default — it targeted node ids only
+`buildVoiceProofGraph()` ever had) is gone, replaced by `PluginProcessor::
+setMacroMappings()`. Finding A's fix landed here. `PluginEditor`'s 4 hardcoded relay/
+attachment members generalized to `std::vector`s, one per all 32
+`MacroParameters::numMacros` slots. 4 new tests in `tests-plugin/
+GraphEditControllerTests.cpp` (add+slot+wire reaches a real compiled node through host
+automation; slot collision rejected with both ids named, graph left unchanged;
+deleting a macro frees its slot; Finding A's own regression test, wiring a macro into
+`buildInitPatchGraph()`'s real global-domain `space.pan` node with voices active).
+Commit `d210794`.
+
+**Batch 3 — UI, drag-to-create.** The M10 `addMacroFromPort`/`macroConfigForPort`
+gesture (`f7f9a2e` introduced, `492e663` removed when the canvas went real-graph-only)
+revived in `graphStore.ts` as `createMacroFromPort`/`macroConfigForPort`, upgraded to
+the real M14 value-contract fields (`isInteger`/`quantity`/`enumOptions`) that didn't
+exist at M10 time; `pickFreeMacroSlot()` also runs on the ordinary `addNode()` path.
+New `dragToMacro` gesture kind (`interactionStore.ts`/`InfiniteCanvas.tsx`): starts on
+an unconnected `Control`/`Event`/`Boolean` input (where the M10 "no gesture starts"
+no-op used to be), dashed preview cable + hint while dragging, commits only on a true
+empty canvas/world mouseup, Esc cancels. `NodeCard.tsx`: `TitleBar`'s dead `isMacro`
+ternary removed (bypass+assist render unconditionally now); editing an
+ALREADY-placed macro's own `slot` shows a blocking confirm first — the warning
+ADR-0015 itself already anticipated in its own Consequences, now actually built.
+Commit `a69e84b`.
+
+**Batch 4 — UI, knob panel.** `MacroSlider.tsx` (M5, dead code since the M10
+rewrite — never imported anywhere) replaced by `MacroKnob.tsx`: the same JUCE
+`WebSliderRelay`/`getSliderState` binding, knob-styled (circular dial, rotating
+indicator — decided over true angle-based rotary dragging) and driven by
+vertical-only delta-based drag. The relay's own 0..1 is raw storage only (the
+underlying `AudioParameterFloat`'s range is always a plain identity range); the knob
+is handed its real display range (`min`/`max`/`isInteger`/unit) from the graph mirror,
+not the relay. New `.macro-panel` row in `App.tsx`, one knob per CLAIMED macro (an
+unclaimed/-1 one has no real relay to bind to, filtered out), sorted by slot, colored
+by the same Modulation/Value/Integer classification every ordinary Control port
+already gets. Renders nothing with zero claimed macros. Commit `f8ef767`.
+
+**Batch 5 — docs.** This entry; `wiki/plans/UtilMacro.md` (new, the durable plan
+record); `wiki/NODES.md`'s `util.macro` entry rewritten (📋 deferred → ✅);
+`wiki/NODES.Status.md`'s 4 stale "to build"/"standalone" `util.macro` mentions
+updated to done; `archive_docs/decisions/0030-util-macro-is-a-real-wireable-node.md`
+(new ADR, amends ADR-0015 — left as-written, per this project's own "don't
+retroactively edit an amended ADR" convention, ADR-0022/ADR-0017's own precedent);
+`CLAUDE.md`'s stale "`util.macro`... is the only thing still open" line and its M19
+"drag a port out... shortcut is retired outright" note both corrected.
+
+**Verified:** `ctest --test-dir build -C Debug` 483/483 green throughout (engine +
+plugin), checkpointed per batch. `npm run build`/`npm run lint` (`ui/`) clean after
+every UI-touching batch — no UI test runner exists in this project (no vitest/jest, no
+existing `*.test.ts*` files), so the UI batches are covered by type-checking + lint +
+manual verification, not unit tests, matching this project's own established
+practice. Standalone app rebuilt and relaunched on the final tree (process stays up,
+no crash). The actual drag-and-release gesture, knob drag, and 33rd-macro-rejection
+checks need a human hand on the WebView's own mouse to exercise end-to-end — same
+computer-use caveat every entry in this file already carries — not yet done as of this
+entry landing.

@@ -639,9 +639,21 @@ with no MIDI involved at all — never both at once for the same origin.
 A fixed value with no input at all — the basic "just a number" source for
 biasing, offsetting, or feeding a structural default into a modulation chain. **Out:** `out` — `Control`, contract configurable on the node.
 
-#### `util.macro` — Macro 📋 *(deliberately deferred, ADR-0015)*
-A host-automatable, smoothed version of Constant — one of 32 fixed slots a DAW
-can record/automate directly, standing in for a knob the outside world controls. **Out:** `out` — `Control`. **Structural:** `slot` (one of 32 fixed host-automation slots), plus the exposed contract. Identical to Constant, plus host-bound and smoothed.
+#### `util.macro` — Macro ✅ *(real as of `wiki/plans/UtilMacro.md` — ADR-0030 amends ADR-0015, doesn't reverse it)*
+A host-automatable, smoothed version of Constant — claims one of 32 fixed
+host-automation slots (`slot`; -1 means unclaimed) and exposes that slot's own
+smoothed value through an ordinary, freely-wireable `Control` output, real DSP
+all the way through rather than a side-channel poke onto some other node's
+parameter. **Out:** `out` — `Control`, contract configurable on the node
+(`min`/`max`/`isInteger`/`quantity`). **Structural:** `slot`, `min`, `max`,
+`isInteger`, `quantity`. Two placed macros can never claim the same slot
+(rejected at compile time, naming both node ids); deleting one frees its slot
+on the very next recompile. Dragging an unconnected `Control`/`Event`/`Boolean`
+input out and releasing on empty canvas auto-creates one, pre-configured from
+that port's own contract (bounds/unit/quantity copied verbatim when the port
+declares them), already wired in and slotted, in one undo step — and every
+claimed macro shows up as a knob in the top-bar panel automatically, no
+further step needed.
 
 #### `util.reroute` — Reroute ✅
 A pure passthrough with no fixed type of its own — a cable-routing waypoint for

@@ -29,9 +29,12 @@ record and `git log` is the source of truth for what's committed — some
 headers there carry no "— done" marker even when the work landed (M20 did),
 and M12/M13 (interaction polish, assist menu) are still open UI milestones.
 **M22 (Basic synthesis: 18 nodes, the Init Patch) is done.** `util.macro`
-(from M21, deliberately deferred, ADR-0015 still Proposed) is the only
-thing still open in the whole M21+M22 node-batch arc — see MILESTONES.md's
-M21/M22 sections. Each milestone must build, pass its tests, and be
+(from M21, deliberately deferred behind ADR-0015) was the only thing still
+open in the whole M21+M22 node-batch arc — now closed: it's a real,
+wireable node as of `wiki/plans/UtilMacro.md`/ADR-0030 (ADR-0030 *amends*
+ADR-0015's application mechanism, doesn't reverse its real 32-fixed-slot
+constraint — see MILESTONES.md's M21/M22 sections for the historical arc
+this closed out). Each milestone must build, pass its tests, and be
 committed before the next one starts. **A fresh plugin instance opens on a
 plain master-out-only graph** (`GraphEditController`'s constructor default,
 `ProofGraphs.h::buildMasterOutOnlyGraph()`) — one unconnected `io.output`
@@ -285,9 +288,11 @@ ctest --test-dir build -C Debug -R PluginTests --output-on-failure
   ADR-0025 has the full reasoning. The canvas is **real-graph-only**: the
   Add menu's catalog no longer merges `mockDescriptors.ts` in (mocks stay in
   the read-only M9 component gallery, `ComponentGallery.tsx`, which fetches
-  its own separate copy), and the M10 "drag a port out to create a Macro"
-  shortcut is retired outright — its target, `mock.macro`, has no real
-  engine equivalent (`util.macro`, ADR-0015, is proposed but not built).
+  its own separate copy). The M10 "drag a port out to create a Macro"
+  shortcut was retired at M19 for exactly this reason — its target,
+  `mock.macro`, had no real engine equivalent — and is back as of
+  `wiki/plans/UtilMacro.md`/ADR-0030 (`createMacroFromPort` in
+  `graphStore.ts`), now that `util.macro` is a real, wireable node.
   `rename`/`bypass` are real, persisted `NodeInstance.properties` writes
   (`GraphEditController::setProperty`, new). **Bypass is real DSP as of
   docs/CLEANUP.md P1 #1**: `GraphCompiler` resolves `properties["bypassed"]`
