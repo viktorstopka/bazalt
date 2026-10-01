@@ -2,6 +2,7 @@
 #include "bazalt/engine/nodes/MacroNode.h"
 #include "bazalt/engine/graph/GraphCompiler.h"
 #include "bazalt/engine/graph/ProofGraphs.h"
+#include <cmath>
 
 using namespace bazalt::engine;
 using namespace bazalt::engine::nodes;
@@ -27,6 +28,38 @@ TEST_CASE ("MacroNode remaps its stored 0..1 value onto its own declared min/max
     float out = 0.0f;
     node.processSample (nullptr, &out);
     CHECK (out == 200.0f + 0.25f * (12000.0f - 200.0f));
+}
+
+TEST_CASE ("MacroNode rounds its output when isInteger is set, matching its own declared port contract",
+           "[engine][nodes][macro]")
+{
+    // getOutputPorts() advertises isInteger/kind=Int off util.macro.isInteger - this
+    // confirms processSample() actually honors that, not just getOutputPorts() alone
+    // (the bug: this node used to be the one place in the codebase where isInteger
+    // was user-configurable without the implementation respecting it).
+    MacroNode node;
+    node.setParameter ("util.macro.min", 0.0f);
+    node.setParameter ("util.macro.max", 7.0f);
+    node.setParameter ("util.macro.isInteger", 1.0f);
+
+    float out = 0.0f;
+    for (const float raw : { 0.0f, 0.1f, 0.49f, 0.5f, 0.51f, 0.9f, 1.0f })
+    {
+        node.setParameter ("util.macro.value", raw);
+        node.processSample (nullptr, &out);
+        CHECK (out == std::round (out)); // always a whole number
+        CHECK (out == std::round (raw * 7.0f)); // and the RIGHT whole number
+    }
+
+    // Not rounded when isInteger is false (the default) - confirms this is a real
+    // conditional, not an always-on rounding regression on the Float path.
+    MacroNode floatNode;
+    floatNode.setParameter ("util.macro.min", 0.0f);
+    floatNode.setParameter ("util.macro.max", 7.0f);
+    floatNode.setParameter ("util.macro.value", 0.1f);
+    floatNode.processSample (nullptr, &out);
+    CHECK (out == 0.1f * 7.0f);
+    CHECK (out != std::round (out));
 }
 
 TEST_CASE ("MacroNode's slot/min/max/isInteger/quantity round-trip through setParameter into getOutputPorts()",

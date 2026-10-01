@@ -24,6 +24,27 @@ namespace bazalt
         }
     }
 
+    void MacroParameters::setMappings (std::vector<bazalt::engine::MacroMapping> newMappings)
+    {
+        const auto current = currentMappingBuffer.load (std::memory_order_acquire);
+        const auto next = (current + 1) % (int) mappingBuffers.size();
+
+        auto& buffer = mappingBuffers[(size_t) next];
+        const auto count = juce::jmin ((int) newMappings.size(), numMacros);
+        for (int i = 0; i < count; ++i)
+            buffer.entries[(size_t) i] = std::move (newMappings[(size_t) i]);
+        buffer.count = count;
+
+        currentMappingBuffer.store (next, std::memory_order_release);
+    }
+
+    std::vector<bazalt::engine::MacroMapping> MacroParameters::getMappings() const
+    {
+        const auto slot = currentMappingBuffer.load (std::memory_order_acquire);
+        const auto& buffer = mappingBuffers[(size_t) slot];
+        return { buffer.entries.begin(), buffer.entries.begin() + buffer.count };
+    }
+
     std::vector<float> MacroParameters::getCurrentValues() const
     {
         std::vector<float> values ((size_t) numMacros);
@@ -41,26 +62,34 @@ namespace bazalt
         }
     }
 
-    void MacroParameters::applyToPlans (bazalt::engine::ExecutionPlan* const* plans, int numPlans, int numSamples) noexcept
+    void MacroParameters::advanceSmoothers (int numSamples) noexcept
     {
         for (int macroIndex = 0; macroIndex < numMacros; ++macroIndex)
         {
             auto& smoother = smoothers[(size_t) macroIndex];
             smoother.setTargetValue (parameters[(size_t) macroIndex]->get());
-            const auto value = smoother.skip (numSamples);
+            smoother.skip (numSamples);
+        }
+    }
 
-            for (const auto& mapping : mappings)
-            {
-                if (mapping.macroIndex != macroIndex)
-                    continue;
+    void MacroParameters::applyToPlans (bazalt::engine::ExecutionPlan* const* plans, int numPlans, int /*numSamples*/) noexcept
+    {
+        const auto slot = currentMappingBuffer.load (std::memory_order_acquire);
+        const auto& buffer = mappingBuffers[(size_t) slot];
 
-                const auto targetValue = mapping.rangeMin + value * (mapping.rangeMax - mapping.rangeMin);
+        for (int mappingIndex = 0; mappingIndex < buffer.count; ++mappingIndex)
+        {
+            const auto& mapping = buffer.entries[(size_t) mappingIndex];
+            if (mapping.macroIndex < 0 || mapping.macroIndex >= numMacros)
+                continue; // defensive - deriveMacroMappings never produces this, but this is RT code
 
-                for (int i = 0; i < numPlans; ++i)
-                    if (plans[i] != nullptr)
-                        if (auto* node = plans[i]->getNodeById (mapping.targetNodeId))
-                            node->setParameter (mapping.targetParameterId, targetValue);
-            }
+            const auto value = smoothers[(size_t) mapping.macroIndex].getCurrentValue();
+            const auto targetValue = mapping.rangeMin + value * (mapping.rangeMax - mapping.rangeMin);
+
+            for (int i = 0; i < numPlans; ++i)
+                if (plans[i] != nullptr)
+                    if (auto* node = plans[i]->getNodeById (mapping.targetNodeId))
+                        node->setParameter (mapping.targetParameterId, targetValue);
         }
     }
 }

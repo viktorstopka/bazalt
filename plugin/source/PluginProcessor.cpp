@@ -1048,6 +1048,12 @@ namespace bazalt
         bazalt::engine::ExecutionPlan* globalPlanForThisBlock = nullptr;
         std::array<VoicePlanPtrs, maxOrigins> originVoicePlanPtrs {};
 
+        // Exactly once per block, regardless of how many domains end up
+        // calling applyToPlans() below — see advanceSmoothers()'s own doc
+        // comment for why calling the old combined applyToPlans() once per
+        // domain used to over-advance every macro's ~20ms ramp.
+        macroParameters.advanceSmoothers (numSamples);
+
         if (monoOnly)
         {
             monoPlan = globalPlanSwapper.getCurrentPlanForAudioThread();

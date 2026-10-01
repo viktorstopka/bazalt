@@ -148,7 +148,15 @@ namespace bazalt::engine::nodes
 
         void processSample (const float*, float* outputs) noexcept override
         {
-            outputs[0] = storedMin + storedValue * (storedMax - storedMin);
+            const auto remapped = storedMin + storedValue * (storedMax - storedMin);
+            // getOutputPorts() advertises isInteger/kind=Int off storedIsInteger -
+            // round here so that contract is actually honored, not just declared.
+            // Previously this node was the one place in the codebase where
+            // isInteger was user-configurable without processSample() respecting
+            // it (InstanceVoiceNode's/SeqStepsNode's own integer-contract ports are
+            // backed by a real integer internally, never a rounded-at-the-last-
+            // moment float).
+            outputs[0] = storedIsInteger ? std::round (remapped) : remapped;
         }
 
         /** Read-only, message-thread-only accessor — GraphEditController
