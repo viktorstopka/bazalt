@@ -201,6 +201,19 @@ but the underlying mechanism looks like real, necessary design, not an oversight
 not confirming this as a mistake; flagging it back to you as the instruction said to
 expect.
 
+**A real, separate bug found alongside this (FIXED, `09-28-InstanceAllocator.2`,
+2026-10-01):** the "seeded from `(patch seed, spawn ordinal)`" part of the design
+above was aspirational until now — `InstanceVoiceNode::prepare()` actually called
+`random.setSeedRandomly()` (wall-clock-seeded, once per plugin-process-lifetime),
+directly contradicting `DOMAINS.md` §4's own stated reason these ports are
+allocator-owned state ("the same patch, the same MIDI, the same seed produce
+bit-identical output... required for the offline render CLI to be a useful
+regression tool"). A new `instance.allocate.voice.seed` structural parameter
+(matching `random.stepped.seed`'s own convention) now actually backs it: each
+`noteOn()` constructs a fresh `juce::Random` from `(seed, instanceIndex)`, a pure
+function with no dependency on wall-clock time or call history. See
+`wiki/MILESTONES.md`'s own `09-28-InstanceAllocator.2` entry for the fix.
+
 ---
 
 ## Part 3 — Architecture / UX mistakes (from your live testing)

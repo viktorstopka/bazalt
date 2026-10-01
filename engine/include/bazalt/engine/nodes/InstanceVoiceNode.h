@@ -3,6 +3,8 @@
 #include "bazalt/engine/graph/Node.h"
 #include "bazalt/engine/graph/ValueTypes.h"
 #include <atomic>
+#include <cmath>
+#include <cstdint>
 #include <juce_core/juce_core.h>
 
 namespace bazalt::engine::nodes
@@ -56,7 +58,6 @@ namespace bazalt::engine::nodes
         void prepare (const NodePrepareInfo& info) override
         {
             sampleRate = info.sampleRate;
-            random.setSeedRandomly(); // per-process-lifetime — patch-level determinism (DOMAINS.md §4) needs a real seed parameter, not built yet (09-28-InstanceAllocator.2)
         }
 
         void reset() override
@@ -116,6 +117,19 @@ namespace bazalt::engine::nodes
                                             .defaultValue = 8.0f,
                                             .displayName = "Max Instances",
                                             .isInteger = true,
+                                            .isStructural = true },
+                     // 09-28-InstanceAllocator.2: real patch-level determinism
+                     // at last — same shape/convention as random.stepped.seed/
+                     // random.drift.seed (RandomSteppedNode.h/RandomDriftNode.h),
+                     // deterministic-by-default rather than time-based.
+                     ParameterDescriptor { .id = "instance.allocate.voice.seed",
+                                            .minValue = 0.0f,
+                                            .maxValue = 999999.0f,
+                                            .defaultValue = 1.0f,
+                                            .displayName = "Seed",
+                                            .isInteger = true,
+                                            .quantity = Quantity::Count,
+                                            .step = 1.0f,
                                             .isStructural = true } };
         }
 
@@ -123,6 +137,8 @@ namespace bazalt::engine::nodes
         {
             if (parameterId == "instance.allocate.voice.maxInstances")
                 maxInstances = (int) (value + 0.5f);
+            else if (parameterId == "instance.allocate.voice.seed")
+                seed = (int) std::lround (value);
         }
 
         /** wiki/plans/DomainRedesign.md Batch 4: this was declared and
@@ -186,8 +202,23 @@ namespace bazalt::engine::nodes
             ageSamples = 0;
             startEvent = true;
             ++instanceIndex;
-            random1Value = random.nextFloat() * 2.0f - 1.0f;
-            random2Value = random.nextFloat() * 2.0f - 1.0f;
+
+            // 09-28-InstanceAllocator.2: random1/random2 are now a pure
+            // function of (patch seed, spawn ordinal) - a FRESH juce::Random
+            // constructed here every spawn, never a persistent member
+            // advanced call-to-call. That's what makes "same patch, same
+            // MIDI, same seed -> bit-identical output" hold (DOMAINS.md §4's
+            // own stated reason these ports are allocator-owned state in the
+            // first place): the old persistent-member design reseeded
+            // randomly once per plugin-process-lifetime (prepare()'s own
+            // setSeedRandomly() call) and then depended on exactly how many
+            // nextFloat() calls had already happened this run - neither of
+            // which is reproducible across runs, hosts, or even two voices
+            // racing in a different note order.
+            auto perSpawnRandom = juce::Random (combineSeed (seed, instanceIndex));
+            random1Value = perSpawnRandom.nextFloat() * 2.0f - 1.0f;
+            random2Value = perSpawnRandom.nextFloat() * 2.0f - 1.0f;
+
             spawnEventsThisBlock.fetch_add (1, std::memory_order_relaxed);
         }
 
@@ -256,8 +287,22 @@ namespace bazalt::engine::nodes
         }
 
     private:
+        /** Boost's classic hash_combine, 64-bit golden-ratio constant - not
+            cryptographic, just a cheap, well-known, deterministic mix so
+            nearby seeds/indices don't produce visibly-correlated streams.
+            Same (seed, instanceIndex) pair always produces the same int64,
+            on any platform, any run - that determinism is the entire point.
+        */
+        static int64_t combineSeed (int seedIn, int instanceIndexIn) noexcept
+        {
+            uint64_t h = (uint64_t) (uint32_t) seedIn;
+            h ^= (uint64_t) (uint32_t) instanceIndexIn + 0x9e3779b97f4a7c15ULL + (h << 6) + (h >> 2);
+            return (int64_t) h;
+        }
+
         double sampleRate = 44100.0;
         int maxInstances = 8;
+        int seed = 1; // deterministic by default, matching random.stepped.seed's own convention
 
         std::atomic<int> spawnEventsThisBlock { 0 }; // DomainRedesign.md Batch 1b — see consumeSpawnEventsThisBlock()
 
@@ -270,7 +315,6 @@ namespace bazalt::engine::nodes
         int instanceIndex = 0;
         float random1Value = 0.0f;
         float random2Value = 0.0f;
-        juce::Random random;
 
         const NoteEvent* pendingNoteBlock = nullptr; // M18 — valid only for the processBlock() call following consumeNoteBlock()
         int pendingNoteBlockLength = 0;

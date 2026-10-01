@@ -620,7 +620,9 @@ Swarm/Trigger runtime machinery exists — not empty shells bolted onto this one
 `wiki/reports/InstanceAllocator_2026-09-28.md` has the full reasoning. **In:** `spawn`
 — `Note`. **Out** (all `polyOnly`): `gate`, `pitch`, `velocity`, `instanceIndex`,
 `instanceAge`, `random1`, `random2`, `start`, `stop` — 9 ports. **Structural:**
-`maxInstances`.
+`maxInstances`, `seed` (real patch-level determinism for `random1`/`random2` as of
+`09-28-InstanceAllocator.2` — each spawn draws from a fresh generator seeded by
+`(seed, instanceIndex)`, not a wall-clock-seeded persistent one).
 
 #### `instance.sum` — Voice Sum ✅ *(renamed from `instance.mix`, wiki/plans/DomainRedesign.md Batch 1b — C++ class name (`InstanceMixNode`) unchanged)*
 Closes an instanced region. **In:** `in` — `Audio`, `polyOnly`. **Out:** `out` —

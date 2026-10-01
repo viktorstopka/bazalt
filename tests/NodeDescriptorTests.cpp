@@ -138,14 +138,17 @@ TEST_CASE ("09-28-InstanceAllocator.3: instance.allocate.voice (renamed from ins
 
     bool sawConfiguration = false;
     bool sawMaxInstances = false;
+    bool sawSeed = false;
     for (const auto& p : voice->parameters)
     {
         if (p.id.containsIgnoreCase ("configuration")) sawConfiguration = true;
         if (p.id == "instance.allocate.voice.maxInstances") sawMaxInstances = true;
+        if (p.id == "instance.allocate.voice.seed") sawSeed = true;
     }
     CHECK_FALSE (sawConfiguration);
     CHECK (sawMaxInstances);
-    REQUIRE (voice->parameters.size() == 1); // maxInstances is the only structural parameter left
+    CHECK (sawSeed); // 09-28-InstanceAllocator.2: real patch-level determinism
+    REQUIRE (voice->parameters.size() == 2); // maxInstances + seed
 }
 
 TEST_CASE ("A node with no title override falls back to its type id in the descriptor",

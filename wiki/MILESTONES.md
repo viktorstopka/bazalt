@@ -475,25 +475,37 @@ a row this session (worse than the usual once-or-twice) — isolated via the sam
 already-committed part-4 baseline with none of this fix's changes present, confirming environmental
 independent of this fix; `SUCCESS` on the next retry with the fix in place.
 
-## `09-28-InstanceAllocator.2` — `random1`/`random2` real determinism
+## `09-28-InstanceAllocator.2` — `random1`/`random2` real determinism — done
 
-**Root cause:** `InstanceAllocatorNode::prepare()` calls `random.setSeedRandomly()` — reseeded
-randomly per plugin-instance-lifetime, not from a real patch-level seed. Directly contradicts the
+**Root cause:** `InstanceVoiceNode::prepare()` called `random.setSeedRandomly()` — reseeded
+randomly per plugin-process-lifetime, not from a real patch-level seed. Directly contradicted the
 one stated reason these ports exist as allocator-owned state rather than a plain `random.*` node
 (`archive_docs/DOMAINS.md` §4): "the same patch, the same MIDI, the same seed produce bit-identical
-output... required for the offline render CLI to be a useful regression tool." Today it doesn't.
+output... required for the offline render CLI to be a useful regression tool." It didn't, until now.
 
-**The fix:** add `instance.allocator.seed` (structural parameter, matching `random.drift`/
-`random.stepped`'s existing `seed` convention — integer, fixed default, not time-based). Stop
-maintaining a persistent `juce::Random` member seeded once at `prepare()`; instead, at each
-`noteOn()`, draw `random1`/`random2` from a `juce::Random` constructed fresh from
-`hashCombine(seed, instanceIndex)`, so the value is a pure function of (patch seed, spawn ordinal)
-— no dependency on wall-clock time, call order, or elapsed blocks.
+**The fix, as shipped:** a new `instance.allocate.voice.seed` structural parameter (same shape as
+`random.stepped.seed`/`random.drift.seed` — integer, range [0, 999999], default `1`, deterministic
+not time-based). The persistent `juce::Random random` member is gone entirely — at each `noteOn()`,
+`random1`/`random2` are drawn from a FRESH `juce::Random`, seeded via a small local `combineSeed()`
+helper (Boost's classic 64-bit `hash_combine`, not cryptographic, just a cheap well-known mix) over
+`(seed, instanceIndex)` — `instanceIndex` is the node's own ever-incrementing spawn ordinal, already
+tracked for the `instanceIndex` output port. The result is a pure function of (patch seed, spawn
+ordinal): no dependency on wall-clock time, call order, elapsed blocks, or which other voices have
+fired in between.
 
-**Tests:** a real regression test compiling the same graph twice from a clean `prepare()`, same
-seed, asserting `random1`/`random2` are bit-identical across runs; a second case with a different
-seed asserting the values differ. Mutation-checked (temporarily revert to `setSeedRandomly()`,
-confirm the new test catches the non-determinism, revert back).
+**Tests:** new `tests/InstanceVoiceNodeTests.cpp` — same seed across two separate
+construct→prepare→noteOn sequences (exactly what two render-cli runs, or two plugin loads of the
+same patch, do) produces bit-identical `random1`/`random2`; a different seed produces different
+values (rules out a mutation that just hardcodes a constant); two successive spawns on the same node
+get different values from each other, and replaying the exact same two-spawn sequence from a clean
+node reproduces BOTH spawns' values exactly, not just the first; the new parameter is real,
+structural, and defaults to `1`. Mutation-tested for real: reverted to the old
+`setSeedRandomly()`-plus-persistent-member shape, reran — 6 of 12 assertions failed exactly as
+expected (the two cross-run/replay determinism tests); restored, green again.
+
+**Verified:** `ctest` 495/495 green (491 + 4 new). `pluginval --strictness-level 10`: SUCCESS.
+Standalone rebuilt (`taskkill` first — the previous session's own Standalone process had the binary
+locked, closed deliberately for this rebuild, not routinely).
 
 ## `09-28-InstanceAllocator.3` — split into a real `instance.voice` node, drop the dead configuration dropdown — done
 
