@@ -1785,3 +1785,45 @@ end to end, alongside the shared `InstanceOriginNode` infrastructure Batch 1
 built and Batch 3 actually exercised. `pluginval --strictness-level 10`
 verified once against the full, final tree (see below) rather than once per
 batch, matching the plan's own stated verification schedule.
+
+---
+
+## `10-01-PreviewCanvasGrowth` — node preview canvases growing without bound, fixed
+
+Direct feedback, raised multiple times across earlier sessions without ever
+actually landing a fix: "visuals getting infinitely bigger... glitching...
+scope/glance looks terrible, pixelated... the program is extremely slow from
+the beginning." `wiki/NODES_Gaps.md`'s own "Scope/Glance preview quality"
+entry has the full root-cause writeup (superseding its own earlier, wrong
+"needs a live look" conclusion) — summary here: `NodePreview.tsx`'s render
+loop read `canvas.clientWidth`/`clientHeight` off the `<canvas>` element
+itself to decide how big to make its own backing-store `width`/`height`
+attributes (the standard DPR/zoom-scaling technique) — but `.node-card`'s
+shrink-to-fit width (`inline-flex`, only ever a `min-width` floor) has to ask
+every descendant "how wide do you intrinsically want to be," and a
+`<canvas>`'s answer to that falls back to its own attribute size, not its
+`width: 100%` CSS — feeding the growing attribute straight back into the
+card's own computed width, which the canvas's `100%` then resolved against
+one frame bigger, read back, enlarged again: an unbounded loop, once per
+reflow. Height was never exposed (pinned to a fixed px value, never a
+percentage); width always was. The SAME root mechanism `InfiniteCanvas.css`'s
+own `.infinite-canvas > canvas` fix solved for the OTHER canvas's height, via
+an accidentally-matched rule — this was the same thing finally surfacing on
+the preview canvas's width, through ITS OWN legitimate rule this time.
+
+**Fix:** `.node-preview-canvas` can no longer be the element a shrink-to-fit
+ancestor measures. All of its sizing moved onto a new wrapper div
+(`.node-preview-canvas-wrap`, `NodeCard.css`); the canvas itself is now
+`position: absolute; inset: 0` inside it — contributing nothing to any
+ancestor's intrinsic-size computation, regardless of its own attributes.
+`NodePreview.tsx` measures `canvas.parentElement` (the wrapper), never the
+canvas's own `clientWidth`/`clientHeight`. One fix, inside the shared
+component every mount site (Standard/Horizontal/Glance previews, the M9
+Component Gallery) already goes through — no per-caller changes needed.
+
+**Verified:** `npm run build`/`npm run lint` (`ui/`) clean. No engine/C++
+change at all — the already-running dev server (Vite HMR) picked the fix up
+live in the already-open Standalone instance, no rebuild/relaunch needed. A
+human hands-on look at the actual running app is still the user's own next
+confirmation step, same computer-use caveat every entry in this file already
+carries.

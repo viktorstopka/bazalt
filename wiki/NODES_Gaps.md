@@ -340,19 +340,75 @@ the hack, rebuilt clean.
 label/value text already truncates itself independently via its own `overflow: hidden;
 text-overflow: ellipsis` on the child spans.
 
-### Scope preview quality
-Two different things share this complaint, worth telling apart:
-- **`ui/src/analysis/TelemetryScope.tsx`** (the separate M5 analysis panel, not a
-  node) — already a known, documented gap (Canvas2D, not WebGL, unchanged since M5).
-- **`ui/src/nodes/NodePreview.tsx`** (the newer, M20 inline per-node preview —
+### Scope/Glance preview quality, node cards growing without bound, whole-editor sluggishness — ROOT-CAUSED AND FIXED (2026-10-01)
+Four complaints that read as unrelated ("visuals getting infinitely bigger — now
+only the width," "glitching for half a second around every second," "scope/glance
+looks terrible, pixelated," "the program is extremely slow from the beginning")
+turned out to share ONE root cause. The entry below is what this file used to say
+about the pixelation half alone — kept for the record, then superseded by the real
+finding underneath it, the same "don't retroactively rewrite a wrong theory, mark it
+superseded" convention this file already uses elsewhere (see `instance.allocator`
+color's own entry two sections up).
+
+~~Two different things share this complaint, worth telling apart:~~
+~~- `ui/src/analysis/TelemetryScope.tsx` (the separate M5 analysis panel, not a
+  node) — already a known, documented gap (Canvas2D, not WebGL, unchanged since M5).~~
+~~- `ui/src/nodes/NodePreview.tsx` (the newer, M20 inline per-node preview —
   `osc.analog`'s/`mix.gain`'s own built-in scope/meter) — also Canvas2D, but its
   resize logic **is** correctly devicePixelRatio-aware (`canvas.width = width * dpr`,
   `ctx.setTransform(dpr, 0, 0, dpr, 0, 0)`) — the standard fix for exactly this kind
   of blurriness is already present. If this one still looks pixelated, the more
   likely cause is the draw routine itself (`telemetryDraw.ts`'s line width/
   anti-aliasing) or the genuinely small on-screen size of a node-card preview, not a
-  missing-DPR bug. **Needs a live look to tell which node's preview you mean before
-  diagnosing further.**
+  missing-DPR bug. Needs a live look to tell which node's preview you mean before
+  diagnosing further.~~ **This last paragraph's conclusion was wrong** — the DPR
+logic being present didn't mean the *size it was scaling* was ever actually stable.
+
+**The real root cause:** `NodePreview.tsx`'s render loop read `canvas.clientWidth`/
+`clientHeight` off the `<canvas>` element itself, then wrote a bigger `canvas.width`/
+`height` ATTRIBUTE back in (the DPR/zoom backing-store scaling the paragraph above
+correctly describes). That's fine as long as the canvas's own CSS size can never be
+influenced by its own attribute values — but `.node-card` is `inline-flex` with only
+a `min-width` floor, never a `width`, so its own width is shrink-to-fit: computed by
+asking every descendant "how wide do you intrinsically want to be." A `<canvas>`'s
+answer to THAT specific query ignores its `width: 100%` (a percentage has no base to
+resolve against when the thing being asked IS what determines that base) and falls
+back to its INTRINSIC size — its `width`/`height` ATTRIBUTES, the exact values the
+render loop was enlarging every frame. That intrinsic size fed `.node-card`'s own
+shrink-to-fit width, `width: 100%` then resolved against THAT on the next layout
+pass (one frame bigger), the render loop read it back via `clientWidth` and enlarged
+the attribute again — an unbounded feedback loop, once per reflow, explaining every
+one of the four symptoms at once: width grows without bound (height didn't, because
+it was already pinned to a fixed `48px`/`28px`/`96px`, never a percentage, so it was
+never exposed to this); the periodic "glitch" is the visible jump each time the
+browser's shrink-to-fit recomputation catches up; "pixelated" is the buffer
+overshooting the browser's real canvas-size ceiling and the DPR math going wrong once
+it does; "slow from the beginning" is the WHOLE editor's dirty-flag render loop never
+going idle — `InfiniteCanvas.tsx`'s own `nodeResizeObserver` watches each node card's
+element for size changes and calls `requestFrame()` on every single one, so a
+continuously-growing preview inside a continuously-growing card keeps the main WebGL
+cable/grid layer re-rendering forever, not just the one small preview canvas.
+`InfiniteCanvas.css`'s own `.infinite-canvas > canvas` fix (its own comment has the
+history) solved the exact same class of bug for the OTHER canvas's HEIGHT, via an
+accidentally-matched CSS rule — this was the same root mechanism finally catching up
+with the preview canvas's WIDTH, through its own legitimate rule this time, not an
+accident.
+
+**Fix applied:** `.node-preview-canvas` can no longer be the element asked "how wide
+do you want to be." `NodeCard.css` moved every bit of its sizing (`width`/`height`/
+`min-width`) onto a new, plain, non-replaced wrapper div (`.node-preview-canvas-wrap`,
+`position: relative; overflow: hidden`); the canvas itself is now
+`position: absolute; inset: 0` inside it — an absolutely-positioned element
+contributes nothing to its container's intrinsic-size computation, full stop,
+regardless of its own attribute values. `NodePreview.tsx` measures
+`canvas.parentElement` (this wrapper) instead of the canvas's own `clientWidth`/
+`clientHeight`, for the same reason — structurally non-circular, not just a
+different way of reading the same number. `npm run build`/`npm run lint` clean; no
+engine/C++ change at all, so no rebuild needed — the already-running dev server
+(Vite HMR) picked the fix up live in the already-open Standalone instance. A human
+hands-on look at the actual running app (does a node preview's width genuinely stay
+put now, does the editor stay smooth) is still the user's own next confirmation step
+— same computer-use caveat every entry in this file already carries.
 
 ### "Input port already connected" — see Occupied-port rejection above (same item).
 

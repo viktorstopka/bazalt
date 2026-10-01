@@ -70,6 +70,23 @@ export function NodePreview({ nodeId, preview }: NodePreviewProps) {
     if (!visible || !canvas || frameType === undefined) return
     const ctx = canvas.getContext('2d')
     if (!ctx) return
+    // The size source of truth is this canvas's own wrapper div
+    // (.node-preview-canvas-wrap, NodeCard.css), never the canvas element
+    // itself. A <canvas>'s width/height ATTRIBUTES (the backing-store size
+    // this effect enlarges below) count as its intrinsic size for any
+    // shrink-to-fit ancestor's own "how wide do you want to be" layout
+    // query — reading clientWidth/clientHeight off the canvas and writing
+    // a bigger attribute back in response to what THAT query produced is
+    // exactly the unbounded feedback loop NodeCard.css's own comment on
+    // `.node-preview-canvas-wrap` documents in full ("visuals getting
+    // infinitely bigger... now it is only the width" — a real, recurring
+    // bug). The wrapper is a plain, non-replaced <div> with explicit CSS
+    // sizing of its own (width/height/min-width) and no path back to this
+    // canvas's attributes at all, so measuring IT instead is what actually
+    // breaks the cycle, not just a different way of reading the same
+    // (circular) number.
+    const sizeSource = canvas.parentElement
+    if (!sizeSource) return
 
     const tap = tapNameForPreview(nodeId, preview.portId)
 
@@ -93,8 +110,8 @@ export function NodePreview({ nodeId, preview }: NodePreviewProps) {
       // isn't meaningful (the M9 Component Gallery, which doesn't live
       // inside the zoomable "world" layer at all).
       const dpr = (window.devicePixelRatio || 1) * Math.max(getCamera().zoom, 1)
-      const width = canvas.clientWidth
-      const height = canvas.clientHeight
+      const width = sizeSource.clientWidth
+      const height = sizeSource.clientHeight
       if (width === 0 || height === 0) return
       const targetWidth = Math.round(width * dpr)
       const targetHeight = Math.round(height * dpr)
@@ -121,5 +138,13 @@ export function NodePreview({ nodeId, preview }: NodePreviewProps) {
 
   if (frameType === undefined) return null
 
-  return <canvas className="node-preview-canvas" ref={canvasRef} />
+  // The wrapper (.node-preview-canvas-wrap, NodeCard.css) owns every bit of
+  // CSS sizing; the canvas itself is `position: absolute; inset: 0` inside
+  // it — see this file's own render()/sizeSource comment above for why
+  // that split is load-bearing, not just a markup nicety.
+  return (
+    <div className="node-preview-canvas-wrap">
+      <canvas className="node-preview-canvas" ref={canvasRef} />
+    </div>
+  )
 }
