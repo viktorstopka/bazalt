@@ -9,6 +9,7 @@
 #include "bazalt/engine/nodes/SeqEuclidNode.h"
 #include <array>
 #include <cmath>
+#include <cstdint>
 #include <limits>
 #include <vector>
 
@@ -179,6 +180,57 @@ TEST_CASE ("ClockPulseNode's run input halts and resumes ticking; reset reissues
     float resetOutputs[2] = {};
     node.processSample (resetInputs, resetOutputs);
     CHECK (resetOutputs[0] > 0.5f);
+}
+
+// Direct feedback: "holding a note... LFOs for instance, when I was
+// automating the frequency to make an arp... it would feel like being
+// slower at first but when holding a note, it would get faster and
+// faster." A real, quantified check for exactly that shape of bug (tempo
+// drifting over a long hold) rather than the short (<1.1s) windows every
+// other test in this file uses — basePhase is a double accumulating
+// effectiveHz/sampleRate every single sample with no block-size reference
+// anywhere in the formula (CLAUDE.md rule 6), so if there's a real
+// per-sample drift bug, 10 minutes (26.46M samples) at a musically
+// reasonable rate should make it unmistakable; if there isn't, the first
+// and last measured intervals should match to within float rounding, not
+// just "close enough to not notice by ear."
+TEST_CASE ("ClockPulseNode never drifts tempo over a long hold - the interval between ticks near the "
+           "start of a 10-minute render matches the interval between ticks near the end, exactly",
+           "[engine][nodes][ClockPulseNode][ClockSeq]")
+{
+    NodePrepareInfo info { 44100.0, 512 };
+    ClockPulseNode node;
+    node.prepare (info);
+    node.reset();
+    node.setParameter ("clock.pulse.rate", 5.0f); // 5Hz - a plausible arp/step rate
+
+    const int64_t totalSamples = (int64_t) (600.0 * 44100.0); // 10 minutes
+    std::vector<int64_t> tickSampleIndices;
+
+    for (int64_t i = 0; i < totalSamples; ++i)
+    {
+        float inputs[5] = { kNaN, kNaN, kNaN, kNaN, 0.0f };
+        float outputs[2] = {};
+        node.processSample (inputs, outputs);
+        if (outputs[0] > 0.5f)
+            tickSampleIndices.push_back (i);
+    }
+
+    // 5Hz for 600s -> ~3000 ticks (k=0..~3000, the free-running k=0 tick
+    // included) - comfortably enough to compare "early" vs. "late" without
+    // being anywhere near either boundary.
+    REQUIRE (tickSampleIndices.size() > 100);
+
+    const auto earlyInterval = tickSampleIndices[10] - tickSampleIndices[9];
+    const auto lateInterval = tickSampleIndices[tickSampleIndices.size() - 10] - tickSampleIndices[tickSampleIndices.size() - 11];
+
+    // Exact sample-count equality, not an approximate tolerance - a real
+    // drift bug (float accumulation error, or anything block-size-shaped
+    // sneaking in) would show up as a measurable difference, and a correct
+    // implementation produces the IDENTICAL integer sample interval here,
+    // every time, for the entire 10-minute render.
+    CHECK (earlyInterval == lateInterval);
+    CHECK (earlyInterval == (int64_t) std::lround (44100.0 / 5.0)); // 8820 samples/tick at 5Hz
 }
 
 // ---- clock.divide ----

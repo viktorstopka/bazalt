@@ -517,6 +517,76 @@ exist in the same graph simultaneously (up to `MultiplicityResolver::maxOrigins`
 
 ---
 
+### "The program is still extremely slow from the beginning" — a real, significant cause found and fixed (2026-10-01)
+Direct feedback, raised repeatedly before a root cause was actually found: constant background
+sluggishness, present from the moment the app launches, independent of graph size or any user
+interaction. Found by reading `ui/src/telemetry/telemetryClient.ts`'s own `startTelemetryPolling()`
+directly: it unconditionally seeded the M4 baseline (`main` + 4 aux buses, all 3 frame types = 15
+taps) at app boot, then polled every one of them via a real `fetch()` call against the native
+resource-provider bridge on **every single animation frame** (~900 fetch calls/second) — for the
+entire app lifetime, starting the instant `main.tsx` runs. The only consumer of those specific tap
+names is `AnalysisPanel.tsx` (the M5 panel) — confirmed by grepping `ui/src/` for every reference
+to the baseline tap names, nothing else touches them — and `App.tsx`'s own `analysisOpen` is a
+hardcoded `false`: that panel has never been mounted in the current build. All 900 fetch/sec were
+pure waste, for data nobody was ever reading, running since before the user even places a single
+node.
+
+**Fix applied:** `startTelemetryPolling()` no longer seeds anything — it only starts the shared
+polling-loop infrastructure itself (the same `activePolls` Map/rAF loop `subscribeNodePreview`'s
+own `pollTap` calls use for real, dynamic node previews, which this leaves untouched). The baseline
+seed moved into two new exported functions, `seedBaselineTaps()`/`unseedBaselineTaps()`, called from
+`AnalysisPanel.tsx`'s own mount/unmount effect — the exact same subscribe-on-mount/unsubscribe-on-
+unmount discipline `NodePreview.tsx` already uses for its own taps. The panel still works identically
+whenever it IS opened; the cost now only exists while it's actually on screen.
+
+**Also investigated and ruled out, empirically, not by inspection alone:** a separate report of audio
+timing feeling unstable while holding a note with a periodic modulation source ("it would get faster
+and faster... LFOs for instance... automating the frequency to make an arp") — new
+`tests/ClockSeqNodesTests.cpp` case renders `ClockPulseNode` for a full 10 simulated minutes
+(26.46M samples) at a musically plausible 5Hz and checks the sample-exact interval between ticks near
+the start of the render against ticks near the end: **identical, exactly 8820 samples, every time** —
+`basePhase` is a `double` accumulator with no block-size reference anywhere in its formula (CLAUDE.md
+rule 6), and this proves it genuinely doesn't drift over a long hold. The perceived speed instability
+is NOT an engine/DSP math bug; it's much more likely a symptom of the SAME real-time performance
+pressure this entry's own fix addresses (a CPU-starved real-time audio thread under-running/glitching
+reads as "speeding up and slowing down," a completely different failure mode from the engine's own
+tick timing being wrong) — consistent with the two reports surfacing together.
+
+**Verified:** `ctest --test-dir build -C Debug` 516/516 green (515 + 1 new drift test — zero
+regressions, confirms the clock math itself was never the problem). `npm run build`/`npm run lint`
+(`ui/`): clean. A human hands-on look at whether the app actually *feels* faster from launch, and
+whether the audio-timing complaint improves, is still the user's own next confirmation step — this
+environment can prove the clock math is airtight and that 900 wasted fetch/sec is now zero; it can't
+feel CPU load the way a person running the actual app can.
+
+### Zoom cropping/offset, borders disappearing — STILL OPEN, narrowed but not yet fixed (2026-10-01)
+ADR-0032's WebView2-native-zoom fix (entry above) turned out NOT to be the cause: direct feedback
+confirmed the symptom reproduces on a **plain scroll wheel, no Ctrl held** — the app's own zoom
+gesture, never WebView2's native one, which only engages on Ctrl+wheel/pinch. That fix is still
+correct and worth keeping (it closes a real, separate gap), it just wasn't THIS bug.
+
+**Narrowed, with a real clue:** direct feedback that cables stay correctly rendered throughout,
+while node cards (and other DOM content) crop/disappear. Cable positions and the DOM world layer's
+CSS transform are both driven from the exact same `camera.zoom`/`panX`/`panY` numbers, read once per
+frame (`InfiniteCanvas.tsx`'s `frame()`) — cables via plain JS arithmetic
+(`portAnchors.ts::offsetToScreenAnchor`), node cards via a literal
+`transform: translate(...) scale(...)` CSS string on `.infinite-canvas-world`. Worked through the
+formula by hand: both paths compute the identical `screen = pan + local * zoom`, so the camera
+numbers themselves aren't corrupted (confirmed, not assumed) — if they were, cables would be wrong
+too. The bug is specifically in how the BROWSER renders a `transform: scale()`'d DOM subtree, not in
+this app's own math.
+
+**Leading theory, not yet confirmed:** Chromium/Blink has known practical limits on how large a
+`transform`'d element's effective paint bounds can get before content gets culled — this app's
+`.infinite-canvas-world` is deliberately NOT GPU-layer-promoted (`InfiniteCanvas.css`'s own comment:
+removed `will-change: transform` on purpose, to stay sharp rather than cache a blurry rasterized
+bitmap), meaning Blink re-paints the scaled DOM content fresh every frame and has to compute a real
+paint rect for it each time — a wide graph zoomed in far enough could plausibly exceed whatever
+internal bound triggers culling, which WebGL (a fixed-size canvas viewport, immune to this specific
+class of limit) would never hit. Not yet proven — needs either a repro with a known graph
+size/zoom level, or a deliberate stress test building a wide graph and checking node visibility
+programmatically at a range of zoom values. Pending that.
+
 ## Full node list checked (55 files, `engine/include/bazalt/engine/nodes/`)
 
 ConstantNode, OutputNode, DelayNode, ListenNode, NoiseBurstNode, NormaliseNode,

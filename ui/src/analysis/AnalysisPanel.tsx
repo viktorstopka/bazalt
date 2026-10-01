@@ -1,5 +1,6 @@
+import { useEffect } from 'react'
 import { TelemetryScope } from './TelemetryScope'
-import type { TapName } from '../telemetry/telemetryClient'
+import { seedBaselineTaps, unseedBaselineTaps, type TapName } from '../telemetry/telemetryClient'
 import './AnalysisPanel.css'
 
 const CHANNELS: { tap: TapName; label: string }[] = [
@@ -18,6 +19,18 @@ const CHANNELS: { tap: TapName; label: string }[] = [
     telemetry client are what that work builds on, not what it throws away).
 */
 export function AnalysisPanel() {
+  // Direct feedback, a real performance bug: these 5 taps x 3 frame types
+  // used to be polled unconditionally from app boot (telemetryClient.ts's
+  // own startTelemetryPolling(), see its updated comment) regardless of
+  // whether this panel was even mounted - it never was, App.tsx's
+  // `analysisOpen` is a hardcoded `false`. Now scoped to this component's
+  // own lifetime, matching the same subscribe-on-mount/unsubscribe-on-
+  // unmount discipline NodePreview.tsx already uses for its own dynamic taps.
+  useEffect(() => {
+    seedBaselineTaps()
+    return () => unseedBaselineTaps()
+  }, [])
+
   return (
     <div className="analysis-panel">
       {CHANNELS.map(({ tap, label }) => (

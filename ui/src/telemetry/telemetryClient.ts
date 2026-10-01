@@ -144,10 +144,21 @@ export function startTelemetryPolling(): void {
   if (running) return
   running = true
 
-  for (const tap of BASELINE_TAP_NAMES)
-    for (const frameType of ALL_FRAME_TYPES)
-      pollTap(tap, frameType)
-
+  // Direct feedback, a real and significant performance bug: this used to
+  // ALSO unconditionally seed the M4 baseline (main + 4 aux buses, all 3
+  // frame types = 15 taps) right here, meaning the app fired 15 fetch()
+  // calls against the native resource-provider bridge on EVERY animation
+  // frame (~900/sec) from the moment it launched - regardless of whether
+  // the M5 analysis panel (the only consumer of those specific tap names,
+  // AnalysisPanel.tsx) was even mounted. It never was: App.tsx's
+  // `analysisOpen` is a hardcoded `false`. That's "slow from the
+  // beginning," literally - constant background native-bridge traffic for
+  // data nobody was reading, for the entire app lifetime, node previews
+  // included (this same shared loop/activePolls Map is what
+  // subscribeNodePreview's own pollTap calls use). Seeding moved to
+  // AnalysisPanel's own mount/unmount (seedBaselineTaps/unseedBaselineTaps,
+  // below) - this function now only starts the shared polling loop
+  // infrastructure itself, seeding nothing until something real needs it.
   const loop = () => {
     if (!running) return
     for (const { tap, frameType } of activePolls.values()) void pollOne(tap, frameType)
@@ -161,6 +172,30 @@ export function stopTelemetryPolling(): void {
   running = false
   if (rafHandle !== null) cancelAnimationFrame(rafHandle)
   rafHandle = null
+}
+
+/** Starts polling the M4 baseline (main + 4 aux buses, all 3 frame types) -
+    call from AnalysisPanel's own mount effect, the only consumer of these
+    specific tap names (checked: nothing else in ui/src references
+    BASELINE_TAP_NAMES/'main'/'aux1'..'aux4'). Those taps are already
+    subscribed engine-side automatically (PluginProcessor::prepareToPlay),
+    so this only ever needs to start client-side polling, never call a
+    native subscribe function the way a dynamic node preview does.
+*/
+export function seedBaselineTaps(): void {
+  for (const tap of BASELINE_TAP_NAMES)
+    for (const frameType of ALL_FRAME_TYPES)
+      pollTap(tap, frameType)
+}
+
+/** Reverses seedBaselineTaps() - call from AnalysisPanel's own unmount
+    cleanup, so closing the panel actually stops the background polling
+    traffic instead of leaving it running forever once ever opened once.
+*/
+export function unseedBaselineTaps(): void {
+  for (const tap of BASELINE_TAP_NAMES)
+    for (const frameType of ALL_FRAME_TYPES)
+      stopPollingTap(tap, frameType)
 }
 
 export interface InterpolatedTap {
