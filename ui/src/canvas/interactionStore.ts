@@ -107,7 +107,21 @@ export interface WireDragGesture {
   */
   hoverReplacing?: boolean
 }
-export type Gesture = PanGesture | BoxSelectGesture | NodeDragGesture | WireDragGesture | null
+/** wiki/plans/UtilMacro.md: mousedown on an unconnected, macro-able input
+    port starts this instead of a plain WireDragGesture (which only ever
+    starts from an input that already HAS a wire to detach — see
+    InfiniteCanvas.tsx's mousedown handler). Committed on mouseup over
+    genuine empty canvas/world space (graphStore.ts's createMacroFromPort);
+    any other mouseup target (a node, a port, an overlay) cancels with no
+    effect, same "only a true empty-space drop commits" rule ghost
+    placement already follows for an unsplice-able wire hover.
+*/
+export interface DragToMacroGesture {
+  kind: 'dragToMacro'
+  nodeId: string
+  portId: string
+}
+export type Gesture = PanGesture | BoxSelectGesture | NodeDragGesture | WireDragGesture | DragToMacroGesture | null
 
 let gesture: Gesture = null
 export function getGesture(): Gesture {

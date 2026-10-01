@@ -7,10 +7,12 @@
 // deliberately not wired" note for that history. The canvas is real-graph-
 // only as of M19: mock.* node types stay in the read-only component gallery
 // (ComponentGallery.tsx, its own separate descriptor fetch+merge) but are no
-// longer placeable here, since they have no engine backing to wire to —
-// including the M10 "drag a port out to create a Macro" shortcut
-// (addMacroFromPort), retired for the same reason (`util.macro`, ADR-0015,
-// isn't a real registered node type yet).
+// longer placeable here, since they have no engine backing to wire to. The
+// M10 "drag a port out to create a Macro" shortcut (addMacroFromPort) was
+// retired for the same reason and is now BACK, revived as
+// createMacroFromPort (see this file's own "Drag-a-port-out-to-a-Macro
+// shortcut" section below) — `util.macro` is a real registered node type as
+// of wiki/plans/UtilMacro.md (ADR-0015 amended, not reversed).
 //
 // A plain external store (subscribe/getSnapshot, read via useGraphSnapshot's
 // useSyncExternalStore) rather than a state-management library — matches
@@ -54,7 +56,7 @@
 // prediction before a command is even sent — that a brief flash-then-
 // revert there is an acceptable, honest "that didn't work" signal rather
 // than the previous glitch-on-every-gesture cost).
-import type { NodeDescriptor } from './descriptorTypes'
+import type { NodeDescriptor, PortDescriptor, Quantity } from './descriptorTypes'
 import { fetchNodeDescriptors } from './fetchNodeDescriptors'
 import { canConnectPorts, findPort, type ConnectionEndpoint } from './canConnect'
 import {
@@ -87,6 +89,13 @@ export interface GraphNode {
       mirrors the engine's own NodeInstance.parameters for this node.
   */
   parameterValues?: Record<string, number>
+  /** wiki/plans/UtilMacro.md: cosmetic-only display unit for a util.macro
+      node, mirrored from NodeInstance.properties["util.macro.unit"] —
+      MacroKnob.tsx reads this for its own display, same as titleOverride
+      above reads properties["title"]. Undefined for every other node type,
+      and for a macro created from a port with no unit of its own.
+  */
+  macroUnit?: string
 }
 
 export interface GraphWire {
@@ -168,6 +177,7 @@ function patchJsonToLocalState(json: string): { nodes: Map<string, GraphNode>; w
   for (const n of doc.nodes ?? []) {
     const properties = n.properties ?? {}
     const title = properties.title
+    const macroUnit = properties['util.macro.unit']
     nodes.set(n.id, {
       id: n.id,
       typeId: n.type,
@@ -176,6 +186,7 @@ function patchJsonToLocalState(json: string): { nodes: Map<string, GraphNode>; w
       titleOverride: typeof title === 'string' && title.length > 0 ? title : undefined,
       bypassed: properties.bypassed === true,
       parameterValues: n.parameters && Object.keys(n.parameters).length > 0 ? { ...n.parameters } : undefined,
+      macroUnit: typeof macroUnit === 'string' && macroUnit.length > 0 ? macroUnit : undefined,
     })
   }
   const wires = new Map<string, GraphWire>()
@@ -620,10 +631,28 @@ async function withHistory(gesture: () => Promise<void>, optimistic?: () => void
 
 export async function addNode(typeId: string, x: number, y: number): Promise<string> {
   const id = makeId('node')
+  // wiki/plans/UtilMacro.md: a bare Macro placed via the Add menu or ghost
+  // click (not the drag-from-a-port shortcut, createMacroFromPort below)
+  // still auto-claims a free slot inside this same gesture, rather than
+  // landing unclaimed (-1) and doing nothing until the user finds the slot
+  // parameter themselves. Left unclaimed (no second command at all) if
+  // every slot is already taken - a 33rd macro is still a valid, if inert,
+  // placement, not an error.
+  const macroSlot = typeId === 'util.macro' ? pickFreeMacroSlot() : undefined
   await withHistory(
-    () => fireCommand(() => graphAddNode(typeId, id, x, y)).then(() => undefined),
+    async () => {
+      if (!(await fireCommand(() => graphAddNode(typeId, id, x, y)))) return
+      if (macroSlot !== undefined) await fireCommand(() => graphSetParameterValue(id, 'util.macro.slot', macroSlot))
+    },
     () => {
-      nodes.set(id, { id, typeId, x, y, bypassed: false })
+      nodes.set(id, {
+        id,
+        typeId,
+        x,
+        y,
+        bypassed: false,
+        parameterValues: macroSlot !== undefined ? { 'util.macro.slot': macroSlot } : undefined,
+      })
       selection = new Set([id])
     },
   )
@@ -908,4 +937,224 @@ export function spliceInsert(wireIdToSplice: string, typeId: string, x: number, 
   )
 
   return newNodeId
+}
+
+// ---- Drag-a-port-out-to-a-Macro shortcut ----------------------------------
+// Direct instruction: "taking an unconnected input node and dragging and
+// releasing to automatically create a macro with the correct predefined
+// types." Revives the retired M10 addMacroFromPort/macroConfigForPort shape
+// (this file's own header comment, and see InfiniteCanvas.tsx's mousedown
+// handler for the other retirement note) now that util.macro is a real
+// registered node type (wiki/plans/UtilMacro.md, ADR-0015 amended not
+// reversed) — upgraded to the real M14 value-contract fields
+// (kind/quantity/enumOptions) that didn't exist at M10 time.
+
+/** util.macro.quantity's own ParameterDescriptor (MacroNode.h) is a plain
+    integer ordinal, not a string — this table's index MUST match Quantity's
+    declaration order here AND engine/include/bazalt/engine/graph/
+    PortDescriptor.h's `Quantity` enum EXACTLY (both are hand-kept in sync
+    by design, the same "one schema, two producers, kept in sync by hand"
+    convention canConnect.ts's own header comment already established for
+    this project). A silent mismatch would misencode every non-Dimensionless
+    macro's own structural "Quantity" parameter — Dimensionless (index 0)
+    is `util.macro.quantity`'s own descriptor default, so a mismatch would
+    stay invisible for the single most common case and only misencode the
+    other nine.
+*/
+const QUANTITY_ORDER: readonly Quantity[] = [
+  'dimensionless',
+  'frequency',
+  'pitch',
+  'time',
+  'gain',
+  'ratio',
+  'unipolar',
+  'bipolar',
+  'count',
+  'phase',
+]
+function quantityOrdinal(quantity: Quantity): number {
+  const index = QUANTITY_ORDER.indexOf(quantity)
+  return index >= 0 ? index : 0
+}
+
+interface MacroSeed {
+  min: number
+  max: number
+  isInteger: boolean
+  quantity: Quantity
+  unit: string
+  /** The macro's own raw 0..1 storage value (util.macro.value) that
+      reproduces `currentValue` under this seed's min/max — purely
+      cosmetic, see createMacroFromPort's own comment on why it's seeded
+      at all.
+  */
+  defaultRaw: number
+}
+
+/** Derives a new macro's own min/max/isInteger/quantity/unit contract from
+    the port it's being dragged out of, matching the retired M10
+    macroConfigForPort()'s rules, upgraded to real fields:
+      - a real `kind: 'enum'` port (with enumOptions) -> an integer
+        0..(N-1) range over those same options (no real engine port
+        exercises this today — a deliberate, explicitly-flagged v1
+        simplification, forward-looking/test-fixture-only for now).
+      - Boolean, or Event with no options -> a small integer 0..1 range.
+      - Event WITH options (mock-only field, see descriptorTypes.ts) -> an
+        integer range over that list, same shape as the enum case above.
+      - Control with clear bounds (minValue/maxValue both set) -> copied
+        verbatim (unit/isInteger/quantity too), so e.g. a filter cutoff
+        macro is still Hz-ranged, not a generic 0..1.
+      - Control with NO clear bounds (math.add's growable "a"/"b" inputs,
+        never given a real min/max) -> a generic Dimensionless 0..1 range.
+    `currentValue` (the port's live fallback value, from GraphNode.
+    parameterValues, or the descriptor's own defaultValue) becomes the
+    macro's seeded raw value, inverted into whatever 0..1 fraction of the
+    chosen range it lands at.
+*/
+function macroConfigForPort(port: PortDescriptor, currentValue: number): MacroSeed {
+  const clamp = (value: number, min: number, max: number): number => Math.min(max, Math.max(min, value))
+  const rawOf = (value: number, min: number, max: number): number => (max > min ? (clamp(value, min, max) - min) / (max - min) : 0)
+
+  if (port.kind === 'enum' && port.enumOptions.length > 0) {
+    const maxIndex = port.enumOptions.length - 1
+    return { min: 0, max: maxIndex, isInteger: true, quantity: 'dimensionless', unit: '', defaultRaw: rawOf(Math.round(currentValue), 0, maxIndex) }
+  }
+  if (port.type === 'event' && port.options && port.options.length > 0) {
+    const maxIndex = port.options.length - 1
+    return { min: 0, max: maxIndex, isInteger: true, quantity: 'dimensionless', unit: '', defaultRaw: rawOf(Math.round(currentValue), 0, maxIndex) }
+  }
+  if (port.type === 'event' || port.type === 'boolean') {
+    return { min: 0, max: 1, isInteger: true, quantity: 'dimensionless', unit: '', defaultRaw: rawOf(Math.round(currentValue), 0, 1) }
+  }
+
+  const hasClearBounds = port.minValue !== null && port.maxValue !== null
+  if (hasClearBounds) {
+    const min = port.minValue as number
+    const max = port.maxValue as number
+    return { min, max, isInteger: port.isInteger, quantity: port.quantity, unit: port.unit, defaultRaw: rawOf(currentValue, min, max) }
+  }
+
+  // Unclear metatype (e.g. math.add's "a"/"b" — no real bound ever set):
+  // a generic Dimensionless 0..1 range, the same fallback the retired M10
+  // gesture used for exactly this case.
+  return { min: 0, max: 1, isInteger: false, quantity: 'dimensionless', unit: '', defaultRaw: clamp(currentValue, 0, 1) }
+}
+
+/** Whether `port` could sensibly become a Macro's value at all. Control,
+    Event, and Boolean all have some meaningful macro shape (see
+    macroConfigForPort above); Audio and Note don't (a macro is a scalar/
+    discrete automatable value, not an audio-rate or event-stream signal),
+    and Data never converts implicitly to anything (SIGNAL_TYPES.md §5,
+    canConnect.ts's own rule) — a macro's plain float output is no
+    exception. Spectral is reserved, not real anywhere yet.
+*/
+export function isMacroablePort(port: Pick<PortDescriptor, 'type'>): boolean {
+  return port.type === 'control' || port.type === 'event' || port.type === 'boolean'
+}
+
+/** Scans the local node mirror for every placed util.macro's own claimed
+    slot (`parameterValues['util.macro.slot']` — already present on every
+    node mirror, patchJsonToLocalState copies NodeInstance.parameters
+    wholesale) and returns the lowest one in [0,31] nothing has claimed
+    yet, or undefined if all 32 are already taken. Pure and synchronous —
+    reads only the already-resynced local mirror, never asks the engine.
+*/
+export function pickFreeMacroSlot(): number | undefined {
+  const claimed = new Set<number>()
+  for (const node of nodes.values()) {
+    if (node.typeId !== 'util.macro') continue
+    const slot = node.parameterValues?.['util.macro.slot']
+    if (slot === undefined) continue
+    const rounded = Math.round(slot)
+    if (rounded >= 0 && rounded < 32) claimed.add(rounded)
+  }
+  for (let slot = 0; slot < 32; slot++) {
+    if (!claimed.has(slot)) return slot
+  }
+  return undefined
+}
+
+/** The drag-a-port-out-to-a-Macro shortcut: creates a new util.macro node
+    at (x, y), pre-configured from `portId` on `nodeId` (macroConfigForPort
+    above), claims the lowest free slot, and wires its output straight into
+    that port — one undo step (addNode -> claim slot -> seed min/max/
+    isInteger/quantity/unit/value -> connect), modeled on spliceInsert's own
+    composite-command shape above. The slot claim is deliberately its own
+    SEPARATE command after addNode, never part of the initial NodeInstance
+    (wiki/plans/UtilMacro.md's "Finding B": util.macro.slot's descriptor
+    default is -1/unclaimed specifically so the transient state between
+    these two commands can never collide with an already-placed macro).
+
+    No-ops (returns undefined, no command sent) if the port doesn't exist or
+    isMacroablePort() rejects it — callers (InfiniteCanvas.tsx's drag-to-
+    empty-space gesture) are expected to have already checked
+    isMacroablePort() before even starting the drag, this is just the same
+    guarantee at the point of committing, matching spliceInsert/canSplice's
+    own split. Also no-ops, but sets lastError to a clear reason, if every
+    slot is already claimed — rather than firing a doomed addNode+
+    setParameterValue sequence GraphEditController's own collision check
+    would reject anyway.
+*/
+export function createMacroFromPort(nodeId: string, portId: string, x: number, y: number): string | undefined {
+  const endpoint = getEndpoint(nodeId, portId, 'input')
+  if (!endpoint || !isMacroablePort(endpoint.port)) return undefined
+
+  const slot = pickFreeMacroSlot()
+  if (slot === undefined) {
+    lastError = 'All 32 macro slots are in use'
+    notify()
+    return undefined
+  }
+
+  const node = nodes.get(nodeId)
+  const currentValue = node?.parameterValues?.[portId] ?? endpoint.port.defaultValue
+  const seed = macroConfigForPort(endpoint.port, currentValue)
+  const isIntegerValue = seed.isInteger ? 1 : 0
+  const quantityValue = quantityOrdinal(seed.quantity)
+
+  const macroId = makeId('node')
+
+  void withHistory(
+    async () => {
+      if (!(await fireCommand(() => graphAddNode('util.macro', macroId, x, y)))) return
+      if (!(await fireCommand(() => graphSetParameterValue(macroId, 'util.macro.slot', slot)))) return
+      await fireCommand(() => graphSetParameterValue(macroId, 'util.macro.min', seed.min))
+      await fireCommand(() => graphSetParameterValue(macroId, 'util.macro.max', seed.max))
+      await fireCommand(() => graphSetParameterValue(macroId, 'util.macro.isInteger', isIntegerValue))
+      await fireCommand(() => graphSetParameterValue(macroId, 'util.macro.quantity', quantityValue))
+      // Cosmetic only (see MacroSeed.defaultRaw's own comment) — immediately
+      // overwritten by the next MacroParameters::applyToPlans block since
+      // the real value is host-bound, not user-set; only here so the knob
+      // doesn't visibly jump to 0 for that one block.
+      await fireCommand(() => graphSetParameterValue(macroId, 'util.macro.value', seed.defaultRaw))
+      if (seed.unit) await fireCommand(() => graphSetProperty(macroId, 'util.macro.unit', seed.unit))
+      if (await fireCommand(() => graphConnectWithAutoAdapt(macroId, 'out', nodeId, portId))) {
+        await designateOutputIfMasterOut(nodeId)
+      }
+    },
+    () => {
+      nodes.set(macroId, {
+        id: macroId,
+        typeId: 'util.macro',
+        x,
+        y,
+        bypassed: false,
+        parameterValues: {
+          'util.macro.slot': slot,
+          'util.macro.min': seed.min,
+          'util.macro.max': seed.max,
+          'util.macro.isInteger': isIntegerValue,
+          'util.macro.quantity': quantityValue,
+          'util.macro.value': seed.defaultRaw,
+        },
+        macroUnit: seed.unit || undefined,
+      })
+      const newWireId = wireId(nodeId, portId)
+      wires.set(newWireId, { id: newWireId, fromNodeId: macroId, fromPortId: 'out', toNodeId: nodeId, toPortId: portId })
+      selection = new Set([macroId])
+    },
+  )
+
+  return macroId
 }

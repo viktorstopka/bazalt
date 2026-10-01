@@ -451,7 +451,6 @@ function InstanceCountBadge({ badge }: { badge?: NodeMultiplicityBadge }) {
 }
 
 function TitleBar({ descriptor, state }: { descriptor: NodeDescriptor; state: NodeCardState }) {
-  const isMacro = descriptor.category === 'Macro'
   return (
     <div className="node-title-bar">
       <span className="node-title-left">
@@ -463,18 +462,14 @@ function TitleBar({ descriptor, state }: { descriptor: NodeDescriptor; state: No
             !
           </span>
         )}
-        {isMacro ? (
-          <span className="node-info-icon" title="Constraints (Type/Shape/Enum)">
-            i
-          </span>
-        ) : (
-          <>
-            <span className={`node-bypass-icon${state.bypassed ? ' node-bypass-icon-active' : ''}`} title="Bypass" />
-            <span className="node-assist-icon" title="Assist menu">
-              +
-            </span>
-          </>
-        )}
+        {/* wiki/plans/UtilMacro.md: a real util.macro node is an ordinary
+            node in every way that matters here — its "Constraints" info-only
+            icon (never had an onClick) is gone; bypass+assist render
+            unconditionally now, same as every other category. */}
+        <span className={`node-bypass-icon${state.bypassed ? ' node-bypass-icon-active' : ''}`} title="Bypass" />
+        <span className="node-assist-icon" title="Assist menu">
+          +
+        </span>
       </div>
     </div>
   )
@@ -505,6 +500,34 @@ function paramValue(state: NodeCardState, id: string, fallback: number): number 
 function paramCommit(state: NodeCardState, id: string): ((value: number) => void) | undefined {
   const commit = state.onParameterCommit
   return commit ? (value: number) => commit(id, value) : undefined
+}
+
+/** wiki/plans/UtilMacro.md's decided slot-reassignment warning: editing an
+    ALREADY-PLACED macro's own "util.macro.slot" repoints a live host-
+    automation binding (whatever was wired to the old slot's knob/host
+    control silently stops reaching this node), so it gets a blocking
+    confirm first — matching this project's existing "reject/confirm rather
+    than silently do something risky" convention. This never fires during
+    creation: createMacroFromPort/addNode's own internal slot claim goes
+    straight through graphStore.ts's setParameterValue, never through this
+    component's onCommit at all, so every commit ParameterRow actually
+    fires here is, by construction, a user editing a macro that's already
+    on the canvas.
+*/
+function macroSlotCommit(state: NodeCardState, id: string): ((value: number) => void) | undefined {
+  const commit = paramCommit(state, id)
+  if (!commit) return undefined
+  return (value: number) => {
+    const nextSlot = Math.round(value) + 1
+    if (window.confirm(`Reassign this Macro to slot ${nextSlot}? Anything currently bound to its host control will no longer reach this node.`)) {
+      commit(value)
+    }
+  }
+}
+
+function parameterRowCommit(descriptor: NodeDescriptor, state: NodeCardState, id: string): ((value: number) => void) | undefined {
+  if (descriptor.typeId === 'util.macro' && id === 'util.macro.slot') return macroSlotCommit(state, id)
+  return paramCommit(state, id)
 }
 
 function StandardBody({ descriptor, state, instanceId }: { descriptor: NodeDescriptor; state: NodeCardState; instanceId?: string }) {
@@ -541,7 +564,7 @@ function StandardBody({ descriptor, state, instanceId }: { descriptor: NodeDescr
           isInteger={p.isInteger}
           unit={p.unit}
           options={parameterOptions(p)}
-          onCommit={paramCommit(state, p.id)}
+          onCommit={parameterRowCommit(descriptor, state, p.id)}
         />
       ))}
       {outputs.map((row) => (
@@ -627,7 +650,7 @@ function HorizontalBody({ descriptor, state, instanceId }: { descriptor: NodeDes
             isInteger={p.isInteger}
             unit={p.unit}
             options={parameterOptions(p)}
-            onCommit={paramCommit(state, p.id)}
+            onCommit={parameterRowCommit(descriptor, state, p.id)}
           />
         ))}
       </div>

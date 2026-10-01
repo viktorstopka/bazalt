@@ -139,7 +139,6 @@
   background: var(--color-error);
 }
 
-.node-info-icon,
 .node-assist-icon {
   display: inline-flex;
   align-items: center;
@@ -151,10 +150,6 @@
   color: var(--color-textSecondary);
   font-size: 13px;
   line-height: 1;
-}
-
-.node-info-icon {
-  font-style: italic;
 }
 
 .node-row {

@@ -13,11 +13,13 @@ import {
   canSplice,
   commitNodeMoves,
   commitWireDrag,
+  createMacroFromPort,
   deleteNodes,
   ensureInitialized,
   findWireAtInput,
   getEndpoint,
   getSnapshot as getGraphSnapshot,
+  isMacroablePort,
   redo,
   setSelection,
   spliceInsert,
@@ -715,6 +717,20 @@ export const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, InfiniteCanvasPro
         }
       }
 
+      // wiki/plans/UtilMacro.md: a dashed preview cable from the dragged
+      // input back to the cursor — always dashed (unlike wireDrag's
+      // valid/rejected colouring above), since there's no "target" to
+      // validate against yet; the drop only ever either commits on empty
+      // space or cancels, never rejects.
+      if (g?.kind === 'dragToMacro') {
+        const fixedAnchor = anchors.get(portKey(g.nodeId, g.portId, 'input'))
+        if (fixedAnchor) {
+          const targetEndpoint = getEndpoint(g.nodeId, g.portId, 'input')
+          const color = endpointColorRgb(targetEndpoint)
+          cables.push({ from: { x: lastMouseCanvasX, y: lastMouseCanvasY }, to: fixedAnchor, color, alpha: 0.6, dashed: true })
+        }
+      }
+
       renderer?.render({ cssWidth: size.cssWidth, cssHeight: size.cssHeight, dpr: size.dpr, zoom: camera.zoom, cables })
 
       if (currentGhost) {
@@ -746,6 +762,21 @@ export const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, InfiniteCanvasPro
           }
         } else if (hintLabelRef.current) {
           hintLabelRef.current.style.display = 'none'
+        }
+      } else if (g?.kind === 'dragToMacro') {
+        // wiki/plans/UtilMacro.md: unlike the ghost-splice hint above, this
+        // one is unconditional for the whole gesture's duration — there's
+        // no "nothing nearby" case to stay quiet for; any empty-space drop
+        // always creates a macro, so the hint is always accurate.
+        const text = 'release on empty space to create a Macro · Esc to cancel'
+        if (hintLabelRef.current && text !== lastHintText) {
+          hintLabelRef.current.textContent = text
+          lastHintText = text
+        }
+        if (hintLabelRef.current) {
+          hintLabelRef.current.style.display = 'block'
+          hintLabelRef.current.style.left = `${lastMouseRef.current.clientX + 16}px`
+          hintLabelRef.current.style.top = `${lastMouseRef.current.clientY + 16}px`
         }
       } else if (hintLabelRef.current) {
         hintLabelRef.current.style.display = 'none'
@@ -787,7 +818,7 @@ export const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, InfiniteCanvasPro
 
       if (e.key === 'Escape') {
         if (getGhost()) clearGhost()
-        else if (getGesture()?.kind === 'wireDrag') setGesture(null)
+        else if (getGesture()?.kind === 'wireDrag' || getGesture()?.kind === 'dragToMacro') setGesture(null)
         setAddMenu(null)
         requestFrame()
         return
@@ -914,10 +945,18 @@ export const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, InfiniteCanvasPro
           const existing = findWireAtInput(port.nodeId, port.portId)
           if (existing) {
             setGesture({ kind: 'wireDrag', fromNodeId: existing.fromNodeId, fromPortId: existing.fromPortId, detachedWireId: existing.id })
+          } else {
+            // wiki/plans/UtilMacro.md: the M10 "drag out to create a Macro"
+            // shortcut is back, now that util.macro is a real registered
+            // node type (graphStore.ts's header comment has the retirement/
+            // revival history) — only for an unconnected input whose
+            // SignalType could sensibly become a macro's value at all
+            // (isMacroablePort rules out Audio/Data/Note/Spectral).
+            const endpoint = getEndpoint(port.nodeId, port.portId, 'input')
+            if (endpoint && isMacroablePort(endpoint.port)) {
+              setGesture({ kind: 'dragToMacro', nodeId: port.nodeId, portId: port.portId })
+            }
           }
-          // Nothing plugged in yet: no gesture starts (the M10 "drag out to
-          // create a Macro" shortcut is retired — see graphStore.ts's header
-          // comment).
         }
         requestFrame()
         return
@@ -1043,9 +1082,10 @@ export const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, InfiniteCanvasPro
         return
       }
 
-      // wireDrag/ghost positions are read fresh from lastMouseCanvasX/Y by
-      // the per-frame loop — just make sure a frame is coming.
-      if (g?.kind === 'wireDrag' || getGhost()) requestFrame()
+      // wireDrag/dragToMacro/ghost positions are read fresh from
+      // lastMouseCanvasX/Y by the per-frame loop — just make sure a frame
+      // is coming.
+      if (g?.kind === 'wireDrag' || g?.kind === 'dragToMacro' || getGhost()) requestFrame()
     }
 
     const onMouseUp = (e: MouseEvent): void => {
@@ -1095,6 +1135,21 @@ export const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, InfiniteCanvasPro
       if (g?.kind === 'wireDrag') {
         const target = g.hoverNodeId && g.hoverPortId && g.hoverValid ? { nodeId: g.hoverNodeId, portId: g.hoverPortId } : null
         commitWireDrag(g.fromNodeId, g.fromPortId, target, g.detachedWireId)
+        setGesture(null)
+        return
+      }
+
+      if (g?.kind === 'dragToMacro') {
+        // Only a true empty canvas/world drop commits — releasing on a
+        // node, a port, or any overlay UI (top bar, Add menu) cancels with
+        // no effect, same rule wire-drag's own onMouseDown gating already
+        // follows for what counts as "empty" (isCanvasOrWorldTarget).
+        if (isCanvasOrWorldTarget(e.target)) {
+          const worldPos = canvasToWorld(lastMouseCanvasX, lastMouseCanvasY)
+          const x = snapValue(worldPos.x, snapSettingsRef.current)
+          const y = snapValue(worldPos.y, snapSettingsRef.current)
+          createMacroFromPort(g.nodeId, g.portId, x, y)
+        }
         setGesture(null)
         return
       }
