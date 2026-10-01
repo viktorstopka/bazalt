@@ -26,6 +26,7 @@ add_executable(EngineTests
     InheritingPortsTests.cpp
     InitPatchTests.cpp
     InstanceSwarmPopulationNodeTests.cpp
+    InstanceSwarmTransientNodeTests.cpp
     InstanceVoiceNodeTests.cpp
     LadderFilterNodeTests.cpp
     LadderFilterTests.cpp

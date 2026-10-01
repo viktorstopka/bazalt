@@ -1657,3 +1657,80 @@ wire the same way the live command path's own `canConnect` check would, just wit
 **Docs updated to match:** `wiki/NODES.md` (new `instance.allocate.swarmPopulation`
 catalog entry, `instance.*` summary row), `wiki/NODES.Status.md` (status row,
 header node count 78→79, Totals table 70/52→71/51, necessity-A 7→6).
+
+**Batch 3 — `instance.allocate.swarmTransient` — the real test of Batch 1's
+`InstanceOriginNode` generalization.** New node (`InstanceSwarmTransientNode.h`):
+one `Event`-typed `spawn` input (no `Note`, no pitch/velocity concept at all —
+`spawnInstance()`'s own args are accepted but ignored, matching the interface's
+own doc comment), the same 8-port shape Swarm-population has. Structural
+`maxInstances` (real, demand-driven, unlike Swarm-population's fixed count) and
+`seed`; a non-structural `duration` (default 0.1s) — each firing restarts the
+instance's own gate/age/random state and auto-releases itself once `duration`
+elapses, with no separate release input at all (a transient is inherently
+self-terminating).
+
+This is the batch that actually exercises Batch 1's interface, not just adds
+to it: `PluginProcessor::findAllocatorNode()` generalized from
+`dynamic_cast<InstanceVoiceNode*>` to `dynamic_cast<InstanceOriginNode*>`, and
+every call site it feeds (`triggerVoiceNoteViaAllocator`'s `allocator->noteOn(...)`
+→ `allocator->spawnInstance(...)`; the internal-trigger-relay's `other->noteOff()`
+→ `other->releaseInstance()`) now dispatches polymorphically — the exact
+mechanism that already let a purely-internal clock→seq→note.assemble chain
+drive Voice with no MIDI involved now serves a non-Voice origin for the first
+time, unchanged in its own logic. `GraphEditController.cpp`'s compile-time
+counterpart (capturing `maxInstances` into `VoiceManager::setMaxActiveVoices`,
+and the "stuck gate on disconnect" cleanup, `09-28-InstanceAllocator.1`'s own
+fix) generalized the same way — needed a new `InstanceOriginNode::
+getMaxInstances()` virtual (default `1`, matching Trigger's own future
+"implicitly 1, not exposed" design; Voice and Swarm-transient both override it
+with their real stored parameter).
+
+**A genuine architectural finding, surfaced and scoped rather than fixed:**
+`PluginProcessor`'s internal-trigger relay reads ONE node copy's own
+gate/instanceIndex state to decide "a spawn or release just happened, dispatch
+it to whichever voice lane `VoiceManager` assigns" — that single copy can only
+ever represent ONE in-flight transient at a time. A second spawn arriving from
+the SAME internal generator before the first one's own `duration` has elapsed
+overwrites that copy's own tracked state before its matching release is ever
+read, so the earlier transient's voice lane never gets an explicit release.
+Not a permanent leak — `VoiceManager`'s existing stealing policy reclaims any
+lane once every physical lane is busy, the same graceful degradation a real
+MIDI note flurry beyond `maxInstances` already gets — but `maxInstances` only
+really behaves as a genuine "several simultaneously live transients" ceiling
+once something can give each spawn its own real identity, not available today
+for a purely internal generator feeding one `Event` port. Documented in the
+node's own doc comment and `wiki/NODES.md` rather than silently overclaiming
+more than what's built — this project's own established pattern for a real,
+found scope cut (same spirit as `09-28-InstanceAllocator.3`'s own "ship the
+achievable core, flag the rest").
+
+**Tests:** `tests/InstanceSwarmTransientNodeTests.cpp` (4 cases, 23 assertions,
+engine-level) — a fired spawn Event sets Gate and fires `start` exactly once;
+auto-releases itself once `duration` elapses with no separate stop input;
+`random1`/`random2`/`position` deterministic per `(seed, spawn ordinal)` and
+differ across successive spawns; the real parameters/ports exist.
+`tests-plugin/InstanceSwarmTransientTests.cpp` (2 cases, plugin-level) — the
+spawn Event dispatches through the real generalized relay (a genuine
+`VoiceManager` voice gets allocated, not just the node's own internal flag,
+and real audio reaches the output — accounting for the relay's own documented
+one-block dispatch latency, the same the Voice-driven internal-trigger path
+already has); the instance-count badge reports `VoiceManager`'s own real
+count (0 before any spawn — a real dispatch, not Swarm-population's
+always-on bypass) and the configured `maxInstances` ceiling. Built via the
+real `GraphEditController` command sequence (`clock.pulse`'s own `tick` Event
+output wired straight into `swarm`'s `spawn`, no adapter needed — both
+`Event`), same as Batch 2's own plugin tests.
+
+**Mutation-tested the dispatch generalization itself**, per the plan's own
+verification step: temporarily reverted `findAllocatorNode` to the concrete
+`dynamic_cast<InstanceVoiceNode*>`, confirmed both `InstanceSwarmTransientTests.cpp`
+assertions failed exactly as expected (0 active voices, silent output — Voice's
+own tests stayed green throughout, since the mutation still includes Voice),
+restored.
+
+**Verified:** full rebuild clean; `ctest --test-dir build -C Debug` 509/509
+green (503 + 4 engine-level + 2 plugin-level new).
+
+**Docs updated to match:** `wiki/NODES.md` (new `instance.allocate.swarmTransient`
+catalog entry, `instance.*` summary row), `wiki/NODES.Status.md` (status row,
+header node count 79→80, Totals table 71/51→72/50, necessity-A 6→5).

@@ -19,7 +19,7 @@
 #include <memory>
 #include <vector>
 
-namespace bazalt::engine::nodes { class IoNoteInNode; class InstanceVoiceNode; }
+namespace bazalt::engine::nodes { class IoNoteInNode; class InstanceOriginNode; }
 
 namespace bazalt
 {
@@ -241,7 +241,10 @@ namespace bazalt
             "instance.allocate.voice.maxInstances" for real (VoiceManager::
             setMaxActiveVoices) — called once per recompile, after this
             bundle's own voice-slot-0 plan is compiled, with whatever that
-            plan's real InstanceVoiceNode reports.
+            plan's real origin node reports via `InstanceOriginNode::
+            getMaxInstances()` (Domain Extensions batch — generalized past
+            `InstanceVoiceNode` specifically once Swarm-transient/Trigger
+            needed the same capture).
         */
         void setOriginMaxVoices (int bundleIndex, int maxVoices) noexcept
         {
@@ -362,8 +365,17 @@ namespace bazalt
             voice's own copy directly (bypassing io.noteIn, which this
             origin may not even have) when an internal trigger needs to
             move to a voice slot other than the one that detected it.
+
+            Returns `InstanceOriginNode*`, not a concrete node type — Domain
+            Extensions batch generalization, so this one dispatch site (and
+            `renderOriginVoiceRange`'s internal-trigger-relay block below,
+            the only caller) serves Voice, Swarm-transient, and Trigger
+            alike with no branching on concrete type. Real MIDI dispatch
+            (`handleMidiEvent`/`triggerVoiceNote`) stays untouched and never
+            calls this at all — it only ever pokes `io.noteIn` directly, by
+            design (MIDI only ever drives Voice).
         */
-        bazalt::engine::nodes::InstanceVoiceNode* findAllocatorNode (bazalt::engine::ExecutionPlan* plan, const juce::String& originNodeId) const noexcept;
+        bazalt::engine::nodes::InstanceOriginNode* findAllocatorNode (bazalt::engine::ExecutionPlan* plan, const juce::String& originNodeId) const noexcept;
         void triggerVoiceNoteViaAllocator (bazalt::engine::ExecutionPlan* plan, const juce::String& originNodeId, float pitch, float velocity) noexcept;
 
         // wiki/plans/UtilMacro.md Finding A: globalPlan is fetched exactly

@@ -63,7 +63,7 @@ are telemetry outputs for live visualization, not ports.
 | `adapt.*` | map, remap, normalise, threshold, sampleHold, **audioToControl** (AudioControlBridge), **boolToControl**, **pitchToFrequency**, **frequencyToPitch**, **gateLength** (all new, direct-feedback sweep) | ✅ all 10 |
 | `data.*` | load, table, scale, material, analyseModes, lookup, **record**, **eqToCurve** (Correction 2) | ✅ table, scale, lookup — 📋 load, material, analyseModes, record, eqToCurve |
 | `analysis.*` | onset, pitch, level, centroid | 📋 all 4 |
-| `instance.*` | allocate.voice, allocate.swarmPopulation, allocate.swarmTransient, allocate.trigger, sum | ✅ allocate.voice, allocate.swarmPopulation, sum — 📋 swarmTransient/trigger (Domain Extensions batch, in progress) |
+| `instance.*` | allocate.voice, allocate.swarmPopulation, allocate.swarmTransient, allocate.trigger, sum | ✅ allocate.voice, allocate.swarmPopulation, allocate.swarmTransient, sum — 📋 trigger (Domain Extensions batch, in progress) |
 | `util.*` | constant, macro, reroute | ✅ all 3 (`macro` real as of `wiki/plans/UtilMacro.md` — ADR-0030 amends ADR-0015, doesn't reverse it) |
 | `view.*` | listen, scope, spectrum, meter, **glance** (new, 0.6) | ✅ all 5 |
 | `factory.*` | eq, curve, wave, sample, notes, material (Correction 2) | 📋 all 6 |
@@ -639,6 +639,29 @@ demand-driven ceiling to distinguish from the live count, this many are
 *always* live), `seed` (same `(seed, instanceIndex)` determinism
 `09-28-InstanceAllocator.2` built for Voice, reused verbatim via the shared
 `combineInstanceSeed` helper).
+
+#### `instance.allocate.swarmTransient` — Swarm (Transient) ✅ *(new, Domain Extensions batch, 2026-10-01)*
+Opens an instanced region whose spawn source is a plain `Event` (`spawn`), not
+a `Note` — no pitch/velocity concept (the shared `InstanceOriginNode`
+interface's `spawnInstance()` accepts but ignores them). Each firing restarts
+this instance's own gate/age/random state and auto-releases itself after
+`duration` seconds elapse — there's no separate release input; a transient is
+inherently self-terminating, unlike Voice's explicit note-off. The first
+non-Voice origin to exercise `PluginProcessor`'s internal-trigger-relay
+dispatch, generalized from a concrete `InstanceVoiceNode*` to the shared
+`InstanceOriginNode*` interface for exactly this (`findAllocatorNode`/
+`renderOriginVoiceRange`). **In:** `spawn` — `Event`. **Out** (all
+`polyOnly`): `gate`, `instanceIndex`, `instanceAge`, `random1`, `random2`,
+`start`, `stop`, `position` — 8 ports (same shape as Swarm-population).
+**Structural:** `maxInstances` (1-64, default 8 — a real, demand-driven
+ceiling, unlike Swarm-population's fixed count), `seed`. **Non-structural:**
+`duration` (seconds, default 0.1, live-editable). **Known scope limit** (see
+the node's own doc comment, `InstanceSwarmTransientNode.h`): a single
+internal generator feeding one `spawn` port can only drive one in-flight
+transient's own release-tracking at a time (slot 0's own compiled copy can
+only represent one lifecycle), so rapid overlapping spawns beyond that
+degrade gracefully to ordinary voice-stealing rather than a true leak — not
+a correctness issue for the realistic case (spawning slower than `duration`).
 
 #### `instance.sum` — Voice Sum ✅ *(renamed from `instance.mix`, wiki/plans/DomainRedesign.md Batch 1b — C++ class name (`InstanceMixNode`) unchanged)*
 Closes an instanced region. **In:** `in` — `Audio`, `polyOnly`. **Out:** `out` —

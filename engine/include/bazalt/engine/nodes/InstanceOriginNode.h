@@ -64,5 +64,17 @@ namespace bazalt::engine::nodes
         */
         virtual void spawnInstance (float pitch, float velocity) noexcept = 0;
         virtual void releaseInstance() noexcept = 0;
+
+        /** `GraphEditController`'s compile-time counterpart to the render-
+            time dispatch above: captured once per recompile off slot 0's
+            own compiled copy and enforced via `VoiceManager::
+            setMaxActiveVoices` (wiki/plans/DomainRedesign.md Batch 4's own
+            mechanism, now generalized past `InstanceVoiceNode*`). Defaults
+            to 1 — Trigger (Batch 4) never overrides this at all, matching
+            its own "maxInstances is implicitly 1, not an exposed parameter"
+            design; Voice and Swarm-transient both override with their real
+            stored parameter value.
+        */
+        virtual int getMaxInstances() const noexcept { return 1; }
     };
 }

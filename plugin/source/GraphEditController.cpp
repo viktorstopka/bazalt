@@ -5,7 +5,7 @@
 #include "bazalt/engine/graph/GraphCompiler.h"
 #include "bazalt/engine/graph/PortGroups.h"
 #include "bazalt/engine/graph/ProofGraphs.h"
-#include "bazalt/engine/nodes/InstanceVoiceNode.h"
+#include "bazalt/engine/nodes/InstanceOriginNode.h"
 #include "bazalt/engine/nodes/InstanceSwarmPopulationNode.h"
 #include "bazalt/engine/patch/PatchSerializer.h"
 #include <algorithm>
@@ -860,7 +860,13 @@ namespace bazalt
                 newVoicePlansBySlot[(size_t) slot][(size_t) i] =
                     std::make_unique<bazalt::engine::ExecutionPlan> (std::move (compileResult.plan));
 
-                if (auto* allocator = dynamic_cast<bazalt::engine::nodes::InstanceVoiceNode*> (
+                // Domain Extensions batch: InstanceOriginNode*, not the
+                // concrete InstanceVoiceNode* this used to be — Swarm-
+                // transient (and, once built, Trigger) need this same
+                // maxInstances capture + stuck-gate cleanup, not just
+                // Voice. getMaxInstances()/getGate()/releaseInstance() are
+                // all real InstanceOriginNode interface methods now.
+                if (auto* allocator = dynamic_cast<bazalt::engine::nodes::InstanceOriginNode*> (
                         newVoicePlansBySlot[(size_t) slot][(size_t) i]->getNodeById (origin.originId)))
                 {
                     if (i == 0)
@@ -868,13 +874,17 @@ namespace bazalt
 
                     // Only when genuinely stuck (still gated, with no way
                     // left to ever hear a stop edge) — never spam a
-                    // spurious noteOff on every recompile of an ordinary,
+                    // spurious release on every recompile of an ordinary,
                     // never-wired-up allocator, which would incorrectly
                     // read as a real transition to PluginProcessor's own
                     // internal-trigger detection (InstanceVoiceNode.h's
-                    // consumeSpawnEventsThisBlock() doc comment).
+                    // consumeSpawnEventsThisBlock() doc comment). Checks
+                    // the "spawn" port specifically — Voice and Swarm-
+                    // transient both use that exact input id; Trigger
+                    // (once built) uses "trigger" instead and isn't covered
+                    // by this check yet.
                     if (! spawnConnected && allocator->getGate())
-                        allocator->noteOff();
+                        allocator->releaseInstance();
                 }
                 // Domain Extensions batch: a swarm-population origin has no
                 // noteOn()-driven instanceIndex at all (nothing ever spawns

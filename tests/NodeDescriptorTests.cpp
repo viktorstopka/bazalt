@@ -10,7 +10,7 @@ TEST_CASE ("NodeFactory::describeAll() returns a descriptor for every registered
     auto factory = buildDefaultNodeFactory();
     const auto descriptors = factory.describeAll();
 
-    REQUIRE (descriptors.size() == 79); // 78 as of wiki/plans/UtilMacro.md (see git history for the full running tally before this) + 1 Domain Extensions batch (instance.allocate.swarmPopulation - swarmTransient/trigger still to come)
+    REQUIRE (descriptors.size() == 80); // 78 as of wiki/plans/UtilMacro.md (see git history for the full running tally before this) + 2 Domain Extensions batch so far (instance.allocate.swarmPopulation, swarmTransient - trigger still to come)
 
     auto findByTypeId = [&] (const juce::String& typeId) -> const NodeDescriptor*
     {

@@ -4,14 +4,15 @@ Tracks, per node, **what's actually built** vs. **what's left**, and for what's 
 **how badly we need it** and **what order to build it in**. Derived from
 `wiki/NODES.md` (the catalog — read that for what each node actually does) and
 `wiki/NODES.System.md` (architecture). Cross-checked directly against
-`engine/include/bazalt/engine/nodes/*.h` (**79 registered node types across 78 files**
-as of the Domain Extensions batch's `instance.allocate.swarmPopulation` (2026-10-01) —
+`engine/include/bazalt/engine/nodes/*.h` (**80 registered node types across 79 files**
+as of the Domain Extensions batch's `instance.allocate.swarmTransient` (2026-10-01) —
 the authoritative running count `tests/NodeDescriptorTests.cpp`'s own
 `NodeDescriptorTests` case tracks and narrates per batch; was 77/74 after
 `wiki/plans/DomainRedesign.md` Batch 3 folded `mix.sum` (`MixNode.h`, its own
 dedicated file/type) straight into `math.add` with no replacement type added, then
 78/77 once `util.macro` (`MacroNode.h`, new file) landed, then 79/78 once
-`InstanceSwarmPopulationNode.h` (new file) landed. `GrowableGroupNode`/
+`InstanceSwarmPopulationNode.h` (new file) landed, then 80/79 once
+`InstanceSwarmTransientNode.h` (new file) landed. `GrowableGroupNode`/
 `InheritingPortsNode` excluded as shared base classes;
 `ViewNodes.h` holds 3 node types and `PitchFrequencyNodes.h` holds 2, which is why the
 type count exceeds the file count. This file's own header count has drifted stale
@@ -303,7 +304,7 @@ edit. Every later `data.*`/`osc.wavetable`/`sampler.*` node rides on this for fr
 | `instance.allocate.voice` | Implemented | | | |
 | `instance.sum` | Implemented | | | renamed from `instance.mix`, `wiki/plans/DomainRedesign.md` Batch 1b |
 | `instance.allocate.swarmPopulation` | Implemented | **A1** | Domain Extensions | Fixed count, always live — simplest of the three (no spawn logic). Done 2026-10-01. |
-| `instance.allocate.swarmTransient` | To be implemented | **A2** | Domain Extensions | Event-triggered spawn, closest to Voice's own shape. |
+| `instance.allocate.swarmTransient` | Implemented | **A2** | Domain Extensions | Event-triggered spawn, closest to Voice's own shape. Done 2026-10-01. |
 | `instance.allocate.trigger` | To be implemented | **A2** | Domain Extensions | Event-triggered, one instance at a time. |
 
 ### `util.*` — 3/3 Implemented
@@ -341,12 +342,12 @@ building for real, not simplified.
 
 | Status | Count |
 |---|---|
-| Implemented | 71 |
+| Implemented | 72 |
 | MVP | 4 (`osc.analog`, `filter.svf`, `excite.burst`, `seq.steps`) |
-| To be implemented | 51 |
+| To be implemented | 50 |
 | **Total native node types** | **126** |
 
-By necessity, among the 51 still to build: **A** 6 · **B** 30 · **C** 9 · **D** 6.
+By necessity, among the 50 still to build: **A** 5 · **B** 30 · **C** 9 · **D** 6.
 
 **Clock+Seq batch — done.** `clock.pulse`/`clock.divide`/`clock.counter`/`seq.euclid`/
 `seq.steps` all built and tested — see their family sections above for per-node notes;

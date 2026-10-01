@@ -4,7 +4,7 @@
 #include "bazalt/engine/graph/GraphCompiler.h"
 #include "bazalt/engine/patch/PatchSerializer.h"
 #include "bazalt/engine/nodes/InstanceMixNode.h"
-#include "bazalt/engine/nodes/InstanceVoiceNode.h"
+#include "bazalt/engine/nodes/InstanceOriginNode.h"
 #include "bazalt/engine/nodes/IoNoteInNode.h"
 #include <algorithm>
 #include <array>
@@ -222,11 +222,13 @@ namespace bazalt
 
         // DomainRedesign.md Batch 2: pokes the allocator DIRECTLY instead of
         // via io.noteIn — this origin may have no io.noteIn at all (a purely
-        // internally-sequenced region), and the allocator's own noteOn()
+        // internally-sequenced region), and the allocator's own spawnInstance()
         // already does everything a real trigger needs (gate/pitch/velocity,
-        // instanceIndex, a fresh random1/random2 draw).
+        // instanceIndex, a fresh random1/random2 draw). spawnInstance(), not
+        // the concrete InstanceVoiceNode::noteOn() — Domain Extensions batch,
+        // this call site serves Voice/Swarm-transient/Trigger alike now.
         if (auto* allocator = findAllocatorNode (plan, originNodeId))
-            allocator->noteOn (pitch, velocity);
+            allocator->spawnInstance (pitch, velocity);
     }
 
     bazalt::engine::nodes::IoNoteInNode* BazaltAudioProcessor::findNoteIn (bazalt::engine::ExecutionPlan* plan) const noexcept
@@ -239,9 +241,12 @@ namespace bazalt
         return plan == nullptr ? nullptr : dynamic_cast<bazalt::engine::nodes::IoNoteInNode*> (plan->getNodeById (plan->noteInNodeId));
     }
 
-    bazalt::engine::nodes::InstanceVoiceNode* BazaltAudioProcessor::findAllocatorNode (bazalt::engine::ExecutionPlan* plan, const juce::String& originNodeId) const noexcept
+    bazalt::engine::nodes::InstanceOriginNode* BazaltAudioProcessor::findAllocatorNode (bazalt::engine::ExecutionPlan* plan, const juce::String& originNodeId) const noexcept
     {
-        return plan == nullptr ? nullptr : dynamic_cast<bazalt::engine::nodes::InstanceVoiceNode*> (plan->getNodeById (originNodeId));
+        // Domain Extensions batch: InstanceOriginNode*, not the concrete
+        // InstanceVoiceNode* this used to return — see this method's own
+        // header doc comment.
+        return plan == nullptr ? nullptr : dynamic_cast<bazalt::engine::nodes::InstanceOriginNode*> (plan->getNodeById (originNodeId));
     }
 
     void BazaltAudioProcessor::pointVoiceTapsAtCurrentVoice (OriginBundle& bundle, const VoicePlanPtrs& voicePlans) noexcept
@@ -677,7 +682,7 @@ namespace bazalt
                         const auto voiceIndex = bundle.voiceManager.noteOff (internalTriggerNoteId);
                         if (voiceIndex >= 0 && voiceIndex != 0)
                             if (auto* other = findAllocatorNode (voicePlans[(size_t) voiceIndex], bundle.originNodeId))
-                                other->noteOff();
+                                other->releaseInstance();
                     }
                 }
             }

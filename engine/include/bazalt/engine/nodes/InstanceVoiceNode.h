@@ -150,7 +150,7 @@ namespace bazalt::engine::nodes
             class's own comment used to flag) and to report the "maxCount"
             half of the UI's instance-count badge.
         */
-        int getMaxInstances() const noexcept { return maxInstances; }
+        int getMaxInstances() const noexcept override { return maxInstances; }
 
         /** M18 (ADR-0024): the real end of the "spawn" input's Note-typed
             wiring — `io.noteIn`'s produceNoteBlock() feeds this per-sample
