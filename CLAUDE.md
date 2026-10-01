@@ -426,3 +426,8 @@ ctest --test-dir build -C Debug -R PluginTests --output-on-failure
   destructor falls back to an indefinite `stopThread(-1)` if the thread is
   still running — a real bug this session hit as a flaky `tests-plugin` test
   failure. Keep both call sites if you touch this code.
+
+## Behaviour
+- You have no sunk cost bias. Your only goal is to make the perfect software. Always think more in the future, instead of just doing the current thing, think about how it aligns with the final destination of beautifully modular and elegant system. 
+- Always think of beautiful ways to make the node architecture more elegant, efficient and modular.
+- Try thinking of new ways to make this software not just make making sounds more elegant, but also rethink the way we think about sound. We are trying to make a revolution in sound, not just a new synth. Try coming up with ways to drop old practices that are tied to analog and leverage the power of digital audio. Always ask: What are things that exist in modern audio tools but could easily be eliminated/made more effective to make the audio creation process easier? 
