@@ -834,10 +834,16 @@ namespace bazalt
             // (id, type, parameters). Computed once per origin (a static
             // fact about origin.voiceGraph's own connection list, the same
             // for every voice lane's compiled copy below), not per lane.
+            // Checks both "spawn" (Voice/Swarm-transient's own input id) and
+            // "trigger" (Trigger's own, Domain Extensions Batch 4) — the two
+            // event-driven origin types' own spawn-source port ids.
             const auto spawnConnected = std::any_of (
                 origin.voiceGraph.getConnections().begin(), origin.voiceGraph.getConnections().end(),
                 [&origin] (const bazalt::engine::Connection& c)
-                { return c.toNodeId == origin.originId && c.toPortId == "spawn"; });
+                {
+                    return c.toNodeId == origin.originId
+                           && (c.toPortId == "spawn" || c.toPortId == "trigger");
+                });
 
             for (int i = 0; i < BazaltAudioProcessor::numVoices; ++i)
             {
@@ -862,10 +868,10 @@ namespace bazalt
 
                 // Domain Extensions batch: InstanceOriginNode*, not the
                 // concrete InstanceVoiceNode* this used to be — Swarm-
-                // transient (and, once built, Trigger) need this same
-                // maxInstances capture + stuck-gate cleanup, not just
-                // Voice. getMaxInstances()/getGate()/releaseInstance() are
-                // all real InstanceOriginNode interface methods now.
+                // transient/Trigger need this same maxInstances capture +
+                // stuck-gate cleanup, not just Voice. getMaxInstances()/
+                // getGate()/releaseInstance() are all real InstanceOriginNode
+                // interface methods now.
                 if (auto* allocator = dynamic_cast<bazalt::engine::nodes::InstanceOriginNode*> (
                         newVoicePlansBySlot[(size_t) slot][(size_t) i]->getNodeById (origin.originId)))
                 {
@@ -878,11 +884,8 @@ namespace bazalt
                     // never-wired-up allocator, which would incorrectly
                     // read as a real transition to PluginProcessor's own
                     // internal-trigger detection (InstanceVoiceNode.h's
-                    // consumeSpawnEventsThisBlock() doc comment). Checks
-                    // the "spawn" port specifically — Voice and Swarm-
-                    // transient both use that exact input id; Trigger
-                    // (once built) uses "trigger" instead and isn't covered
-                    // by this check yet.
+                    // consumeSpawnEventsThisBlock() doc comment). spawnConnected
+                    // (above) already checks both "spawn" and "trigger".
                     if (! spawnConnected && allocator->getGate())
                         allocator->releaseInstance();
                 }

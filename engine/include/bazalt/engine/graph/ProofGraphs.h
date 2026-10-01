@@ -32,6 +32,7 @@
 #include "bazalt/engine/nodes/InstanceVoiceNode.h"
 #include "bazalt/engine/nodes/InstanceSwarmPopulationNode.h"
 #include "bazalt/engine/nodes/InstanceSwarmTransientNode.h"
+#include "bazalt/engine/nodes/InstanceTriggerNode.h"
 #include "bazalt/engine/nodes/InstanceMixNode.h"
 #include "bazalt/engine/nodes/IoNoteInNode.h"
 #include "bazalt/engine/nodes/SubtractNode.h"
@@ -133,6 +134,7 @@ namespace bazalt::engine
         factory.registerType ("instance.allocate.voice", [] { return std::make_unique<nodes::InstanceVoiceNode>(); }); // 09-28-InstanceAllocator.3 — renamed from "instance.allocator"; 09-29-AddMenu.1 — renamed again from "instance.voice"
         factory.registerType ("instance.allocate.swarmPopulation", [] { return std::make_unique<nodes::InstanceSwarmPopulationNode>(); }); // Domain Extensions batch
         factory.registerType ("instance.allocate.swarmTransient", [] { return std::make_unique<nodes::InstanceSwarmTransientNode>(); }); // Domain Extensions batch
+        factory.registerType ("instance.allocate.trigger", [] { return std::make_unique<nodes::InstanceTriggerNode>(); }); // Domain Extensions batch
         factory.registerType ("instance.sum", [] { return std::make_unique<nodes::InstanceMixNode>(); }); // DomainRedesign.md Batch 1b — renamed from "instance.mix" (C++ class name unchanged)
         factory.registerType ("io.noteIn", [] { return std::make_unique<nodes::IoNoteInNode>(); });
         // M21 Batch A, wave 1 — fixed-arity nodes needing no new infrastructure.

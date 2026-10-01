@@ -4,16 +4,16 @@ Tracks, per node, **what's actually built** vs. **what's left**, and for what's 
 **how badly we need it** and **what order to build it in**. Derived from
 `wiki/NODES.md` (the catalog — read that for what each node actually does) and
 `wiki/NODES.System.md` (architecture). Cross-checked directly against
-`engine/include/bazalt/engine/nodes/*.h` (**80 registered node types across 79 files**
-as of the Domain Extensions batch's `instance.allocate.swarmTransient` (2026-10-01) —
-the authoritative running count `tests/NodeDescriptorTests.cpp`'s own
-`NodeDescriptorTests` case tracks and narrates per batch; was 77/74 after
-`wiki/plans/DomainRedesign.md` Batch 3 folded `mix.sum` (`MixNode.h`, its own
-dedicated file/type) straight into `math.add` with no replacement type added, then
-78/77 once `util.macro` (`MacroNode.h`, new file) landed, then 79/78 once
-`InstanceSwarmPopulationNode.h` (new file) landed, then 80/79 once
-`InstanceSwarmTransientNode.h` (new file) landed. `GrowableGroupNode`/
-`InheritingPortsNode` excluded as shared base classes;
+`engine/include/bazalt/engine/nodes/*.h` (**81 registered node types across 80 files**
+as of the Domain Extensions batch's `instance.allocate.trigger` (2026-10-01),
+closing out that whole arc — the authoritative running count
+`tests/NodeDescriptorTests.cpp`'s own `NodeDescriptorTests` case tracks and
+narrates per batch; was 77/74 after `wiki/plans/DomainRedesign.md` Batch 3 folded
+`mix.sum` (`MixNode.h`, its own dedicated file/type) straight into `math.add` with
+no replacement type added, then 78/77 once `util.macro` (`MacroNode.h`, new file)
+landed, then 79/78, 80/79, 81/80 once `InstanceSwarmPopulationNode.h`/
+`InstanceSwarmTransientNode.h`/`InstanceTriggerNode.h` (3 new files) landed in
+turn. `GrowableGroupNode`/`InheritingPortsNode` excluded as shared base classes;
 `ViewNodes.h` holds 3 node types and `PitchFrequencyNodes.h` holds 2, which is why the
 type count exceeds the file count. This file's own header count has drifted stale
 twice now from same-day/same-milestone batches that landed after it was last
@@ -305,7 +305,7 @@ edit. Every later `data.*`/`osc.wavetable`/`sampler.*` node rides on this for fr
 | `instance.sum` | Implemented | | | renamed from `instance.mix`, `wiki/plans/DomainRedesign.md` Batch 1b |
 | `instance.allocate.swarmPopulation` | Implemented | **A1** | Domain Extensions | Fixed count, always live — simplest of the three (no spawn logic). Done 2026-10-01. |
 | `instance.allocate.swarmTransient` | Implemented | **A2** | Domain Extensions | Event-triggered spawn, closest to Voice's own shape. Done 2026-10-01. |
-| `instance.allocate.trigger` | To be implemented | **A2** | Domain Extensions | Event-triggered, one instance at a time. |
+| `instance.allocate.trigger` | Implemented | **A2** | Domain Extensions | Event-triggered, one instance at a time. Done 2026-10-01. |
 
 ### `util.*` — 3/3 Implemented
 
@@ -342,12 +342,12 @@ building for real, not simplified.
 
 | Status | Count |
 |---|---|
-| Implemented | 72 |
+| Implemented | 73 |
 | MVP | 4 (`osc.analog`, `filter.svf`, `excite.burst`, `seq.steps`) |
-| To be implemented | 50 |
+| To be implemented | 49 |
 | **Total native node types** | **126** |
 
-By necessity, among the 50 still to build: **A** 5 · **B** 30 · **C** 9 · **D** 6.
+By necessity, among the 49 still to build: **A** 4 · **B** 30 · **C** 9 · **D** 6.
 
 **Clock+Seq batch — done.** `clock.pulse`/`clock.divide`/`clock.counter`/`seq.euclid`/
 `seq.steps` all built and tested — see their family sections above for per-node notes;
@@ -404,7 +404,7 @@ but sit at the top of the recommended order below because `note.quantize` (A),
 | **Clock+Seq** — done | `clock.pulse`, `clock.divide`, `clock.counter`, `seq.steps`, `seq.euclid` | Chain into each other directly (pulse → divide → counter → steps/euclid); tested as one rhythmic pipeline (`tests/ClockSeqNodesTests.cpp`). |
 | **Data Foundations** — done | `data.scale`, `data.table`, `data.lookup` | `data.lookup` literally reads what `data.table`/`data.scale` produce — the pathfinder for the whole Data-publishing pipeline (`tests/DataFoundationsNodesTests.cpp`, 18 cases including two real compiled-graph round trips). |
 | **Note Stream** — done (6/9; `hold`/`select`/`chord` blocked on a real engine limit) | `note.gate`, `note.value`, `note.transpose`, `note.filter`, `note.humanize`, `note.quantize` | All consume/produce `Note`, tested together (`tests/NoteStreamNodesTests.cpp`, including a real compiled-graph round trip through `data.scale → note.quantize → note.value`). |
-| **Domain Extensions** | `instance.allocate.swarmPopulation`, `instance.allocate.swarmTransient`, `instance.allocate.trigger` | Share the same instance-context/lifetime runtime machinery `instance.allocate.voice` already proved out. |
+| **Domain Extensions** — done | `instance.allocate.swarmPopulation`, `instance.allocate.swarmTransient`, `instance.allocate.trigger` | Share the same instance-context/lifetime runtime machinery `instance.allocate.voice` already proved out. |
 | **PM Core** | `excite.impulse`, `excite.pluck`, `excite.mallet`, `resonator.comb`, `resonator.modal`, `resonator.string`, `resonator.plate`, `excite.burst` (MVP top-off), `data.material` | The basic excite→resonate pairs (Struck Body, Karplus-Strong) — designed to plug straight into each other; `data.material` feeds `resonator.modal` directly, moved here from the now-closed Data Foundations batch (a stray tag in an earlier pass — it was never one of that batch's 3 actual members). |
 | **PM Friction/Breath** | `excite.stickSlip`, `excite.breath`, `excite.contact`, `resonator.tube` | Friction/breath-driven excitation, tested against tube/string for Bowed String / Breath-Wind. |
 | **PM Voice** | `osc.glottal`, `excite.vocalFolds`, `resonator.junction`, `resonator.tract`, `filter.formant` | Correction 1's vocal-modelling cluster — the hardest batch, targets the "cat purr" reference patch. Build last within Physical Modelling. |
@@ -457,9 +457,14 @@ matters more than the letter for a couple of "C" items:
    whole family (the only node that can PRODUCE a `Note` stream from scratch); it
    doesn't actually need `analysis.pitch` to be useful (accepts any `pitch [audio]`),
    so building it out of order cost nothing.
-4. **Domain Extensions** (`instance.allocate.swarmPopulation`/`swarmTransient`/
-   `trigger`) — reuses proven `instance.allocate.voice` machinery; unlocks the Water/
-   Cicada Field/percussive-one-shot stock groups.
+4. ~~**Domain Extensions**~~ — **done.** `instance.allocate.swarmPopulation`/
+   `swarmTransient`/`trigger` all built and tested (`tests/InstanceSwarmPopulationNodeTests.cpp`/
+   `InstanceSwarmTransientNodeTests.cpp`/`InstanceTriggerNodeTests.cpp` + matching
+   `tests-plugin/` integration suites). Reused proven `instance.allocate.voice`
+   machinery as planned — `VoiceManager`, the generalized `InstanceOriginNode`
+   interface (new, Batch 1), and `09-28-InstanceAllocator.2`'s own
+   `(seed, ordinal)` determinism all carried over with zero Voice regressions.
+   Unlocks the Water/Cicada Field/percussive-one-shot stock groups.
 5. ~~**`util.macro`**~~ — **done.** `wiki/plans/UtilMacro.md`/ADR-0030: a real,
    wireable node (not the hand-curated side-table ADR-0015 originally rejected),
    plus the drag-a-port-out-to-create-a-macro UI gesture and the top-bar knob

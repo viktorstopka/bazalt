@@ -1734,3 +1734,54 @@ green (503 + 4 engine-level + 2 plugin-level new).
 **Docs updated to match:** `wiki/NODES.md` (new `instance.allocate.swarmTransient`
 catalog entry, `instance.*` summary row), `wiki/NODES.Status.md` (status row,
 header node count 79→80, Totals table 71/51→72/50, necessity-A 6→5).
+
+**Batch 4 — `instance.allocate.trigger` — done, closes out the whole arc.**
+New node (`InstanceTriggerNode.h`): one `Event`-typed `trigger` input, the
+shared 7-port shape (no `position` — not a swarm type). Only `seed` is an
+exposed parameter; `maxInstances` is implicitly `1`
+(`InstanceOriginNode::getMaxInstances()`'s own default, never overridden —
+matching `09-28-InstanceAllocator.3`'s own precedent of only exposing a
+parameter that actually does something). Deliberately **no** auto-release
+(unlike Swarm-transient's `duration`) — the gate stays asserted until the
+next trigger fires. "A second trigger re-triggers the same instance" needed
+zero special-casing in the node itself: with `maxInstances == 1`,
+`VoiceManager`'s own existing, already-tested stealing policy is what makes
+every subsequent trigger steal the one lane that exists (briefly fading,
+then retriggering fresh gate/age/random via the same `spawnInstance()` the
+relay already calls polymorphically) — free reuse of Batch 3's own
+generalized dispatch, exactly as the plan anticipated ("reuses everything
+Batch 3 built; the only new work is the node class itself"). One small real
+fix alongside it: `GraphEditController.cpp`'s "stuck gate on disconnect"
+check (`09-28-InstanceAllocator.1`'s own fix) was hardcoded to the `"spawn"`
+port id only — generalized to also recognize `"trigger"`, closing the gap
+Batch 3's own docs had flagged as not-yet-covered.
+
+**Tests:** `tests/InstanceTriggerNodeTests.cpp` (4 cases, 25 assertions,
+engine-level) — a fired trigger sets Gate and fires `start` exactly once; a
+second trigger re-triggers the same instance (fresh age/random/instanceIndex,
+gate never drops in between); `random1`/`random2` deterministic per
+`(seed, spawn ordinal)`; only the real `seed` parameter exists, no
+`maxInstances`, 7 output ports with no `position`.
+`tests-plugin/InstanceTriggerTests.cpp` (2 cases, plugin-level) — the
+trigger Event dispatches through the same generalized relay Batch 3 built
+(a real voice allocated, real audio reaches output, accounting for the
+relay's own one-block latency); the instance-count badge always reports a
+ceiling of 1.
+
+**Verified:** full rebuild clean; `ctest --test-dir build -C Debug` 515/515
+green (509 + 4 engine-level + 2 plugin-level new).
+
+**Docs updated to match:** `wiki/NODES.md` (new `instance.allocate.trigger`
+catalog entry; `instance.*` summary row now "all five ✅"; the Water/Cicada
+Field reference-patch rows' stale "a future `instance.allocate.*`" wording
+corrected to name the real, built node, with what still actually blocks each
+full patch — Bubble/Cicada themselves, not the allocators), `wiki/NODES.Status.md`
+(status row, header node count 80→81, Totals table 72/50→73/49, necessity-A
+5→4, the "Domain Extensions" batch and build-order item both marked done).
+
+**The whole Domain Extensions arc is now closed**: all three node types
+(`swarmPopulation`/`swarmTransient`/`trigger`) are real, wireable, and tested
+end to end, alongside the shared `InstanceOriginNode` infrastructure Batch 1
+built and Batch 3 actually exercised. `pluginval --strictness-level 10`
+verified once against the full, final tree (see below) rather than once per
+batch, matching the plan's own stated verification schedule.

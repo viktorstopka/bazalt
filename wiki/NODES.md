@@ -63,7 +63,7 @@ are telemetry outputs for live visualization, not ports.
 | `adapt.*` | map, remap, normalise, threshold, sampleHold, **audioToControl** (AudioControlBridge), **boolToControl**, **pitchToFrequency**, **frequencyToPitch**, **gateLength** (all new, direct-feedback sweep) | ✅ all 10 |
 | `data.*` | load, table, scale, material, analyseModes, lookup, **record**, **eqToCurve** (Correction 2) | ✅ table, scale, lookup — 📋 load, material, analyseModes, record, eqToCurve |
 | `analysis.*` | onset, pitch, level, centroid | 📋 all 4 |
-| `instance.*` | allocate.voice, allocate.swarmPopulation, allocate.swarmTransient, allocate.trigger, sum | ✅ allocate.voice, allocate.swarmPopulation, allocate.swarmTransient, sum — 📋 trigger (Domain Extensions batch, in progress) |
+| `instance.*` | allocate.voice, allocate.swarmPopulation, allocate.swarmTransient, allocate.trigger, sum | ✅ all five — Domain Extensions batch done 2026-10-01 |
 | `util.*` | constant, macro, reroute | ✅ all 3 (`macro` real as of `wiki/plans/UtilMacro.md` — ADR-0030 amends ADR-0015, doesn't reverse it) |
 | `view.*` | listen, scope, spectrum, meter, **glance** (new, 0.6) | ✅ all 5 |
 | `factory.*` | eq, curve, wave, sample, notes, material (Correction 2) | 📋 all 6 |
@@ -663,6 +663,19 @@ only represent one lifecycle), so rapid overlapping spawns beyond that
 degrade gracefully to ordinary voice-stealing rather than a true leak — not
 a correctness issue for the realistic case (spawning slower than `duration`).
 
+#### `instance.allocate.trigger` — Trigger ✅ *(new, Domain Extensions batch, 2026-10-01)*
+Opens an instanced region with exactly one instance at a time — no
+`maxInstances` parameter at all (implicitly 1, matching Voice's own
+precedent of only exposing parameters that actually do something). Spawn
+source is a plain `Event` (`trigger`), not `Note`. No `position` output —
+not a swarm type. Deliberately no auto-release (unlike Swarm-transient's own
+`duration`): the gate stays asserted until the next trigger fires. "A second
+trigger re-triggers the same instance" falls out of `maxInstances == 1` for
+free, via `instance.sum`'s shared `VoiceManager`'s own existing stealing
+policy — no special-casing needed in the node itself. **In:** `trigger` —
+`Event`. **Out** (all `polyOnly`): `gate`, `instanceIndex`, `instanceAge`,
+`random1`, `random2`, `start`, `stop` — 7 ports. **Structural:** `seed` only.
+
 #### `instance.sum` — Voice Sum ✅ *(renamed from `instance.mix`, wiki/plans/DomainRedesign.md Batch 1b — C++ class name (`InstanceMixNode`) unchanged)*
 Closes an instanced region. **In:** `in` — `Audio`, `polyOnly`. **Out:** `out` —
 `Audio` (Scalar). **Structural:** `mode` (enum: sum, average). `DomainSplitter` (one
@@ -769,11 +782,11 @@ group).
 | **Arpeggiator** | Cycles held notes | `note.hold` → `clock.pulse` → `clock.counter` → `note.select` | 📋 |
 | **Chord** | One note becomes several | `note.chord` with `data.scale` | 📋 |
 | **Bubble** | A single water bubble | `osc.sine` with pitch from `env.curve` (rising chirp) × `env.adsr` (short decay) | 📋 |
-| **Water** | Rain, a stream, a boil | `noise.dust` → a future `instance.allocate.swarmTransient` (09-28-InstanceAllocator.3: Swarm modes are no longer a config on `instance.allocate.voice` — they'll be their own node type once built) → Bubble per instance, radius from `random` → `instance.sum` | 📋 |
+| **Water** | Rain, a stream, a boil | `noise.dust` → `instance.allocate.swarmTransient` (real as of the Domain Extensions batch, 2026-10-01) → Bubble per instance, radius from `random` → `instance.sum` | 📋 — the allocator is real now; Bubble itself still isn't built |
 | **Crackle** | Fire, static, ice | `noise.dust` → `excite.burst` → `resonator.modal` with a small stone/ceramic set | 📋 |
 | **Scrape** | Stone dragged across asphalt | `excite.contact` → `resonator.modal` with `data.material` (stone, irregular) → `space.reverb` | 📋 |
 | **Cicada** | One insect | `clock.pulse` with jitter → `excite.burst` → `filter.formant` → body from `resonator.modal` | 📋 |
-| **Cicada Field** | A population of them | a future `instance.allocate.swarmPopulation` (see the Water row above) → Cicada per instance, rate/pitch from `random.drift`, placement from `panPosition` | 📋 |
+| **Cicada Field** | A population of them | `instance.allocate.swarmPopulation` (real now, see the Water row above) → Cicada per instance, rate/pitch from `random.drift`, placement from `panPosition` | 📋 — the allocator is real now; Cicada itself still isn't built |
 | **Breath / Wind** | Wind, breathing, flutes | `excite.breath` → `resonator.tube`, contour from `env.curve` | 📋 |
 | **Bowed String** | Violin-like | `excite.stickSlip` ↔ `resonator.string`, coupling loop closed through `motion` | 📋 |
 | **Struck Body** | Drum, bell, plate | `excite.mallet` ↔ `resonator.plate` or `resonator.modal` | 📋 |
@@ -791,7 +804,7 @@ missing primitives (once M23–M29 land):
 3. **Arpeggiator and chords** — `note.hold`, `clock.counter`, `note.select`, `note.chord`.
 4. **Struck body with material data** — `excite.mallet` → `resonator.modal` ← `data.material`.
 5. **Stone on asphalt** — `excite.contact` → `resonator.modal`, `util.macro` driving speed/pressure.
-6. **Transient and persistent swarms** — future `instance.allocate.swarmTransient`/`instance.allocate.swarmPopulation` node types (09-28-InstanceAllocator.3: no longer configurations of `instance.allocate.voice` — see the Water/Cicada Field rows above).
+6. **Transient and persistent swarms** — `instance.allocate.swarmTransient`/`instance.allocate.swarmPopulation`, real node types as of the Domain Extensions batch (2026-10-01) — see the Water/Cicada Field rows above for what still blocks each full reference patch.
 7. **Ordinary subtractive patch** — `osc.analog`, `filter.ladder`, `env.adsr` — **built, playable today** as Init Patch.
 8. **Per-voice effects** — `shape.waveshaper`, `delay.line`, `space.reverb` placed before `instance.sum`.
 9. **Hexaphonic guitar** — `io.audioIn` per channel → `analysis.onset` + `analysis.pitch` → `note.assemble` → `instance.allocate.voice` (each string gets its own voice/mix pair, not a shared one — avoids needing a Note-stream-merge node).

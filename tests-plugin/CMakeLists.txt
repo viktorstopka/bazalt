@@ -35,6 +35,7 @@ target_sources(PluginTests
         InitPatchTests.cpp
         InstanceSwarmPopulationTests.cpp
         InstanceSwarmTransientTests.cpp
+        InstanceTriggerTests.cpp
         MacroParametersTests.cpp
         NodeDescriptorJsonTests.cpp
         PatchStateTests.cpp
