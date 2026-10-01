@@ -1571,3 +1571,89 @@ no crash). The actual drag-and-release gesture, knob drag, and 33rd-macro-reject
 checks need a human hand on the WebView's own mouse to exercise end-to-end — same
 computer-use caveat every entry in this file already carries — not yet done as of this
 entry landing.
+
+---
+
+# Domain Extensions — `instance.allocate.swarmPopulation`/`swarmTransient`/`trigger`
+
+`wiki/NODES.Status.md`'s own "Domain Extensions" batch named all three; this arc
+makes it concrete. Design source of truth: `archive_docs/DOMAINS.md` §3/§4 (written
+before `09-28-InstanceAllocator.3` ever removed the old `configuration` enum, but its
+spawn-source/port/parameter spec per configuration is unchanged by that split).
+**Batches 1-2 done, 2026-10-01; 3-4 (swarmTransient/trigger) are the open forward
+plan**, same "write the plan, ship it batch by batch" discipline this whole project
+already uses.
+
+**Batch 1 — infrastructure.** New `InstanceOriginNode` interface
+(`engine/include/bazalt/engine/nodes/InstanceOriginNode.h`): `getGate()`,
+`consumeSpawnEventsThisBlock()`, `getPitch()`/`getVelocity()` (defaulted —
+Swarm-transient/Trigger have no such concept), `spawnInstance(pitch, velocity)`,
+`releaseInstance()` — the shared shape `PluginProcessor`'s internal-trigger-relay
+mechanism needs to serve any event-driven origin type, not just Voice.
+`InstanceVoiceNode` now implements it, purely by forwarding to its own existing
+methods (zero behavior change). `MultiplicityResolver`'s one hardcoded origin-type
+check (`node.type == instanceVoiceTypeId`) generalized to a 4-element
+`instanceOriginTypeIds[]`/`isInstanceOriginType()` — the only place in the whole
+fixed-point origin-propagation algorithm that ever named a concrete type string;
+everything else already worked purely in terms of resolved `originId`s. No new node
+registered yet, so no new behavior to test beyond "Voice alone still works exactly as
+before" (the existing `MultiplicityResolverTests.cpp`/`InstanceVoiceNodeTests.cpp`
+suites staying green). Commit `9bb7004`.
+
+**Batch 2 — `instance.allocate.swarmPopulation`.** New node
+(`InstanceSwarmPopulationNode.h`): zero inputs, 8 outputs (Voice's own 7
+non-Voice-specific ports — `gate`/`instanceIndex`/`instanceAge`/`random1`/`random2`/
+`start`/`stop` — plus a new `position`, Control/Bipolar, DOMAINS.md §4's "spatial
+position model" scoped down to one plain per-instance value for MVP). Structural
+parameters `populationSize` (1-64, default 8) and `seed`, reusing
+`09-28-InstanceAllocator.2`'s own `combineSeed(seed, ordinal)` determinism helper —
+factored out to a new shared `InstanceSeeding.h` (`combineInstanceSeed`) once a
+second node needed the identical mix. **Deliberately does NOT implement
+`InstanceOriginNode`** — per its own design ("fixed count, always live... no spawn
+logic"), nothing ever calls `noteOn`/`noteOff` for it at all.
+
+That last fact exposed a real, previously-unaccounted-for gap:
+`PluginProcessor::renderOriginVoiceRange`'s per-voice loop skips any slot
+`VoiceManager` still considers `Idle` — and since nothing ever spawns a
+Swarm-population instance, every one of its physical voice-plan slots would stay
+permanently `Idle` and the origin would produce silence forever. Calling
+`VoiceManager::noteOn()` from the message thread (`GraphEditController`, at compile
+time) was considered and rejected — `Voice`'s own fields are deliberately
+non-atomic, audio-thread-only state (unlike `maxActiveVoices`/`activeVoiceCount`,
+real `std::atomic<int>` for exactly this reason); doing so would reintroduce the
+exact class of data race `09-28-InstanceAllocator`'s own earlier sweep eliminated.
+**Fix:** a new `std::atomic<int> OriginBundle::swarmPopulationSize { -1 }` — `-1`
+means ordinary `VoiceManager`-driven behavior (Voice, unchanged); `>= 0` means
+"bypass the whole Idle/Active/Releasing/Stealing stage machine for this bundle;
+render slots `[0, value)` unconditionally every block." Written once per recompile
+(`GraphEditController::setSwarmPopulationSize`, mirroring the existing
+`setOriginMaxVoices` pattern — iterates **all** `maxOrigins` slots unconditionally,
+not just this compile's occupied ones, so a now-vacated/retyped slot correctly resets
+back to `-1` rather than leaving a stale bypass behind); read every block
+(`renderOriginVoiceRange`'s new early branch). `getOriginActiveVoiceCount`/
+`getOriginMaxVoices` check `swarmPopulationSize >= 0` first and report
+`populationSize` (clamped to `numVoices`) for both halves, since `VoiceManager`'s own
+count stays permanently 0 for this origin and would otherwise show a wrong "0/N"
+instance-count badge for a healthy, fully-populated swarm.
+
+**Tests:** `tests/InstanceSwarmPopulationNodeTests.cpp` (4 cases, engine-level) —
+Gate split correctly by `populationSize` across physical slots; `start` fires exactly
+once right after `reset()`; `random1`/`random2`/`position` deterministic per
+`(seed, slot)` across separate node instances and differ across slots; the real
+`populationSize`/`seed` structural parameters exist. `tests-plugin/
+InstanceSwarmPopulationTests.cpp` (4 cases, plugin-level) — real audio with zero
+MIDI/spawn input at all; `populationSize` genuinely scales summed loudness; slots
+beyond `populationSize` never render; the instance-count badge reports
+`populationSize` correctly. Built via the real `GraphEditController` command
+sequence (`addNode`/`connectWithAutoAdapt`/`connect`), the same path a live UI
+drag-to-wire gesture uses — not a hand-built `NodeGraph` with raw, adapter-less
+connections, which `GraphCompiler::compile()` rejects for a direct Bipolar->Pitch
+wire the same way the live command path's own `canConnect` check would, just without
+`connectWithAutoAdapt`'s adapter-insertion step.
+
+**Verified:** full rebuild clean; `ctest --test-dir build -C Debug` 503/503 green
+(495 + 4 engine-level + 4 plugin-level new).
+
+**Docs updated to match:** `wiki/NODES.md` (new `instance.allocate.swarmPopulation`
+catalog entry, `instance.*` summary row), `wiki/NODES.Status.md` (status row,
+header node count 78→79, Totals table 70/52→71/51, necessity-A 7→6).

@@ -600,6 +600,36 @@ namespace bazalt
         if (numSamples <= 0)
             return;
 
+        // Domain Extensions batch: a swarmPopulation origin bypasses
+        // VoiceManager's whole Idle/Active/Releasing/Stealing stage machine
+        // entirely — "fixed count, always live" (archive_docs/DOMAINS.md
+        // §3) means there is no spawn/release event to detect or dispatch
+        // at all, unlike every other origin type the rest of this function
+        // handles. See OriginBundle::swarmPopulationSize's own doc comment
+        // for why this is a plain atomic int, not a VoiceManager concept.
+        if (const auto populationSize = bundle.swarmPopulationSize.load (std::memory_order_relaxed); populationSize >= 0)
+        {
+            auto* sum = bundle.instanceMixScratchBuffer.getWritePointer (0) + startSample;
+            int activeCount = 0;
+            const auto liveCount = juce::jmin (populationSize, numVoices);
+
+            for (int voiceIndex = 0; voiceIndex < liveCount; ++voiceIndex)
+            {
+                auto* plan = voicePlans[(size_t) voiceIndex];
+                if (plan == nullptr)
+                    continue;
+
+                processPlanRange (plan, startSample, numSamples);
+                const auto* voiceOut = plan->blockBuffers[(size_t) plan->finalOutputBufferIndex].getBlock().getChannelPointer (0);
+                for (int i = 0; i < numSamples; ++i)
+                    sum[i] += voiceOut[i];
+                ++activeCount;
+            }
+
+            bundle.activeVoiceCountThisBlock = activeCount;
+            return;
+        }
+
         // DomainRedesign.md Batch 2 (InstanceVoiceNode::consumeSpawnEventsThisBlock's
         // own doc comment has the full story): detect + dispatch an internal
         // trigger from whatever happened on voice slot 0's own plan the LAST

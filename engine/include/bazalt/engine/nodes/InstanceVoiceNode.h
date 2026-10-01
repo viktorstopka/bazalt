@@ -3,6 +3,7 @@
 #include "bazalt/engine/graph/Node.h"
 #include "bazalt/engine/graph/ValueTypes.h"
 #include "bazalt/engine/nodes/InstanceOriginNode.h"
+#include "bazalt/engine/nodes/InstanceSeeding.h"
 #include <atomic>
 #include <cmath>
 #include <cstdint>
@@ -216,7 +217,7 @@ namespace bazalt::engine::nodes
             // nextFloat() calls had already happened this run - neither of
             // which is reproducible across runs, hosts, or even two voices
             // racing in a different note order.
-            auto perSpawnRandom = juce::Random (combineSeed (seed, instanceIndex));
+            auto perSpawnRandom = juce::Random (combineInstanceSeed (seed, instanceIndex));
             random1Value = perSpawnRandom.nextFloat() * 2.0f - 1.0f;
             random2Value = perSpawnRandom.nextFloat() * 2.0f - 1.0f;
 
@@ -299,19 +300,6 @@ namespace bazalt::engine::nodes
         }
 
     private:
-        /** Boost's classic hash_combine, 64-bit golden-ratio constant - not
-            cryptographic, just a cheap, well-known, deterministic mix so
-            nearby seeds/indices don't produce visibly-correlated streams.
-            Same (seed, instanceIndex) pair always produces the same int64,
-            on any platform, any run - that determinism is the entire point.
-        */
-        static int64_t combineSeed (int seedIn, int instanceIndexIn) noexcept
-        {
-            uint64_t h = (uint64_t) (uint32_t) seedIn;
-            h ^= (uint64_t) (uint32_t) instanceIndexIn + 0x9e3779b97f4a7c15ULL + (h << 6) + (h >> 2);
-            return (int64_t) h;
-        }
-
         double sampleRate = 44100.0;
         int maxInstances = 8;
         int seed = 1; // deterministic by default, matching random.stepped.seed's own convention

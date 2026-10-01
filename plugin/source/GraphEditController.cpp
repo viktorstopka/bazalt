@@ -6,6 +6,7 @@
 #include "bazalt/engine/graph/PortGroups.h"
 #include "bazalt/engine/graph/ProofGraphs.h"
 #include "bazalt/engine/nodes/InstanceVoiceNode.h"
+#include "bazalt/engine/nodes/InstanceSwarmPopulationNode.h"
 #include "bazalt/engine/patch/PatchSerializer.h"
 #include <algorithm>
 #include <array>
@@ -807,6 +808,13 @@ namespace bazalt
         // else in this function already waits for.
         std::array<int, BazaltAudioProcessor::maxOrigins> maxInstancesBySlot {};
 
+        // Domain Extensions batch: -1 (default) for every slot unless a
+        // swarmPopulation origin is found there below — see
+        // BazaltAudioProcessor::OriginBundle::swarmPopulationSize's own doc
+        // comment for what this actually changes in renderOriginVoiceRange.
+        std::array<int, BazaltAudioProcessor::maxOrigins> swarmPopulationSizeBySlot {};
+        swarmPopulationSizeBySlot.fill (-1);
+
         for (const auto& origin : split.origins)
         {
             const auto slot = bundleSlotOf (slotForOrigin, origin.originId);
@@ -867,6 +875,21 @@ namespace bazalt
                     // consumeSpawnEventsThisBlock() doc comment).
                     if (! spawnConnected && allocator->getGate())
                         allocator->noteOff();
+                }
+                // Domain Extensions batch: a swarm-population origin has no
+                // noteOn()-driven instanceIndex at all (nothing ever spawns
+                // it — "fixed count, always live") — this is the one and
+                // only place anything tells each of the N physically-
+                // compiled copies which slot it is, needed so
+                // populationSize/seed can differ each copy's own
+                // gate/random/position deterministically. See
+                // InstanceSwarmPopulationNode.h's own doc comment.
+                else if (auto* swarm = dynamic_cast<bazalt::engine::nodes::InstanceSwarmPopulationNode*> (
+                             newVoicePlansBySlot[(size_t) slot][(size_t) i]->getNodeById (origin.originId)))
+                {
+                    swarm->setInstanceSlot (i);
+                    if (i == 0)
+                        swarmPopulationSizeBySlot[(size_t) slot] = swarm->getPopulationSize();
                 }
             }
         }
@@ -996,6 +1019,17 @@ namespace bazalt
             if (slot >= 0)
                 processor.setOriginMaxVoices (slot, maxInstancesBySlot[(size_t) slot]);
         }
+
+        // Domain Extensions batch: ALL maxOrigins slots, unconditionally -
+        // not just this compile's occupied ones (unlike the maxInstances
+        // loop just above). A slot whose origin was just deleted, or
+        // changed from swarmPopulation to Voice/something else, MUST have
+        // this reset back to -1 here, or a stale >= 0 value would keep
+        // forcing phantom always-on voices into what's now an ordinary
+        // demand-driven origin - a real correctness bug, not just a cosmetic
+        // staleness the way a stale maxInstances ceiling would be.
+        for (int slot = 0; slot < BazaltAudioProcessor::maxOrigins; ++slot)
+            processor.setSwarmPopulationSize (slot, swarmPopulationSizeBySlot[(size_t) slot]);
 
         // DomainDot's real replacement — per-port, not per-node (§2.4's two
         // boundary node types have real mixed per-port shapes).

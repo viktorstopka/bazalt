@@ -33,6 +33,7 @@ target_sources(PluginTests
         GraphEditControllerTests.cpp
         HostInputTests.cpp
         InitPatchTests.cpp
+        InstanceSwarmPopulationTests.cpp
         MacroParametersTests.cpp
         NodeDescriptorJsonTests.cpp
         PatchStateTests.cpp

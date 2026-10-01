@@ -63,7 +63,7 @@ are telemetry outputs for live visualization, not ports.
 | `adapt.*` | map, remap, normalise, threshold, sampleHold, **audioToControl** (AudioControlBridge), **boolToControl**, **pitchToFrequency**, **frequencyToPitch**, **gateLength** (all new, direct-feedback sweep) | ✅ all 10 |
 | `data.*` | load, table, scale, material, analyseModes, lookup, **record**, **eqToCurve** (Correction 2) | ✅ table, scale, lookup — 📋 load, material, analyseModes, record, eqToCurve |
 | `analysis.*` | onset, pitch, level, centroid | 📋 all 4 |
-| `instance.*` | allocate.voice, allocate.swarmPopulation, allocate.swarmTransient, allocate.trigger, sum | ✅ allocate.voice, sum — 📋 the three Swarm/Trigger spawn types (Domain Extensions batch) |
+| `instance.*` | allocate.voice, allocate.swarmPopulation, allocate.swarmTransient, allocate.trigger, sum | ✅ allocate.voice, allocate.swarmPopulation, sum — 📋 swarmTransient/trigger (Domain Extensions batch, in progress) |
 | `util.*` | constant, macro, reroute | ✅ all 3 (`macro` real as of `wiki/plans/UtilMacro.md` — ADR-0030 amends ADR-0015, doesn't reverse it) |
 | `view.*` | listen, scope, spectrum, meter, **glance** (new, 0.6) | ✅ all 5 |
 | `factory.*` | eq, curve, wave, sample, notes, material (Correction 2) | 📋 all 6 |
@@ -623,6 +623,22 @@ Swarm/Trigger runtime machinery exists — not empty shells bolted onto this one
 `maxInstances`, `seed` (real patch-level determinism for `random1`/`random2` as of
 `09-28-InstanceAllocator.2` — each spawn draws from a fresh generator seeded by
 `(seed, instanceIndex)`, not a wall-clock-seeded persistent one).
+
+#### `instance.allocate.swarmPopulation` — Swarm (Population) ✅ *(new, Domain Extensions batch, 2026-10-01)*
+Opens an instanced region with a fixed, always-live count — no spawn/release
+mechanism at all (unlike Voice, nothing ever calls `noteOn`/`noteOff` for
+this origin; `populationSize` of its physical slots simply report `gate =
+true` from the very first block onward, the rest report `false`). **In:**
+none. **Out** (all `polyOnly`): `gate`, `instanceIndex`, `instanceAge`,
+`random1`, `random2`, `start`, `stop`, `position` — 8 ports (`position`:
+`Control`, Bipolar — pan-like; `archive_docs/DOMAINS.md` §4's own "spatial
+position model" scoped down to this one plain per-instance value for MVP,
+not a full spatial subsystem). **Structural:** `populationSize` (1-64,
+default 8 — deliberately not named `maxInstances`: there's no
+demand-driven ceiling to distinguish from the live count, this many are
+*always* live), `seed` (same `(seed, instanceIndex)` determinism
+`09-28-InstanceAllocator.2` built for Voice, reused verbatim via the shared
+`combineInstanceSeed` helper).
 
 #### `instance.sum` — Voice Sum ✅ *(renamed from `instance.mix`, wiki/plans/DomainRedesign.md Batch 1b — C++ class name (`InstanceMixNode`) unchanged)*
 Closes an instanced region. **In:** `in` — `Audio`, `polyOnly`. **Out:** `out` —
