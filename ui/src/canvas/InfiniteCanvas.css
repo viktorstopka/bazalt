@@ -3,11 +3,20 @@
    user-select:none stops text (labels, titles) from becoming a native text
    selection on drag; touch-action/overscroll-behavior:none stop the
    browser's own rubber-band/gesture scrolling from fighting the custom
-   pan/zoom. This narrows, but can't fully eliminate, "WebView-ness" —
-   WebView2's own native pinch-zoom/edge-swipe handling isn't reachable
-   from CSS/JS at all; that would need a JUCE-side WebBrowserComponent
-   option. The rename `<input>` (GraphSurface.tsx) opts back into text
-   selection via its own element. */
+   pan/zoom. WebView2's own native pinch-zoom/Ctrl+wheel zoom genuinely
+   isn't reachable from CSS/JS at all (confirmed, not assumed — JUCE's own
+   `WebBrowserComponent::Options::WinWebView2` exposes no zoom-related
+   option, and `preventDefault()` on a wheel event doesn't suppress it
+   either, since it operates at the WebView2 HOST level) — ADR-0032 is the
+   JUCE-side fix this comment used to say would be needed: it's disabled
+   outright now, a one-line patch to vendored JUCE's own Windows backend
+   (`cmake/ApplyJuceWebView2ZoomPatch.cmake`), not something achievable from
+   this file. That was the real cause of a real, repeatedly-reported bug —
+   two independent zoom transforms (this app's own `camera.zoom` and
+   WebView2's own native one, both triggered by the same Ctrl+wheel
+   gesture) compounding into cropped/offset content and, past a combined
+   zoom threshold, content disappearing outright. The rename `<input>`
+   (GraphSurface.tsx) opts back into text selection via its own element. */
 .infinite-canvas {
   position: relative;
   width: 100%;

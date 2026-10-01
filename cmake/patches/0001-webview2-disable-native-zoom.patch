@@ -1,0 +1,26 @@
+diff --git a/modules/juce_gui_extra/native/juce_WebBrowserComponent_windows.cpp b/modules/juce_gui_extra/native/juce_WebBrowserComponent_windows.cpp
+index 9caca3066..eecc22d49 100644
+--- a/modules/juce_gui_extra/native/juce_WebBrowserComponent_windows.cpp
++++ b/modules/juce_gui_extra/native/juce_WebBrowserComponent_windows.cpp
+@@ -1026,6 +1026,21 @@ private:
+             settings->put_IsStatusBarEnabled (! preferences.getWinWebView2BackendOptions().getIsStatusBarDisabled());
+             settings->put_IsBuiltInErrorPageEnabled (! preferences.getWinWebView2BackendOptions().getIsBuiltInErrorPageDisabled());
+ 
++            // Bazalt patch (see cmake/patches/0001-webview2-disable-native-zoom.patch):
++            // disables WebView2's own native Ctrl+MouseWheel/Ctrl+Plus/Ctrl+Minus/
++            // pinch zoom, which operates at the WebView2 host level, entirely
++            // independent of the hosted page's own wheel-event handling (the
++            // page's preventDefault() on a wheel event does NOT suppress it -
++            // Microsoft's own documented behaviour for IsZoomControlEnabled).
++            // Bazalt's own node-editor canvas (InfiniteCanvas.tsx) implements its
++            // own pan/zoom entirely in JS/CSS against camera.zoom - a second,
++            // independent native zoom layered on top of that is never wanted,
++            // and was the real root cause behind a real, repeatedly-reported bug
++            // (content cropped/offset at odd zoom levels, borders and eventually
++            // everything disappearing above a zoom threshold - two independent
++            // zoom transforms compounding, not one implementation's own bug).
++            settings->put_IsZoomControlEnabled (false);
++
+             if (userAgent.isNotEmpty())
+             {
+                 ComSmartPtr<ICoreWebView2Settings2> settings2;

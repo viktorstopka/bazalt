@@ -17,6 +17,14 @@ include(FetchContent)
 # ---------------------------------------------------------------------------
 # JUCE — pinned to an exact tag (never a moving branch), see
 # docs/decisions/0001-juce-version-and-license.md
+#
+# PATCH_COMMAND: disables WebView2's own native Ctrl+MouseWheel/pinch zoom in
+# the vendored Windows WebBrowserComponent backend — see
+# archive_docs/decisions/0032-disable-webview2-native-zoom.md and
+# cmake/ApplyJuceWebView2ZoomPatch.cmake's own header comment for the full
+# reasoning. Runs once, only on a fresh fetch (FetchContent's own documented
+# behaviour — a `build/_deps/juce-src` that already exists is left alone),
+# and is itself idempotent if CMake ever re-runs it anyway.
 # ---------------------------------------------------------------------------
 FetchContent_Declare(
     JUCE
@@ -24,6 +32,7 @@ FetchContent_Declare(
     GIT_TAG        9.0.2
     GIT_SHALLOW    TRUE
     GIT_PROGRESS   TRUE
+    PATCH_COMMAND  ${CMAKE_COMMAND} -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/ApplyJuceWebView2ZoomPatch.cmake"
 )
 FetchContent_MakeAvailable(JUCE)
 

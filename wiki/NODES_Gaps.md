@@ -410,6 +410,62 @@ hands-on look at the actual running app (does a node preview's width genuinely s
 put now, does the editor stay smooth) is still the user's own next confirmation step
 — same computer-use caveat every entry in this file already carries.
 
+### Zoom cropping/offset, borders disappearing, everything vanishing above a zoom threshold — ROOT-CAUSED AND FIXED (ADR-0032, 2026-10-01)
+Direct feedback, raised immediately after the preview-canvas-growth fix above landed: "it now
+zooms weird as hell... zooms independently from the frame... too big for the frame so is
+cropped... on zoom, sometimes some borders disappear, and after zooming above a threshold
+everything just disappears." Not caused by that fix (different files entirely — `InfiniteCanvas.tsx`'s
+own camera/zoom code was never touched by it) and not a new regression either: `InfiniteCanvas.css`'s
+own header comment had already named the real suspect as a known, accepted limitation *before*
+this was ever reported as a live bug — "WebView2's own native pinch-zoom/edge-swipe handling isn't
+reachable from CSS/JS at all; that would need a JUCE-side `WebBrowserComponent` option."
+
+**Confirmed, not assumed:** read JUCE's own vendored source (`build/_deps/juce-src`) directly.
+`WebBrowserComponent::Options::WinWebView2` exposes zero zoom-related options (only DLL location/
+user data folder/status bar/error page/background colour) — contrast the Linux WebKit backend's
+own `LinuxWkWebView::withNativeZoomGesture`, **disabled by default** there specifically so native
+pinch/Ctrl+wheel zoom translates into ordinary JS wheel events instead. Nothing equivalent exists
+for Windows, and `juce_WebBrowserComponent_windows.cpp`'s own `setWebViewPreferences()` never
+calls WebView2's own `put_IsZoomControlEnabled` — its default is enabled, and per Microsoft's own
+documentation it governs Ctrl+MouseWheel/Ctrl+Plus/Ctrl+Minus/pinch zoom at the WebView2 HOST
+level, independent of the hosted page's own wheel-event handling (`InfiniteCanvas.tsx`'s own
+`onWheel` already calls `preventDefault()` unconditionally — this was never a missing-call bug on
+the app side; native zoom simply isn't reachable that way at all).
+
+That's the real mechanism behind every symptom: **two independent zoom transforms were
+compounding** — this app's own `camera.zoom` (JS/CSS, clamped `[0.1, 8]`, the only one
+`InfiniteCanvas.tsx`'s code has ever known about) and WebView2's own native host-level zoom
+(uncontrolled, fired by the same Ctrl+wheel gesture), neither aware of the other. "Too big for
+the frame, cropped" is native zoom scaling the whole rendered page past the WebView2 control's
+own viewport, clipped at a different boundary than the app's own `.infinite-canvas { overflow:
+hidden }` was ever designed to account for. "Borders disappearing"/"everything disappearing above
+a threshold" is the COMBINED effective scale (camera.zoom × WebView2's own factor) pushing past
+what either transform was ever tested against alone. This almost certainly also explains some of
+the "still glitching periodically" report that persisted after the preview-canvas-growth fix —
+Windows' own smooth-scroll/trackpad input occasionally synthesizes wheel deltas that read as a
+zoom gesture to WebView2 even without a deliberate Ctrl press, which would read as exactly this
+kind of unpredictable periodic hiccup.
+
+**Fix applied (ADR-0032 has the full reasoning):** `cmake/ApplyJuceWebView2ZoomPatch.cmake`, wired
+into the top-level `CMakeLists.txt`'s `FetchContent_Declare(JUCE ...)` as its `PATCH_COMMAND`,
+patches `juce_WebBrowserComponent_windows.cpp` to call `settings->put_IsZoomControlEnabled
+(false)` — one line, same pattern already used for `put_IsStatusBarEnabled`/
+`put_IsBuiltInErrorPageEnabled` right above it. Runs once, automatically, right after JUCE is
+first fetched (never re-run against an already-populated `build/_deps/juce-src`, and idempotent
+even if it somehow were) — a durable fix that survives a clean rebuild, not a hand-edit that
+silently vanishes the next time `build/_deps` gets wiped. `cmake/patches/
+0001-webview2-disable-native-zoom.patch` is the human-readable record of exactly what changes, in
+standard diff form.
+
+**Verified:** `ctest --test-dir build -C Debug` 515/515 green (no engine/plugin-logic change at
+all — this only touches WebView2 host configuration). Confirmed the patched line actually compiles
+against this project's real, linked WebView2 SDK (not just assumed from Microsoft's docs) by
+building `BazaltPlugin_Standalone` clean. A human hands-on look at the actual running app — does
+Ctrl+wheel/pinch now leave zoom entirely to the app's own camera, do borders stay solid across the
+zoom range, does the periodic glitch actually stop — is still the user's own next confirmation
+step, same computer-use caveat every entry in this file already carries; this environment can
+confirm the fix compiles and is wired correctly, not what it looks like on screen.
+
 ### "Input port already connected" — see Occupied-port rejection above (same item).
 
 ---
