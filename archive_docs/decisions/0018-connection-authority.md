@@ -1,7 +1,11 @@
 # 0018 — The engine is the sole authority on connection validity
 
 ## Status
-Proposed (M16). Not implemented.
+Accepted and implemented (M16). This Status line went stale — a later audit (the
+post-`util.macro`-ship sweep, 2026-10-01) found it still said "Not implemented" despite
+`CanConnect.h`/`.cpp` being exactly the pure `canConnect(from, to)` function this ADR
+decided to build, called from both `GraphCompiler::compile()` and
+`GraphEditController::connect()`/`connectWithAutoAdapt()` as specified, since M16.
 
 ## Context
 `SIGNAL_TYPES.md` §4: exactly one `canConnect(from, to) -> Ok | NeedsAdapters(chain) | Reject`

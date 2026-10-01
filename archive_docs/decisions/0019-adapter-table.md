@@ -1,8 +1,13 @@
 # 0019 — Adapters are real, visible, auto-inserted nodes, shipped incrementally
 
 ## Status
-Proposed (M16 for the first three adapters, extended through M19–M21 as dependent nodes ship). Not
-implemented.
+Accepted and implemented incrementally (M16 for the first three adapters, extended through
+M19–M21 and the 0.x arc as dependent nodes shipped). This Status line went stale — a later
+audit (the post-`util.macro`-ship sweep, 2026-10-01) found it still said "Not implemented"
+while this very document's own "Amendment (M20)" and "Amendment (0.x arc)" sections below
+already described real, shipped adapter nodes (`adapt.map`/`adapt.normalise`/
+`adapt.threshold`/`adapt.remap`/`adapt.audioToControl`) in past tense — a direct
+self-contradiction within one file, not just staleness against external code.
 
 ## Context
 `SIGNAL_TYPES.md` §5: when `canConnect` (ADR-0018) returns `NeedsAdapters`, the UI inserts real nodes

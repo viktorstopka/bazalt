@@ -1,7 +1,13 @@
 # 0014 — Port/parameter unification via a shared value contract
 
 ## Status
-Proposed (M14, per `docs/MILESTONES.md`). Not implemented.
+Accepted and implemented (M14). This Status line went stale — a later audit (the
+post-`util.macro`-ship sweep, 2026-10-01) found it still said "Not implemented" despite the
+decision having shipped for several milestones: `PortDescriptor`/`ParameterDescriptor`
+(`engine/include/bazalt/engine/graph/PortDescriptor.h`) carry exactly the fields this ADR
+decided to add — `ValueKind kind`, `Quantity quantity`, `Curve curve`, `Polarity polarity`,
+`enumOptions`, `softMin`/`softMax`, `isStructural` — all real, all in active use by real
+nodes (e.g. `InstanceVoiceNode.h`'s own structural parameters) since M14.
 
 ## Context
 `VALUE_MODEL.md` proposes one canonical `ValueContract` (`kind`, `quantity`, `min`/`max`, `default`,

@@ -96,8 +96,9 @@ export function MacroKnob({ slot, label, min, max, isInteger, unit, color }: Mac
   const raw = clamp01(state.getNormalisedValue())
   const displayValue = min + raw * (max - min)
   // -135deg..+135deg, a common knob sweep (270deg of travel, pointing
-  // straight down at the centre/default position) — purely cosmetic, the
-  // indicator line's own rotation, not a hit-test target (dragging is
+  // straight UP at the centre/default position, raw=0.5 - MacroKnob.css's
+  // own comment has the exact reasoning) — purely cosmetic, the indicator
+  // line's own rotation, not a hit-test target (dragging is
   // delta-based from anywhere on the knob, not angle-from-centre).
   const rotationDeg = -135 + raw * 270
 

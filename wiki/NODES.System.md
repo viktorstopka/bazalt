@@ -30,9 +30,24 @@ one place (§2) instead of a proliferation of special-cased wire kinds.
 
 Deliberate consequences:
 
-- **Boolean and Integer aren't signal types.** They're `Control` with `kind = bool` /
-  `int`. The UI colours/glyphs them distinctly by reading the value contract, not by a
-  separate wire type.
+- **Integer isn't a signal type.** It's `Control` with `kind = int`. The UI
+  colours/glyphs it distinctly by reading the value contract, not by a separate wire
+  type.
+- **Boolean IS a real, separate signal type** (`SignalType::Boolean`, M7) — this
+  table omitted it until a post-`util.macro`-ship sweep (2026-10-01) caught the
+  omission, and the line above used to claim it was "Control with kind=bool," which
+  the real engine never did. `PortDescriptor.h`'s own doc comment states the actual
+  reason directly: Boolean is "a genuinely different buffer-level contract from
+  Control — no smoothing, no skew, one bit of state — not just a UI-side colour
+  distinction." Concretely: `Boolean` connects to `Boolean` directly; `Boolean` into
+  `Control` auto-inserts `adapt.boolToControl`; but `Control` into `Boolean` has no
+  adapter at all today and is a hard `Reject` — see §4's matrix for both rows. (A real
+  bug traced back to exactly this confusion: the UI's drag-a-port-out-to-create-a-
+  Macro gesture used to treat Boolean as macro-able the same as Control/Event, since
+  a macro's value has a meaningful 0/1 shape either way — but a macro's own output
+  port is always `Control`, so that gesture tried the one direction with no adapter,
+  failing every time. Fixed in `graphStore.ts`'s `isMacroablePort()`, not here — this
+  entry exists so the next design decision doesn't inherit the same wrong premise.)
 - **Modulation isn't a signal type.** It's `Control` with quantity `Unipolar` or
   `Bipolar` (§2).
 - **Note is a real type, not a MIDI convention.** MIDI must enter the graph through a
@@ -243,6 +258,8 @@ should close.
 | `Event` | `Event` | Ok | — | ✅ |
 | `Note` | `Note` | Ok | — | ✅ (only 2 real Note ports exist to test this with — see §1) |
 | `Boolean` | `Boolean` | Ok | — | ✅ |
+| `Boolean` | `Control` | NeedsAdapters | `adapt.boolToControl` ("From Bool") | ✅ |
+| `Control` | `Boolean` | Reject | "Incompatible signal types with no adapter available yet" — no real `Control`→`Boolean` adapter exists (added to this table during a post-`util.macro`-ship sweep, 2026-10-01 — this row was missing despite the table's own "complete scenario matrix" claim, and its absence let a UI gesture wrongly assume this direction worked too; see §1's note) | ✅ (this *is* the engine's real behavior — rejecting is correct, the gap was only this doc never saying so) |
 | `Control` | `Event` | NeedsAdapters | `adapt.threshold`, rising edge at 50% of range | ✅ |
 | `Event` | `Control` | — | catalog names `env.adsr`(trigger-fed)/`adapt.sampleHold`("Latch") as the manual pattern | ❌ not auto-inserted |
 | `Audio` (mono) | `Control` (`Unipolar`/`Bipolar`/`Dimensionless`) | NeedsAdapters | `adapt.audioToControl` — reads the waveform's instantaneous value, scaled by `depth` | ✅ (`wiki/plans/AudioControlBridge.md`) |

@@ -2,14 +2,17 @@
 // hand-mirrored from engine/src/graph/CanConnect.cpp so the UI predicts
 // with the same logic the engine enforces, not an independent
 // classification-bucket guess (the retired ui/src/graph/wireRules.ts).
-// "Generated" per SIGNAL_TYPES.md §4 is aspirational here the same way
-// NodeDescriptorJson.cpp/descriptorTypes.ts are "one schema, two
-// producers" by hand, not by a codegen tool — there is no such tool, this
-// file is kept in sync with CanConnect.cpp by hand, on purpose, the same
-// way that pair already is. If UI and engine ever disagree, the engine
-// wins (GraphEditController::connectWithAutoAdapt is the real, committing
-// authority — see graphCommands.ts) — this file is prediction only, for
-// live wire-drag feedback before a drop is ever attempted.
+// "Generated" per wiki/NODES.System.md §4 (supersedes archive_docs/
+// SIGNAL_TYPES.md §4, which this comment used to cite — archive_docs/ is
+// historical reference only, not current spec, per CLAUDE.md) is
+// aspirational here the same way NodeDescriptorJson.cpp/descriptorTypes.ts
+// are "one schema, two producers" by hand, not by a codegen tool — there is
+// no such tool, this file is kept in sync with CanConnect.cpp by hand, on
+// purpose, the same way that pair already is. If UI and engine ever
+// disagree, the engine wins (GraphEditController::connectWithAutoAdapt is
+// the real, committing authority — see graphCommands.ts) — this file is
+// prediction only, for live wire-drag feedback before a drop is ever
+// attempted.
 import type { PortDescriptor, Quantity } from './descriptorTypes'
 import { synthesizeGroupPort } from './portGroups'
 import type { PortMultiplicityInfo } from './graphCommands'

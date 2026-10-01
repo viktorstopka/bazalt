@@ -1,7 +1,10 @@
 # 0016 — Signal type set: add Data, defer folding Boolean into Control
 
 ## Status
-Proposed (M14 for schema groundwork, M15 for `Data` specifically). Not implemented.
+Accepted and implemented (M14 for schema groundwork, M15 for `Data` specifically). This
+Status line went stale — a later audit (the post-`util.macro`-ship sweep, 2026-10-01)
+found it still said "Not implemented" despite `SignalType` (`SignalType.h`) having carried
+`Data` as a real 7th enum member, in active use, since M15.
 
 ## Context
 `SIGNAL_TYPES.md` §2 proposes six types — `Audio, Control, Event, Note, Data, Spectral` — with

@@ -1,7 +1,12 @@
 # 0017 — `Data` value ownership and lifetime
 
 ## Status
-Proposed (M15). Not implemented.
+Accepted and implemented (M15). This Status line went stale — a later audit (the
+post-`util.macro`-ship sweep, 2026-10-01) found it still said "Not implemented" despite
+`engine/include/bazalt/engine/graph/Data.h` being a real, reference-counted,
+atomic-pointer-swap `DataPublisher` mechanism matching this decision closely, in active
+use since M15. (ADR-0022 amends this ADR's own explicitly-left-open patch-serialization
+question — see that ADR's own Status line.)
 
 ## Context
 `SIGNAL_TYPES.md` §2's Data type details section requires: an immutable, reference-counted buffer

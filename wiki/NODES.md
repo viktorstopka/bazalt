@@ -15,14 +15,12 @@ implemented.
 
 **✅ Implemented** — real, registered, in `engine/include/bazalt/engine/nodes/`.
 **🚧 Partial** — implemented but narrower than this spec (the gap is named).
-**📋 Catalog only** — specified here, not built yet. Most of the catalog is this today
-— **52 of the 130 node types below are catalog-only** (down from 67 before the
-Clock+Seq batch, 62 before the Data Foundations batch, 59 before the Note Stream batch,
-53 before the `note.assemble` follow-up — `wiki/NODES.Status.md` tracks the build order
-for what's left; `adapt.audioToControl`/`boolToControl`/`pitchToFrequency`/
-`frequencyToPitch`/`gateLength` were all added whole, by the Audio → Control Bridge and
-a direct-feedback sweep session respectively — the five nodes in this file that were
-never catalog-only at all, real from their first commit).
+**📋 Catalog only** — specified here, not built yet. Most of the catalog is this today.
+`wiki/NODES.Status.md` is the authoritative running count of how many node types are
+implemented vs. catalog-only and tracks the build order for what's left — this file
+used to maintain its own separate count here too (it drifted stale at least twice,
+caught during a post-`util.macro`-ship sweep, 2026-10-01), so it no longer tries;
+check that file for the current number rather than trusting a hardcoded one here.
 Don't assume a node works in the running app because it's in this file; check the
 status marker.
 
@@ -53,7 +51,7 @@ are telemetry outputs for live visualization, not ports.
 | `shape.*` | waveshaper, clip, fold, rectify, crush | 📋 all 5 |
 | `delay.*` | line | ✅ |
 | `space.*` | reverb, diffuser, pan, width | ✅ pan, width — 📋 reverb, diffuser |
-| `mix.*` | sum, crossfade, gain, downmix | ✅ all 4 |
+| `mix.*` | crossfade, gain, downmix | ✅ all 3 (`sum` removed — folded into `math.add`, `wiki/plans/DomainRedesign.md` Batch 3) |
 | `env.*` | adsr, curve, follower | ✅ adsr, follower — 📋 curve |
 | `lfo.*` | shape | 📋 |
 | `random.*` | stepped, drift | ✅ both |
@@ -65,8 +63,8 @@ are telemetry outputs for live visualization, not ports.
 | `adapt.*` | map, remap, normalise, threshold, sampleHold, **audioToControl** (AudioControlBridge), **boolToControl**, **pitchToFrequency**, **frequencyToPitch**, **gateLength** (all new, direct-feedback sweep) | ✅ all 10 |
 | `data.*` | load, table, scale, material, analyseModes, lookup, **record**, **eqToCurve** (Correction 2) | ✅ table, scale, lookup — 📋 load, material, analyseModes, record, eqToCurve |
 | `analysis.*` | onset, pitch, level, centroid | 📋 all 4 |
-| `instance.*` | allocator (Voice only), mix | 🚧 allocator (Voice ✅, Swarm/Trigger 📋 — M28) — ✅ mix |
-| `util.*` | constant, macro, reroute | ✅ constant, reroute — 📋 macro (ADR-0015, deliberately deferred) |
+| `instance.*` | allocate.voice, allocate.swarmPopulation, allocate.swarmTransient, allocate.trigger, sum | ✅ allocate.voice, sum — 📋 the three Swarm/Trigger spawn types (Domain Extensions batch) |
+| `util.*` | constant, macro, reroute | ✅ all 3 (`macro` real as of `wiki/plans/UtilMacro.md` — ADR-0030 amends ADR-0015, doesn't reverse it) |
 | `view.*` | listen, scope, spectrum, meter, **glance** (new, 0.6) | ✅ all 5 |
 | `factory.*` | eq, curve, wave, sample, notes, material (Correction 2) | 📋 all 6 |
 

@@ -4,18 +4,19 @@ Tracks, per node, **what's actually built** vs. **what's left**, and for what's 
 **how badly we need it** and **what order to build it in**. Derived from
 `wiki/NODES.md` (the catalog — read that for what each node actually does) and
 `wiki/NODES.System.md` (architecture). Cross-checked directly against
-`engine/include/bazalt/engine/nodes/*.h` (77 registered node types across 74 files as
-of `wiki/plans/DomainRedesign.md` Batch 3 — the authoritative running count
+`engine/include/bazalt/engine/nodes/*.h` (**78 registered node types across 77 files**
+as of `wiki/plans/UtilMacro.md` — the authoritative running count
 `tests/NodeDescriptorTests.cpp`'s own `NodeDescriptorTests` case tracks and narrates
-per batch; was 78/75 before that batch folded `mix.sum` (`MixNode.h`, its own
-dedicated file/type) straight into `math.add`, with no replacement type added.
-`GrowableGroupNode`/`InheritingPortsNode` excluded as shared base classes;
+per batch; was 77/74 after `wiki/plans/DomainRedesign.md` Batch 3 folded `mix.sum`
+(`MixNode.h`, its own dedicated file/type) straight into `math.add` with no
+replacement type added, then 78/77 again once `util.macro` (`MacroNode.h`, new file)
+landed. `GrowableGroupNode`/`InheritingPortsNode` excluded as shared base classes;
 `ViewNodes.h` holds 3 node types and `PitchFrequencyNodes.h` holds 2, which is why the
-type count exceeds the file count. This file's own header count had drifted stale
-before DomainRedesign even started, from same-day batches that landed after it was
-last written — corrected here against the authoritative source rather than
-incrementally patched) — every ✅/🚧 claim below is a real, compiled, registered node,
-not aspirational.
+type count exceeds the file count. This file's own header count has drifted stale
+twice now from same-day/same-milestone batches that landed after it was last
+written — both corrected here against the authoritative source (a post-`util.macro`-
+ship sweep caught the second drift, 2026-10-01) rather than incrementally patched)
+— every ✅/🚧 claim below is a real, compiled, registered node, not aspirational.
 
 This file doesn't replace `wiki/NODES_Gaps.md` (found-defect tracking for nodes that
 exist) or `wiki/MILESTONES.md` (what actually shipped, in what order). It's the

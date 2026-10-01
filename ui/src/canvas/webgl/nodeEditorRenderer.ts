@@ -7,8 +7,10 @@
 // it never needs to know about pan/zoom at all.
 //
 // No background grid is drawn (removed per direct feedback — "get rid of
-// the grid dots in the background"; StressTestCanvas.tsx's own unrelated
-// M8 spike grid is untouched, it doesn't import this module). Convention:
+// the grid dots in the background"; this was independent of the M8
+// stress-test spike's own grid — StressTestCanvas.tsx/stressGraph.ts,
+// deleted wholesale in M10 polish once the real editor made the spike's
+// questions askable against real content instead). Convention:
 // every position this module is given is in CSS pixels, canvas-local.
 // Internally cables are drawn with u_pan=(0,0), u_zoom=dpr,
 // u_resolution=(deviceWidth, deviceHeight) — i.e. a pure CSS-px-to-device-px

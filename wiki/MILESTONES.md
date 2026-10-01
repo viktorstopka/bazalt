@@ -35,6 +35,12 @@ are the actual Audio-biased gap). Root-caused the Master Out bug precisely
 rather than treated as broken. Three items still need live repro before a fix is
 designed: dropdown clicks, Note-port connectivity, Reroute connectivity.
 
+**A note on ordering:** `0.3`-`0.7` below were built, in that numeric order, before `0.2`
+(Stereo) — ticket numbers were assigned once, at scoping time, and kept stable rather than
+renumbered to match actual build order; `0.2` itself went through its own longer design
+detour (see its own section below) that pushed it later in real time. Read this file top
+to bottom by number, not by physical position, if that ever matters.
+
 ## 0.3 — Master Out / output designation, fixed — done
 
 `graphSetOutput` was already real and tested on the native side, just uncalled from
@@ -157,24 +163,6 @@ mono→stereo broadcast logic crashed on a debug assertion rather than silently
 passing, confirming it's load-bearing. `pluginval --strictness-level 10` SUCCESS. UI
 `npm run build`/`npm run lint` clean with zero `ui/src` changes. Standalone app built,
 launched, and sanity-checked against the redesigned Init Patch.
-
-## 0.3 — Master Out / output designation, fixed
-
-Wire `graphSetOutput` into the UI: auto-call it when a cable is dropped onto
-`io.output`'s input, plus a general "Set as Output" context-menu action on any node's
-output. No new engine mechanism — the bridge command already exists and is tested.
-
-## 0.4 — Connection-replace UX
-
-Wiring into an already-occupied input auto-disconnects the old cable first, instead
-of rejecting the new one. Locate the exact UI drop-handler call site.
-
-## 0.5 — Node-level fixes from the confirmed `NODES_Gaps.md` entries
-
-Executed only after your review of 0.1's findings corrects/confirms them. Expected
-shape: `mix.gain` title fix, `mix.gain.gain` gets a real unconnected default,
-`mix.sum`'s `level.N` removed in favor of auto-inserted `mix.gain`, `excite.burst`
-gets a real `trigger : Event` port. Exact scope finalized after your review.
 
 ## 0.6 — Minimal preview nodes for non-Audio types — done
 

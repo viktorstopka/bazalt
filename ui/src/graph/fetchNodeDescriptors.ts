@@ -10,8 +10,9 @@ import type { NodeDescriptor } from './descriptorTypes'
 // present, but at runtime it's only injected inside the real WebView
 // (withNativeIntegrationEnabled()) — undefined when this page is opened in
 // a plain browser tab during UI-only iteration, which is a harmless
-// "no real descriptors yet" case here, not an error (same guard as
-// StressTestCanvas.tsx's callNativeFunction).
+// "no real descriptors yet" case here, not an error (the same guard every
+// other native-function wrapper in this codebase uses, e.g.
+// graphCommands.ts's callCommand).
 export async function fetchNodeDescriptors(): Promise<NodeDescriptor[]> {
   if (typeof window.__JUCE__ === 'undefined') return []
 

@@ -13,7 +13,12 @@ below). Not-yet-decided new capabilities get designed in `wiki/plans/` (one
 file per proposal, e.g. `wiki/plans/AudioControlBridge.md`) before any code
 exists for them — distinct from `wiki/reports/` (investigative write-ups
 answering a specific question) and `wiki/NODES_Gaps.md` (found-defect
-tracking for existing behavior). **Historical design docs (M0–M22 era, superseded, not maintained —
+tracking for existing behavior). A plan file isn't deleted once it's built —
+it stays as the durable project record (see `wiki/plans/UtilMacro.md`'s own
+"Status: Built" header, written at completion rather than mid-discussion);
+all three files currently in `wiki/plans/` (`AudioControlBridge.md`,
+`DomainRedesign.md`, `UtilMacro.md`) are fully implemented today, same as
+the proposal they once were before any code existed. **Historical design docs (M0–M22 era, superseded, not maintained —
 don't read for current specs/plan):** `archive_docs/ARCHITECTURE.md`,
 `archive_docs/NODE_EDITOR.md`, `archive_docs/MILESTONES.md`,
 `archive_docs/decisions/`. Still the right place to look for *why* something
@@ -238,9 +243,16 @@ ctest --test-dir build -C Debug -R PluginTests --output-on-failure
 - **Host boundary (M21, ADR-0028).** `io.audioIn`/`io.control`/`io.transport`
   read a plain `HostInputs` struct the plugin fills per `process()` range
   (`ExecutionPlan::applyHostInputs`), never JUCE types. `io.noteIn` is NOT on
-  that mechanism — it's still poked by the hardcoded id `"noteIn"`
-  (`BazaltAudioProcessor::findNoteIn`), so a note-in placed under another id is
-  silently ignored. A graph with no `instance.allocate.voice` (`MultiplicityResolver`'s
+  that mechanism — it's poked directly via `BazaltAudioProcessor::findNoteIn`.
+  This note used to say that lookup was still a hardcoded literal id
+  (`"noteIn"`), so a note-in placed under another id would be silently
+  ignored — true through M21, but fixed during the `09-28-InstanceAllocator`
+  arc: `findNoteIn` now resolves by TYPE at compile time
+  (`ExecutionPlan::noteInNodeId`, set in `GraphCompiler.cpp` for whichever
+  node has type `"io.noteIn"`, whatever its id), the same fix
+  `instance.mix`'s own `externalInputNodeId` already had. A note-in placed
+  under any id (e.g. the editor's own auto-generated `"node7"`) works
+  correctly. A graph with no `instance.allocate.voice` (`MultiplicityResolver`'s
   own `MultiplicityResult::monoOnly` field, replacing `DomainSplitter::monoOnly` as of
   `wiki/plans/DomainRedesign.md`) is one plan run every block, so audio effects work
   but it plays no notes. **Never call `ExecutionPlan::getNodeById ("literal")` on the audio

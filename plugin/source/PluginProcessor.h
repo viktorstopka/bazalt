@@ -37,13 +37,17 @@ namespace bazalt
         own key decision: a compile-time reclassification rewrite, not an
         ExecutionPlan-internals one), just no longer assumed singular.
 
-        Note-port routing through the compiled graph is still deferred
-        (see CLAUDE.md's "known interim simplifications"): MIDI is
+        Note routes through real compiled-graph ports as of M18 (ADR-0024,
+        see CLAUDE.md's "known interim simplifications" for the full
+        mechanism) — this was true only through M3-M17, when MIDI was
         translated directly into setParameter()/noteOn()/noteOff() calls on
-        each voice's compiled node instances, not through a Note-typed
-        port. That's a real, deliberate scoping decision for M3, not an
-        oversight — full Note-port signal routing is a bigger change that
-        only earns its cost once a live graph editor needs it.
+        each voice's compiled node instances with no Note-typed port
+        involved at all; this comment was never updated when that changed.
+        `handleMidiEvent` now makes exactly one direct poke
+        (`IoNoteInNode::injectNoteOn`/`injectNoteOff`/`injectPitchBend` on
+        each voice's own `io.noteIn` node, found by type via `findNoteIn`,
+        not by a hardcoded id), and everything downstream of that is
+        ordinary graph wiring through a real `Note`-typed port/buffer.
     */
     class BazaltAudioProcessor final : public juce::AudioProcessor,
                                         private juce::Timer

@@ -17,8 +17,12 @@ documented design once checked against the code and `wiki/NODES.System.md`'s
 architecture — those are called out separately, for your confirmation, not silently
 agreed with.
 
-**Nothing here is fixed yet.** This is identification only, per your instruction —
-review it, correct anything I got wrong, and fixes become their own later milestones.
+**Most of this is now fixed** (marked **FIXED** inline, each citing the milestone that
+fixed it) — this line used to say "nothing here is fixed yet," written when this file
+was identification-only per the original instruction, and never updated once `0.3`
+through `0.7` actually landed. The lower-confidence items this file itself flags as
+needing your judgment first (SVF naming, the `math.*`/`adapt.*` no-fallback pattern,
+`instance.allocate.voice`'s randoms) are genuinely still open, pending that review.
 
 ---
 
@@ -201,7 +205,7 @@ expect.
 
 ## Part 3 — Architecture / UX mistakes (from your live testing)
 
-### Master Out doesn't decide the output — real, confirmed, root-caused
+### Master Out doesn't decide the output — real, confirmed, root-caused — FIXED (Milestone 0.3)
 `io.output` (`OutputNode.h`) is a plain 1-in/1-out passthrough. The real mechanism
 that designates what the compiled graph actually outputs is
 `GraphEditController::setOutput()` (`graphSetOutput` over the M7 bridge) — confirmed
@@ -218,12 +222,25 @@ precisely-located bug, not an architecture philosophy problem. (`plain graphConn
 is also absent from the export list, but that's superseded by
 `graphConnectWithAutoAdapt` for all real UI use — not a gap.)
 
-### Occupied-port rejection instead of replace
+**Fixed (Milestone 0.3):** added the missing `graphSetOutput` wrapper
+(`ui/src/graph/graphCommands.ts`), wired into every gesture that can land a
+connection on a node's input (`addWire`/`commitWireDrag`/`spliceInsert` in
+`graphStore.ts`) — wiring into `io.output` auto-designates it as the graph's real
+output, no separate step needed — plus a general "Set as Output" right-click action
+for designating any node's output explicitly.
+
+### Occupied-port rejection instead of replace — FIXED (Milestone 0.4)
 Confirmed real and intentional today — the compiler enforces one source per input
 (referenced directly in `RerouteNode.h`'s own comment: "the compiler's one-source-
 per-input check"). Dropping a second cable onto an already-wired input is rejected
-rather than replacing the old one. Not yet located to the exact UI drop-handler call
-site that would need to change to auto-disconnect first.
+rather than replacing the old one.
+
+**Fixed (Milestone 0.4):** `GraphEditController::connect()`/`connectWithAutoAdapt()`
+now call a new `replaceExistingInputConnection()` helper that removes any existing
+connection already targeting that `(toNodeId, toPortId)` pair before adding the new
+one — covers direct connects, the adapter-chain path, and the polymorphic-endpoint
+(Reroute) path. The compiler's own "Input port already connected" check still exists
+as a safety net, it just never fires on an ordinary user gesture any more.
 
 ### Stereo: `left`/`right` port pairs instead of one real cable — FIXED
 A stereo signal is one real Audio cable now, catalog-wide. `space.pan`/`space.width`/
