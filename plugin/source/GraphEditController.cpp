@@ -539,6 +539,41 @@ namespace bazalt
         });
     }
 
+    GraphEditController::CommandResult GraphEditController::createMacro (
+        const juce::String& macroNodeId, float x, float y,
+        int slot, float min, float max, bool isInteger, int quantity,
+        const juce::String& unit, float value)
+    {
+        if (macroNodeId.isEmpty())
+            return { false, "Node id must not be empty" };
+
+        if (graph.findNode (macroNodeId) != nullptr)
+            return { false, "Node id already exists: " + macroNodeId };
+
+        if (slot < -1 || slot > 31)
+            return { false, "Macro slot must be -1 (unclaimed) or in [0, 31]" };
+
+        return applyBatch ([&] (bazalt::engine::NodeGraph& g)
+        {
+            bazalt::engine::NodeInstance instance;
+            instance.id = macroNodeId;
+            instance.type = "util.macro";
+            instance.position = { x, y };
+            instance.parameters = {
+                { "util.macro.slot", (float) slot },
+                { "util.macro.min", min },
+                { "util.macro.max", max },
+                { "util.macro.isInteger", isInteger ? 1.0f : 0.0f },
+                { "util.macro.quantity", (float) quantity },
+                { "util.macro.value", value },
+            };
+            if (unit.isNotEmpty())
+                instance.properties["util.macro.unit"] = unit;
+
+            g.addNode (std::move (instance));
+        });
+    }
+
     GraphEditController::CommandResult GraphEditController::disconnect (const juce::String& fromNodeId,
                                                                          const juce::String& fromPortId,
                                                                          const juce::String& toNodeId,

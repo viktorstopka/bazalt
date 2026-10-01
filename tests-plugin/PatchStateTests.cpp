@@ -1,9 +1,23 @@
 #include <catch2/catch_test_macros.hpp>
 #include "PluginProcessor.h"
 #include "MacroParameters.h"
+#include "bazalt/engine/graph/ProofGraphs.h"
+#include <algorithm>
 #include <cmath>
 
 using namespace bazalt;
+
+namespace
+{
+    float rms (const juce::AudioBuffer<float>& buffer, int channel)
+    {
+        double sumSquares = 0.0;
+        const auto* data = buffer.getReadPointer (channel);
+        for (int i = 0; i < buffer.getNumSamples(); ++i)
+            sumSquares += (double) data[i] * (double) data[i];
+        return (float) std::sqrt (sumSquares / buffer.getNumSamples());
+    }
+}
 
 TEST_CASE ("Plugin state round-trips macro values exactly through getStateInformation/setStateInformation",
            "[plugin][patch]")
@@ -107,4 +121,114 @@ TEST_CASE ("Loading malformed state data is rejected without crashing or corrupt
     for (int ch = 0; ch < buffer.getNumChannels(); ++ch)
         for (int i = 0; i < buffer.getNumSamples(); ++i)
             REQUIRE (std::isfinite (buffer.getSample (ch, i)));
+}
+
+// Closes a real test gap found during a post-ship sweep (wiki/plans/UtilMacro.md):
+// the two tests above never actually exercised a util.macro node (both run against
+// the default master-out-only graph) - the exact path a human hits the first time
+// they save/reload a patch containing macros had never been run by CI.
+
+TEST_CASE ("A saved patch with multiple claimed util.macro nodes round-trips exactly, and host "
+           "automation reaches each real target through a real processBlock after reload",
+           "[plugin][patch][macro]")
+{
+    BazaltAudioProcessor processor;
+    processor.prepareToPlay (44100.0, 512);
+
+    auto& controller = processor.getGraphEditController();
+    REQUIRE (controller.setGraph (bazalt::engine::buildVoiceProofGraph()).success);
+
+    REQUIRE (controller.createMacro ("cutoffMacro", 0.0f, 0.0f, 3, 200.0f, 12000.0f, false, 1, "Hz", 0.5f).success);
+    REQUIRE (controller.connectWithAutoAdapt ("cutoffMacro", "out", "svf", "filter.svf.cutoff").success);
+    REQUIRE (controller.createMacro ("resMacro", 200.0f, 0.0f, 9, 0.3f, 4.0f, false, 0, "", 0.5f).success);
+    REQUIRE (controller.connectWithAutoAdapt ("resMacro", "out", "svf", "filter.svf.resonance").success);
+
+    const auto json = processor.getStateAsJson();
+    REQUIRE (json.isNotEmpty());
+
+    BazaltAudioProcessor reloaded;
+    reloaded.prepareToPlay (44100.0, 512);
+    REQUIRE (reloaded.loadStateFromJson (json));
+
+    const auto doc = reloaded.getCurrentPatchDocument();
+    const auto findNode = [&] (const juce::String& id)
+    {
+        return std::find_if (doc.nodes.begin(), doc.nodes.end(), [&] (const auto& n) { return n.id == id; });
+    };
+
+    const auto cutoffNode = findNode ("cutoffMacro");
+    REQUIRE (cutoffNode != doc.nodes.end());
+    CHECK (cutoffNode->parameters.at ("util.macro.slot") == 3.0f);
+    CHECK (cutoffNode->parameters.at ("util.macro.min") == 200.0f);
+    CHECK (cutoffNode->parameters.at ("util.macro.max") == 12000.0f);
+
+    const auto resNode = findNode ("resMacro");
+    REQUIRE (resNode != doc.nodes.end());
+    CHECK (resNode->parameters.at ("util.macro.slot") == 9.0f);
+    CHECK (resNode->parameters.at ("util.macro.min") == 0.3f);
+    CHECK (resNode->parameters.at ("util.macro.max") == 4.0f);
+
+    // Host automation on each slot must reach its real target through a real
+    // processBlock() post-load - this exercises setGraph() ->
+    // recompileAndPublish() -> deriveMacroMappings() actually running after a
+    // LOAD, not just after a live command sequence (every other macro test
+    // in this codebase only ever checks the live-command path).
+    juce::MidiBuffer noteOn;
+    noteOn.addEvent (juce::MidiMessage::noteOn (1, 60, (juce::uint8) 100), 0);
+    juce::AudioBuffer<float> buffer (2, 512);
+    buffer.clear();
+    reloaded.processBlock (buffer, noteOn);
+
+    auto settle = [&] (int slot, float raw)
+    {
+        reloaded.getMacroParameter (slot).setValueNotifyingHost (raw);
+        juce::AudioBuffer<float> settled (2, 512);
+        for (int block = 0; block < 10; ++block)
+        {
+            settled.clear();
+            juce::MidiBuffer empty;
+            reloaded.processBlock (settled, empty);
+        }
+        return rms (settled, 0);
+    };
+
+    const auto rmsLowCutoff = settle (3, 0.0f);
+    const auto rmsHighCutoff = settle (3, 1.0f);
+    CHECK (rmsHighCutoff > rmsLowCutoff * 1.2f);
+}
+
+TEST_CASE ("Loading a saved patch where two util.macro nodes claim the same slot is rejected, "
+           "leaving the processor's prior graph intact",
+           "[plugin][patch][macro]")
+{
+    // The equivalent two-colliding-macros scenario was previously only ever
+    // tested via live GraphEditController commands - this is the same check
+    // through loadStateFromJson() instead, the path a hand-edited or
+    // corrupted saved file would actually hit.
+    BazaltAudioProcessor processor;
+    processor.prepareToPlay (44100.0, 512);
+
+    const auto originalDoc = processor.getCurrentPatchDocument();
+
+    const juce::String colliding = R"json({
+        "schemaVersion": 7,
+        "nodes": [
+            { "id": "m1", "type": "util.macro", "position": { "x": 0.0, "y": 0.0 }, "parameters": { "util.macro.slot": 4.0 }, "properties": {} },
+            { "id": "m2", "type": "util.macro", "position": { "x": 100.0, "y": 0.0 }, "parameters": { "util.macro.slot": 4.0 }, "properties": {} },
+            { "id": "out", "type": "io.output", "position": { "x": 200.0, "y": 0.0 }, "parameters": {}, "properties": {} }
+        ],
+        "connections": [],
+        "outputNodeId": "out",
+        "outputPortId": "out",
+        "macroValues": [],
+        "view": { "panX": 0.0, "panY": 0.0, "zoom": 1.0 },
+        "meta": { "name": "", "author": "", "createdAtMs": 0, "modifiedAtMs": 0 }
+    })json";
+
+    CHECK_FALSE (processor.loadStateFromJson (colliding));
+
+    const auto afterDoc = processor.getCurrentPatchDocument();
+    REQUIRE (afterDoc.nodes.size() == originalDoc.nodes.size());
+    for (size_t i = 0; i < originalDoc.nodes.size(); ++i)
+        CHECK (afterDoc.nodes[i].id == originalDoc.nodes[i].id);
 }

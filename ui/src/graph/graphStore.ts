@@ -62,6 +62,7 @@ import { canConnectPorts, findPort, type ConnectionEndpoint } from './canConnect
 import {
   graphAddNode,
   graphConnectWithAutoAdapt,
+  graphCreateMacro,
   graphDeleteNode,
   graphDisconnect,
   graphGetNodeMultiplicity,
@@ -635,14 +636,22 @@ export async function addNode(typeId: string, x: number, y: number): Promise<str
   // click (not the drag-from-a-port shortcut, createMacroFromPort below)
   // still auto-claims a free slot inside this same gesture, rather than
   // landing unclaimed (-1) and doing nothing until the user finds the slot
-  // parameter themselves. Left unclaimed (no second command at all) if
-  // every slot is already taken - a 33rd macro is still a valid, if inert,
-  // placement, not an error.
-  const macroSlot = typeId === 'util.macro' ? pickFreeMacroSlot() : undefined
+  // parameter themselves. Left unclaimed (-1) if every slot is already
+  // taken - a 33rd macro is still a valid, if inert, placement, not an
+  // error. Routed through the same single-recompile graphCreateMacro as
+  // createMacroFromPort below (post-ship sweep P2.1) rather than
+  // addNode+setParameterValue's own old 2-recompile sequence, with the
+  // engine's own plain defaults (0..1 Dimensionless, not integer) for
+  // everything a dragged-from-a-port macro would otherwise derive from the
+  // source port.
+  const macroSlot = typeId === 'util.macro' ? pickFreeMacroSlot() ?? -1 : undefined
   await withHistory(
     async () => {
-      if (!(await fireCommand(() => graphAddNode(typeId, id, x, y)))) return
-      if (macroSlot !== undefined) await fireCommand(() => graphSetParameterValue(id, 'util.macro.slot', macroSlot))
+      if (macroSlot !== undefined) {
+        await fireCommand(() => graphCreateMacro(id, x, y, macroSlot, 0, 1, false, 0, '', 0))
+        return
+      }
+      await fireCommand(() => graphAddNode(typeId, id, x, y))
     },
     () => {
       nodes.set(id, {
@@ -1041,16 +1050,45 @@ function macroConfigForPort(port: PortDescriptor, currentValue: number): MacroSe
   return { min: 0, max: 1, isInteger: false, quantity: 'dimensionless', unit: '', defaultRaw: clamp(currentValue, 0, 1) }
 }
 
-/** Whether `port` could sensibly become a Macro's value at all. Control,
-    Event, and Boolean all have some meaningful macro shape (see
-    macroConfigForPort above); Audio and Note don't (a macro is a scalar/
-    discrete automatable value, not an audio-rate or event-stream signal),
-    and Data never converts implicitly to anything (SIGNAL_TYPES.md §5,
-    canConnect.ts's own rule) — a macro's plain float output is no
-    exception. Spectral is reserved, not real anywhere yet.
+/** Whether `port` could sensibly become a Macro's value at all. Control and
+    Event both have a meaningful macro shape (see macroConfigForPort above).
+    Audio and Note don't (a macro is a scalar/discrete automatable value,
+    not an audio-rate or event-stream signal), and Data never converts
+    implicitly to anything (SIGNAL_TYPES.md §5, canConnect.ts's own rule) —
+    a macro's plain float output is no exception. Spectral is reserved, not
+    real anywhere yet.
+
+    Deliberately NOT `Boolean`, even though a macro has a meaningful 0/1
+    shape for one (direct feedback bug: a real util.macro's own output port
+    is ALWAYS Control — MacroNode.h never declares a Boolean output — and
+    the real engine's CanConnect.cpp has an adapter for Boolean->Control but
+    none for the reverse Control->Boolean, so dragging out of e.g.
+    env.adsr's "gate" used to add the macro node, claim a slot, and seed its
+    config, only to have the final connect command hard-reject, leaving an
+    orphaned, disconnected macro on the canvas every single time. Revisit
+    once a real Control->Boolean adapter exists (a genuinely separate,
+    bigger feature, not a one-line fix) — until then this is exactly what
+    isMacroConnectable() below also guards, belt-and-suspenders.
 */
 export function isMacroablePort(port: Pick<PortDescriptor, 'type'>): boolean {
-  return port.type === 'control' || port.type === 'event' || port.type === 'boolean'
+  return port.type === 'control' || port.type === 'event'
+}
+
+/** The authoritative check `createMacroFromPort` uses right before
+    committing — mirrors canSplice()'s own "check canConnectPorts against
+    the real candidate descriptor before sending any command" discipline,
+    which the original drag-to-macro gesture skipped (it only ever checked
+    isMacroablePort()'s coarse type-based gate, never actually asked whether
+    util.macro's own real declared output port could connect into this
+    specific target). Catches any future port-type mismatch the same way,
+    not just the Boolean case isMacroablePort() above already excludes by
+    type.
+*/
+function isMacroConnectable(port: PortDescriptor): boolean {
+  const macroDescriptor = getDescriptor('util.macro')
+  const macroOutput = macroDescriptor && findPort(macroDescriptor, 'out', 'output')
+  if (!macroOutput) return false
+  return canConnectPorts(macroOutput, port).outcome !== 'reject'
 }
 
 /** Scans the local node mirror for every placed util.macro's own claimed
@@ -1086,19 +1124,24 @@ export function pickFreeMacroSlot(): number | undefined {
     default is -1/unclaimed specifically so the transient state between
     these two commands can never collide with an already-placed macro).
 
-    No-ops (returns undefined, no command sent) if the port doesn't exist or
-    isMacroablePort() rejects it — callers (InfiniteCanvas.tsx's drag-to-
-    empty-space gesture) are expected to have already checked
-    isMacroablePort() before even starting the drag, this is just the same
-    guarantee at the point of committing, matching spliceInsert/canSplice's
-    own split. Also no-ops, but sets lastError to a clear reason, if every
-    slot is already claimed — rather than firing a doomed addNode+
+    No-ops (returns undefined, no command sent) if the port doesn't exist,
+    isMacroablePort() rejects its type, or isMacroConnectable() says the
+    real engine would reject the resulting wire anyway — callers
+    (InfiniteCanvas.tsx's drag-to-empty-space gesture) are expected to have
+    already checked isMacroablePort() before even starting the drag, but
+    this function re-checks both itself rather than trusting the caller, so
+    it can never commit the addNode step and then fail the connect step,
+    leaving an orphaned macro node behind (a real bug this exact two-check
+    guard fixes — see isMacroablePort()'s own comment). Matches
+    spliceInsert/canSplice's own "check first, commit only if it would
+    work" discipline. Also no-ops, but sets lastError to a clear reason, if
+    every slot is already claimed — rather than firing a doomed addNode+
     setParameterValue sequence GraphEditController's own collision check
     would reject anyway.
 */
 export function createMacroFromPort(nodeId: string, portId: string, x: number, y: number): string | undefined {
   const endpoint = getEndpoint(nodeId, portId, 'input')
-  if (!endpoint || !isMacroablePort(endpoint.port)) return undefined
+  if (!endpoint || !isMacroablePort(endpoint.port) || !isMacroConnectable(endpoint.port)) return undefined
 
   const slot = pickFreeMacroSlot()
   if (slot === undefined) {
@@ -1117,18 +1160,21 @@ export function createMacroFromPort(nodeId: string, portId: string, x: number, y
 
   void withHistory(
     async () => {
-      if (!(await fireCommand(() => graphAddNode('util.macro', macroId, x, y)))) return
-      if (!(await fireCommand(() => graphSetParameterValue(macroId, 'util.macro.slot', slot)))) return
-      await fireCommand(() => graphSetParameterValue(macroId, 'util.macro.min', seed.min))
-      await fireCommand(() => graphSetParameterValue(macroId, 'util.macro.max', seed.max))
-      await fireCommand(() => graphSetParameterValue(macroId, 'util.macro.isInteger', isIntegerValue))
-      await fireCommand(() => graphSetParameterValue(macroId, 'util.macro.quantity', quantityValue))
-      // Cosmetic only (see MacroSeed.defaultRaw's own comment) — immediately
-      // overwritten by the next MacroParameters::applyToPlans block since
-      // the real value is host-bound, not user-set; only here so the knob
-      // doesn't visibly jump to 0 for that one block.
-      await fireCommand(() => graphSetParameterValue(macroId, 'util.macro.value', seed.defaultRaw))
-      if (seed.unit) await fireCommand(() => graphSetProperty(macroId, 'util.macro.unit', seed.unit))
+      // One atomic call creates the node AND sets every structural
+      // parameter (slot/min/max/isInteger/quantity/value, plus the cosmetic
+      // unit property) in a single recompile — see graphCommands.ts's own
+      // comment on graphCreateMacro. Previously this was addNode + 5x
+      // setParameterValue + setProperty, 6 separate recompiles with a real
+      // transient-slot-collision race between them (wiki/plans/UtilMacro.md
+      // Finding B's own "-1 unclaimed sentinel" workaround existed only to
+      // paper over that race); now a slot collision is rejected as one
+      // atomic no-op, nothing added at all.
+      if (
+        !(await fireCommand(() =>
+          graphCreateMacro(macroId, x, y, slot, seed.min, seed.max, seed.isInteger, quantityValue, seed.unit, seed.defaultRaw),
+        ))
+      )
+        return
       if (await fireCommand(() => graphConnectWithAutoAdapt(macroId, 'out', nodeId, portId))) {
         await designateOutputIfMasterOut(nodeId)
       }

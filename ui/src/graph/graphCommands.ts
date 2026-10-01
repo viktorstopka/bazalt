@@ -24,6 +24,29 @@ export function graphAddNode(typeId: string, nodeId: string, x: number, y: numbe
   return callCommand('graphAddNode', typeId, nodeId, x, y)
 }
 
+/** wiki/plans/UtilMacro.md P2.1 (post-ship sweep): adds one fully-configured
+    util.macro node (every structural parameter plus its cosmetic unit
+    property, all atomically with the node's own creation) in a single
+    recompile — see GraphEditController::createMacro's own doc comment.
+    Replaces graphAddNode + 5x graphSetParameterValue + graphSetProperty for
+    this one gesture; still followed by a separate graphConnectWithAutoAdapt
+    call to wire it in, not folded into this same call.
+*/
+export function graphCreateMacro(
+  nodeId: string,
+  x: number,
+  y: number,
+  slot: number,
+  min: number,
+  max: number,
+  isInteger: boolean,
+  quantity: number,
+  unit: string,
+  value: number,
+): Promise<CommandResult> {
+  return callCommand('graphCreateMacro', nodeId, x, y, slot, min, max, isInteger ? 1 : 0, quantity, unit, value)
+}
+
 export function graphDeleteNode(nodeId: string): Promise<CommandResult> {
   return callCommand('graphDeleteNode', nodeId)
 }

@@ -79,6 +79,28 @@ namespace bazalt
                                    const juce::String& toNodeId, const juce::String& toPortId);
         CommandResult setParameterValue (const juce::String& nodeId, const juce::String& parameterId, float value);
 
+        /** Adds one fully-configured `util.macro` node (id/position/every
+            structural parameter and its cosmetic `unit` property, all in
+            the SAME NodeInstance) in ONE recompile via `applyBatch`,
+            replacing what used to be the
+            UI's own addNode + 5x setParameterValue + setProperty sequence
+            (6 separate recompiles). Does NOT connect it — callers still
+            call `connectWithAutoAdapt` separately afterward (reusing its
+            existing adapter-chain insertion rather than duplicating it
+            here, since a macro dragged out of a real Event-typed input,
+            e.g. `random.stepped`'s own `trigger` port, genuinely needs a
+            Threshold adapter inserted, not a raw connection). Two
+            round trips instead of 7-8, and — since every structural
+            parameter is now set atomically with the node's own creation —
+            the transient "unclaimed slot" window Batch 2's `-1` sentinel
+            was built to paper over doesn't exist for this path any more:
+            a slot collision is now rejected as ONE atomic no-op (nothing
+            added at all), never a half-configured orphan node.
+        */
+        CommandResult createMacro (const juce::String& macroNodeId, float x, float y,
+                                     int slot, float min, float max, bool isInteger, int quantity,
+                                     const juce::String& unit, float value);
+
         /** Designates which node's output port is the graph's audible
             output (NodeGraph::setOutput) — M8 addition: M7's own command
             list (addNode/deleteNode/connect/disconnect/setParameterValue)

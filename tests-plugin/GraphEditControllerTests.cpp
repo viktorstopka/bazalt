@@ -2,6 +2,7 @@
 #include "PluginProcessor.h"
 #include "bazalt/engine/graph/ProofGraphs.h"
 #include "bazalt/engine/patch/PatchSerializer.h"
+#include <algorithm>
 #include <atomic>
 #include <cmath>
 #include <thread>
@@ -856,4 +857,98 @@ TEST_CASE ("Finding A: a macro wired into GLOBAL-domain content is still applied
     // the sign must flip between the two extremes.
     CHECK (balanceFullLeft > 0.01f);
     CHECK (balanceFullRight < -0.01f);
+}
+
+// wiki/plans/UtilMacro.md P2.1 (post-ship sweep) - GraphEditController::createMacro:
+// one atomic recompile instead of the drag gesture's old 6-recompile
+// addNode+5xsetParameterValue+setProperty sequence.
+
+TEST_CASE ("createMacro adds a fully-configured util.macro node in one recompile",
+           "[plugin][GraphEditController][macro]")
+{
+    BazaltAudioProcessor processor;
+    processor.prepareToPlay (44100.0, 512);
+
+    auto& controller = processor.getGraphEditController();
+    REQUIRE (controller.setGraph (bazalt::engine::buildMasterOutOnlyGraph()).success);
+
+    const auto result = controller.createMacro ("m1", 10.0f, 20.0f, 5, 200.0f, 12000.0f, false, 1 /* Frequency */, "Hz", 0.5f);
+    REQUIRE (result.success);
+
+    const auto& nodes = controller.getGraph().getNodes();
+    const auto it = std::find_if (nodes.begin(), nodes.end(), [] (const auto& n) { return n.id == "m1"; });
+    REQUIRE (it != nodes.end());
+    CHECK (it->type == "util.macro");
+    CHECK (it->position.x == 10.0f);
+    CHECK (it->position.y == 20.0f);
+    CHECK (it->parameters.at ("util.macro.slot") == 5.0f);
+    CHECK (it->parameters.at ("util.macro.min") == 200.0f);
+    CHECK (it->parameters.at ("util.macro.max") == 12000.0f);
+    CHECK (it->parameters.at ("util.macro.isInteger") == 0.0f);
+    CHECK (it->parameters.at ("util.macro.quantity") == 1.0f);
+    CHECK (it->parameters.at ("util.macro.value") == 0.5f);
+    REQUIRE (it->properties.count ("util.macro.unit") == 1);
+    CHECK (it->properties.at ("util.macro.unit").toString() == "Hz");
+}
+
+TEST_CASE ("createMacro rejects a slot collision as one atomic no-op - nothing is added at all",
+           "[plugin][GraphEditController][macro]")
+{
+    BazaltAudioProcessor processor;
+    processor.prepareToPlay (44100.0, 512);
+
+    auto& controller = processor.getGraphEditController();
+    REQUIRE (controller.setGraph (bazalt::engine::buildMasterOutOnlyGraph()).success);
+
+    REQUIRE (controller.createMacro ("m1", 0.0f, 0.0f, 3, 0.0f, 1.0f, false, 0, "", 0.0f).success);
+
+    const auto graphBefore = controller.getGraph();
+    const auto rejected = controller.createMacro ("m2", 100.0f, 0.0f, 3, 0.0f, 1.0f, false, 0, "", 0.0f);
+
+    CHECK_FALSE (rejected.success);
+    CHECK (rejected.errorMessage.contains ("m1"));
+    CHECK (rejected.errorMessage.contains ("3"));
+
+    // Unlike the old multi-command gesture, there is no partial/orphaned
+    // node left behind - the whole create is one atomic unit that either
+    // fully lands or doesn't exist at all.
+    const auto& graphAfter = controller.getGraph();
+    REQUIRE (graphAfter.getNodes().size() == graphBefore.getNodes().size());
+    CHECK (graphAfter.findNode ("m2") == nullptr);
+}
+
+TEST_CASE ("createMacro's slot survives into a real derived mapping, same as the old multi-command path",
+           "[plugin][GraphEditController][macro]")
+{
+    BazaltAudioProcessor processor;
+    processor.prepareToPlay (44100.0, 512);
+
+    auto& controller = processor.getGraphEditController();
+    REQUIRE (controller.setGraph (bazalt::engine::buildVoiceProofGraph()).success);
+
+    REQUIRE (controller.createMacro ("macro1", 0.0f, 0.0f, 7, 200.0f, 12000.0f, false, 0, "", 0.0f).success);
+    REQUIRE (controller.connectWithAutoAdapt ("macro1", "out", "svf", "filter.svf.cutoff").success);
+
+    juce::MidiBuffer noteOn;
+    noteOn.addEvent (juce::MidiMessage::noteOn (1, 60, (juce::uint8) 100), 0);
+    juce::AudioBuffer<float> buffer (2, 512);
+    buffer.clear();
+    processor.processBlock (buffer, noteOn);
+
+    auto settleAndMeasure = [&] (float macroRawValue)
+    {
+        processor.getMacroParameter (7).setValueNotifyingHost (macroRawValue);
+        juce::AudioBuffer<float> settled (2, 512);
+        for (int block = 0; block < 10; ++block)
+        {
+            settled.clear();
+            juce::MidiBuffer empty;
+            processor.processBlock (settled, empty);
+        }
+        return rms (settled, 0);
+    };
+
+    const auto rmsLowCutoff = settleAndMeasure (0.0f);
+    const auto rmsHighCutoff = settleAndMeasure (1.0f);
+    CHECK (rmsHighCutoff > rmsLowCutoff * 1.5f);
 }
