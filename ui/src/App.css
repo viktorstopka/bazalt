@@ -24,6 +24,21 @@
   color: var(--color-textPrimary);
 }
 
+/* wiki/plans/UtilMacro.md: the top-bar knob panel, one row directly below
+   .top-bar (a plain sibling in flow, not absolutely positioned — same
+   opaque-background reasoning as .top-bar's own comment above: this can
+   sit over panned-under nodes/cables too). Horizontally scrollable since
+   up to 32 claimed macros can exist at once; never wraps, so the row's
+   own height stays fixed regardless of count. */
+.macro-panel {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-md);
+  padding: 0 var(--space-md) var(--space-sm);
+  background: var(--color-background);
+  overflow-x: auto;
+}
+
 .top-bar-title {
   font-weight: 600;
   opacity: 0.8;
