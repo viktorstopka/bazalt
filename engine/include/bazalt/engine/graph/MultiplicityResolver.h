@@ -5,11 +5,14 @@
 
 namespace bazalt::engine
 {
-    /** One "instance.allocate.voice" node's own Poly-resolved region — every
-        node MultiplicityResolver::split() classified as Poly(originId ==
-        this node's own id), duplicated in on the origin's own upstream
-        trigger chain (see MultiplicityResolver.cpp's own comment on why),
-        plus the allocator itself. Compiled numVoices times, exactly like
+    /** One instance-allocating node's own Poly-resolved region (any of
+        "instance.allocate.voice"/"swarmPopulation"/"swarmTransient"/
+        "trigger" — Domain Extensions batch; see MultiplicityResolver.cpp's
+        own `isInstanceOriginType`) — every node MultiplicityResolver::
+        split() classified as Poly(originId == this node's own id),
+        duplicated in on the origin's own upstream trigger chain (see
+        MultiplicityResolver.cpp's own comment on why), plus the allocator
+        itself. Compiled numVoices times, exactly like
         DomainSplitResult::voiceGraph was — this struct is engine-level
         (NodeGraph-shaped); the plugin-level per-origin runtime state
         (VoiceManager + 8 PlanSwappers) is a DIFFERENT, deliberately
@@ -40,8 +43,8 @@ namespace bazalt::engine
         bool success = false;
         juce::String errorMessage;
 
-        /** True iff the graph has no "instance.allocate.voice" node AND no
-            "instance.sum" node at all — wholly Scalar, compiled once, run
+        /** True iff the graph has no instance-allocating node of any kind
+            AND no "instance.sum" node at all — wholly Scalar, compiled once, run
             every block whether or not any note is held (DomainSplitResult::
             monoOnly, unchanged meaning). `origins` is empty and
             `globalGraph` is the whole, unfiltered input graph.
@@ -69,7 +72,7 @@ namespace bazalt::engine
         */
         juce::String outputOriginId;
 
-        std::vector<MultiplicityOrigin> origins; // one per instance.allocate.voice node, declaration order
+        std::vector<MultiplicityOrigin> origins; // one per instance-allocating node, declaration order
         NodeGraph globalGraph;                    // every Scalar-resolved node, incl. every instance.sum and the designated output
     };
 
@@ -83,11 +86,13 @@ namespace bazalt::engine
         to build this.
 
         Algorithm (`split`):
-        1. Every "instance.allocate.voice" node is an ORIGIN, keyed by its own
-           id (a fixed producer, never resolved dynamically — every one of
-           its output ports is Poly(originId = its own id) by construction).
-           More than `maxOrigins` is a compile error, same tone as the old
-           "only one... found N" message.
+        1. Every instance-allocating node (any of the four Domain Extensions
+           types — see MultiplicityResolver.cpp's own `isInstanceOriginType`)
+           is an ORIGIN, keyed by its own id (a fixed producer, never
+           resolved dynamically — every one of its output ports is
+           Poly(originId = its own id) by construction). More than
+           `maxOrigins` is a compile error, same tone as the old "only
+           one... found N" message.
         2. Fixed-point pass over every other (non-origin, non-"instance.sum")
            node: resolves Scalar if every wired input is Scalar (or
            unconnected); resolves Poly(X) if any wired input is Poly(X) and
@@ -138,7 +143,8 @@ namespace bazalt::engine
     class MultiplicityResolver
     {
     public:
-        /** More than this many simultaneous "instance.allocate.voice" nodes
+        /** More than this many simultaneous instance-allocating nodes (of
+            any of the four Domain Extensions types, combined)
             is a compile error — a small, fixed ceiling, the same precedent
             BazaltAudioProcessor::numAuxBuses already sets for "more than a
             handful of these would need real UI/perf design first."

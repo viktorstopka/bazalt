@@ -12,7 +12,33 @@ namespace bazalt::engine
         // one-line diff here, not a re-derivation of the algorithm below.
         constexpr const char* instanceSumTypeId = "instance.sum";
         constexpr const char* instanceSumInputPortId = "in";
-        constexpr const char* instanceVoiceTypeId = "instance.allocate.voice";
+
+        /** Domain Extensions batch: every node type that opens an instanced
+            (Poly) region is an ORIGIN to this algorithm, regardless of which
+            of the four spawn mechanisms it is (DOMAINS.md §3) — the
+            fixed-point propagation below operates purely on origin id
+            strings once this set has identified them, with zero further
+            dependency on which concrete node type produced a given origin.
+            A fixed set of constants, not a generic "ask the node itself"
+            marker, matching this file's own existing style (named
+            constants) and because NodeGraph's plain {id,type,...} structs
+            have no node OBJECT to ask here at all — only the raw type
+            string, same reason instanceSumTypeId above is a string too.
+        */
+        constexpr const char* instanceOriginTypeIds[] = {
+            "instance.allocate.voice",
+            "instance.allocate.swarmPopulation",
+            "instance.allocate.swarmTransient",
+            "instance.allocate.trigger",
+        };
+
+        bool isInstanceOriginType (const juce::String& type) noexcept
+        {
+            for (const auto* originTypeId : instanceOriginTypeIds)
+                if (type == originTypeId)
+                    return true;
+            return false;
+        }
     }
 
     MultiplicityResult MultiplicityResolver::split (const NodeGraph& graph)
@@ -25,7 +51,7 @@ namespace bazalt::engine
         std::vector<juce::String> sumIds;
         for (const auto& node : nodes)
         {
-            if (node.type == instanceVoiceTypeId)
+            if (isInstanceOriginType (node.type))
                 originIds.push_back (node.id);
             else if (node.type == instanceSumTypeId)
                 sumIds.push_back (node.id);
@@ -34,7 +60,8 @@ namespace bazalt::engine
         if ((int) originIds.size() > maxOrigins)
         {
             result.errorMessage = "Only up to " + juce::String (maxOrigins)
-                                   + " instance.allocate.voice nodes are supported per graph (found "
+                                   + " instance-allocating nodes (instance.allocate.voice/swarmPopulation/"
+                                     "swarmTransient/trigger) are supported per graph (found "
                                    + juce::String ((int) originIds.size()) + ")";
             return result;
         }

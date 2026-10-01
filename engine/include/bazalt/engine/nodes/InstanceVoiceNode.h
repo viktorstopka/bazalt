@@ -2,6 +2,7 @@
 
 #include "bazalt/engine/graph/Node.h"
 #include "bazalt/engine/graph/ValueTypes.h"
+#include "bazalt/engine/nodes/InstanceOriginNode.h"
 #include <atomic>
 #include <cmath>
 #include <cstdint>
@@ -49,7 +50,7 @@ namespace bazalt::engine::nodes
         safe/additive (`VALUE_MODEL.md` §8's stability table), unlike removing
         one. Add them once something can actually drive them.
     */
-    class InstanceVoiceNode : public Node
+    class InstanceVoiceNode : public Node, public InstanceOriginNode
     {
     public:
         static constexpr int numInputs = 1;  // spawn
@@ -263,11 +264,22 @@ namespace bazalt::engine::nodes
             an audio-thread-written, occasionally-read count
             (`PluginProcessor::auxPeakLevels`).
         */
-        int consumeSpawnEventsThisBlock() noexcept { return spawnEventsThisBlock.exchange (0, std::memory_order_relaxed); }
+        int consumeSpawnEventsThisBlock() noexcept override { return spawnEventsThisBlock.exchange (0, std::memory_order_relaxed); }
 
-        bool getGate() const noexcept { return gate; }
-        float getPitch() const noexcept { return pitch; }
-        float getVelocity() const noexcept { return velocity; }
+        bool getGate() const noexcept override { return gate; }
+        float getPitch() const noexcept override { return pitch; }
+        float getVelocity() const noexcept override { return velocity; }
+
+        /** InstanceOriginNode's generic dispatch surface — forwards to the
+            real noteOn()/noteOff() below, which stay the real, direct-poke
+            entry points (tests/tools/real MIDI dispatch all call those by
+            name, unchanged). These two exist only so
+            PluginProcessor's origin-relay dispatch can target ANY
+            InstanceOriginNode polymorphically, Voice included, without a
+            concrete-type special case.
+        */
+        void spawnInstance (float pitchIn, float velocityIn) noexcept override { noteOn (pitchIn, velocityIn); }
+        void releaseInstance() noexcept override { noteOff(); }
 
         void processSample (const float*, float* outputs) noexcept override
         {
