@@ -587,6 +587,55 @@ class of limit) would never hit. Not yet proven — needs either a repro with a 
 size/zoom level, or a deliberate stress test building a wide graph and checking node visibility
 programmatically at a range of zoom values. Pending that.
 
+### `resonator.plate.quality` crash — FIXED (2026-10-03)
+*A structural parameter's own `prepare()`-time buffer allocation read the
+node's just-constructed DEFAULT value instead of the parameter's declared
+CEILING — safe only if the two happen to be equal.*
+
+**Confirmed, found live, direct feedback**: "setting plate quality to high
+crashed it." Root cause, confirmed by reading `GraphCompiler.cpp` directly:
+a freshly-constructed node gets `prepare()` called BEFORE its stored
+parameters are applied via `setParameter()` (the compiler's own real,
+established order — prepare a fresh node first, then loop `setParameter()`
+over everything the graph has saved for it). `ResonatorPlateNode::prepare()`
+sized its `state1`/`state2` mode-state vectors from the LIVE `quality`
+member — still at its just-constructed default, `Medium` (16 modes), since
+`setParameter()` hadn't run yet — rather than the parameter's own declared
+maximum, `High` (32 modes). The very next `setParameter
+("resonator.plate.quality", 2.0)` call raised `quality` to `High` without
+ever resizing the vectors; `processSample()`'s own per-mode loop then
+indexed `state1[16..31]`/`state2[16..31]`, a real out-of-bounds vector
+access — reproduced directly as a hang (not a clean crash) when the exact
+real construction order was mutation-tested.
+
+`resonator.modal`'s own structurally-identical `maxModes` parameter has the
+SAME pattern (`prepare()` reads the live `maxModesParam` member) but was
+never actually broken by it — only because its default (64) already equals
+its own declared ceiling, so `prepare()` always allocates the full ceiling
+by coincidence. Hardened anyway, to the same explicit "always allocate to
+the ceiling, not the live value" pattern, so this exact bug class can't
+reappear here later if that coincidence ever stops holding.
+
+**Fix applied:** both nodes' `prepare()` now size their state vectors to
+their own parameter's declared ceiling explicitly (`ResonatorPlateNode`:
+`maxModesFor (Quality::High)`; `ResonatorModalNode`: `defaultMaxModes`) —
+the same "fixed-maximum allocation, a structural parameter only ever
+controls how much of it is USED" pattern `filter.ladder`'s own fixed-size
+internal state already follows for its own structural `poles` parameter.
+
+**Tests:** `tests/PMCoreNodesTests.cpp` — a direct node-level test calling
+`prepare()` then `setParameter()` in the EXACT real order (the opposite of
+every other test in that file, which calls `setParameter()` first — a real
+gap in this batch's own original test coverage, not a second copy of an
+already-covered case), and a real compiled-graph test placing
+`resonator.plate` with `quality` already saved as `High` from the start
+(the literal reported/saved-patch shape). Mutation-tested: reverting the
+fix reproduced the hang under the new regression test, confirming it
+actually catches this bug; restored, clean and fast.
+
+**Verified:** full rebuild clean, `ctest --test-dir build -C Debug` 577/577
+green (575 + 2 new). Standalone app relaunched, stays up.
+
 ## Full node list checked (55 files, `engine/include/bazalt/engine/nodes/`)
 
 ConstantNode, OutputNode, DelayNode, ListenNode, NoiseBurstNode, NormaliseNode,

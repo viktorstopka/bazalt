@@ -102,8 +102,20 @@ namespace bazalt::engine::nodes
         void prepare (const NodePrepareInfo& info) override
         {
             sampleRate = info.sampleRate;
-            state1.assign ((size_t) maxModesParam, 0.0f);
-            state2.assign ((size_t) maxModesParam, 0.0f);
+            // Always allocate to the CEILING (defaultMaxModes), never the
+            // current `maxModesParam` member — GraphCompiler.cpp calls
+            // prepare() BEFORE applying a freshly-constructed node's own
+            // stored parameters, so `maxModesParam` is still at its
+            // just-constructed default here, not whatever the graph's own
+            // saved "resonator.modal.maxModes" value will shortly set it
+            // to. Harmless today only because that default already equals
+            // the ceiling (sizing from the live member would be genuinely
+            // safe only by coincidence) — hardened explicitly after the
+            // IDENTICAL bug class was caught live in `resonator.plate`'s
+            // own `quality` (whose default is NOT its ceiling), see that
+            // node's own comment for the full mechanism.
+            state1.assign ((size_t) defaultMaxModes, 0.0f);
+            state2.assign ((size_t) defaultMaxModes, 0.0f);
         }
 
         void reset() override

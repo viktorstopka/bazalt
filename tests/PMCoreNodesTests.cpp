@@ -1099,6 +1099,72 @@ TEST_CASE ("ResonatorPlateNode stays finite and bounded over a long run at high 
     }
 }
 
+// ---- A real, live-crash bug: prepare() runs BEFORE setParameter() ----
+//
+// GraphCompiler.cpp's own real construction order for a freshly-created node
+// is prepare() THEN setParameter() for every stored parameter (never the
+// other way around) - confirmed by direct feedback that setting
+// resonator.plate's own "quality" to High crashed the running Standalone
+// app. Both tests below call prepare()/setParameter() in that EXACT real
+// order (the opposite of every other test above in this file, which calls
+// setParameter() first - a real gap in this file's own original coverage,
+// not a second copy of an already-covered case).
+
+TEST_CASE ("ResonatorPlateNode's state vectors are sized to the ceiling even when quality is raised AFTER prepare()",
+           "[engine][nodes][ResonatorPlateNode][PMCore][regression]")
+{
+    ResonatorPlateNode node;
+    node.prepare ({ 44100.0, 512 }); // quality is still its just-constructed default (Medium) here
+    node.setParameter ("resonator.plate.quality", 2.0f); // High - the real order GraphCompiler.cpp uses
+
+    // The real, live-reproduced crash: processSample() indexes state1/state2
+    // up to activeModeCount-1 (31 at High). If the vectors were sized from
+    // the live `quality` member INSIDE prepare() (the original bug), they'd
+    // only have 16 elements here - this run would read/write out of bounds.
+    float outputs[2];
+    const float excited[7] = { 1.0f, 0.5f, 0.5f, 2.0f, 1.0f, 0.4f, 0.6f };
+    const float quiet[7] = { 0.0f, 0.5f, 0.5f, 2.0f, 1.0f, 0.4f, 0.6f };
+    node.processSample (excited, outputs);
+    for (int i = 0; i < 1000; ++i)
+    {
+        node.processSample (quiet, outputs);
+        REQUIRE (std::isfinite (outputs[0]));
+        REQUIRE (std::isfinite (outputs[1]));
+    }
+}
+
+TEST_CASE ("A real compiled graph placing resonator.plate at quality=High from the start does not crash",
+           "[engine][PMCore][regression][integration]")
+{
+    // The literal reported scenario: a patch (or a live parameter edit,
+    // which GraphEditController::recompileAndPublish() always turns into a
+    // fresh node construction, CLAUDE.md's own documented behaviour) with
+    // resonator.plate's own "resonator.plate.quality" parameter already set
+    // to High (2.0) - exactly what a saved NodeInstance::parameters entry
+    // looks like, exercising the real factory.create() -> prepare() ->
+    // setParameter() order end to end, not a hand-sequenced unit test.
+    constexpr double sampleRate = 44100.0;
+    constexpr int blockSize = 512;
+
+    NodeGraph graph;
+    graph.addNode ({ "plate", "resonator.plate", {},
+                      { { "resonator.plate.quality", 2.0f }, { "resonator.plate.size", 0.2f } }, {} });
+    graph.setOutput ("plate", "out");
+
+    auto factory = buildDefaultNodeFactory();
+    auto result = GraphCompiler::compile (graph, factory, { sampleRate, blockSize }, 1);
+    REQUIRE (result.success);
+    auto& plan = result.plan;
+
+    const auto* leftPtr = plan.blockBuffers[(size_t) plan.finalOutputBufferIndex].getBlock().getChannelPointer (0);
+    for (int block = 0; block < 5; ++block)
+    {
+        plan.process (blockSize);
+        for (int i = 0; i < blockSize; ++i)
+            REQUIRE (std::isfinite (leftPtr[i]));
+    }
+}
+
 // ---- The real cross-node feedback cycle: excite.mallet <-> resonator.string ----
 
 TEST_CASE ("A real compiled graph closes excite.mallet<->resonator.string into a per-sample feedback region, and plays",

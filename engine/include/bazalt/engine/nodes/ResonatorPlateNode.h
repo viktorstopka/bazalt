@@ -74,8 +74,26 @@ namespace bazalt::engine::nodes
         void prepare (const NodePrepareInfo& info) override
         {
             sampleRate = info.sampleRate;
-            state1.assign ((size_t) maxModesFor (quality), 0.0f);
-            state2.assign ((size_t) maxModesFor (quality), 0.0f);
+            // Always allocate to the CEILING (High, 32 modes), never the
+            // current `quality` member — a real, confirmed-live crash this
+            // session's own direct feedback caught: GraphCompiler.cpp
+            // calls prepare() BEFORE applying a freshly-constructed node's
+            // stored parameters (it prepares first, then loops
+            // `setParameter()` over every saved parameter) — so `quality`
+            // is still at its just-constructed default (`Medium`, 16) the
+            // moment this runs, regardless of what the graph's own saved
+            // "resonator.plate.quality" value will shortly set it to.
+            // Sizing from the live member here left state1/state2 at 16
+            // elements even when `setParameter()` moments later raised
+            // `quality` to `High` (32) — processSample()'s loop then
+            // indexed state1[16..31], a real out-of-bounds vector access.
+            // Always sizing to the true ceiling here, and letting
+            // `setParameter()`/processSample() only ever use fewer of
+            // those already-allocated slots, is the same safe pattern
+            // `filter.ladder`'s own fixed-size internal state already uses
+            // for its own structural `poles` parameter.
+            state1.assign ((size_t) maxModesFor (Quality::High), 0.0f);
+            state2.assign ((size_t) maxModesFor (Quality::High), 0.0f);
         }
 
         void reset() override
