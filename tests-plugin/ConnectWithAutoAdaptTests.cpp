@@ -308,3 +308,92 @@ TEST_CASE ("connectWithAutoAdapt rejects a Stereo source into a Control-typed po
     CHECK (controller.getGraph().getNodes().size() == nodesBefore);
     CHECK (controller.getGraph().getConnections().size() == connectionsBefore);
 }
+
+TEST_CASE ("connectWithAutoAdapt inserts adapt.controlToAudio for a Bipolar modulation source into an Audio-typed port",
+           "[plugin][GraphEditController][CanConnect][ControlToAudioBridge]")
+{
+    BazaltAudioProcessor processor;
+    processor.prepareToPlay (44100.0, 512);
+    auto& controller = processor.getGraphEditController();
+    REQUIRE (controller.setGraph (bazalt::engine::buildVoiceProofGraph()).success);
+
+    // allocator.random1 is a real Bipolar Control source (InstanceVoiceNode.h).
+    // adapt.audioToControl's own "in" is a plain Audio port - a neutral,
+    // otherwise-irrelevant destination, same trick the Audio->Control tests
+    // above use with adapt.normalise for a neutral Control destination.
+    REQUIRE (controller.addNode ("adapt.audioToControl", "destTest", 0.0f, 0.0f).success);
+
+    const auto result = controller.connectWithAutoAdapt ("allocator", "random1", "destTest", "in");
+    REQUIRE (result.success);
+
+    const auto& graph = controller.getGraph();
+    const bazalt::engine::NodeInstance* bridgeNode = nullptr;
+    for (const auto& n : graph.getNodes())
+        if (n.type == "adapt.controlToAudio")
+            bridgeNode = &n;
+    REQUIRE (bridgeNode != nullptr);
+
+    bool sourceToBridge = false, bridgeToDestination = false;
+    for (const auto& c : graph.getConnections())
+    {
+        if (c.fromNodeId == "allocator" && c.fromPortId == "random1" && c.toNodeId == bridgeNode->id && c.toPortId == "in")
+            sourceToBridge = true;
+        if (c.fromNodeId == bridgeNode->id && c.fromPortId == "out" && c.toNodeId == "destTest" && c.toPortId == "in")
+            bridgeToDestination = true;
+    }
+    CHECK (sourceToBridge);
+    CHECK (bridgeToDestination);
+}
+
+TEST_CASE ("connectWithAutoAdapt inserts adapt.normalise then adapt.controlToAudio for a real-quantity source into an Audio-typed port",
+           "[plugin][GraphEditController][CanConnect][ControlToAudioBridge]")
+{
+    // allocator.pitch is a real Quantity::Pitch source (InstanceVoiceNode.h) -
+    // the symmetric counterpart of the Audio->Control real-quantity test
+    // above, just with the real-quantity step on the source side this time.
+    BazaltAudioProcessor processor;
+    processor.prepareToPlay (44100.0, 512);
+    auto& controller = processor.getGraphEditController();
+    REQUIRE (controller.setGraph (bazalt::engine::buildVoiceProofGraph()).success);
+
+    REQUIRE (controller.addNode ("adapt.audioToControl", "destTest", 0.0f, 0.0f).success);
+
+    const auto result = controller.connectWithAutoAdapt ("allocator", "pitch", "destTest", "in");
+    REQUIRE (result.success);
+
+    const auto& graph = controller.getGraph();
+    const bazalt::engine::NodeInstance* normaliseNode = nullptr;
+    const bazalt::engine::NodeInstance* bridgeNode = nullptr;
+    for (const auto& n : graph.getNodes())
+    {
+        if (n.type == "adapt.normalise")
+            normaliseNode = &n;
+        if (n.type == "adapt.controlToAudio")
+            bridgeNode = &n;
+    }
+    REQUIRE (normaliseNode != nullptr);
+    REQUIRE (bridgeNode != nullptr);
+
+    // adapt.normalise seeded from the SOURCE's own range (allocator.pitch,
+    // 0..127 per InstanceVoiceNode.h's own port descriptor) - the mirror
+    // image of the forward bridge's adapt.map, which seeds from the
+    // DESTINATION instead.
+    REQUIRE (normaliseNode->parameters.count ("adapt.normalise.min") == 1);
+    CHECK (normaliseNode->parameters.at ("adapt.normalise.min") == 0.0f);
+    REQUIRE (normaliseNode->parameters.count ("adapt.normalise.max") == 1);
+    CHECK (normaliseNode->parameters.at ("adapt.normalise.max") == 127.0f);
+
+    bool sourceToNormalise = false, normaliseToBridge = false, bridgeToDestination = false;
+    for (const auto& c : graph.getConnections())
+    {
+        if (c.fromNodeId == "allocator" && c.fromPortId == "pitch" && c.toNodeId == normaliseNode->id && c.toPortId == "in")
+            sourceToNormalise = true;
+        if (c.fromNodeId == normaliseNode->id && c.fromPortId == "out" && c.toNodeId == bridgeNode->id && c.toPortId == "in")
+            normaliseToBridge = true;
+        if (c.fromNodeId == bridgeNode->id && c.fromPortId == "out" && c.toNodeId == "destTest" && c.toPortId == "in")
+            bridgeToDestination = true;
+    }
+    CHECK (sourceToNormalise);
+    CHECK (normaliseToBridge);
+    CHECK (bridgeToDestination);
+}

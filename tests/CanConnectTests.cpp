@@ -194,6 +194,50 @@ TEST_CASE ("canConnect: stereo Audio into Control is a hard reject, not a 3-step
     CHECK (realQuantity.outcome == ConnectionOutcome::Reject);
 }
 
+TEST_CASE ("canConnect: a modulation-quantity Control into Audio needs To Audio, one step",
+           "[engine][CanConnect][ControlToAudioBridge]")
+{
+    const auto result = canConnect (controlPort (Quantity::Bipolar), audioPort());
+
+    REQUIRE (result.outcome == ConnectionOutcome::NeedsAdapters);
+    REQUIRE (result.adapterChain.size() == 1);
+    CHECK (result.adapterChain[0].typeId == "adapt.controlToAudio");
+    CHECK (result.adapterChain[0].inputPortId == "in");
+
+    // Dimensionless behaves the same as an explicit modulation quantity -
+    // one step only, same as connectControl()'s own Dimensionless handling.
+    CHECK (canConnect (controlPort(), audioPort()).outcome == ConnectionOutcome::NeedsAdapters);
+    CHECK (canConnect (controlPort (Quantity::Unipolar), audioPort()).outcome == ConnectionOutcome::NeedsAdapters);
+}
+
+TEST_CASE ("canConnect: a real-quantity Control into Audio needs Normalise, then To Audio",
+           "[engine][CanConnect][ControlToAudioBridge]")
+{
+    const auto from = controlPort (Quantity::Frequency, 20.0f, 20000.0f);
+    const auto result = canConnect (from, audioPort());
+
+    REQUIRE (result.outcome == ConnectionOutcome::NeedsAdapters);
+    REQUIRE (result.adapterChain.size() == 2);
+    CHECK (result.adapterChain[0].typeId == "adapt.normalise");
+    CHECK (result.adapterChain[0].seedFromSourceRange);
+    CHECK_FALSE (result.adapterChain[0].seedFromDestinationRange);
+    CHECK (result.adapterChain[1].typeId == "adapt.controlToAudio");
+}
+
+TEST_CASE ("canConnect: Control into Audio has no stereo complication - Control has no Channels concept",
+           "[engine][CanConnect][ControlToAudioBridge][channels]")
+{
+    // A Control source into a STEREO-destined Audio port still only ever
+    // needs the one-step bridge - the existing mono->stereo free broadcast
+    // (connectAudio()) handles the rest once adapt.controlToAudio's own
+    // mono "out" reaches the real Audio<->Audio leg, with no second adapter
+    // needed on THIS leg of the connection.
+    const auto result = canConnect (controlPort (Quantity::Bipolar), audioPort (Channels::Stereo));
+    REQUIRE (result.outcome == ConnectionOutcome::NeedsAdapters);
+    REQUIRE (result.adapterChain.size() == 1);
+    CHECK (result.adapterChain[0].typeId == "adapt.controlToAudio");
+}
+
 TEST_CASE ("canConnect: Audio channels, mono->mono, mono->stereo (free), stereo->stereo are Ok",
            "[engine][CanConnect][channels]")
 {

@@ -16,9 +16,10 @@ answering a specific question) and `wiki/NODES_Gaps.md` (found-defect
 tracking for existing behavior). A plan file isn't deleted once it's built —
 it stays as the durable project record (see `wiki/plans/UtilMacro.md`'s own
 "Status: Built" header, written at completion rather than mid-discussion);
-all three files currently in `wiki/plans/` (`AudioControlBridge.md`,
-`DomainRedesign.md`, `UtilMacro.md`) are fully implemented today, same as
-the proposal they once were before any code existed. **Historical design docs (M0–M22 era, superseded, not maintained —
+all four files currently in `wiki/plans/` (`AudioControlBridge.md`,
+`ControlToAudioBridge.md`, `DomainRedesign.md`, `UtilMacro.md`) are fully
+implemented today, same as the proposal they once were before any code
+existed. **Historical design docs (M0–M22 era, superseded, not maintained —
 don't read for current specs/plan):** `archive_docs/ARCHITECTURE.md`,
 `archive_docs/NODE_EDITOR.md`, `archive_docs/MILESTONES.md`,
 `archive_docs/decisions/`. Still the right place to look for *why* something

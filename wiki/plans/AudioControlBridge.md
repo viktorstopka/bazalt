@@ -240,6 +240,14 @@ original text.
   somewhere expecting a raw waveform doesn't obviously do anything useful, since
   Control cables already free-broadcast at whatever rate a destination reads them).
   Flagged as an open symmetric question for later, not scoped here.
+
+  **Superseded, 2026-10-02:** the user asked directly, a concrete use case (sonification/
+  monitoring a modulation source as audio; feeding a Control source into an
+  audio-rate-only processing chain) turned out to exist after all, and
+  `wiki/plans/ControlToAudioBridge.md` builds it — `adapt.controlToAudio` ("To
+  Audio"), the real mirror of `adapt.audioToControl` above. This bullet stays as
+  written (this project's own "don't retroactively rewrite a superseded plan
+  bullet" convention) — the new plan is the current word on this direction.
 - **No `Quantity` table changes.** The new node's output reuses the existing
   `Bipolar` quantity as-is (`wiki/NODES.System.md` §2) — no "raw audio range"
   quantity is introduced.

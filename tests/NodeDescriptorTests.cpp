@@ -10,7 +10,7 @@ TEST_CASE ("NodeFactory::describeAll() returns a descriptor for every registered
     auto factory = buildDefaultNodeFactory();
     const auto descriptors = factory.describeAll();
 
-    REQUIRE (descriptors.size() == 81); // 78 as of wiki/plans/UtilMacro.md (see git history for the full running tally before this) + 3 Domain Extensions batch (instance.allocate.swarmPopulation, swarmTransient, trigger - the full arc)
+    REQUIRE (descriptors.size() == 82); // 81 as of the Domain Extensions batch (see git history for the full running tally before this) + 1 Control -> Audio Bridge (adapt.controlToAudio, wiki/plans/ControlToAudioBridge.md)
 
     auto findByTypeId = [&] (const juce::String& typeId) -> const NodeDescriptor*
     {

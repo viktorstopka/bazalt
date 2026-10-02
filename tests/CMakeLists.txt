@@ -13,6 +13,7 @@ add_executable(EngineTests
     BlockSizeInvarianceTests.cpp
     CanConnectTests.cpp
     ClockSeqNodesTests.cpp
+    ControlToAudioBridgeTests.cpp
     DataFoundationsNodesTests.cpp
     DataTests.cpp
     DcBlockNodeTests.cpp

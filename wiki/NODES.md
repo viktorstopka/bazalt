@@ -60,7 +60,7 @@ are telemetry outputs for live visualization, not ports.
 | `note.*` | gate, value, quantize, transpose, chord, hold, select, humanize, filter, assemble | ✅ gate, value, quantize, transpose, humanize, filter, assemble — 📋 chord, hold, select (real engine limit — see the `note.filter`/`note.hold` entries below) |
 | `math.*` | add, subtract, multiply, divide, abs, clamp, minmax, power, round, modulo, slew | ✅ all 11 |
 | `logic.*` | boolean, not, compare, toggle, select | ✅ all 5 |
-| `adapt.*` | map, remap, normalise, threshold, sampleHold, **audioToControl** (AudioControlBridge), **boolToControl**, **pitchToFrequency**, **frequencyToPitch**, **gateLength** (all new, direct-feedback sweep) | ✅ all 10 |
+| `adapt.*` | map, remap, normalise, threshold, sampleHold, **audioToControl** (AudioControlBridge), **controlToAudio** (ControlToAudioBridge), **boolToControl**, **pitchToFrequency**, **frequencyToPitch**, **gateLength** (all new, direct-feedback sweep) | ✅ all 11 |
 | `data.*` | load, table, scale, material, analyseModes, lookup, **record**, **eqToCurve** (Correction 2) | ✅ table, scale, lookup — 📋 load, material, analyseModes, record, eqToCurve |
 | `analysis.*` | onset, pitch, level, centroid | 📋 all 4 |
 | `instance.*` | allocate.voice, allocate.swarmPopulation, allocate.swarmTransient, allocate.trigger, sum | ✅ all five — Domain Extensions batch done 2026-10-01 |
@@ -517,6 +517,25 @@ needs `mix.downmix` first — a 3-adapter chain would exceed the two-adapter
 ceiling); `depth : float·Unipolar·0–1·linear·1.0` (unpatched = full-strength
 passthrough, the same "just as loud as before" contract `mix.gain.gain`
 established). **Out:** `out` — `float·Bipolar` (clamped to −1…1).
+
+#### `adapt.controlToAudio` — To Audio ✅ *(new, `wiki/plans/ControlToAudioBridge.md`)*
+The reverse of the node above — reads an ordinary Control signal and hands it
+out as an Audio signal, closing the "open symmetric question for later"
+`AudioControlBridge.md` §6 explicitly deferred. Same mechanical/opinion-free
+spirit as every other `adapt.*` node, never a creative DSP effect. **In:**
+`in` — `Control`, polymorphic on quantity (`Unipolar` by default, `Bipolar`
+once resolved — same mechanism `adapt.map`'s own `in` already uses). A real
+quantity source (e.g. `Frequency`) is chained through `adapt.normalise`
+first, seeded from the *source's* own range — the mirror image of
+`adapt.audioToControl → adapt.map`'s own two-step shape, just with the
+real-quantity step on the source side instead of the destination side.
+**Out:** `out` — `Audio`, mono (a Control source has no stereo concept to
+spread; the existing mono → stereo free broadcast handles a destination that
+wants it). **Behavior:** `Bipolar` passes straight through, clamped to
+−1…1; `Unipolar` (0..1) expands to the full audio swing via `in*2-1` first —
+a 0..1 modulation source has no natural centre in audio terms, so using its
+full excursion rather than only the positive half is the more useful
+default against a destination range that's always exactly ±1.
 
 #### `adapt.boolToControl` — From Bool ✅ *(new — direct feedback: "bool not being pluggable into control and ints... annoying")*
 Maps a Boolean to either of two editable numbers — the mechanical Boolean → Control

@@ -128,6 +128,19 @@ export function canConnectPorts(from: PortDescriptor, to: PortDescriptor): CanCo
     )
   }
 
+  // Control -> Audio Bridge (wiki/plans/ControlToAudioBridge.md) — the
+  // reverse of the Audio -> Control bridge above, closing the "open
+  // symmetric question for later" AudioControlBridge.md §6 explicitly
+  // deferred. Mirrors CanConnect.cpp's own branch exactly. No stereo
+  // complication: Control ports have no channels concept to begin with.
+  if (from.type === 'control' && to.type === 'audio') {
+    return needsAdapters(
+      isRealQuantity(from.quantity)
+        ? 'A real-quantity modulation source into Audio needs Normalise, then To Audio'
+        : 'A modulation signal into an Audio-typed port needs To Audio',
+    )
+  }
+
   // Direct feedback: "bool not being pluggable into control and ints."
   if (from.type === 'boolean' && to.type === 'control') {
     return needsAdapters('A Boolean signal into a Control-typed port needs a From Bool')

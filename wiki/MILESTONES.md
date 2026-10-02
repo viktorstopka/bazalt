@@ -1868,3 +1868,53 @@ human hands-on look at the actual running app — does Ctrl+wheel/pinch now
 leave zoom entirely to the app's own camera, do borders stay solid, does the
 periodic glitch actually stop — is still the user's own next confirmation
 step, same computer-use caveat every entry in this file already carries.
+
+---
+
+## `10-02-ControlToAudioBridge` — the reverse Audio↔Control bridge, `adapt.controlToAudio`
+
+Direct question — "does [Audio → Control] have an opposite?" — followed by "proceed
+on working." Closes the "open symmetric question for later" `wiki/plans/
+AudioControlBridge.md` §6 explicitly deferred when that plan was written
+("No reverse Control → Audio bridge... not scoped here"). Full reasoning and
+design in the new `wiki/plans/ControlToAudioBridge.md`, written at completion
+per this project's own "plan stays as the durable record" convention.
+
+**What shipped:** new `adapt.controlToAudio` node ("To Audio") — the mechanical
+mirror of `adapt.audioToControl`, reusing `MapNode.h`'s own polymorphic-port
+mechanism (`hasPolymorphicPorts()`/`resolveIncomingPort()`) rather than inventing
+a second one. `Bipolar` sources pass straight through, clamped; `Unipolar`
+(0..1, the default until resolved) expand to the full audio swing via `*2-1` —
+deliberately not left at only the positive half, since a 0..1 source has no
+natural centre in audio terms and the destination range is always exactly ±1.
+New `CanConnect.cpp` branch: a `Unipolar`/`Bipolar`/`Dimensionless` source needs
+only the one adapter; a real-quantity source (e.g. `Frequency`) is routed through
+`adapt.normalise` first, seeded from the SOURCE's own range — the mirror image of
+`adapt.audioToControl → adapt.map`'s own two-step shape, just with the
+real-quantity step on the source side instead of the destination side. No stereo
+reject case needed on this side at all (unlike the forward bridge) — `Control`
+ports have no `Channels` concept to begin with, so the existing mono → stereo
+free broadcast handles the final leg for free. Mirrored in `ui/src/graph/
+canConnect.ts`, same "engine is the sole authority, UI predicts" pattern every
+other adapter rule here already follows.
+
+**Tests:** `tests/ControlToAudioBridgeTests.cpp` (8 cases, node-level polymorphism/
+clamping/expansion behavior plus two real compiled-graph integration tests — one
+`random.stepped`'s own Bipolar `out` reaching Master Out as genuine, measurable
+audio; one routed through a synthetic real-quantity source via `adapt.map` to
+exercise the real 2-step chain end to end). `tests/CanConnectTests.cpp` (3 new
+cases: 1-step, 2-step, and the no-stereo-complication case).
+`tests-plugin/ConnectWithAutoAdaptTests.cpp` (2 new cases: real auto-insertion
+through `GraphEditController`, using `buildVoiceProofGraph()`'s own real
+`allocator.random1`/`allocator.pitch` outputs as genuine Bipolar/real-quantity
+Control sources rather than a synthetic test-only node).
+
+**Verified:** full rebuild clean. `ctest --test-dir build -C Debug` 524/524 green
+(516 + 8 engine-level new). `npm run build`/`npm run lint` (`ui/`): clean.
+
+**Docs:** `wiki/NODES.md` (new catalog entry, `adapt.*` summary row 10→11),
+`wiki/NODES.System.md` §4 (three new matrix rows for `Control → Audio`),
+`wiki/plans/AudioControlBridge.md` §6 (its own "no reverse bridge" bullet marked
+superseded, left as written — this project's own "don't retroactively rewrite a
+superseded plan bullet" convention), `CLAUDE.md` (the `wiki/plans/` file count,
+three → four).

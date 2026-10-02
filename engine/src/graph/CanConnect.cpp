@@ -226,6 +226,40 @@ namespace bazalt::engine
             return needsAdapter (first, "A raw audio signal into a modulation port needs Audio to Modulation");
         }
 
+        // Control -> Audio Bridge (wiki/plans/ControlToAudioBridge.md) — the
+        // reverse of the Audio -> Control bridge above, closing the "open
+        // symmetric question for later" AudioControlBridge.md §6 explicitly
+        // deferred. No stereo complication here at all: Control ports have
+        // no Channels concept to begin with, so there's no reject case to
+        // design the way the forward direction needed one for a stereo
+        // Audio source.
+        if (from.type == SignalType::Control && to.type == SignalType::Audio)
+        {
+            if (isRealQuantity (from.quantity))
+            {
+                // Real quantity -> Audio needs the SOURCE's own range
+                // collapsed to Unipolar first (adapt.normalise, seeded from
+                // the SOURCE range — the exact same node/seeding
+                // connectControl() already uses for Control(real) ->
+                // Control(Unipolar/Bipolar) above), then the bridge. Mirrors
+                // adapt.audioToControl -> adapt.map's own two-step shape,
+                // just with the real-quantity step on the source side this
+                // time instead of the destination side.
+                AdapterStep first { "adapt.normalise", "in" };
+                first.seedFromSourceRange = true;
+                AdapterStep second { "adapt.controlToAudio", "in" };
+
+                CanConnectResult result;
+                result.outcome = ConnectionOutcome::NeedsAdapters;
+                result.adapterChain = { first, second };
+                result.reason = "A real-quantity modulation source into Audio needs Normalise, then To Audio";
+                return result;
+            }
+
+            AdapterStep step { "adapt.controlToAudio", "in" };
+            return needsAdapter (step, "A modulation signal into an Audio-typed port needs To Audio");
+        }
+
         // Direct feedback: "bool not being pluggable into control and
         // ints... annoying." Exactly as mechanical/opinion-free as every
         // other adapter above — a plain two-value lookup, never a creative

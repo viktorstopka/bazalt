@@ -25,6 +25,7 @@
 #include "bazalt/engine/nodes/NormaliseNode.h"
 #include "bazalt/engine/nodes/ThresholdNode.h"
 #include "bazalt/engine/nodes/AudioToControlNode.h"
+#include "bazalt/engine/nodes/ControlToAudioNode.h"
 #include "bazalt/engine/nodes/BoolToControlNode.h"
 #include "bazalt/engine/nodes/PitchFrequencyNodes.h"
 #include "bazalt/engine/nodes/GateLengthNode.h"
@@ -119,6 +120,7 @@ namespace bazalt::engine
         // Audio -> Control Bridge (wiki/plans/AudioControlBridge.md) — the
         // mechanical adapter canConnect auto-inserts for Audio -> Control.
         factory.registerType ("adapt.audioToControl", [] { return std::make_unique<nodes::AudioToControlNode>(); });
+        factory.registerType ("adapt.controlToAudio", [] { return std::make_unique<nodes::ControlToAudioNode>(); }); // wiki/plans/ControlToAudioBridge.md
         // Boolean -> Control (direct feedback: "bool not being pluggable
         // into control and ints... annoying").
         factory.registerType ("adapt.boolToControl", [] { return std::make_unique<nodes::BoolToControlNode>(); });
