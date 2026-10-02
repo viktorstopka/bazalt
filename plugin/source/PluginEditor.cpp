@@ -46,6 +46,100 @@ namespace bazalt
 </html>
 )html";
 
+        // Real, confirmed gap this used to be (wiki/NODES_Gaps.md has the
+        // full write-up): a Release build's own resource provider always
+        // served `placeholderHtml` above, regardless of whether a real
+        // `ui/dist` was ever built — a stale `plugin/CMakeLists.txt` comment
+        // claimed "release builds serve ui/dist from disk," but no code
+        // anywhere ever actually read it. `findUiDistRoot()`/
+        // `serveUiDistFile()` below are that real mechanism, fed by this
+        // same CMakeLists.txt's own `CopyUiDist.cmake` post-build step,
+        // which ships a built `ui/dist` alongside both the VST3 bundle and
+        // the Standalone executable whenever one exists at build time.
+
+        juce::String mimeTypeForExtension (const juce::String& extension) noexcept
+        {
+            // Every extension ui/dist's own Vite build actually produces
+            // (index.html, assets/*.js, assets/*.css, favicon.svg) plus a
+            // few common web-asset types a future UI change might add —
+            // anything else falls back to a generic binary type, which
+            // WebView2 still renders/loads correctly for most purposes.
+            if (extension == "html") return "text/html";
+            if (extension == "js")   return "application/javascript";
+            if (extension == "css")  return "text/css";
+            if (extension == "svg")  return "image/svg+xml";
+            if (extension == "json") return "application/json";
+            if (extension == "png")  return "image/png";
+            if (extension == "jpg" || extension == "jpeg") return "image/jpeg";
+            if (extension == "woff") return "font/woff";
+            if (extension == "woff2") return "font/woff2";
+            if (extension == "ico")  return "image/x-icon";
+            return "application/octet-stream";
+        }
+
+        // A real, built `ui/dist`, shipped alongside this binary by
+        // CMakeLists.txt's own post-build copy step — tried in both
+        // possible packaging shapes, since a VST3 bundle and a flat
+        // Standalone executable sit at different depths relative to their
+        // own output directory:
+        //   VST3:       Bazalt.vst3/Contents/x86_64-win/Bazalt.vst3 (this
+        //               binary) alongside Bazalt.vst3/Contents/Resources/ui/
+        //   Standalone: Bazalt.exe alongside a flat sibling ui/ folder
+        // Returns an invalid (default-constructed) File if neither exists —
+        // the caller falls back to the placeholder in that case, same as
+        // always. Computed once (a plugin binary's own on-disk location
+        // never changes mid-process) via a function-local static, which is
+        // thread-safe initialization (C++11 "magic statics") in case
+        // WebView2's resource-provider callback ever runs off the message
+        // thread.
+        const juce::File& findUiDistRoot()
+        {
+            static const juce::File uiDistRoot = [] () -> juce::File
+            {
+                const auto exe = juce::File::getSpecialLocation (juce::File::currentExecutableFile);
+
+                const auto bundleUi = exe.getParentDirectory().getParentDirectory()
+                                          .getChildFile ("Resources").getChildFile ("ui");
+                if (bundleUi.getChildFile ("index.html").existsAsFile())
+                    return bundleUi;
+
+                const auto siblingUi = exe.getParentDirectory().getChildFile ("ui");
+                if (siblingUi.getChildFile ("index.html").existsAsFile())
+                    return siblingUi;
+
+                return {};
+            }();
+
+            return uiDistRoot;
+        }
+
+        std::optional<juce::WebBrowserComponent::Resource> serveUiDistFile (const juce::File& uiDistRoot, const juce::String& url)
+        {
+            const auto relativePath = (url == "/" || url.isEmpty()) ? juce::String ("index.html")
+                                                                      : url.fromFirstOccurrenceOf ("/", false, false);
+            const auto file = uiDistRoot.getChildFile (relativePath);
+
+            // Defensive: a resource provider is handed raw request paths, so
+            // guard against one that (deliberately or not) tries to escape
+            // uiDistRoot via "../" — this WebView only ever navigates to
+            // paths this same binary generates, but there's no cost to
+            // checking anyway.
+            if (! file.getFullPathName().startsWith (uiDistRoot.getFullPathName()) || ! file.existsAsFile())
+                return std::nullopt;
+
+            juce::MemoryBlock block;
+            if (! file.loadFileAsData (block))
+                return std::nullopt;
+
+            const auto* begin = reinterpret_cast<const std::byte*> (block.getData());
+            const auto* end = begin + block.getSize();
+
+            return juce::WebBrowserComponent::Resource {
+                std::vector<std::byte> (begin, end),
+                mimeTypeForExtension (file.getFileExtension().trimCharactersAtStart ("."))
+            };
+        }
+
         std::optional<bazalt::engine::TelemetryFrameType> frameTypeFromPathSegment (const juce::String& segment)
         {
             if (segment == "scope")
@@ -89,6 +183,20 @@ namespace bazalt
         {
             if (url.startsWith ("/tap/"))
                 return serveTap (processor, url);
+
+            const auto& uiDistRoot = findUiDistRoot();
+            if (uiDistRoot != juce::File())
+            {
+                if (auto resource = serveUiDistFile (uiDistRoot, url))
+                    return resource;
+
+                // A real ui/dist is shipped but this specific path wasn't
+                // found in it (e.g. a damaged copy, or a genuinely unknown
+                // request) — fall through to the placeholder below only for
+                // "/"/"/index.html" so the app still shows SOMETHING rather
+                // than a blank page; any other unknown path stays a real
+                // 404 (std::nullopt), same as before this change.
+            }
 
             if (url == "/" || url == "/index.html")
             {

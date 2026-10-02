@@ -636,6 +636,70 @@ actually catches this bug; restored, clean and fast.
 **Verified:** full rebuild clean, `ctest --test-dir build -C Debug` 577/577
 green (575 + 2 new). Standalone app relaunched, stays up.
 
+### Release build never actually served `ui/dist` — FIXED (2026-10-03)
+*A code comment claimed real behavior that no code anywhere actually
+implemented — a stale "this is already done" claim, the opposite failure
+mode from the usual "this note never got updated after the fix landed."*
+
+**Confirmed, found while answering a direct, practical question**: "can I
+get a VST3 export to test on a different computer?" Investigating that
+surfaced a genuine contradiction: `CLAUDE.md`'s own "Known interim
+simplifications" section said a Release build always serves a hardcoded
+placeholder page, "still true as of M6" — but `plugin/CMakeLists.txt` had
+its own, DIFFERENT comment claiming "release builds serve ui/dist from disk
+via a resource provider." Reading `PluginEditor.cpp`'s actual
+`serveResource()` directly settled it: the CMakeLists.txt comment was
+wrong, describing an intent that was never implemented — every Release
+request for `/`/`/index.html` always returned the same hardcoded
+`placeholderHtml` string, completely independent of whether a real
+`ui/dist` existed on disk anywhere.
+
+**Why this mattered for the actual question asked:** the Debug build (the
+only one with a real editor) loads its UI from `http://localhost:5173` — a
+dev server running on the SAME machine. Copying just the compiled `.vst3`
+to a different computer, as asked, would never get a working editor there:
+Debug needs a dev server that doesn't exist on the target machine, and
+Release never read `ui/dist` at all regardless of whether it was present.
+
+**Fix applied:** a real mechanism, not a workaround. `plugin/CMakeLists.txt`
+gained a new `cmake/CopyUiDist.cmake` post-build step for both the VST3 and
+Standalone targets — copies a built `ui/dist` (`cd ui && npm run build`)
+into the VST3 bundle's own `Contents/Resources/ui/` and a flat sibling
+`ui/` next to the Standalone executable, skipping (with a status message,
+never a build failure) when `ui/dist` hasn't been built. `PluginEditor.cpp`
+gained `findUiDistRoot()` (tries both packaging shapes, returns an invalid
+`File` if neither exists) and `serveUiDistFile()` (reads a real file by
+extension-derived MIME type) — wired into `serveResource()` ahead of the
+old placeholder, which still exists and still serves as a real, honest
+fallback when no `ui/dist` was shipped at all, rather than the only path.
+
+**Verified:** `cd ui && npm run build` (fresh, current `ui/dist`). Both
+Debug and Release rebuilds clean; the post-build step's own status message
+confirms the copy actually ran for every target
+(`BazaltPlugin_VST3`/`BazaltPlugin_Standalone`, both configs), and the
+files were confirmed present on disk at the exact paths `findUiDistRoot()`
+expects. Release Standalone launched and stayed up (no crash) — this
+environment has no screenshot/visual-inspection capability to confirm the
+real UI renders pixel-for-pixel rather than the placeholder (the same
+long-standing limitation every UI milestone in this project's history has
+noted), but the code path is provably exercised: Release never touches
+`JUCE_DEBUG`'s dev-server branch at all, so this is the exact mechanism a
+different computer would also use, not a Debug-only proxy for it.
+Debug rebuilt and relaunched afterward too, confirming its own dev-server
+path is genuinely untouched — the new copy step runs for Debug as well
+(harmless; Debug's `JUCE_DEBUG` branch never calls `serveResource()` for
+`/`, only for `/tap/...`). `ctest --test-dir build -C Debug` 577/577 green
+throughout, unaffected (no engine-level change at all).
+
+**Deliberately not built**: ARCHITECTURE.md §7's original full
+binary-embedded end state (compiling `ui/dist` into the plugin binary
+itself as `BinaryData`, so a single `.vst3` file needs no sibling `ui/`
+folder at all) — this fix ships `ui/dist` ALONGSIDE the binary, which still
+means two things to copy to another machine (`Bazalt.vst3` and its own
+`Contents/Resources/ui/`, or `Bazalt.exe` and its own sibling `ui/`) rather
+than one self-contained file. Real, separate, larger future work if a
+single-file release is ever actually needed — nothing today requires it.
+
 ## Full node list checked (55 files, `engine/include/bazalt/engine/nodes/`)
 
 ConstantNode, OutputNode, DelayNode, ListenNode, NoiseBurstNode, NormaliseNode,

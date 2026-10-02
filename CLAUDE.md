@@ -183,13 +183,27 @@ ctest --test-dir build -C Debug -R PluginTests --output-on-failure
 
 ## Known interim simplifications (not bugs, don't "fix" without checking)
 
-- The M0 plugin editor's release-build WebView serves a hard-coded
-  placeholder HTML string via a resource provider, not the embedded
-  `ui/dist` binary-resource pipeline described in ARCHITECTURE.md §7. Still
-  true as of M6 — no milestone through M6 has actually scoped wiring this
-  up (a previous version of this note claimed "tracked for M5"; that never
-  happened and the claim was wrong, corrected during M6's docs pass). Needed
-  before a Release build is usable for anything beyond Debug-only dev.
+- **Fixed, 2026-10-03** — this note used to say the M0 plugin editor's
+  release-build WebView always served a hard-coded placeholder HTML string
+  via a resource provider, never the real `ui/dist` build, "still true as of
+  M6." That gap is closed: `PluginEditor.cpp`'s `findUiDistRoot()`/
+  `serveUiDistFile()` now serve a real, built `ui/dist` (`cd ui && npm run
+  build`) from disk when one is shipped alongside the binary, fed by
+  `plugin/CMakeLists.txt`'s new `CopyUiDist.cmake` post-build step (copies
+  `ui/dist` into the VST3 bundle's `Contents/Resources/ui/` and a flat
+  sibling `ui/` next to the Standalone executable). The hard-coded
+  placeholder still exists and still serves for `/`/`/index.html` only when
+  no `ui/dist` was shipped (e.g. a Debug-only checkout that never ran `npm
+  run build`) — a real, honest fallback, not the only path anymore. This is
+  the "ship `ui/dist` alongside the binary" interim path, not
+  ARCHITECTURE.md §7's original full binary-embedded end state (compiled-in
+  resources needing no sibling `ui/` folder at all) — that's still real,
+  separate future work if a single-file `.vst3` is ever needed. Found and
+  fixed in response to a direct, practical need: testing the plugin on a
+  different computer, where the Debug build's own `localhost:5173` dev-
+  server dependency doesn't help at all. See `wiki/NODES_Gaps.md` for the
+  full write-up and `wiki/MILESTONES.md`'s own entry for the build/test
+  record.
 - `COMPANY_NAME`/`PRODUCT_NAME` in `plugin/CMakeLists.txt` are placeholders
   pending real publisher info.
 - `Note` routes through real ports as of M18 (ADR-0024) — `PluginProcessor::

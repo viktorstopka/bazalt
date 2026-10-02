@@ -43,8 +43,17 @@ target_compile_definitions(BazaltPlugin
         JUCE_VST3_CAN_REPLACE_VST2=0
         # Debug builds point the WebView at the Vite dev server for hot
         # reload; release builds serve ui/dist from disk via a resource
-        # provider. See ARCHITECTURE.md §7 — full binary-embedded release
-        # assets are a follow-up (tracked for M5), this is the interim path.
+        # provider (findUiDistRoot()/serveResource() in PluginEditor.cpp,
+        # fed by this file's own CopyUiDist.cmake post-build step) — real as
+        # of 2026-10-03, not aspirational. This comment used to describe
+        # that as a stale, never-actually-built claim ("tracked for M5,
+        # this is the interim path") while the real code always served a
+        # hardcoded placeholder regardless of ui/dist's existence — see
+        # wiki/NODES_Gaps.md's own write-up for the full story. Full
+        # binary-embedded (not copied-alongside) release assets, the
+        # originally-envisioned ARCHITECTURE.md §7 end state, is still real,
+        # separate future work if a single-file .vst3 with no sibling ui/
+        # folder is ever needed.
         BAZALT_UI_DEV_SERVER_URL="http://localhost:5173"
         # Standalone only (JucePlugin_Build_Standalone-guarded): use our own
         # source/StandaloneApp.cpp instead of JUCE's stock Standalone app, so
@@ -62,3 +71,37 @@ target_link_libraries(BazaltPlugin
         juce::juce_recommended_config_flags
         juce::juce_recommended_warning_flags
 )
+
+# Ship ui/dist (cd ui && npm run build) alongside a Release build so it's
+# genuinely self-contained on a machine with no Node/dev-server at all —
+# PluginEditor.cpp's own Release-build resource provider (findUiDistRoot())
+# reads it from exactly these two locations. Harmless, cheap no-op for
+# Debug (which never reads this — Debug loads the live Vite dev server
+# instead) and for anyone who hasn't run `npm run build` yet
+# (cmake/CopyUiDist.cmake skips with a status message, never fails the
+# build) — see that script's own comment for the full reasoning.
+if(TARGET BazaltPlugin_VST3)
+    # VST3 bundle layout: Bazalt.vst3/Contents/x86_64-win/Bazalt.vst3 (the
+    # binary itself, what TARGET_FILE_DIR points at) alongside
+    # Bazalt.vst3/Contents/Resources/ — ship ui/dist under a "ui" subfolder
+    # there, next to moduleinfo.json's own existing neighbour.
+    add_custom_command(TARGET BazaltPlugin_VST3 POST_BUILD
+        COMMAND ${CMAKE_COMMAND}
+            "-DSRC=${CMAKE_SOURCE_DIR}/ui/dist"
+            "-DDST=$<TARGET_FILE_DIR:BazaltPlugin_VST3>/../Resources/ui"
+            -P "${CMAKE_SOURCE_DIR}/cmake/CopyUiDist.cmake"
+        VERBATIM
+        COMMENT "Bazalt: copying ui/dist into the VST3 bundle (if built)")
+endif()
+
+if(TARGET BazaltPlugin_Standalone)
+    # Standalone layout: Bazalt.exe sits flat in its own output directory,
+    # no bundle nesting — ship ui/dist as a flat sibling "ui" folder.
+    add_custom_command(TARGET BazaltPlugin_Standalone POST_BUILD
+        COMMAND ${CMAKE_COMMAND}
+            "-DSRC=${CMAKE_SOURCE_DIR}/ui/dist"
+            "-DDST=$<TARGET_FILE_DIR:BazaltPlugin_Standalone>/ui"
+            -P "${CMAKE_SOURCE_DIR}/cmake/CopyUiDist.cmake"
+        VERBATIM
+        COMMENT "Bazalt: copying ui/dist next to the Standalone executable (if built)")
+endif()
