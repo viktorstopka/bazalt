@@ -2133,3 +2133,97 @@ occurrences in one session is more than this flake has shown before, worth
 naming as a real, if ultimately environmental, pattern rather than brushing
 past it silently). `ctest --test-dir build -C Debug` 563/563 green (553 + 10
 new). `wiki/NODES.md`/`wiki/NODES.Status.md` updated to match.
+
+## PM Core batch 4 — `excite.mallet`, `resonator.plate` — done, 2026-10-02, closes the whole PM Core batch
+
+The last two nodes, and the real architectural payoff this entire batch was
+building toward: the first production cross-node feedback cycle this engine
+has ever compiled and run.
+
+**`excite.mallet`** (`ExciteMalletNode.h`): a half-sine contact pulse — a
+real, standard simplified approximation of an elastic (Hertzian) contact
+force profile, used throughout percussion-synthesis literature, not an
+arbitrary envelope shape. `stiffness ∝ contact frequency` (stiffer = shorter,
+brighter), `mass ∝ 1/frequency` (heavier = longer, duller); contact ends
+cleanly after exactly one half-cycle, a real one-shot matching a single
+strike. **The real dynamics the catalog's own framing asks for** ("the
+collision itself reacts to what it hits — real contact dynamics, not a fixed
+envelope"): every sample during contact, `feedback` (a resonator's own
+motion at the contact point) subtracts from the mallet's own effective
+driving velocity — `effectiveVelocity = velocity₀ - 0.3·feedback`, the
+literal Newton's-third-law shape, this node's own documented coupling
+coefficient. Unwired, `feedback` reads silence (an ordinary unconnected
+Audio input) and the contact is a pure, uncoupled pulse — every bit as valid
+a use.
+
+**`resonator.plate`** (`ResonatorPlateNode.h`): the hardest resonator in the
+catalog, and a real, explicitly documented simplification rather than a
+literal 2D finite-difference mesh (a project of its own) — reuses
+`resonator.modal`'s own two-pole-resonator-bank technique over a FIXED,
+internally-generated mode set (no `modes` input, unlike `resonator.modal`):
+the same membrane-Bessel-zero table `data.material`'s own `plate` geometry
+already established, squared the same documented way (a plate's `k²` bending
+dispersion over a membrane's `k¹` tension-only one). `quality` (low/medium/
+high → 8/16/32 modes) stands in for mesh resolution. No `pitch` input —
+`size`/`tension` together derive the plate's own absolute fundamental
+(smaller/tenser rings higher, this node's own documented, unmeasured
+mapping). `positionX`/`positionY` generalize `resonator.modal`'s own 1D
+mode-shape weighting into two independent axes. Stereo spread is
+unconditional (the catalog gives this node no `spread` knob at all) via the
+same golden-angle constant `resonator.modal` already uses. Real stereo
+cable, not the catalog's stale `left`/`right` pair — same correction
+`resonator.modal` already made for the same reason.
+
+**The real payoff, proven by a real compiled graph, not just two isolated
+node unit tests**: `clock.pulse → excite.mallet.trigger`, `excite.mallet.out
+→ resonator.string.excite`, `resonator.string.motion → excite.mallet.feedback`
+— a literal 2-node graph cycle, compiled through the REAL `GraphCompiler`
+(not a synthetic node type), asserted to actually produce a
+`ExecutionPlan::Step::Kind::PerSampleRegion` (not silently treated as
+acyclic — a real, previously-only-architecturally-confirmed claim, now
+empirically proven), and run for 10 full blocks producing real, finite,
+bounded, genuinely audible output (RMS ≈ 0.16, nowhere near the near-zero
+floor a broken coupling would produce). This is the concrete fulfillment of
+this whole file's own PM Core intro, which checked and confirmed this
+mechanism existed and would work BEFORE any PM Core code was written — the
+first time that confirmation has been cashed out against two real,
+production node types instead of `tests/GraphCompilerTests.cpp`'s own
+synthetic ones.
+
+**Tests:** `tests/PMCoreNodesTests.cpp`, 11 node-level cases + 1 real
+compiled-graph integration case. `excite.mallet`: silence until triggered,
+the one-shot contact pulse ending cleanly on its own (`contact` true then
+false, never forever-ringing), `stiffness`/`mass` genuinely changing contact
+duration in the right directions, `feedback` measurably reducing output (the
+real coupling, not a cosmetic input), clean mid-contact retriggering.
+`resonator.plate`: silence on silence, `size`/`tension` both genuinely
+raising the fundamental, `quality` structurally changing the real mode count
+used (a genuine behavioral difference, not just a number read and ignored),
+`decay` ordering, real stereo panning, a long-run finite/bounded stability
+check at full 32-mode `quality`. The integration test: `result.success`,
+a real `PerSampleRegionStep` present in the compiled plan, 10 blocks of
+finite/bounded/genuinely-nonzero-RMS output.
+
+**Verified:** full rebuild clean (the same transient MSVC "invalid COMDAT
+selection" flake did NOT recur this batch — the three earlier occurrences
+this session stay isolated incidents, not a worsening trend). `ctest
+--test-dir build -C Debug` 575/575 green (563 + 12 new). `wiki/NODES.md`
+(both catalog entries ✅, the `excite.*`/`resonator.*` status-index rows),
+`wiki/NODES.Status.md` (status rows, Totals table, header count, the "Nodes
+to build next" step 6 marked done, the Appendix stock-group cross-reference
+— Struck Body now ✅ buildable, Crackle/Bowed String down to one missing
+ingredient each) all updated to match.
+
+---
+
+**The whole PM Core batch is now closed**, all 4 batches, same day
+(2026-10-02): `excite.impulse`/`pluck`/`mallet`, `resonator.comb`/`modal`/
+`string`/`plate`, and `data.material` — 8 new real, wireable, tested node
+types, 48 new test cases (`tests/PMCoreNodesTests.cpp`), and the first real
+production exercise of `GraphCompiler.cpp`'s cross-node feedback-cycle
+mechanism. Bazalt's sound is no longer subtractive-synthesis-only. Explicitly
+NOT part of this batch, left open as planned: `excite.burst`'s own `tone`/
+`shape` MVP gap, and the PM Friction/Breath (`excite.stickSlip`/`breath`/
+`contact`, `resonator.tube`) and PM Voice (`osc.glottal`, `excite.vocalFolds`,
+`resonator.junction`/`tract`, `filter.formant`) batches `wiki/NODES.Status.md`'s
+own build order already sequences after this one.

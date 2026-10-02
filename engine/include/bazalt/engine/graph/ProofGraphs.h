@@ -87,6 +87,8 @@
 #include "bazalt/engine/nodes/ResonatorModalNode.h"
 #include "bazalt/engine/nodes/ExcitePluckNode.h"
 #include "bazalt/engine/nodes/ResonatorStringNode.h"
+#include "bazalt/engine/nodes/ExciteMalletNode.h"
+#include "bazalt/engine/nodes/ResonatorPlateNode.h"
 
 namespace bazalt::engine
 {
@@ -218,6 +220,11 @@ namespace bazalt::engine
         // into resonator.string) + resonator.string (the playable Karplus-Strong).
         factory.registerType ("excite.pluck", [] { return std::make_unique<nodes::ExcitePluckNode>(); });
         factory.registerType ("resonator.string", [] { return std::make_unique<nodes::ResonatorStringNode>(); });
+        // PM Core batch 4 — closes the batch: excite.mallet (the first real
+        // production exercise of a cross-node per-sample feedback cycle,
+        // via resonator.string's own "motion" output) + resonator.plate.
+        factory.registerType ("excite.mallet", [] { return std::make_unique<nodes::ExciteMalletNode>(); });
+        factory.registerType ("resonator.plate", [] { return std::make_unique<nodes::ResonatorPlateNode>(); });
         return factory;
     }
 

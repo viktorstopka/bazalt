@@ -45,8 +45,8 @@ are telemetry outputs for live visualization, not ports.
 | `osc.*` | analog, sine, wavetable, **glottal** (Correction 1) | ✅ analog, sine — 📋 wavetable, glottal |
 | `sampler.*` | player, granular | 📋 both |
 | `noise.*` | colored, dust | 📋 both |
-| `excite.*` | impulse, burst, pluck, mallet, stickSlip, breath, contact, **vocalFolds** (Correction 1) | ✅ impulse, burst, pluck — 📋 the other 5 |
-| `resonator.*` | modal, string, tube, plate, comb, **junction**, **tract** (Correction 1) | ✅ comb, modal, string — 📋 the other 4 |
+| `excite.*` | impulse, burst, pluck, mallet, stickSlip, breath, contact, **vocalFolds** (Correction 1) | ✅ impulse, burst, pluck, mallet — 📋 stickSlip, breath, contact, vocalFolds |
+| `resonator.*` | modal, string, tube, plate, comb, **junction**, **tract** (Correction 1) | ✅ comb, modal, string, plate — 📋 tube, junction, tract |
 | `filter.*` | svf, ladder, onepole, allpass, shelf, peak, formant, dcBlock | ✅ svf, ladder, onepole, allpass, shelf, peak, dcBlock — 📋 formant |
 | `shape.*` | waveshaper, clip, fold, rectify, crush | 📋 all 5 |
 | `delay.*` | line | ✅ |
@@ -148,10 +148,10 @@ A pre-shaped plucked-string excitation, pickup position and hardness baked in �
 the one-node shortcut into `resonator.string` without hand-building the comb-notch
 spectrum yourself. **In:** `trigger : Event`; `position`; `hardness`; `amplitude`. **Out:** `out` — `Audio`. **Native:** comb-notch shaping, awkward to hand-wire per patch. **A concrete, tested contract this session had to design:** a fixed 5ms linearly-decaying noise burst, `hardness` an in-line one-pole (`filter.onepole`'s own "Damping" convention — `0` darkest, `1` brightest), `position` a plain FIR difference-tap against a FIXED 200-sample reference window (this node has no pitch concept, unlike `resonator.string`'s own `position`, which taps its real, live delay line). `amplitude`/`hardness`/`position` are all sampled once, at the moment `trigger` fires — not continuously tracked during the decay, matching how a real pluck's attack character never changes mid-ring.
 
-#### `excite.mallet` — Mallet / Collision 📋
+#### `excite.mallet` — Mallet / Collision ✅ *(PM Core batch 4, closes the batch)*
 Models a mallet or hammer striking something, with a `feedback` path from the
 resonator so the collision itself reacts to what it hits — real contact dynamics,
-not a fixed envelope. **In:** `trigger : Event`; `velocity`; `mass`; `stiffness`; `feedback` — `Audio` (optional). **Out:** `out` — `Audio`; `contact` — `bool`. **Native:** single-sample feedback, numerically delicate.
+not a fixed envelope. **In:** `trigger : Event`; `velocity`; `mass`; `stiffness`; `feedback` — `Audio` (optional). **Out:** `out` — `Audio`; `contact` — `bool`. **Native:** single-sample feedback, numerically delicate. **Behavior:** a half-sine contact pulse (a real, standard simplified Hertzian-contact-force approximation), `stiffness`/`mass` setting its frequency (hence duration/brightness); `feedback` subtracts from the mallet's own effective driving velocity every sample it's in contact — real Newton's-third-law coupling, not a fixed envelope. Wiring `resonator.string`'s own `motion` output back into `feedback` closes a real, literal 2-node graph cycle — the first production node pair to exercise `GraphCompiler.cpp`'s existing per-sample-region/SCC mechanism (confirmed architecturally before this batch's first line of code, proven end to end by a real compiled-graph test).
 
 #### `excite.stickSlip` — Stick-Slip / Bow 📋
 A friction/bow model — continuous pressure and speed, not a trigger, drive the
@@ -183,9 +183,9 @@ An open- or closed-end waveguide tube — the resonating body behind wind
 instruments, ducts, and bores, with reflection and flare shaping its resonant
 character. **In:** `excite` — `Audio`; `length`; `damping`; `reflection`; `flare`. **Out:** `out` — `Audio`; `motion` — `Audio`. **Structural:** `endCondition` (enum: open, closed). **Native:** single-sample feedback in both directions.
 
-#### `resonator.plate` — Plate / Membrane 📋
+#### `resonator.plate` — Plate / Membrane ✅ *(PM Core batch 4, closes the batch — real, documented simplification)*
 A 2D waveguide mesh — the resonating body behind drum heads, plates, and gongs,
-with a pickup point placed anywhere on the surface. **In:** `excite` — `Audio`; `size`; `tension`; `decay`; `damping`; `positionX`, `positionY`. **Out:** `left`, `right` — `Audio`. **Structural:** `quality` (enum: low, medium, high). **Native:** inner loop scales with mesh size.
+with a pickup point placed anywhere on the surface. **In:** `excite` — `Audio`; `size`; `tension`; `decay`; `damping`; `positionX`, `positionY`. **Out:** `out` — `Audio` (`Channels::Stereo`, primary — one real stereo cable, the modern catalog-wide shape, not the stale `left`/`right` pair this entry predates). **Structural:** `quality` (enum: low, medium, high → 8/16/32 modes). **Native:** inner loop scales with mode count. **Not a literal 2D mesh solve** — a real, documented simplification: self-contained (no `modes` input, unlike `resonator.modal`), reusing `resonator.modal`'s own two-pole-resonator-bank technique over the SAME membrane-Bessel-zero table `data.material`'s own `plate` geometry already uses, squared the same way. No `pitch` input — `size`/`tension` together set its own absolute fundamental (smaller/tenser rings higher). `positionX`/`positionY` generalize `resonator.modal`'s own mode-shape weighting into two axes; stereo spread is unconditional (no `spread` knob exists for this node) via the same golden-angle constant `resonator.modal` uses.
 
 #### `resonator.comb` — Comb ✅ *(PM Core batch 1)*
 The cheap resonator, and the building block for hand-built feedback experiments. **In:** `in` — `Audio`; `frequency [audio]`; `feedback` (hard-limited to ±0.999); `damping`. **Out:** `out` — `Audio`. **Structural:** `type` (enum: feedforward, feedback; default feedback). **Behavior:** `feedback` mode is the real IIR loop (`y[n] = x[n] + g·damped(y[n-M])`, the textbook Karplus-Strong-style absorption comb — damping sits INSIDE the loop); `feedforward` mode taps the input only (`y[n] = x[n] + g·damped(x[n-M])`), unconditionally stable, pure notch/peak comb-filtering with no possible ring-up. `damping` reuses `filter.onepole`'s own "Damping" port convention exactly: `0` = darkest/most damped, `1` = brightest/no damping. No fractional-delay interpolation, same simplification `delay.line` itself already makes.

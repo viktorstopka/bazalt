@@ -12,6 +12,10 @@
 #include "bazalt/engine/nodes/ResonatorModalNode.h"
 #include "bazalt/engine/nodes/ExcitePluckNode.h"
 #include "bazalt/engine/nodes/ResonatorStringNode.h"
+#include "bazalt/engine/nodes/ExciteMalletNode.h"
+#include "bazalt/engine/nodes/ResonatorPlateNode.h"
+#include "bazalt/engine/graph/GraphCompiler.h"
+#include "bazalt/engine/graph/ProofGraphs.h"
 #include "bazalt/engine/RtAllocationTrap.h"
 #include <algorithm>
 #include <cmath>
@@ -831,4 +835,323 @@ TEST_CASE ("ResonatorStringNode stays finite and bounded over a long run",
         REQUIRE (std::fabs (outputs[0]) < 1000.0f);
         REQUIRE (std::fabs (outputs[1]) < 1000.0f);
     }
+}
+
+// ---- excite.mallet ----
+
+TEST_CASE ("ExciteMalletNode is silent and has no contact until triggered", "[engine][nodes][ExciteMalletNode][PMCore]")
+{
+    ExciteMalletNode node;
+    node.prepare ({ 44100.0, 512 });
+
+    float outputs[2];
+    const float quiet[5] = { 0.0f, kNaN, kNaN, kNaN, 0.0f };
+    for (int i = 0; i < 100; ++i)
+    {
+        node.processSample (quiet, outputs);
+        CHECK (outputs[0] == 0.0f);
+        CHECK (outputs[1] == 0.0f);
+    }
+}
+
+TEST_CASE ("ExciteMalletNode's contact is a one-shot half-sine pulse: true during, false and silent after",
+           "[engine][nodes][ExciteMalletNode][PMCore]")
+{
+    ExciteMalletNode node;
+    node.prepare ({ 44100.0, 512 });
+
+    float outputs[2];
+    const float trigger[5] = { 1.0f, 0.8f, 0.3f, 0.5f, 0.0f };
+    node.processSample (trigger, outputs);
+    CHECK (outputs[1] == 1.0f); // contact == true
+
+    const float quiet[5] = { 0.0f, kNaN, kNaN, kNaN, 0.0f };
+    int contactSamples = 1;
+    while (contactSamples < 10000)
+    {
+        node.processSample (quiet, outputs);
+        if (outputs[1] == 0.0f)
+            break;
+        ++contactSamples;
+    }
+
+    REQUIRE (contactSamples < 10000); // contact must end on its own - a real one-shot, not a forever-ringing node
+    CHECK (outputs[0] == 0.0f); // silent the instant contact ends
+
+    // Stays silent afterward.
+    for (int i = 0; i < 50; ++i)
+    {
+        node.processSample (quiet, outputs);
+        CHECK (outputs[0] == 0.0f);
+        CHECK (outputs[1] == 0.0f);
+    }
+}
+
+TEST_CASE ("ExciteMalletNode's stiffness shortens contact duration; mass lengthens it",
+           "[engine][nodes][ExciteMalletNode][PMCore]")
+{
+    auto contactDuration = [] (float stiffness, float mass)
+    {
+        ExciteMalletNode node;
+        node.prepare ({ 44100.0, 512 });
+        float outputs[2];
+        const float trigger[5] = { 1.0f, 0.8f, mass, stiffness, 0.0f };
+        node.processSample (trigger, outputs);
+        const float quiet[5] = { 0.0f, kNaN, kNaN, kNaN, 0.0f };
+        int samples = 1;
+        while (samples < 10000)
+        {
+            node.processSample (quiet, outputs);
+            if (outputs[1] == 0.0f)
+                break;
+            ++samples;
+        }
+        return samples;
+    };
+
+    const auto softStiff = contactDuration (0.1f, 0.3f);
+    const auto hardStiff = contactDuration (0.9f, 0.3f);
+    CHECK (hardStiff < softStiff); // stiffer -> shorter contact
+
+    const auto lightMass = contactDuration (0.5f, 0.1f);
+    const auto heavyMass = contactDuration (0.5f, 0.9f);
+    CHECK (heavyMass > lightMass); // heavier -> longer contact
+}
+
+TEST_CASE ("ExciteMalletNode's feedback measurably reduces the effective driving velocity",
+           "[engine][nodes][ExciteMalletNode][PMCore]")
+{
+    ExciteMalletNode uncoupled, opposed;
+    uncoupled.prepare ({ 44100.0, 512 });
+    opposed.prepare ({ 44100.0, 512 });
+
+    float outputs[2];
+    const float trigger[5] = { 1.0f, 1.0f, 0.3f, 0.5f, 0.0f };
+    uncoupled.processSample (trigger, outputs);
+    opposed.processSample (trigger, outputs);
+
+    const float noFeedback[5] = { 0.0f, kNaN, kNaN, kNaN, 0.0f };
+    const float withFeedback[5] = { 0.0f, kNaN, kNaN, kNaN, 1.0f }; // a resonator pushing back hard
+
+    uncoupled.processSample (noFeedback, outputs);
+    const auto uncoupledOut = outputs[0];
+    opposed.processSample (withFeedback, outputs);
+    const auto opposedOut = outputs[0];
+
+    CHECK (opposedOut < uncoupledOut); // real coupling: positive feedback measurably reduces output
+}
+
+TEST_CASE ("ExciteMalletNode retriggering mid-contact restarts cleanly", "[engine][nodes][ExciteMalletNode][PMCore]")
+{
+    ExciteMalletNode node;
+    node.prepare ({ 44100.0, 512 });
+
+    float outputs[2];
+    const float trigger1[5] = { 1.0f, 0.3f, 0.3f, 0.5f, 0.0f };
+    node.processSample (trigger1, outputs);
+    node.processSample (trigger1, outputs); // let it ring a tiny bit
+
+    const float trigger2[5] = { 1.0f, 1.0f, 0.3f, 0.5f, 0.0f }; // louder retrigger
+    node.processSample (trigger2, outputs);
+    CHECK (outputs[1] == 1.0f); // contact restarted
+}
+
+// ---- resonator.plate ----
+
+TEST_CASE ("ResonatorPlateNode is silent on silent input", "[engine][nodes][ResonatorPlateNode][PMCore]")
+{
+    ResonatorPlateNode node;
+    node.prepare ({ 44100.0, 512 });
+
+    float outputs[2];
+    const float quiet[7] = { 0.0f, 0.5f, 0.5f, 2.0f, 1.0f, 0.4f, 0.6f };
+    for (int i = 0; i < 500; ++i)
+    {
+        node.processSample (quiet, outputs);
+        CHECK (outputs[0] == 0.0f);
+        CHECK (outputs[1] == 0.0f);
+    }
+}
+
+TEST_CASE ("ResonatorPlateNode's size and tension both raise the fundamental (smaller/tenser -> higher)",
+           "[engine][nodes][ResonatorPlateNode][PMCore]")
+{
+    auto zeroCrossingsFor = [] (float size, float tension)
+    {
+        ResonatorPlateNode node;
+        node.prepare ({ 44100.0, 512 });
+        float outputs[2];
+        const float excited[7] = { 1.0f, size, tension, 3.0f, 1.0f, 0.4f, 0.6f };
+        node.processSample (excited, outputs);
+        const float quiet[7] = { 0.0f, size, tension, 3.0f, 1.0f, 0.4f, 0.6f };
+        int crossings = 0;
+        float previous = outputs[0];
+        for (int i = 0; i < 2205; ++i)
+        {
+            node.processSample (quiet, outputs);
+            if ((previous < 0.0f && outputs[0] >= 0.0f) || (previous > 0.0f && outputs[0] <= 0.0f))
+                ++crossings;
+            previous = outputs[0];
+        }
+        return crossings;
+    };
+
+    CHECK (zeroCrossingsFor (0.0f, 0.5f) > zeroCrossingsFor (1.0f, 0.5f)); // smaller (size=0) rings higher than larger (size=1)
+    CHECK (zeroCrossingsFor (0.5f, 1.0f) > zeroCrossingsFor (0.5f, 0.0f)); // tenser rings higher than looser
+}
+
+TEST_CASE ("ResonatorPlateNode's quality structurally changes the real mode count used",
+           "[engine][nodes][ResonatorPlateNode][PMCore]")
+{
+    ResonatorPlateNode low, high;
+    low.setParameter ("resonator.plate.quality", 0.0f);  // low -> 8 modes
+    high.setParameter ("resonator.plate.quality", 2.0f); // high -> 32 modes
+    low.prepare ({ 44100.0, 512 });
+    high.prepare ({ 44100.0, 512 });
+
+    float outputsLow[2], outputsHigh[2];
+    const float excited[7] = { 1.0f, 0.5f, 0.5f, 3.0f, 1.0f, 0.4f, 0.6f };
+    low.processSample (excited, outputsLow);
+    high.processSample (excited, outputsHigh);
+
+    const float quiet[7] = { 0.0f, 0.5f, 0.5f, 3.0f, 1.0f, 0.4f, 0.6f };
+    bool everDiffered = false;
+    for (int i = 0; i < 1000; ++i)
+    {
+        low.processSample (quiet, outputsLow);
+        high.processSample (quiet, outputsHigh);
+        if (std::fabs (outputsLow[0] - outputsHigh[0]) > 1e-5f)
+            everDiffered = true;
+    }
+    CHECK (everDiffered);
+}
+
+TEST_CASE ("ResonatorPlateNode's decay orders sustained energy: longer decay keeps more energy after the same time",
+           "[engine][nodes][ResonatorPlateNode][PMCore]")
+{
+    ResonatorPlateNode shortDecay, longDecay;
+    shortDecay.prepare ({ 44100.0, 512 });
+    longDecay.prepare ({ 44100.0, 512 });
+
+    float outputs[2];
+    const float shortExcited[7] = { 1.0f, 0.5f, 0.5f, 0.1f, 1.0f, 0.4f, 0.6f };
+    const float longExcited[7] = { 1.0f, 0.5f, 0.5f, 5.0f, 1.0f, 0.4f, 0.6f };
+    shortDecay.processSample (shortExcited, outputs);
+    longDecay.processSample (longExcited, outputs);
+
+    const float shortQuiet[7] = { 0.0f, 0.5f, 0.5f, 0.1f, 1.0f, 0.4f, 0.6f };
+    const float longQuiet[7] = { 0.0f, 0.5f, 0.5f, 5.0f, 1.0f, 0.4f, 0.6f };
+
+    float rmsShort = 0.0f, rmsLong = 0.0f;
+    const int total = 44100, window = 4410;
+    for (int i = 0; i < total; ++i)
+    {
+        shortDecay.processSample (shortQuiet, outputs);
+        const auto ls = outputs[0];
+        longDecay.processSample (longQuiet, outputs);
+        const auto ll = outputs[0];
+        if (i >= total - window)
+        {
+            rmsShort += ls * ls;
+            rmsLong += ll * ll;
+        }
+    }
+    CHECK (rmsLong > rmsShort);
+}
+
+TEST_CASE ("ResonatorPlateNode pans deterministically across the stereo field (left and right genuinely differ)",
+           "[engine][nodes][ResonatorPlateNode][PMCore]")
+{
+    ResonatorPlateNode node;
+    node.prepare ({ 44100.0, 512 });
+
+    float outputs[2];
+    const float excited[7] = { 1.0f, 0.5f, 0.5f, 3.0f, 1.0f, 0.4f, 0.6f };
+    node.processSample (excited, outputs);
+
+    const float quiet[7] = { 0.0f, 0.5f, 0.5f, 3.0f, 1.0f, 0.4f, 0.6f };
+    bool everDiffered = false;
+    for (int i = 0; i < 1000; ++i)
+    {
+        node.processSample (quiet, outputs);
+        if (std::fabs (outputs[0] - outputs[1]) > 1e-4f)
+            everDiffered = true;
+    }
+    CHECK (everDiffered);
+}
+
+TEST_CASE ("ResonatorPlateNode stays finite and bounded over a long run at high quality",
+           "[engine][nodes][ResonatorPlateNode][PMCore]")
+{
+    ResonatorPlateNode node;
+    node.setParameter ("resonator.plate.quality", 2.0f); // high -> 32 modes
+    node.prepare ({ 44100.0, 512 });
+
+    float outputs[2];
+    for (int i = 0; i < 44100 * 2; ++i)
+    {
+        const float inputs[7] = { i < 10 ? 0.9f : 0.0f, 0.1f, 0.9f, 4.0f, 0.1f, 0.5f, 0.5f };
+        node.processSample (inputs, outputs);
+        REQUIRE (std::isfinite (outputs[0]));
+        REQUIRE (std::isfinite (outputs[1]));
+        REQUIRE (std::fabs (outputs[0]) < 1000.0f);
+        REQUIRE (std::fabs (outputs[1]) < 1000.0f);
+    }
+}
+
+// ---- The real cross-node feedback cycle: excite.mallet <-> resonator.string ----
+
+TEST_CASE ("A real compiled graph closes excite.mallet<->resonator.string into a per-sample feedback region, and plays",
+           "[engine][PMCore][integration]")
+{
+    // The exact case this whole batch's own intro confirmed GraphCompiler.cpp's
+    // existing Tarjan SCC-based cycle detection already handles: resonator.string's
+    // "motion" output feeds back into excite.mallet's own "feedback" input, closing
+    // a literal 2-node graph cycle - the first production node pair to actually
+    // exercise it (every earlier PM Core node's own feedback, where it has any, is
+    // self-contained internal state, never a cross-node cycle).
+    constexpr double sampleRate = 44100.0;
+    constexpr int blockSize = 512;
+
+    NodeGraph graph;
+    graph.addNode ({ "clock", "clock.pulse", {}, { { "clock.pulse.rate", 50.0f } }, {} });
+    graph.addNode ({ "mallet", "excite.mallet", {}, { { "excite.mallet.velocity", 0.9f }, { "excite.mallet.stiffness", 0.6f } }, {} });
+    graph.addNode ({ "string", "resonator.string", {}, { { "pitch", 69.0f }, { "resonator.string.decay", 2.0f } }, {} });
+    graph.addConnection ({ "clock", "tick", "mallet", "trigger" });
+    graph.addConnection ({ "mallet", "out", "string", "excite" });
+    graph.addConnection ({ "string", "motion", "mallet", "feedback" });
+    graph.setOutput ("string", "out");
+
+    auto factory = buildDefaultNodeFactory();
+    auto result = GraphCompiler::compile (graph, factory, { sampleRate, blockSize }, 1);
+    REQUIRE (result.success);
+    auto& plan = result.plan;
+
+    // Confirm the cycle was genuinely detected and scheduled as a per-sample
+    // region - not silently treated as acyclic (which would be a real,
+    // previously-unexercised engine bug, not a passing edge case).
+    bool hasPerSampleRegion = false;
+    for (const auto& step : plan.steps)
+        if (step.kind == ExecutionPlan::Step::Kind::PerSampleRegion)
+            hasPerSampleRegion = true;
+    REQUIRE (hasPerSampleRegion);
+
+    const auto* outputPtr = plan.blockBuffers[(size_t) plan.finalOutputBufferIndex].getBlock().getChannelPointer (0);
+
+    double sumSquares = 0.0;
+    int totalSamples = 0;
+    for (int block = 0; block < 10; ++block)
+    {
+        plan.process (blockSize);
+        for (int i = 0; i < blockSize; ++i)
+        {
+            REQUIRE (std::isfinite (outputPtr[i]));
+            REQUIRE (std::fabs (outputPtr[i]) < 1000.0f);
+            sumSquares += (double) outputPtr[i] * (double) outputPtr[i];
+            ++totalSamples;
+        }
+    }
+
+    const auto rms = std::sqrt (sumSquares / (double) totalSamples);
+    CHECK (rms > 0.0001); // real, audible output - the coupled system actually plays
 }

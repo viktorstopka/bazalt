@@ -4,11 +4,12 @@ Tracks, per node, **what's actually built** vs. **what's left**, and for what's 
 **how badly we need it** and **what order to build it in**. Derived from
 `wiki/NODES.md` (the catalog — read that for what each node actually does) and
 `wiki/NODES.System.md` (architecture). Cross-checked directly against
-`engine/include/bazalt/engine/nodes/*.h` (**88 registered node types across 86 files**
-as of the PM Core batch's third step (`excite.pluck`/`resonator.string`, 2026-10-02)
-— six new files total this arc so far (`excite.impulse`/`resonator.comb`/
-`data.material`/`resonator.modal`/`excite.pluck`/`resonator.string`), +6 from the 82
-registered at the Control -> Audio Bridge — the authoritative running count
+`engine/include/bazalt/engine/nodes/*.h` (**90 registered node types across 88 files**
+as of the PM Core batch's fourth and final step (`excite.mallet`/`resonator.plate`,
+2026-10-02) — eight new files total this arc (`excite.impulse`/`resonator.comb`/
+`data.material`/`resonator.modal`/`excite.pluck`/`resonator.string`/
+`excite.mallet`/`resonator.plate`), +8 from the 82 registered at the Control -> Audio
+Bridge — the authoritative running count
 `tests/NodeDescriptorTests.cpp`'s own `NodeDescriptorTests` case tracks and
 narrates per batch; was 77/74 after `wiki/plans/DomainRedesign.md` Batch 3 folded
 `mix.sum` (`MixNode.h`, its own dedicated file/type) straight into `math.add` with
@@ -103,28 +104,28 @@ rather than waiting; every `factory.*` node still does want the real thing.
 | `noise.colored` | To be implemented | **B1** | Noise & Grain | Filtered-white-noise family; straightforward. |
 | `noise.dust` | To be implemented | **B2** | Noise & Grain | Sample-accurate sparse-impulse timing. |
 
-### `excite.*` — physical excitation — 2 Implemented, 1 MVP, 5 to build
+### `excite.*` — physical excitation — 3 Implemented, 1 MVP, 4 to build
 
 | Node | Status | Necessity | Batch | Notes |
 |---|---|---|---|---|
 | `excite.impulse` | Implemented | | PM Core | Done, batch 1 (2026-10-02). |
 | `excite.pluck` | Implemented | | PM Core | Done, batch 3 (2026-10-02). Fixed 5ms noise burst; `position` is a fixed-window FIR comb (no pitch concept of its own, unlike `resonator.string`'s own `position`). |
+| `excite.mallet` | Implemented | | PM Core | Done, batch 4 (2026-10-02), closes the PM Core batch. A half-sine contact pulse; `feedback` genuinely couples to a resonator's own `motion`, the first real cross-node per-sample feedback cycle in production node code. |
 | `excite.burst` | MVP | | PM Core | Missing `tone`/`shape`; trigger/duration already real. |
-| `excite.mallet` | To be implemented | **B2** | PM Core | Single-sample feedback collision model. |
 | `excite.stickSlip` | To be implemented | **B3** | PM Friction/Breath | Delicate near-zero-speed friction. |
 | `excite.breath` | To be implemented | **B2** | PM Friction/Breath | Nonlinear noise-modulation (breath/reed/lip modes). |
 | `excite.contact` | To be implemented | **B2** | PM Friction/Breath | Scrape/grain-rate model. |
 | `excite.vocalFolds` | To be implemented | **B3** | PM Voice | Hardest excite node — self-oscillating two-mass valve. |
 
-### `resonator.*` — resonating bodies — 3 Implemented, 4 to build
+### `resonator.*` — resonating bodies — 4 Implemented, 3 to build
 
 | Node | Status | Necessity | Batch | Notes |
 |---|---|---|---|---|
 | `resonator.comb` | Implemented | | PM Core | Done, batch 1 (2026-10-02). |
 | `resonator.modal` | Implemented | | PM Core | Done, batch 2 (2026-10-02). The centre of the PM set — a real bank of up to 64 two-pole resonators driven by `data.material`'s mode set, one real stereo output. |
 | `resonator.string` | Implemented | | PM Core | Done, batch 3 (2026-10-02). The playable Karplus-Strong flagship — a real circular delay line through a damping one-pole + single-stage stiffness allpass; `release` is a real `bool` gate (held/muted), not a knob. |
+| `resonator.plate` | Implemented | | PM Core | Done, batch 4 (2026-10-02), closes the PM Core batch. A real, documented simplification — reuses `resonator.modal`'s two-pole bank over a fixed, internally-generated mode set (the same membrane-Bessel-zero table `data.material` uses, squared), not a literal 2D mesh solve. |
 | `resonator.tube` | To be implemented | **B2** | PM Friction/Breath | Single-tube waveguide, feedback both directions. |
-| `resonator.plate` | To be implemented | **B3** | PM Core | 2D mesh, scales with mesh size. |
 | `resonator.junction` | To be implemented | **B3** | PM Voice | Correction 1; multi-way scattering junction. |
 | `resonator.tract` | To be implemented | **B3** | PM Voice | Correction 1; multi-section vocal-tract-shaped waveguide. |
 
@@ -344,12 +345,21 @@ building for real, not simplified.
 
 | Status | Count |
 |---|---|
-| Implemented | 79 |
+| Implemented | 81 |
 | MVP | 4 (`osc.analog`, `filter.svf`, `excite.burst`, `seq.steps`) |
-| To be implemented | 43 |
+| To be implemented | 41 |
 | **Total native node types** | **126** |
 
-By necessity, among the 43 still to build: **A** 4 · **B** 26 · **C** 7 · **D** 6.
+By necessity, among the 41 still to build: **A** 4 · **B** 24 · **C** 7 · **D** 6.
+
+**The whole PM Core batch is now closed** (2026-10-02): `excite.impulse`/`pluck`/
+`mallet`, `resonator.comb`/`modal`/`string`/`plate`, and `data.material` are all
+real, wireable, and tested end to end — Bazalt's first physical-modelling
+instruments, the Struck Body and (bar `excite.stickSlip`) Bowed String reference
+patches now fully or almost-fully buildable. `excite.burst`'s own `tone`/`shape`
+MVP gap and `resonator.tube`/`junction`/`tract` are explicitly NOT part of this —
+left for their own later batches (PM Friction/Breath, PM Voice) exactly as
+originally planned.
 
 **PM Core batch 1 — done, 2026-10-02.** `excite.impulse`/`resonator.comb` built and
 tested (`tests/PMCoreNodesTests.cpp`) — the simplest real excite→resonate pair,
@@ -423,7 +433,7 @@ but sit at the top of the recommended order below because `note.quantize` (A),
 | **Data Foundations** — done | `data.scale`, `data.table`, `data.lookup` | `data.lookup` literally reads what `data.table`/`data.scale` produce — the pathfinder for the whole Data-publishing pipeline (`tests/DataFoundationsNodesTests.cpp`, 18 cases including two real compiled-graph round trips). |
 | **Note Stream** — done (6/9; `hold`/`select`/`chord` blocked on a real engine limit) | `note.gate`, `note.value`, `note.transpose`, `note.filter`, `note.humanize`, `note.quantize` | All consume/produce `Note`, tested together (`tests/NoteStreamNodesTests.cpp`, including a real compiled-graph round trip through `data.scale → note.quantize → note.value`). |
 | **Domain Extensions** — done | `instance.allocate.swarmPopulation`, `instance.allocate.swarmTransient`, `instance.allocate.trigger` | Share the same instance-context/lifetime runtime machinery `instance.allocate.voice` already proved out. |
-| **PM Core** | `excite.impulse`, `excite.pluck`, `excite.mallet`, `resonator.comb`, `resonator.modal`, `resonator.string`, `resonator.plate`, `excite.burst` (MVP top-off), `data.material` | The basic excite→resonate pairs (Struck Body, Karplus-Strong) — designed to plug straight into each other; `data.material` feeds `resonator.modal` directly, moved here from the now-closed Data Foundations batch (a stray tag in an earlier pass — it was never one of that batch's 3 actual members). |
+| **PM Core** — done | `excite.impulse`, `excite.pluck`, `excite.mallet`, `resonator.comb`, `resonator.modal`, `resonator.string`, `resonator.plate`, `data.material` | The basic excite→resonate pairs (Struck Body, Karplus-Strong) — designed to plug straight into each other; `data.material` feeds `resonator.modal` directly, moved here from the now-closed Data Foundations batch (a stray tag in an earlier pass — it was never one of that batch's 3 actual members). `excite.burst`'s own MVP top-off (`tone`/`shape`) deliberately NOT included — a separate, smaller follow-up, not scoped into this batch. |
 | **PM Friction/Breath** | `excite.stickSlip`, `excite.breath`, `excite.contact`, `resonator.tube` | Friction/breath-driven excitation, tested against tube/string for Bowed String / Breath-Wind. |
 | **PM Voice** | `osc.glottal`, `excite.vocalFolds`, `resonator.junction`, `resonator.tract`, `filter.formant` | Correction 1's vocal-modelling cluster — the hardest batch, targets the "cat purr" reference patch. Build last within Physical Modelling. |
 | **Noise & Grain** | `noise.colored`, `noise.dust`, `sampler.granular` | Stochastic/granular sources sharing test approach. |
@@ -487,12 +497,16 @@ matters more than the letter for a couple of "C" items:
    wireable node (not the hand-curated side-table ADR-0015 originally rejected),
    plus the drag-a-port-out-to-create-a-macro UI gesture and the top-bar knob
    panel.
-6. **PM Core** — **in progress.** Batches 1-3 done (`excite.impulse`, `resonator.comb`,
-   `data.material`, `resonator.modal`, `excite.pluck`, `resonator.string`,
-   2026-10-02) — the first real "personality" sounds beyond subtractive synthesis,
-   including the flagship playable Karplus-Strong string. Remaining: `excite.mallet`
-   + `resonator.plate`, plus topping off `excite.burst`'s MVP gap with `tone`/`shape`.
-   Still the biggest **B** cluster.
+6. ~~**PM Core**~~ — **done, 2026-10-02 (all 4 batches).** `excite.impulse`,
+   `resonator.comb`, `data.material`, `resonator.modal`, `excite.pluck`,
+   `resonator.string`, `excite.mallet`, `resonator.plate` all built and tested
+   (`tests/PMCoreNodesTests.cpp`, 48 cases total across the 4 batches) — the first
+   real "personality" sounds beyond subtractive synthesis, the flagship playable
+   Karplus-Strong string, and a real, production-proven cross-node feedback cycle
+   (`excite.mallet`↔`resonator.string`, the first one this engine has ever compiled
+   outside a synthetic test). `excite.burst`'s own `tone`/`shape` MVP gap was
+   explicitly left open, as planned — a separate, smaller follow-up, not part of
+   this batch's own scope.
 7. **Shaping** + **Noise & Grain** — cheap wins (mostly difficulty 1–2), round out the
    effects/sources palette while PM Core's more delicate nodes are being tuned.
 8. **PM Friction/Breath** (`excite.stickSlip`/`breath`/`contact` + `resonator.tube`) —
@@ -539,12 +553,12 @@ not with the A/B/C/D/Batch treatment above.
 | **Chord** | 📋 — blocked | `data.scale` Implemented, but `note.chord` hits the same real engine limit as `note.hold`/`note.select`. |
 | **Bubble** | 📋 | `env.curve` (Env/LFO Shapes). |
 | **Water** | 📋 | `noise.dust`, `instance.allocate.swarmTransient` (step 4), Bubble. |
-| **Crackle** | 📋 | `noise.dust`, `excite.burst` (already MVP-usable), `resonator.modal`, `data.material` (both PM Core). |
-| **Scrape** | 📋 | `excite.contact` (PM Friction/Breath), `resonator.modal`, `data.material`, `space.reverb`. |
-| **Cicada** | 📋 | `clock.pulse` now Implemented — `excite.burst` already MVP-usable; still needs `filter.formant` (PM Voice), `resonator.modal` (PM Core). |
+| **Crackle** | 📋 — only `noise.dust` missing | `resonator.modal`/`data.material`/`excite.burst` all Implemented now (PM Core done); just `noise.dust` (Noise & Grain) left. |
+| **Scrape** | 📋 | `excite.contact` (PM Friction/Breath), `space.reverb` — `resonator.modal`/`data.material` now Implemented (PM Core done). |
+| **Cicada** | 📋 | `clock.pulse`/`resonator.modal` now Implemented — `excite.burst` already MVP-usable; still needs `filter.formant` (PM Voice). |
 | **Cicada Field** | 📋 | `instance.allocate.swarmPopulation` (step 4), `random.drift` (already Implemented), Cicada. |
 | **Breath / Wind** | 📋 | `excite.breath`, `resonator.tube` (PM Friction/Breath), `env.curve`. |
-| **Bowed String** | 📋 | `excite.stickSlip`, `resonator.string` (PM Friction/Breath + PM Core). |
-| **Struck Body** | 📋 | `excite.mallet`, `resonator.plate`/`modal` (PM Core). |
+| **Bowed String** | 📋 — only `excite.stickSlip` missing | `resonator.string` now Implemented (PM Core done, with a real `motion` output ready for the coupling); just `excite.stickSlip` (PM Friction/Breath) left. |
+| **Struck Body** | ✅ buildable now | `excite.mallet` and `resonator.plate`/`modal` all Implemented (PM Core done, 2026-10-02) — the real coupled `excite.mallet`↔`resonator.string` cycle is proven end to end by a real compiled-graph test, same mechanism this patch's own `resonator.plate`/`modal` pairing would use. |
 | **Hex Guitar Front End** | 📋 | `analysis.onset`, `analysis.pitch` (Analysis batch) — `note.assemble` itself is now Implemented. |
 | **Voiced self-oscillation (cat purr)** | 📋 | The entire PM Voice batch, plus `env.curve`/`random.drift`/`lfo.shape`/`mix.crossfade` (all either Implemented or earlier batches). Hardest reference patch in the catalog. |
