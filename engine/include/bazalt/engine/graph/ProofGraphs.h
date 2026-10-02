@@ -85,6 +85,8 @@
 #include "bazalt/engine/nodes/ResonatorCombNode.h"
 #include "bazalt/engine/nodes/DataMaterialNode.h"
 #include "bazalt/engine/nodes/ResonatorModalNode.h"
+#include "bazalt/engine/nodes/ExcitePluckNode.h"
+#include "bazalt/engine/nodes/ResonatorStringNode.h"
 
 namespace bazalt::engine
 {
@@ -212,6 +214,10 @@ namespace bazalt::engine
         // PM Core batch 2 — the Data(modal-set) producer/consumer pair.
         factory.registerType ("data.material", [] { return std::make_unique<nodes::DataMaterialNode>(); });
         factory.registerType ("resonator.modal", [] { return std::make_unique<nodes::ResonatorModalNode>(); });
+        // PM Core batch 3 — the flagship: excite.pluck (the one-node shortcut
+        // into resonator.string) + resonator.string (the playable Karplus-Strong).
+        factory.registerType ("excite.pluck", [] { return std::make_unique<nodes::ExcitePluckNode>(); });
+        factory.registerType ("resonator.string", [] { return std::make_unique<nodes::ResonatorStringNode>(); });
         return factory;
     }
 

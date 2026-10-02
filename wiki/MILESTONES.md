@@ -2001,3 +2001,135 @@ table, header count) updated to match. `pluginval`/Standalone verification
 deferred to the end of the whole PM Core arc, matching the Domain Extensions
 arc's own stated verification schedule ("once against the full, final tree...
 rather than once per batch").
+
+## PM Core batch 2 — `data.material`, `resonator.modal` — done, 2026-10-02
+
+The first real `Data(modal-set)` producer/consumer pair, and the centre of
+the whole physical-modelling set.
+
+**`data.material`** (`DataMaterialNode.h`): the catalog gives this node six
+input names ("stiffness, density, damping, size, inharmonicity, irregularity")
+and nothing else — the concrete mapping from each knob to the generated mode
+set is this node's own design, same treatment `data.lookup`'s mode contract
+and `data.scale`'s octaveSize generalization already got. Per-geometry base
+ratio sets: `string` (plain harmonics), `tube` (odd harmonics only, a closed-
+open tube), `bar` (the free-free Euler-Bernoulli beam's own large-`n`
+asymptotic formula, checked against the standard reference values to within
+~1% even at low mode numbers), `membrane` (a hardcoded table of the first 12
+circular-membrane Bessel-zero ratios, continued past that by linear
+extrapolation), `plate` (the membrane table's own ratios, squared — a
+documented simplification: reuses the membrane's nodal pattern but applies a
+plate's `k²` bending dispersion instead of a membrane's `k¹` tension-only one,
+NOT a literal finite-element solve), `irregularSolid` (no closed form, built
+from deterministic seeded gaps via `combineInstanceSeed`). Then, uniformly:
+stiffness-scaled inharmonicity stretch (the classic stiff-string formula),
+deterministic seeded irregularity jitter, a density×damping decay-weight
+falloff, and a preset-driven amplitude-rolloff exponent (metal/glass brighter,
+wood/stone duller — this node's own documented material characterization, not
+a measurement). `size` is a declared port, matching the catalog, but
+deliberately not yet consumed — the same honest-gap treatment `data.table`'s
+own `loop` flag already gets. Same RT-safety shape as `data.scale`: real
+wireable ports, but only `setParameter()` actually rebuilds/republishes.
+
+**`resonator.modal`** (`ResonatorModalNode.h`): a real bank of up to 64
+independent two-pole resonators (`y[n] = 2r·cos(w)y[n-1] - r²y[n-2] +
+excite[n]·gain`), one per mode in the required `modes` input, summed into one
+real stereo output — built directly on the stereo redesign's
+`Channels::Stereo` convention rather than the catalog's own stale `left`/
+`right` pair (the catalog text for this not-yet-built node predates
+`wiki/NODES.System.md` §9; corrected to the real, current shape rather than
+literally matching stale prose). `pitch` reuses `osc.analog`'s own absolute-
+semitone-to-Hz formula exactly. `decay`/`brightness` combine with
+`data.material`'s own per-mode `decayWeight` into each mode's effective 60dB
+time (brightness never touches the fundamental's own decay, only the
+overtones' balance). `position` applies the textbook string mode-shape
+weighting (`|sin((k+1)πposition)|`) as a documented generalization across
+every geometry — `position == 0` is a real physical null (total silence), not
+a bug. `spread` pans each mode deterministically via a golden-angle constant,
+no `seed` needed (the same mode always lands at the same stereo position on
+every run of the same patch).
+
+**Tests:** `tests/PMCoreNodesTests.cpp`, 18 new cases. `data.material`: buffer
+shape, exact string/tube ratios, bar ratios within 2% of the published
+reference values, inharmonicity+stiffness stretching modes sharp monotonically,
+irregularity determinism across separate instances for the same seed, decay
+weight staying flat unless BOTH density and damping are non-zero, preset-driven
+amplitude rolloff (metal louder than wood at high modes), republish-generation
+bump, RT-safety allocation-trap read. `resonator.modal`: silence with nothing
+wired, silence on a wrong-tag buffer, correct ringing frequency for a single
+unison mode (zero-crossing count), `position == 0` total silence, `decay`
+ordering, `maxModes` structurally capping which modes of a buffer are read
+(an exact equivalence test against an independently-capped reference),
+`spread` genuinely panning (mono at 0, real left/right difference at 1), a
+long-run finite/bounded stability check at full 64 modes.
+
+**A real, previously-documented bug hit a third time in this same session**:
+another new test name used a real em dash, reproducing the same CTest/Catch2
+Windows-locale encoding mismatch `09-28-InstanceAllocator.1` first documented
+and PM Core batch 1 already hit once — fixed the same way, a plain hyphen.
+
+**Verified:** full rebuild clean (one transient MSVC "invalid COMDAT
+selection" link error on an untouched file, resolved on a plain retry with no
+code change — not a regression, the same class of flake this session's very
+first full build also hit). `ctest --test-dir build -C Debug` 553/553 green
+(535 + 18 new). `wiki/NODES.md`/`wiki/NODES.Status.md` updated to match.
+
+## PM Core batch 3 — `excite.pluck`, `resonator.string` — done, 2026-10-02
+
+The flagship pair the whole batch is named after: "the playable version of
+Karplus-Strong."
+
+**`excite.pluck`** (`ExcitePluckNode.h`): a fixed 5ms linearly-decaying noise
+burst (the same envelope shape `excite.burst` already uses, just much
+shorter), `hardness` an in-line one-pole reusing `filter.onepole`'s own
+"Damping" convention, `position` a plain FIR difference-tap against a FIXED
+200-sample reference window — deliberately NOT scaled to any particular
+absolute pitch, since this node (unlike `resonator.string`'s own `position`)
+has no pitch concept at all; it's a pre-shaped excitation meant to be fed into
+whatever resonator eventually sets the real pitch. `amplitude`/`hardness`/
+`position` are all sampled once, at the moment `trigger` fires, not
+continuously tracked during the decay — a real pluck has one fixed attack
+character, matching every other one-shot excitation node's own convention.
+
+**`resonator.string`** (`ResonatorStringNode.h`): a real digital waveguide —
+a circular delay line of `sampleRate/pitch` samples closed through a damping
+one-pole (the same "Damping" convention `resonator.comb`/`filter.onepole`
+already establish) plus a single-stage stiffness allpass (a documented
+simplification of the full Jaffe-Smith dispersion cascade — one stage, not a
+chain), scaled by a `decay`-derived per-round-trip gain using the same
+time-based decay formula `resonator.comb`'s own feedback mode already uses,
+just parametrized by seconds instead of a raw gain — the "playable
+instrument" framing this node's own catalog entry asks for. `position` is a
+real difference-tap against the string's own live delay line (unlike
+`excite.pluck`'s fixed-window version, this one is scaled to the string's
+actual sounding pitch). **`release` is a real, documented design call the
+catalog names but doesn't define: a `bool` gate, not a knob** — held (`true`,
+the default) rings normally at `decay`'s own rate; released (`false`) ramps
+an extra damping multiplier down to a 0.4 floor over ~15ms, modelling a
+palm-mute/finger-lift, independent of whatever `decay` alone would have done.
+`motion` outputs the loop's own freshly-computed value at the injection
+point — what a coupled exciter (`excite.mallet`'s `feedback`, PM Core's
+remaining batch) reads to feel the string push back, a literal graph cycle
+`GraphCompiler.cpp`'s existing per-sample-region/SCC mechanism already
+compiles correctly (confirmed architecturally before PM Core's first line of
+code was written — see this file's own PM Core section intro).
+
+**Tests:** `tests/PMCoreNodesTests.cpp`, 10 new cases. `excite.pluck`: silence
+until triggered, exact silence at `amplitude == 0` regardless of the noise
+generator, exact 5-sample (5ms @ 1kHz) burst duration, the "sampled once at
+trigger" contract (changing `amplitude` to 0 mid-decay doesn't retroactively
+silence an already-fired pluck). `resonator.string`: silence with no
+excitation, correct ringing frequency for a single excitation (zero-crossing
+count), `decay` ordering, `release` gate measurably muting faster than
+holding (isolated by using a near-unity `decay` so the release ramp's own
+effect dominates), `out`/`motion` being real, distinct signals when
+`position > 0`, a long-run finite/bounded stability check with stiffness and
+damping both pushed toward their extremes.
+
+**Verified:** full rebuild clean (the same transient MSVC "invalid COMDAT
+selection" flake hit twice more this batch, on two different, untouched
+files — resolved both times on a plain retry with zero code changes; three
+occurrences in one session is more than this flake has shown before, worth
+naming as a real, if ultimately environmental, pattern rather than brushing
+past it silently). `ctest --test-dir build -C Debug` 563/563 green (553 + 10
+new). `wiki/NODES.md`/`wiki/NODES.Status.md` updated to match.

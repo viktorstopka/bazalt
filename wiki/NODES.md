@@ -45,8 +45,8 @@ are telemetry outputs for live visualization, not ports.
 | `osc.*` | analog, sine, wavetable, **glottal** (Correction 1) | ✅ analog, sine — 📋 wavetable, glottal |
 | `sampler.*` | player, granular | 📋 both |
 | `noise.*` | colored, dust | 📋 both |
-| `excite.*` | impulse, burst, pluck, mallet, stickSlip, breath, contact, **vocalFolds** (Correction 1) | ✅ impulse, burst — 📋 the other 6 |
-| `resonator.*` | modal, string, tube, plate, comb, **junction**, **tract** (Correction 1) | ✅ comb, modal — 📋 the other 5 |
+| `excite.*` | impulse, burst, pluck, mallet, stickSlip, breath, contact, **vocalFolds** (Correction 1) | ✅ impulse, burst, pluck — 📋 the other 5 |
+| `resonator.*` | modal, string, tube, plate, comb, **junction**, **tract** (Correction 1) | ✅ comb, modal, string — 📋 the other 4 |
 | `filter.*` | svf, ladder, onepole, allpass, shelf, peak, formant, dcBlock | ✅ svf, ladder, onepole, allpass, shelf, peak, dcBlock — 📋 formant |
 | `shape.*` | waveshaper, clip, fold, rectify, crush | 📋 all 5 |
 | `delay.*` | line | ✅ |
@@ -143,10 +143,10 @@ A timed burst of white noise with a linear decay — the standard broadband
 excitation for plucks, hits, and anything else that needs a transient kick rather
 than a tonal source. **In (spec):** `trigger : Event`; `duration`; `tone`; `shape`. **In (real today):** `trigger : Event` and `duration [audio]·0.1–2000ms·log·30ms` — a clock, a threshold detector, or anything else that produces Events can now start it; the direct C++ `trigger(int durationSamples)` poke still exists too (tests/tools), calling the same internal logic. `tone`/`shape` aren't built yet — still 🚧, not full catalog compliance. **Out:** `out` — `Audio` (white-noise burst, linear decay envelope over the triggered duration).
 
-#### `excite.pluck` — Pluck 📋
+#### `excite.pluck` — Pluck ✅ *(PM Core batch 3)*
 A pre-shaped plucked-string excitation, pickup position and hardness baked in —
 the one-node shortcut into `resonator.string` without hand-building the comb-notch
-spectrum yourself. **In:** `trigger : Event`; `position`; `hardness`; `amplitude`. **Out:** `out` — `Audio`. **Native:** comb-notch shaping, awkward to hand-wire per patch.
+spectrum yourself. **In:** `trigger : Event`; `position`; `hardness`; `amplitude`. **Out:** `out` — `Audio`. **Native:** comb-notch shaping, awkward to hand-wire per patch. **A concrete, tested contract this session had to design:** a fixed 5ms linearly-decaying noise burst, `hardness` an in-line one-pole (`filter.onepole`'s own "Damping" convention — `0` darkest, `1` brightest), `position` a plain FIR difference-tap against a FIXED 200-sample reference window (this node has no pitch concept, unlike `resonator.string`'s own `position`, which taps its real, live delay line). `amplitude`/`hardness`/`position` are all sampled once, at the moment `trigger` fires — not continuously tracked during the decay, matching how a real pluck's attack character never changes mid-ring.
 
 #### `excite.mallet` — Mallet / Collision 📋
 Models a mallet or hammer striking something, with a `feedback` path from the
@@ -175,8 +175,8 @@ A self-oscillating two-mass valve — frequency **emerges** from pressure/mass/s
 #### `resonator.modal` — Modal Bank ✅ *(PM Core batch 2)*
 The centre of the physical-modelling set. **In:** `excite` — `Audio`; `modes` — `Data(modal-set)`, required; `pitch [audio]` (absolute semitones, same `440·2^((pitch-69)/12)` convention `osc.analog` uses); `decay`; `brightness`; `inharmonicity`; `position` (pickup point); `spread`. **Out:** `out` — `Audio` (`Channels::Stereo`, primary — one real stereo cable; the catalog's own `left`/`right` pair predates the stereo redesign, `NODES.System.md` §9, which made one `Channels::Stereo` port the catalog-wide rule for every node, including ones not yet built when it landed). **Structural:** `maxModes` (default 64). **Native:** inner loop scales with mode count; delicate resonant filters — a bank of real two-pole resonators (`y[n] = 2r·cos(w)y[n-1] - r²y[n-2] + excite[n]·gain`), coefficients recomputed per mode per sample, the single most expensive node in this catalog by construction. `position` uses the textbook string mode-shape weighting (`|sin((k+1)πposition)|`) as a documented generalization across every geometry; `position == 0` is a real physical null (total silence), not a bug. `spread` pans each mode deterministically via a golden-angle constant — no `seed` needed, the same mode always lands at the same stereo position on every run.
 
-#### `resonator.string` — String 📋
-A waveguide string, the playable version of Karplus-Strong. **In:** `excite` — `Audio`; `pitch [audio]`; `decay`; `damping`; `stiffness`; `position`; `release`. **Out:** `out` — `Audio`; `motion` — `Audio` (feeds back into `excite.stickSlip`/`excite.mallet`). **Native:** single-sample feedback; tuning/interpolation delicate.
+#### `resonator.string` — String ✅ *(PM Core batch 3)*
+A waveguide string, the playable version of Karplus-Strong. **In:** `excite` — `Audio`; `pitch [audio]`; `decay`; `damping`; `stiffness`; `position`; `release`. **Out:** `out` — `Audio`; `motion` — `Audio` (feeds back into `excite.stickSlip`/`excite.mallet`). **Native:** single-sample feedback; tuning/interpolation delicate. **Behavior:** a real circular delay line (`sampleRate/pitch` samples) closed through a damping one-pole (`filter.onepole`'s own convention) plus a single-stage stiffness allpass (a documented simplification of the full Jaffe-Smith dispersion cascade), scaled by a `decay`-derived per-round-trip gain (the same time-based formula `resonator.comb`'s feedback mode uses, parametrized by seconds instead of a raw gain). `position` is a real difference-tap against the string's own live delay line (unlike `excite.pluck`'s fixed-window version). **`release` is a real, documented design call: a `bool` gate, not a knob** — held (`true`, the default) rings normally; released (`false`) ramps an extra damping multiplier down to a floor over ~15ms, modelling a palm-mute/finger-lift. `motion` is the loop's own freshly-computed value at the injection point, for a real coupled exciter (`excite.mallet`'s `feedback`) to read — a literal graph cycle once wired that way, compiled by `GraphCompiler.cpp`'s existing per-sample-region mechanism.
 
 #### `resonator.tube` — Tube 📋
 An open- or closed-end waveguide tube — the resonating body behind wind

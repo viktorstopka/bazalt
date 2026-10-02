@@ -10,6 +10,8 @@
 #include "bazalt/engine/nodes/ResonatorCombNode.h"
 #include "bazalt/engine/nodes/DataMaterialNode.h"
 #include "bazalt/engine/nodes/ResonatorModalNode.h"
+#include "bazalt/engine/nodes/ExcitePluckNode.h"
+#include "bazalt/engine/nodes/ResonatorStringNode.h"
 #include "bazalt/engine/RtAllocationTrap.h"
 #include <algorithm>
 #include <cmath>
@@ -614,5 +616,219 @@ TEST_CASE ("ResonatorModalNode stays finite and bounded over a long run at full 
         REQUIRE (std::isfinite (r));
         REQUIRE (std::fabs (l) < 1000.0f);
         REQUIRE (std::fabs (r) < 1000.0f);
+    }
+}
+
+// ---- excite.pluck ----
+
+TEST_CASE ("ExcitePluckNode is silent until triggered", "[engine][nodes][ExcitePluckNode][PMCore]")
+{
+    ExcitePluckNode node;
+    node.prepare ({ 44100.0, 512 });
+
+    for (int i = 0; i < 100; ++i)
+        CHECK (runOneSample (node, { 0.0f, kNaN, kNaN, kNaN }) == 0.0f);
+}
+
+TEST_CASE ("ExcitePluckNode's amplitude == 0 is exact silence regardless of the noise generator",
+           "[engine][nodes][ExcitePluckNode][PMCore]")
+{
+    ExcitePluckNode node;
+    node.prepare ({ 44100.0, 512 });
+
+    CHECK (runOneSample (node, { 1.0f, 0.3f, 0.5f, 0.0f }) == 0.0f);
+    for (int i = 0; i < 300; ++i)
+        CHECK (runOneSample (node, { 0.0f, kNaN, kNaN, kNaN }) == 0.0f);
+}
+
+TEST_CASE ("ExcitePluckNode's burst lasts exactly burstDurationMs, then goes silent",
+           "[engine][nodes][ExcitePluckNode][PMCore]")
+{
+    ExcitePluckNode node;
+    node.prepare ({ 1000.0, 512 }); // 1kHz -> 5ms == 5 samples exactly
+
+    runOneSample (node, { 1.0f, 0.3f, 1.0f, 1.0f });
+    for (int i = 1; i < 5; ++i)
+        runOneSample (node, { 0.0f, kNaN, kNaN, kNaN });
+
+    // 6th sample onward: silent.
+    CHECK (runOneSample (node, { 0.0f, kNaN, kNaN, kNaN }) == 0.0f);
+    CHECK (runOneSample (node, { 0.0f, kNaN, kNaN, kNaN }) == 0.0f);
+}
+
+TEST_CASE ("ExcitePluckNode samples amplitude/hardness/position once at trigger, not live during decay",
+           "[engine][nodes][ExcitePluckNode][PMCore]")
+{
+    ExcitePluckNode node;
+    node.prepare ({ 1000.0, 512 });
+
+    runOneSample (node, { 1.0f, 0.3f, 1.0f, 1.0f }); // fires with amplitude 1.0
+
+    // Changing amplitude to 0 via setParameter mid-decay must NOT retroactively
+    // silence this already-fired pluck (it was captured at trigger time).
+    node.setParameter ("excite.pluck.amplitude", 0.0f);
+
+    bool anyNonZero = false;
+    for (int i = 1; i < 5; ++i)
+        if (runOneSample (node, { 0.0f, kNaN, kNaN, kNaN }) != 0.0f)
+            anyNonZero = true;
+
+    CHECK (anyNonZero);
+}
+
+// ---- resonator.string ----
+
+TEST_CASE ("ResonatorStringNode is silent with no excitation", "[engine][nodes][ResonatorStringNode][PMCore]")
+{
+    ResonatorStringNode node;
+    node.prepare ({ 44100.0, 512 });
+
+    float outputs[2];
+    const float inputs[7] = { 0.0f, 69.0f, 3.0f, 0.5f, 0.1f, 0.15f, 1.0f };
+    for (int i = 0; i < 1000; ++i)
+    {
+        node.processSample (inputs, outputs);
+        CHECK (outputs[0] == 0.0f);
+        CHECK (outputs[1] == 0.0f);
+    }
+}
+
+TEST_CASE ("ResonatorStringNode rings at the expected pitch after a single-sample excitation",
+           "[engine][nodes][ResonatorStringNode][PMCore]")
+{
+    ResonatorStringNode node;
+    node.prepare ({ 44100.0, 512 });
+
+    float outputs[2];
+    const float excited[7] = { 1.0f, 69.0f, 3.0f, 1.0f, 0.0f, 0.0f, 1.0f }; // damping=1 (brightest), stiffness=0 (no dispersion)
+    node.processSample (excited, outputs);
+
+    const float quiet[7] = { 0.0f, 69.0f, 3.0f, 1.0f, 0.0f, 0.0f, 1.0f };
+    int zeroCrossings = 0;
+    float previous = outputs[0];
+    const int window = 2205; // 50ms @ 44100Hz -> ~22 cycles @ 440Hz -> ~44 zero crossings
+    for (int i = 0; i < window; ++i)
+    {
+        node.processSample (quiet, outputs);
+        if ((previous < 0.0f && outputs[0] >= 0.0f) || (previous > 0.0f && outputs[0] <= 0.0f))
+            ++zeroCrossings;
+        previous = outputs[0];
+    }
+
+    CHECK (zeroCrossings > 30);
+    CHECK (zeroCrossings < 58);
+}
+
+TEST_CASE ("ResonatorStringNode's decay orders sustained energy: longer decay keeps more energy after the same time",
+           "[engine][nodes][ResonatorStringNode][PMCore]")
+{
+    ResonatorStringNode shortDecay, longDecay;
+    shortDecay.prepare ({ 44100.0, 512 });
+    longDecay.prepare ({ 44100.0, 512 });
+
+    float outputs[2];
+    const float shortExcited[7] = { 1.0f, 69.0f, 0.1f, 0.5f, 0.1f, 0.15f, 1.0f };
+    const float longExcited[7] = { 1.0f, 69.0f, 5.0f, 0.5f, 0.1f, 0.15f, 1.0f };
+    shortDecay.processSample (shortExcited, outputs);
+    longDecay.processSample (longExcited, outputs);
+
+    const float shortQuiet[7] = { 0.0f, 69.0f, 0.1f, 0.5f, 0.1f, 0.15f, 1.0f };
+    const float longQuiet[7] = { 0.0f, 69.0f, 5.0f, 0.5f, 0.1f, 0.15f, 1.0f };
+
+    float rmsShort = 0.0f, rmsLong = 0.0f;
+    const int total = 44100, window = 4410;
+    for (int i = 0; i < total; ++i)
+    {
+        shortDecay.processSample (shortQuiet, outputs);
+        const auto ls = outputs[0];
+        longDecay.processSample (longQuiet, outputs);
+        const auto ll = outputs[0];
+
+        if (i >= total - window)
+        {
+            rmsShort += ls * ls;
+            rmsLong += ll * ll;
+        }
+    }
+
+    CHECK (rmsLong > rmsShort);
+}
+
+TEST_CASE ("ResonatorStringNode's release gate mutes the string faster than holding it",
+           "[engine][nodes][ResonatorStringNode][PMCore]")
+{
+    ResonatorStringNode held, released;
+    held.prepare ({ 44100.0, 512 });
+    released.prepare ({ 44100.0, 512 });
+
+    float outputs[2];
+    const float excited[7] = { 1.0f, 69.0f, 10.0f, 0.3f, 0.1f, 0.15f, 1.0f }; // long decay so release's own effect dominates
+    held.processSample (excited, outputs);
+    released.processSample (excited, outputs);
+
+    const float heldQuiet[7] = { 0.0f, 69.0f, 10.0f, 0.3f, 0.1f, 0.15f, 1.0f };   // release == true (held)
+    const float releasedQuiet[7] = { 0.0f, 69.0f, 10.0f, 0.3f, 0.1f, 0.15f, 0.0f }; // release == false
+
+    float rmsHeld = 0.0f, rmsReleased = 0.0f;
+    const int total = 8820; // 200ms, long enough for the ~15ms release ramp to fully take effect
+    const int window = 441; // last 10ms
+    for (int i = 0; i < total; ++i)
+    {
+        held.processSample (heldQuiet, outputs);
+        const auto h = outputs[0];
+        released.processSample (releasedQuiet, outputs);
+        const auto r = outputs[0];
+
+        if (i >= total - window)
+        {
+            rmsHeld += h * h;
+            rmsReleased += r * r;
+        }
+    }
+
+    CHECK (rmsReleased < rmsHeld);
+}
+
+TEST_CASE ("ResonatorStringNode's out and motion are real, distinct signals when position > 0",
+           "[engine][nodes][ResonatorStringNode][PMCore]")
+{
+    ResonatorStringNode node;
+    node.prepare ({ 44100.0, 512 });
+
+    float outputs[2];
+    const float excited[7] = { 1.0f, 69.0f, 3.0f, 0.3f, 0.1f, 0.3f, 1.0f };
+    node.processSample (excited, outputs);
+
+    const float quiet[7] = { 0.0f, 69.0f, 3.0f, 0.3f, 0.1f, 0.3f, 1.0f };
+    bool everDiffered = false;
+    bool everNonZero = false;
+    for (int i = 0; i < 500; ++i)
+    {
+        node.processSample (quiet, outputs);
+        if (std::fabs (outputs[0] - outputs[1]) > 1e-6f)
+            everDiffered = true;
+        if (outputs[1] != 0.0f)
+            everNonZero = true;
+    }
+
+    CHECK (everDiffered);
+    CHECK (everNonZero);
+}
+
+TEST_CASE ("ResonatorStringNode stays finite and bounded over a long run",
+           "[engine][nodes][ResonatorStringNode][PMCore]")
+{
+    ResonatorStringNode node;
+    node.prepare ({ 44100.0, 512 });
+
+    float outputs[2];
+    for (int i = 0; i < 44100 * 2; ++i)
+    {
+        const float inputs[7] = { i < 10 ? 0.8f : 0.0f, 48.0f, 8.0f, 0.2f, 0.9f, 0.4f, 1.0f };
+        node.processSample (inputs, outputs);
+        REQUIRE (std::isfinite (outputs[0]));
+        REQUIRE (std::isfinite (outputs[1]));
+        REQUIRE (std::fabs (outputs[0]) < 1000.0f);
+        REQUIRE (std::fabs (outputs[1]) < 1000.0f);
     }
 }
