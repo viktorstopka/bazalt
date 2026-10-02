@@ -518,13 +518,23 @@ namespace bazalt
     {
         using Options = juce::WebBrowserComponent::Options;
 
+        // A real, DAW-relevant gap this closes (see
+        // BazaltAudioProcessor::getInstanceId()'s own doc comment): every
+        // instance used to point at the SAME fixed user-data folder —
+        // never exercised by the Standalone app (always exactly one
+        // instance), but a real host routinely runs several instances of
+        // the same plugin at once, and the Standalone app could easily be
+        // running alongside a DAW's own instance as two unrelated
+        // processes pointing at the same folder either way.
+        const auto webView2UserDataFolder = juce::File::getSpecialLocation (juce::File::tempDirectory)
+                                                 .getChildFile ("Bazalt")
+                                                 .getChildFile ("WebView2")
+                                                 .getChildFile (processor.getInstanceId().toString());
+
         auto options = Options {}
                             .withBackend (Options::Backend::webview2)
                             .withWinWebView2Options (
-                                Options::WinWebView2 {}.withUserDataFolder (
-                                    juce::File::getSpecialLocation (juce::File::tempDirectory)
-                                        .getChildFile ("Bazalt")
-                                        .getChildFile ("WebView2")))
+                                Options::WinWebView2 {}.withUserDataFolder (webView2UserDataFolder))
                             .withNativeIntegrationEnabled();
 
         for (auto& relay : macroRelays)

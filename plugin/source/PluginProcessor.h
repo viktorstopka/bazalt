@@ -192,6 +192,24 @@ namespace bazalt
         // interface (GraphCompiler::compile allocates; never audio-thread).
         bazalt::engine::NodeFactory& getNodeFactory() noexcept { return nodeFactory; }
         bazalt::engine::PlanSwapper& getGlobalPlanSwapper() noexcept { return globalPlanSwapper; }
+
+        /** A stable identity for THIS processor instance, generated once in
+            the constructor — `PluginEditor.cpp` uses it to give each
+            instance's own WebView2 a separate user-data folder
+            (`%TEMP%/Bazalt/WebView2/<uuid>/`) instead of every instance
+            sharing one fixed path. A real, DAW-relevant gap this closes:
+            Microsoft's own WebView2 guidance is one user-data folder per
+            running environment — a shared, fixed path was never exercised
+            by the Standalone app (always exactly one instance) but a real
+            host like Ableton routinely runs several instances of the same
+            plugin at once (multiple tracks), and separately, the Standalone
+            app and a DAW's own VST3 instance could easily be running
+            concurrently as two unrelated OS processes pointing at the
+            SAME folder — neither scenario is exotic enough to leave
+            unaddressed just because nothing here has reproduced an actual
+            crash from it yet.
+        */
+        const juce::Uuid& getInstanceId() const noexcept { return instanceId; }
         void setHasGlobalDomain (bool hasIt) noexcept { hasGlobalDomain.store (hasIt, std::memory_order_release); }
 
         /** M21: true while the graph has no active origin at all (no
@@ -395,6 +413,7 @@ namespace bazalt
         void timerCallback() override;
 
         bazalt::engine::NodeFactory nodeFactory;
+        const juce::Uuid instanceId; // see getInstanceId()'s own doc comment
 
         // wiki/plans/DomainRedesign.md Batch 2: up to maxOrigins independent
         // origin bundles, replacing the single voiceManager + 8

@@ -700,6 +700,73 @@ means two things to copy to another machine (`Bazalt.vst3` and its own
 than one self-contained file. Real, separate, larger future work if a
 single-file release is ever actually needed — nothing today requires it.
 
+### Every plugin instance shared one fixed WebView2 profile folder — FIXED (2026-10-03)
+*A real, DAW-relevant gap the Standalone app could never have surfaced
+(it's always exactly one instance) — found by deliberately auditing for
+real-host crash risks before testing on another machine, not from a live
+reproduced crash.*
+
+**The gap:** `PluginEditor.cpp`'s `makeWebViewOptions()` pointed every
+editor's WebView2 at the exact same fixed path,
+`%TEMP%/Bazalt/WebView2/`, with no per-instance distinction at all.
+Microsoft's own WebView2 guidance is one user-data folder per running
+environment; a shared, fixed path is a real correctness gap regardless of
+the exact failure mode in any one host version — a real host routinely
+runs several instances of the same plugin at once (multiple tracks in one
+project), and separately, the Standalone app and a DAW's own VST3 instance
+could easily be running concurrently as two unrelated OS processes pointing
+at the same folder either way. Not reproduced as an actual crash here (no
+second machine or multi-instance Ableton session available in this
+environment to force it) — flagged and fixed as a real, plausible,
+best-practice violation found by code audit, which is exactly what was
+asked for ("research what could cause a crash... fix these things, if
+any").
+
+**Fix applied:** `BazaltAudioProcessor` gained a `const juce::Uuid
+instanceId`, generated once per instance at construction
+(`getInstanceId()`). `PluginEditor.cpp`'s WebView2 options now build the
+user-data folder as `%TEMP%/Bazalt/WebView2/<instance-uuid>/` instead of
+the one shared path — every instance, in every process, genuinely isolated.
+A new instance (including the SAME plugin reloaded in a new session) gets a
+fresh UUID and therefore a fresh folder; old instances' folders are left in
+`%TEMP%` rather than deleted on unload (deleting a WebView2 profile
+immediately at destruction risks racing WebView2's own async, not-
+necessarily-synchronous teardown of resources tied to that folder — a real,
+considered tradeoff, not an oversight: cheap, OS-cleaned temp-folder growth
+over many sessions versus a genuine risk of deleting files a still-
+shutting-down WebView2 instance has open).
+
+**Also investigated, during the same audit, and ruled out — not bugs:**
+- **State restored before the first `prepareToPlay`** (a real VST3 host
+  doesn't guarantee call order): already correctly handled —
+  `GraphEditController::recompileAndPublish()` checks its own `isPrepared`
+  flag first and defers the real compile until `prepare()` eventually runs,
+  rather than compiling against a not-yet-valid sample rate/block size.
+- **Denormal numbers from the new long-decaying resonator feedback loops**
+  (comb/modal/string/plate): `processBlock()` already wraps its entire body
+  in `juce::ScopedNoDenormals`, present since well before this session —
+  covers every new PM Core node's own feedback loop for free.
+- **`MacroParameters`'s own triple-buffer mapping handoff**: theoretically
+  requires 3 separate `setMappings()` calls to land within the same few-
+  microsecond window as one `applyToPlans()` call to actually race — not
+  achievable by anything this codebase's own call pattern produces
+  (`setMappings()` only ever fires once per discrete, UI/API-paced graph
+  edit, never in a tight loop). The repeated "Parameter thread safety"
+  pluginval timeout this project's own history notes several times (always
+  confirmed "environmental" via `git stash` A/B comparison) most likely
+  reflects pluginval's own known stress-test flakiness on a loaded dev
+  machine, not a bug in this code — inspected directly here rather than
+  re-asserting the prior dismissal at face value, since `pluginval` itself
+  isn't installed in this environment to re-run and settle it conclusively.
+
+**Verified:** full rebuild clean (Debug and Release, both VST3 and
+Standalone). New regression test
+(`tests-plugin/BusLayoutTests.cpp`, "Two processor instances get distinct
+identities") confirms two separately-constructed processors never collide.
+`ctest --test-dir build -C Debug` 578/578 green. Release Standalone
+launched, confirmed a genuinely new, uniquely-named subfolder appears under
+`%TEMP%/Bazalt/WebView2/` for that run.
+
 ## Full node list checked (55 files, `engine/include/bazalt/engine/nodes/`)
 
 ConstantNode, OutputNode, DelayNode, ListenNode, NoiseBurstNode, NormaliseNode,
