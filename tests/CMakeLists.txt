@@ -44,6 +44,7 @@ add_executable(EngineTests
     NoteStreamNodesTests.cpp
     OversamplingStageTests.cpp
     PatchSerializerTests.cpp
+    PMCoreNodesTests.cpp
     PlanSwapperTests.cpp
     PolyBlepOscillatorTests.cpp
     ProofGraphRenderTests.cpp

@@ -4,9 +4,10 @@ Tracks, per node, **what's actually built** vs. **what's left**, and for what's 
 **how badly we need it** and **what order to build it in**. Derived from
 `wiki/NODES.md` (the catalog — read that for what each node actually does) and
 `wiki/NODES.System.md` (architecture). Cross-checked directly against
-`engine/include/bazalt/engine/nodes/*.h` (**81 registered node types across 80 files**
-as of the Domain Extensions batch's `instance.allocate.trigger` (2026-10-01),
-closing out that whole arc — the authoritative running count
+`engine/include/bazalt/engine/nodes/*.h` (**84 registered node types across 82 files**
+as of the PM Core batch's first step (`excite.impulse`/`resonator.comb`, 2026-10-02)
+— two new files, +2 from the 82 registered at the Control -> Audio Bridge — the
+authoritative running count
 `tests/NodeDescriptorTests.cpp`'s own `NodeDescriptorTests` case tracks and
 narrates per batch; was 77/74 after `wiki/plans/DomainRedesign.md` Batch 3 folded
 `mix.sum` (`MixNode.h`, its own dedicated file/type) straight into `math.add` with
@@ -101,12 +102,12 @@ rather than waiting; every `factory.*` node still does want the real thing.
 | `noise.colored` | To be implemented | **B1** | Noise & Grain | Filtered-white-noise family; straightforward. |
 | `noise.dust` | To be implemented | **B2** | Noise & Grain | Sample-accurate sparse-impulse timing. |
 
-### `excite.*` — physical excitation — 1 MVP, 7 to build
+### `excite.*` — physical excitation — 1 Implemented, 1 MVP, 6 to build
 
 | Node | Status | Necessity | Batch | Notes |
 |---|---|---|---|---|
+| `excite.impulse` | Implemented | | PM Core | Done, batch 1 (2026-10-02). |
 | `excite.burst` | MVP | | PM Core | Missing `tone`/`shape`; trigger/duration already real. |
-| `excite.impulse` | To be implemented | **B1** | PM Core | A single-sample (or short) delta — trivial. |
 | `excite.pluck` | To be implemented | **B2** | PM Core | Comb-notch shaping. |
 | `excite.mallet` | To be implemented | **B2** | PM Core | Single-sample feedback collision model. |
 | `excite.stickSlip` | To be implemented | **B3** | PM Friction/Breath | Delicate near-zero-speed friction. |
@@ -114,11 +115,11 @@ rather than waiting; every `factory.*` node still does want the real thing.
 | `excite.contact` | To be implemented | **B2** | PM Friction/Breath | Scrape/grain-rate model. |
 | `excite.vocalFolds` | To be implemented | **B3** | PM Voice | Hardest excite node — self-oscillating two-mass valve. |
 
-### `resonator.*` — resonating bodies — 7 to build (none started)
+### `resonator.*` — resonating bodies — 1 Implemented, 6 to build
 
 | Node | Status | Necessity | Batch | Notes |
 |---|---|---|---|---|
-| `resonator.comb` | To be implemented | **B1** | PM Core | Simplest resonator, feedforward/feedback. |
+| `resonator.comb` | Implemented | | PM Core | Done, batch 1 (2026-10-02). |
 | `resonator.modal` | To be implemented | **B2** | PM Core | The centre of the PM set; scales with mode count. |
 | `resonator.string` | To be implemented | **B2** | PM Core | Waveguide string — the playable Karplus-Strong. |
 | `resonator.tube` | To be implemented | **B2** | PM Friction/Breath | Single-tube waveguide, feedback both directions. |
@@ -342,12 +343,18 @@ building for real, not simplified.
 
 | Status | Count |
 |---|---|
-| Implemented | 73 |
+| Implemented | 75 |
 | MVP | 4 (`osc.analog`, `filter.svf`, `excite.burst`, `seq.steps`) |
-| To be implemented | 49 |
+| To be implemented | 47 |
 | **Total native node types** | **126** |
 
-By necessity, among the 49 still to build: **A** 4 · **B** 30 · **C** 9 · **D** 6.
+By necessity, among the 47 still to build: **A** 4 · **B** 28 · **C** 9 · **D** 6.
+
+**PM Core batch 1 — done, 2026-10-02.** `excite.impulse`/`resonator.comb` built and
+tested (`tests/PMCoreNodesTests.cpp`) — the simplest real excite→resonate pair,
+proving the pattern with no `Data` pipeline dependency and no cross-node feedback
+requirement (both nodes' own feedback, where they have any, is self-contained
+internal state). See `wiki/MILESTONES.md`'s own entry.
 
 **Clock+Seq batch — done.** `clock.pulse`/`clock.divide`/`clock.counter`/`seq.euclid`/
 `seq.steps` all built and tested — see their family sections above for per-node notes;

@@ -81,6 +81,8 @@
 #include "bazalt/engine/nodes/NoteHumanizeNode.h"
 #include "bazalt/engine/nodes/NoteAssembleNode.h"
 #include "bazalt/engine/nodes/NoteQuantizeNode.h"
+#include "bazalt/engine/nodes/ExciteImpulseNode.h"
+#include "bazalt/engine/nodes/ResonatorCombNode.h"
 
 namespace bazalt::engine
 {
@@ -201,6 +203,10 @@ namespace bazalt::engine
         // stream rather than reshaping an existing one.
         factory.registerType ("note.assemble", [] { return std::make_unique<nodes::NoteAssembleNode>(); });
         factory.registerType ("note.quantize", [] { return std::make_unique<nodes::NoteQuantizeNode>(); });
+        // PM Core batch (wiki/NODES.Status.md's own build-next order, step 6) —
+        // the first real physical-modelling nodes.
+        factory.registerType ("excite.impulse", [] { return std::make_unique<nodes::ExciteImpulseNode>(); });
+        factory.registerType ("resonator.comb", [] { return std::make_unique<nodes::ResonatorCombNode>(); });
         return factory;
     }
 

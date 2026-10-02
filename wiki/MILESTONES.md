@@ -1918,3 +1918,86 @@ Control sources rather than a synthetic test-only node).
 superseded, left as written — this project's own "don't retroactively rewrite a
 superseded plan bullet" convention), `CLAUDE.md` (the `wiki/plans/` file count,
 three → four).
+
+---
+
+# PM Core — the first physical-modelling nodes
+
+`wiki/NODES.Status.md`'s own build-next order, step 6: the biggest remaining "B"
+cluster, and the first batch that makes Bazalt sound like something other than
+subtractive synthesis. Design source: `wiki/NODES.md`'s own `excite.*`/
+`resonator.*`/`data.material` catalog entries. Built batch by batch, same
+discipline the Domain Extensions arc used — each batch compiles, tests green,
+commits before the next starts.
+
+A real architectural question got checked and answered before any of this was
+written, not assumed: can the engine even support the cross-node feedback loops
+physical modelling needs (`excite.mallet`'s `feedback` input fed from a
+resonator's own output, forming a literal 2-node graph cycle)? Yes — `GraphCompiler.cpp`
+already does real Tarjan strongly-connected-component cycle detection and compiles
+any feedback cycle into a `PerSampleRegionStep` automatically, as long as every node
+in the cycle implements `supportsPerSample()` (true by default on `Node` — every
+node here qualifies without extra work). That mechanism existed since the stereo
+redesign's own groundwork but had never been exercised by two real, production node
+types forming a real cycle — only synthetic test node types (`tests/
+GraphCompilerTests.cpp`) and the still-unbuilt "Karplus-Strong with single-sample
+feedback" stock patch (`delay.line` → `filter.onepole` → `mix.gain` → back into the
+delay) had ever been a candidate. PM Core's `excite.mallet ↔ resonator.string`
+coupling (batch 4) is the first real production use.
+
+## PM Core batch 1 — `excite.impulse`, `resonator.comb` — done, 2026-10-02
+
+The simplest real excite→resonate pair: no `Data` pipeline dependency, no
+cross-node feedback requirement (each node's own feedback, where it has any, is
+entirely self-contained internal state) — proves the pattern end to end before
+the harder nodes.
+
+**`excite.impulse`** (`ExciteImpulseNode.h`): the catalog's own simplest
+excitation — `trigger : Event`, `amplitude`, `width` (0 = a true single-sample
+delta, the catalog's own stated meaning). A real design call the catalog named
+but didn't shape: `width > 0` widens into a raised-cosine (Hann) bump rather
+than a hard rectangular pulse, so widening stays click-free; capped at 50ms
+(`maxWidthMs`) since anything longer is `excite.burst`/`excite.pluck`'s job, not
+this node's. Same Event-trigger convention every other Event-consuming node in
+this catalog already uses ("non-zero this sample = fired").
+
+**`resonator.comb`** (`ResonatorCombNode.h`): the cheapest real resonator —
+unlike plain `delay.line` (a generic no-feedback building block for hand-built
+networks), this one bakes feedback and damping in directly, the same way
+`filter.ladder` bakes in its own resonance rather than asking the patch to wire
+one up externally. Two structural modes: `feedback` (the real IIR loop,
+`y[n] = x[n] + g·damped(y[n-M])`, textbook Karplus-Strong-style absorption —
+the damping one-pole sits INSIDE the loop) and `feedforward` (FIR,
+`y[n] = x[n] + g·damped(x[n-M])`, taps the input only, unconditionally stable,
+can never ring). `damping` deliberately reuses `filter.onepole`'s own "Damping"
+port convention exactly (`0` = darkest, `1` = brightest) — a real, considered
+choice to keep that label meaning the same thing everywhere in the catalog,
+not a new, second convention. `feedback` is hard-limited to ±0.999 regardless
+of the raw input, matching the catalog's own "hard-limited below 1" spec; no
+fractional-delay interpolation, the same simplification `DelayNode.h` itself
+already makes.
+
+**Tests:** `tests/PMCoreNodesTests.cpp` (9 cases) — impulse: silence until
+triggered, exact single-sample delta at `width == 0`, the raised-cosine shape
+and length at `width > 0`, clean mid-flight retriggering. Comb: silent on
+silent input, exact sample-level arithmetic for both feedforward and feedback
+modes against a hand-worked impulse response (verifying the feedforward mode
+genuinely never re-reads its own output, the real distinction between the two
+modes), a long-run bounded-output check with `feedback` deliberately over-driven
+to 5.0 (confirming the hard limit actually holds), and a direct test of the
+`damping` convention (bright vs. dark, same formula as `filter.onepole`).
+
+**A real, previously-documented bug hit again, same fix applied**: one new test
+name used a real em dash, reproducing `09-28-InstanceAllocator.1`'s own
+documented CTest/Catch2 Windows-locale encoding mismatch (the test ran and
+passed fine invoked directly, but came back "Failed" under `ctest` with a
+mangled name) — replaced with a plain hyphen, matching every other test name in
+this codebase, confirmed fixed by rerunning under `ctest` specifically.
+
+**Verified:** full rebuild clean. `ctest --test-dir build -C Debug` 535/535
+green (526 + 9 new). `wiki/NODES.md` (both catalog entries ✅, the `excite.*`/
+`resonator.*` status-index row), `wiki/NODES.Status.md` (status rows, Totals
+table, header count) updated to match. `pluginval`/Standalone verification
+deferred to the end of the whole PM Core arc, matching the Domain Extensions
+arc's own stated verification schedule ("once against the full, final tree...
+rather than once per batch").

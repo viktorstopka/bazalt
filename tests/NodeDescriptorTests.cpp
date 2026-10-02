@@ -10,7 +10,7 @@ TEST_CASE ("NodeFactory::describeAll() returns a descriptor for every registered
     auto factory = buildDefaultNodeFactory();
     const auto descriptors = factory.describeAll();
 
-    REQUIRE (descriptors.size() == 82); // 81 as of the Domain Extensions batch (see git history for the full running tally before this) + 1 Control -> Audio Bridge (adapt.controlToAudio, wiki/plans/ControlToAudioBridge.md)
+    REQUIRE (descriptors.size() == 84); // 82 as of the Control -> Audio Bridge (see git history for the full running tally before this) + 2 PM Core batch 1 (excite.impulse, resonator.comb)
 
     auto findByTypeId = [&] (const juce::String& typeId) -> const NodeDescriptor*
     {

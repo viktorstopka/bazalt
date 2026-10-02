@@ -45,8 +45,8 @@ are telemetry outputs for live visualization, not ports.
 | `osc.*` | analog, sine, wavetable, **glottal** (Correction 1) | ✅ analog, sine — 📋 wavetable, glottal |
 | `sampler.*` | player, granular | 📋 both |
 | `noise.*` | colored, dust | 📋 both |
-| `excite.*` | impulse, burst, pluck, mallet, stickSlip, breath, contact, **vocalFolds** (Correction 1) | ✅ burst — 📋 the other 7 |
-| `resonator.*` | modal, string, tube, plate, comb, **junction**, **tract** (Correction 1) | 📋 all 7 |
+| `excite.*` | impulse, burst, pluck, mallet, stickSlip, breath, contact, **vocalFolds** (Correction 1) | ✅ impulse, burst — 📋 the other 6 |
+| `resonator.*` | modal, string, tube, plate, comb, **junction**, **tract** (Correction 1) | ✅ comb — 📋 the other 6 |
 | `filter.*` | svf, ladder, onepole, allpass, shelf, peak, formant, dcBlock | ✅ svf, ladder, onepole, allpass, shelf, peak, dcBlock — 📋 formant |
 | `shape.*` | waveshaper, clip, fold, rectify, crush | 📋 all 5 |
 | `delay.*` | line | ✅ |
@@ -134,9 +134,9 @@ resonating bodies. Friction/collision models that need to feel the resonator exp
 `feedback` input for that purpose (`NODES.System.md` §1's `Audio`-typed excitation
 path).
 
-#### `excite.impulse` — Impulse 📋
+#### `excite.impulse` — Impulse ✅ *(PM Core batch 1)*
 The simplest possible excitation — a single sharp transient (or a short pulse once
-widened) to knock a resonator into motion. **In:** `trigger : Event`; `amplitude`; `width` (0 = a true single-sample delta). **Out:** `out` — `Audio`.
+widened) to knock a resonator into motion. **In:** `trigger : Event`; `amplitude`; `width` (0 = a true single-sample delta). **Out:** `out` — `Audio`. **Shape, a real design call the catalog named but didn't define:** `width == 0` fires an exact one-sample delta at `amplitude`; `width > 0` widens into a raised-cosine (Hann) bump over that span instead of a hard rectangular pulse, so widening stays click-free. Capped at 50ms (`maxWidthMs`) — longer than that is `excite.burst`/`excite.pluck`'s job.
 
 #### `excite.burst` — Noise Burst 🚧 *(partially fixed — wiki/NODES_Gaps.md's `hardcoded-trigger`)*
 A timed burst of white noise with a linear decay — the standard broadband
@@ -187,8 +187,8 @@ character. **In:** `excite` — `Audio`; `length`; `damping`; `reflection`; `fla
 A 2D waveguide mesh — the resonating body behind drum heads, plates, and gongs,
 with a pickup point placed anywhere on the surface. **In:** `excite` — `Audio`; `size`; `tension`; `decay`; `damping`; `positionX`, `positionY`. **Out:** `left`, `right` — `Audio`. **Structural:** `quality` (enum: low, medium, high). **Native:** inner loop scales with mesh size.
 
-#### `resonator.comb` — Comb 📋
-The cheap resonator, and the building block for hand-built feedback experiments. **In:** `in` — `Audio`; `frequency [audio]`; `feedback` (hard-limited below 1); `damping`. **Out:** `out` — `Audio`. **Structural:** `type` (enum: feedforward, feedback).
+#### `resonator.comb` — Comb ✅ *(PM Core batch 1)*
+The cheap resonator, and the building block for hand-built feedback experiments. **In:** `in` — `Audio`; `frequency [audio]`; `feedback` (hard-limited to ±0.999); `damping`. **Out:** `out` — `Audio`. **Structural:** `type` (enum: feedforward, feedback; default feedback). **Behavior:** `feedback` mode is the real IIR loop (`y[n] = x[n] + g·damped(y[n-M])`, the textbook Karplus-Strong-style absorption comb — damping sits INSIDE the loop); `feedforward` mode taps the input only (`y[n] = x[n] + g·damped(x[n-M])`), unconditionally stable, pure notch/peak comb-filtering with no possible ring-up. `damping` reuses `filter.onepole`'s own "Damping" port convention exactly: `0` = darkest/most damped, `1` = brightest/no damping. No fractional-delay interpolation, same simplification `delay.line` itself already makes.
 
 #### `resonator.junction` — Scattering Junction 📋 *(Correction 1)*
 A multi-way junction where waveguides meet — a branch closed at its far end acts as a side cavity that removes energy at its own resonances, producing the spectral notches a plain band-pass filter cannot create. **In:** `in` — `Audio`; port group `branch.0…branch.N` — `Audio` (growable, min 2, max 8, bidirectional); `impedance.0…N [audio]` (modulating one is opening/closing a valve, e.g. a soft palate); `loss`. **Out:** `out` — `Audio`; the branch group returns reflected waves. **Structural:** `branches` (2–8). **Native:** single-sample feedback across several paths (Kelly–Lochbaum scattering).
