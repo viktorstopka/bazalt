@@ -4,10 +4,11 @@ Tracks, per node, **what's actually built** vs. **what's left**, and for what's 
 **how badly we need it** and **what order to build it in**. Derived from
 `wiki/NODES.md` (the catalog — read that for what each node actually does) and
 `wiki/NODES.System.md` (architecture). Cross-checked directly against
-`engine/include/bazalt/engine/nodes/*.h` (**84 registered node types across 82 files**
-as of the PM Core batch's first step (`excite.impulse`/`resonator.comb`, 2026-10-02)
-— two new files, +2 from the 82 registered at the Control -> Audio Bridge — the
-authoritative running count
+`engine/include/bazalt/engine/nodes/*.h` (**86 registered node types across 84 files**
+as of the PM Core batch's second step (`data.material`/`resonator.modal`, 2026-10-02)
+— four new files total this arc (`excite.impulse`/`resonator.comb`/
+`data.material`/`resonator.modal`), +4 from the 82 registered at the Control -> Audio
+Bridge — the authoritative running count
 `tests/NodeDescriptorTests.cpp`'s own `NodeDescriptorTests` case tracks and
 narrates per batch; was 77/74 after `wiki/plans/DomainRedesign.md` Batch 3 folded
 `mix.sum` (`MixNode.h`, its own dedicated file/type) straight into `math.add` with
@@ -115,12 +116,12 @@ rather than waiting; every `factory.*` node still does want the real thing.
 | `excite.contact` | To be implemented | **B2** | PM Friction/Breath | Scrape/grain-rate model. |
 | `excite.vocalFolds` | To be implemented | **B3** | PM Voice | Hardest excite node — self-oscillating two-mass valve. |
 
-### `resonator.*` — resonating bodies — 1 Implemented, 6 to build
+### `resonator.*` — resonating bodies — 2 Implemented, 5 to build
 
 | Node | Status | Necessity | Batch | Notes |
 |---|---|---|---|---|
 | `resonator.comb` | Implemented | | PM Core | Done, batch 1 (2026-10-02). |
-| `resonator.modal` | To be implemented | **B2** | PM Core | The centre of the PM set; scales with mode count. |
+| `resonator.modal` | Implemented | | PM Core | Done, batch 2 (2026-10-02). The centre of the PM set — a real bank of up to 64 two-pole resonators driven by `data.material`'s mode set, one real stereo output. |
 | `resonator.string` | To be implemented | **B2** | PM Core | Waveguide string — the playable Karplus-Strong. |
 | `resonator.tube` | To be implemented | **B2** | PM Friction/Breath | Single-tube waveguide, feedback both directions. |
 | `resonator.plate` | To be implemented | **B3** | PM Core | 2D mesh, scales with mesh size. |
@@ -259,7 +260,7 @@ the Audio → Control Bridge (`wiki/plans/AudioControlBridge.md`); `adapt.boolTo
 them) — none of the five were ever moved out of the catalog-only backlog; they never
 were catalog-only.
 
-### `data.*` — producing and reading buffers — 3 Implemented, 5 to build
+### `data.*` — producing and reading buffers — 4 Implemented, 4 to build
 
 Foundational, but not "essential-for-modularity" the way `note.*`/`clock.*` are —
 these exist to feed other nodes, so bucketed **C**: needed for a first content wave,
@@ -280,10 +281,10 @@ edit. Every later `data.*`/`osc.wavetable`/`sampler.*` node rides on this for fr
 | `data.scale` | Implemented | 12 named scales (everything the catalog asks for except "harmonic series" and "custom", both deliberately deferred — see below); `octaveSize` proportionally rescales the 12-tone patterns. Real, documented RT-safety limit: `root`'s *live* cable value is never read on the audio thread (rebuilding means a heap allocation) — only the value applied via `setParameter()` republishes. |
 | `data.table` | Implemented | Curve content is a fixed 32-point parameter bank (`seq.steps`' own pattern), not real `NodeContent` — that category doesn't exist as code yet. `resolution` (2–32) picks how many points publish. |
 | `data.lookup` | Implemented | 4 modes (nearest/interpolate/index/wrapIndex) with a concrete, tested contract this session had to design (the catalog names the modes, not their exact semantics); `dataB`/`morph` blending with graceful tag-mismatch fallback. |
+| `data.material` | Implemented | Done, PM Core batch 2 (2026-10-02). Publishes `Data(modal-set)`, stride 3 (`ratio`/`amplitudeWeight`/`decayWeight`) per mode; `string`/`tube`/`bar`/`membrane` geometries use real or closely-approximated closed forms, `plate` reuses `membrane`'s table squared (documented simplification), `irregularSolid` is deterministic seeded noise. `size` is a declared port, not yet consumed — a real, deliberate gap. Feeds `resonator.modal` (built same batch) and, later, `filter.formant`. |
 
 | Node | Status | Necessity | Batch | Notes |
 |---|---|---|---|---|
-| `data.material` | To be implemented | **C2** | PM Core | Physical-modelling counterpart of `data.scale`; feeds `resonator.modal`/`filter.formant`. (Re-batched from "Data Foundations" now that batch is closed — this node was never actually one of its 3 members, a stray tag in an earlier pass.) |
 | `data.record` | To be implemented | **C2** | EQ/Curve Data | Real-time capture + worker-thread handoff, preallocated buffer. |
 | `data.load` | To be implemented | **C3** | Sampler | File I/O + multiple interpretations (sample/wavetable/IR) — real format work, not just DSP. |
 | `data.analyseModes` | To be implemented | **C3** | Analysis+Assemble | FFT/peak-picking modal analysis of a recording. |
@@ -343,18 +344,23 @@ building for real, not simplified.
 
 | Status | Count |
 |---|---|
-| Implemented | 75 |
+| Implemented | 77 |
 | MVP | 4 (`osc.analog`, `filter.svf`, `excite.burst`, `seq.steps`) |
-| To be implemented | 47 |
+| To be implemented | 45 |
 | **Total native node types** | **126** |
 
-By necessity, among the 47 still to build: **A** 4 · **B** 28 · **C** 9 · **D** 6.
+By necessity, among the 45 still to build: **A** 4 · **B** 28 · **C** 7 · **D** 6.
 
 **PM Core batch 1 — done, 2026-10-02.** `excite.impulse`/`resonator.comb` built and
 tested (`tests/PMCoreNodesTests.cpp`) — the simplest real excite→resonate pair,
 proving the pattern with no `Data` pipeline dependency and no cross-node feedback
 requirement (both nodes' own feedback, where they have any, is self-contained
 internal state). See `wiki/MILESTONES.md`'s own entry.
+
+**PM Core batch 2 — done, 2026-10-02.** `data.material`/`resonator.modal` built and
+tested (`tests/PMCoreNodesTests.cpp`, 18 more cases) — the first real `Data(modal-set)`
+producer/consumer pair, and the centre of the whole physical-modelling set. See
+`wiki/MILESTONES.md`'s own entry.
 
 **Clock+Seq batch — done.** `clock.pulse`/`clock.divide`/`clock.counter`/`seq.euclid`/
 `seq.steps` all built and tested — see their family sections above for per-node notes;
@@ -476,10 +482,11 @@ matters more than the letter for a couple of "C" items:
    wireable node (not the hand-curated side-table ADR-0015 originally rejected),
    plus the drag-a-port-out-to-create-a-macro UI gesture and the top-bar knob
    panel.
-6. **PM Core** (`excite.impulse`/`pluck`/`mallet` + `resonator.comb`/`modal`/`string`/
-   `plate`, plus topping off `excite.burst`'s MVP gap with `tone`/`shape`) — delivers
-   the first real "personality" sounds (Struck Body, Karplus-Strong) and is the
-   biggest **B** cluster.
+6. **PM Core** — **in progress.** Batches 1-2 done (`excite.impulse`, `resonator.comb`,
+   `data.material`, `resonator.modal`, 2026-10-02) — the first real "personality"
+   sounds beyond subtractive synthesis. Remaining: `excite.pluck`/`mallet` +
+   `resonator.string`/`plate`, plus topping off `excite.burst`'s MVP gap with
+   `tone`/`shape`. Still the biggest **B** cluster.
 7. **Shaping** + **Noise & Grain** — cheap wins (mostly difficulty 1–2), round out the
    effects/sources palette while PM Core's more delicate nodes are being tuned.
 8. **PM Friction/Breath** (`excite.stickSlip`/`breath`/`contact` + `resonator.tube`) —

@@ -83,6 +83,8 @@
 #include "bazalt/engine/nodes/NoteQuantizeNode.h"
 #include "bazalt/engine/nodes/ExciteImpulseNode.h"
 #include "bazalt/engine/nodes/ResonatorCombNode.h"
+#include "bazalt/engine/nodes/DataMaterialNode.h"
+#include "bazalt/engine/nodes/ResonatorModalNode.h"
 
 namespace bazalt::engine
 {
@@ -207,6 +209,9 @@ namespace bazalt::engine
         // the first real physical-modelling nodes.
         factory.registerType ("excite.impulse", [] { return std::make_unique<nodes::ExciteImpulseNode>(); });
         factory.registerType ("resonator.comb", [] { return std::make_unique<nodes::ResonatorCombNode>(); });
+        // PM Core batch 2 — the Data(modal-set) producer/consumer pair.
+        factory.registerType ("data.material", [] { return std::make_unique<nodes::DataMaterialNode>(); });
+        factory.registerType ("resonator.modal", [] { return std::make_unique<nodes::ResonatorModalNode>(); });
         return factory;
     }
 

@@ -8,6 +8,9 @@
 #include <catch2/catch_approx.hpp>
 #include "bazalt/engine/nodes/ExciteImpulseNode.h"
 #include "bazalt/engine/nodes/ResonatorCombNode.h"
+#include "bazalt/engine/nodes/DataMaterialNode.h"
+#include "bazalt/engine/nodes/ResonatorModalNode.h"
+#include "bazalt/engine/RtAllocationTrap.h"
 #include <algorithm>
 #include <cmath>
 #include <limits>
@@ -27,6 +30,40 @@ namespace
         node.processSample (inputs.data(), outputs);
         return output;
     }
+
+    // ResonatorModalNode has 2 real output channels (Stereo) — this variant
+    // reads both back, same calling convention runOneSample() above uses for
+    // every other (mono) node here.
+    std::pair<float, float> runOneStereoSample (Node& node, std::vector<float> inputs)
+    {
+        float outputs[2] = { 0.0f, 0.0f };
+        node.processSample (inputs.data(), outputs);
+        return { outputs[0], outputs[1] };
+    }
+
+    std::vector<float> dataValues (DataPublisher& publisher)
+    {
+        const auto* buffer = publisher.getCurrentForAudioThread();
+        REQUIRE (buffer != nullptr);
+        std::vector<float> values;
+        for (int i = 0; i < (int) buffer->rawSize(); ++i)
+            values.push_back (buffer->rawData()[i]);
+        return values;
+    }
+
+    // A synthetic DataBuffer wired directly via setDataInput() — the
+    // documented, intended way to unit-test a Data-consuming node without
+    // going through a real GraphCompiler/producer (Node.h's own doc comment
+    // on setDataInput()/getDataPublisher()).
+    struct SyntheticModalSet
+    {
+        DataPublisher publisher;
+
+        explicit SyntheticModalSet (std::vector<float> interleavedRatioAmpDecay)
+        {
+            publisher.publish (std::make_unique<DataBuffer> (DataTag::ModalSet, std::move (interleavedRatioAmpDecay), 3));
+        }
+    };
 }
 
 // ---- excite.impulse ----
@@ -207,4 +244,375 @@ TEST_CASE ("ResonatorCombNode's damping follows filter.onepole's own convention:
 
     CHECK (brightEcho == Catch::Approx (0.9f));
     CHECK (darkEcho == Catch::Approx (0.0f).margin (1e-6f));
+}
+
+// ---- data.material ----
+
+TEST_CASE ("DataMaterialNode publishes a modal-set buffer with the right shape",
+           "[engine][nodes][DataMaterialNode][PMCore]")
+{
+    DataMaterialNode node;
+    node.prepare ({ 44100.0, 512 });
+
+    const auto* buffer = node.getDataPublisher()->getCurrentForAudioThread();
+    REQUIRE (buffer != nullptr);
+    CHECK (buffer->tag() == DataTag::ModalSet);
+    CHECK (buffer->stride() == 3);
+    CHECK (buffer->length() == 32); // default modeCount
+}
+
+TEST_CASE ("DataMaterialNode's string geometry is the plain harmonic series with no inharmonicity",
+           "[engine][nodes][DataMaterialNode][PMCore]")
+{
+    DataMaterialNode node;
+    node.prepare ({ 44100.0, 512 });
+    node.setParameter ("data.material.geometry", 0.0f); // string
+    node.setParameter ("data.material.inharmonicity", 0.0f);
+    node.setParameter ("data.material.modeCount", 5.0f);
+
+    const auto* buffer = node.getDataPublisher()->getCurrentForAudioThread();
+    REQUIRE (buffer != nullptr);
+    REQUIRE (buffer->length() == 5);
+    for (int i = 0; i < 5; ++i)
+        CHECK (buffer->at (i, 0) == Catch::Approx ((float) (i + 1)));
+}
+
+TEST_CASE ("DataMaterialNode's tube geometry is odd harmonics only",
+           "[engine][nodes][DataMaterialNode][PMCore]")
+{
+    DataMaterialNode node;
+    node.prepare ({ 44100.0, 512 });
+    node.setParameter ("data.material.geometry", 2.0f); // tube
+    node.setParameter ("data.material.inharmonicity", 0.0f);
+    node.setParameter ("data.material.modeCount", 4.0f);
+
+    const auto* buffer = node.getDataPublisher()->getCurrentForAudioThread();
+    REQUIRE (buffer != nullptr);
+    CHECK (buffer->at (0, 0) == Catch::Approx (1.0f));
+    CHECK (buffer->at (1, 0) == Catch::Approx (3.0f));
+    CHECK (buffer->at (2, 0) == Catch::Approx (5.0f));
+    CHECK (buffer->at (3, 0) == Catch::Approx (7.0f));
+}
+
+TEST_CASE ("DataMaterialNode's bar geometry matches the known free-free-beam reference ratios within 2%",
+           "[engine][nodes][DataMaterialNode][PMCore]")
+{
+    DataMaterialNode node;
+    node.prepare ({ 44100.0, 512 });
+    node.setParameter ("data.material.geometry", 1.0f); // bar
+    node.setParameter ("data.material.inharmonicity", 0.0f);
+    node.setParameter ("data.material.modeCount", 4.0f);
+
+    const auto* buffer = node.getDataPublisher()->getCurrentForAudioThread();
+    REQUIRE (buffer != nullptr);
+    // Standard reference values (Fletcher & Rossing) for a free-free bar's
+    // flexural modes: 1, 2.756, 5.404, 8.933.
+    CHECK (buffer->at (0, 0) == Catch::Approx (1.0f).epsilon (0.02));
+    CHECK (buffer->at (1, 0) == Catch::Approx (2.756f).epsilon (0.02));
+    CHECK (buffer->at (2, 0) == Catch::Approx (5.404f).epsilon (0.02));
+    CHECK (buffer->at (3, 0) == Catch::Approx (8.933f).epsilon (0.02));
+}
+
+TEST_CASE ("DataMaterialNode's inharmonicity+stiffness stretch higher modes sharp, monotonically",
+           "[engine][nodes][DataMaterialNode][PMCore]")
+{
+    DataMaterialNode flat, stretched;
+    flat.prepare ({ 44100.0, 512 });
+    stretched.prepare ({ 44100.0, 512 });
+    flat.setParameter ("data.material.inharmonicity", 0.0f);
+    stretched.setParameter ("data.material.inharmonicity", 1.0f);
+    stretched.setParameter ("data.material.stiffness", 1.0f);
+
+    const auto flatMode32 = flat.getDataPublisher()->getCurrentForAudioThread()->at (31, 0);
+    const auto stretchedMode32 = stretched.getDataPublisher()->getCurrentForAudioThread()->at (31, 0);
+
+    CHECK (flatMode32 == Catch::Approx (32.0f)); // pure harmonic, mode 32 of a string
+    CHECK (stretchedMode32 > flatMode32); // real inharmonicity always stretches SHARP, never flat
+}
+
+TEST_CASE ("DataMaterialNode's irregularity is deterministic for the same seed, across separate instances",
+           "[engine][nodes][DataMaterialNode][PMCore]")
+{
+    DataMaterialNode a, b;
+    a.prepare ({ 44100.0, 512 });
+    b.prepare ({ 44100.0, 512 });
+    a.setParameter ("data.material.irregularity", 0.8f);
+    a.setParameter ("data.material.seed", 42.0f);
+    b.setParameter ("data.material.irregularity", 0.8f);
+    b.setParameter ("data.material.seed", 42.0f);
+
+    CHECK (dataValues (*a.getDataPublisher()) == dataValues (*b.getDataPublisher()));
+
+    b.setParameter ("data.material.seed", 43.0f);
+    CHECK (dataValues (*a.getDataPublisher()) != dataValues (*b.getDataPublisher()));
+}
+
+TEST_CASE ("DataMaterialNode's decay weight is flat at 1.0 unless BOTH density and damping are non-zero",
+           "[engine][nodes][DataMaterialNode][PMCore]")
+{
+    DataMaterialNode node;
+    node.prepare ({ 44100.0, 512 });
+    node.setParameter ("data.material.modeCount", 8.0f);
+    node.setParameter ("data.material.density", 0.0f);
+    node.setParameter ("data.material.damping", 1.0f); // damping alone, density == 0 -> no effect
+
+    const auto* flatBuffer = node.getDataPublisher()->getCurrentForAudioThread();
+    for (int i = 0; i < 8; ++i)
+        CHECK (flatBuffer->at (i, 2) == Catch::Approx (1.0f));
+
+    node.setParameter ("data.material.density", 1.0f); // now both non-zero
+    const auto* decayingBuffer = node.getDataPublisher()->getCurrentForAudioThread();
+    CHECK (decayingBuffer->at (0, 2) == Catch::Approx (1.0f)); // fundamental is always 1.0
+    CHECK (decayingBuffer->at (7, 2) < decayingBuffer->at (3, 2)); // higher modes decay faster (lower weight)
+    CHECK (decayingBuffer->at (3, 2) < decayingBuffer->at (1, 2));
+}
+
+TEST_CASE ("DataMaterialNode's preset shapes amplitude rolloff - metal stays louder than wood at high modes",
+           "[engine][nodes][DataMaterialNode][PMCore]")
+{
+    DataMaterialNode wood, metal;
+    wood.prepare ({ 44100.0, 512 });
+    metal.prepare ({ 44100.0, 512 });
+    wood.setParameter ("data.material.modeCount", 16.0f);
+    metal.setParameter ("data.material.modeCount", 16.0f);
+    wood.setParameter ("data.material.preset", 0.0f);  // wood
+    metal.setParameter ("data.material.preset", 2.0f); // metal
+
+    const auto woodMode16 = wood.getDataPublisher()->getCurrentForAudioThread()->at (15, 1);
+    const auto metalMode16 = metal.getDataPublisher()->getCurrentForAudioThread()->at (15, 1);
+
+    CHECK (metalMode16 > woodMode16);
+    // Both presets agree exactly at the fundamental (n^-exponent == 1 at n=1 regardless of exponent).
+    CHECK (wood.getDataPublisher()->getCurrentForAudioThread()->at (0, 1) == Catch::Approx (1.0f));
+    CHECK (metal.getDataPublisher()->getCurrentForAudioThread()->at (0, 1) == Catch::Approx (1.0f));
+}
+
+TEST_CASE ("DataMaterialNode republishes (a new generation) on every relevant setParameter call",
+           "[engine][nodes][DataMaterialNode][PMCore]")
+{
+    DataMaterialNode node;
+    node.prepare ({ 44100.0, 512 });
+    const auto firstGeneration = node.getDataPublisher()->getCurrentForAudioThread()->generation;
+
+    node.setParameter ("data.material.stiffness", 0.9f);
+    const auto secondGeneration = node.getDataPublisher()->getCurrentForAudioThread()->generation;
+
+    CHECK (secondGeneration > firstGeneration);
+}
+
+TEST_CASE ("DataMaterialNode's read side (getCurrentForAudioThread) is allocation-free",
+           "[engine][nodes][DataMaterialNode][PMCore]")
+{
+    DataMaterialNode node;
+    node.prepare ({ 44100.0, 512 });
+
+    const DataBuffer* buffer = nullptr;
+    {
+        ScopedAudioThreadAllocationTrap trap;
+        buffer = node.getDataPublisher()->getCurrentForAudioThread();
+    }
+    CHECK (buffer != nullptr);
+}
+
+// ---- resonator.modal ----
+
+TEST_CASE ("ResonatorModalNode is silent with no modes connected", "[engine][nodes][ResonatorModalNode][PMCore]")
+{
+    ResonatorModalNode node;
+    node.prepare ({ 44100.0, 512 });
+
+    for (int i = 0; i < 100; ++i)
+    {
+        const auto [l, r] = runOneStereoSample (node, { 1.0f, 0.0f, kNaN, kNaN, kNaN, kNaN, kNaN, kNaN });
+        CHECK (l == 0.0f);
+        CHECK (r == 0.0f);
+    }
+}
+
+TEST_CASE ("ResonatorModalNode is silent if the wired Data buffer isn't a ModalSet",
+           "[engine][nodes][ResonatorModalNode][PMCore]")
+{
+    ResonatorModalNode node;
+    node.prepare ({ 44100.0, 512 });
+
+    DataPublisher wrongTag;
+    wrongTag.publish (std::make_unique<DataBuffer> (DataTag::Curve, std::vector<float> { 1.0f, 1.0f, 1.0f }, 3));
+    node.setDataInput ("modes", &wrongTag);
+
+    const auto [l, r] = runOneStereoSample (node, { 1.0f, 0.0f, kNaN, kNaN, kNaN, kNaN, kNaN, kNaN });
+    CHECK (l == 0.0f);
+    CHECK (r == 0.0f);
+}
+
+TEST_CASE ("ResonatorModalNode rings at the expected frequency for a single unison mode",
+           "[engine][nodes][ResonatorModalNode][PMCore]")
+{
+    ResonatorModalNode node;
+    node.prepare ({ 44100.0, 512 });
+    SyntheticModalSet oneMode ({ 1.0f, 1.0f, 1.0f }); // ratio=1, ampWeight=1, decayWeight=1
+    node.setDataInput ("modes", &oneMode.publisher);
+    node.setParameter ("resonator.modal.position", 0.5f); // avoid nulling the only mode
+    node.setParameter ("resonator.modal.spread", 0.0f);   // keep it mono/centred for a simple zero-crossing count
+
+    const float pitch = 69.0f; // A4, 440Hz exactly (440 * 2^0 == 440)
+    runOneStereoSample (node, { 1.0f, 0.0f, pitch, 2.0f, 1.0f, 0.0f, 0.5f, 0.0f }); // single-sample excitation
+
+    int zeroCrossings = 0;
+    float previous = 0.0f;
+    const int window = 2205; // 50ms @ 44100Hz -> ~22 cycles @ 440Hz expected -> ~44 zero crossings
+    for (int i = 0; i < window; ++i)
+    {
+        const auto [l, r] = runOneStereoSample (node, { 0.0f, 0.0f, pitch, 2.0f, 1.0f, 0.0f, 0.5f, 0.0f });
+        juce::ignoreUnused (r);
+        if ((previous < 0.0f && l >= 0.0f) || (previous > 0.0f && l <= 0.0f))
+            ++zeroCrossings;
+        previous = l;
+    }
+
+    // ~44 expected; generous tolerance since the resonator isn't an ideal oscillator.
+    CHECK (zeroCrossings > 30);
+    CHECK (zeroCrossings < 58);
+}
+
+TEST_CASE ("ResonatorModalNode's position == 0 silences the output entirely (a real physical null, not a bug)",
+           "[engine][nodes][ResonatorModalNode][PMCore]")
+{
+    ResonatorModalNode node;
+    node.prepare ({ 44100.0, 512 });
+    SyntheticModalSet modes ({ 1.0f, 1.0f, 1.0f, 2.0f, 1.0f, 1.0f, 3.0f, 1.0f, 1.0f });
+    node.setDataInput ("modes", &modes.publisher);
+    node.setParameter ("resonator.modal.position", 0.0f);
+
+    for (int i = 0; i < 200; ++i)
+    {
+        const auto inputs = i == 0 ? std::vector<float> { 1.0f, 0.0f, 69.0f, 2.0f, 1.0f, 0.0f, 0.0f, 0.0f }
+                                    : std::vector<float> { 0.0f, 0.0f, 69.0f, 2.0f, 1.0f, 0.0f, 0.0f, 0.0f };
+        const auto [l, r] = runOneStereoSample (node, inputs);
+        CHECK (l == 0.0f);
+        CHECK (r == 0.0f);
+    }
+}
+
+TEST_CASE ("ResonatorModalNode's decay knob orders sustained energy: longer decay keeps more energy after the same time",
+           "[engine][nodes][ResonatorModalNode][PMCore]")
+{
+    ResonatorModalNode shortDecay, longDecay;
+    shortDecay.prepare ({ 44100.0, 512 });
+    longDecay.prepare ({ 44100.0, 512 });
+    SyntheticModalSet modesA ({ 1.0f, 1.0f, 1.0f });
+    SyntheticModalSet modesB ({ 1.0f, 1.0f, 1.0f });
+    shortDecay.setDataInput ("modes", &modesA.publisher);
+    longDecay.setDataInput ("modes", &modesB.publisher);
+
+    const auto excite = [] (Node& n, float decay)
+    {
+        runOneStereoSample (n, { 1.0f, 0.0f, 69.0f, decay, 1.0f, 0.0f, 0.5f, 0.0f });
+    };
+    excite (shortDecay, 0.05f);
+    excite (longDecay, 3.0f);
+
+    float rmsShort = 0.0f, rmsLong = 0.0f;
+    const int window = 4410; // 100ms trailing window, taken after letting both ring for a while
+    for (int i = 0; i < 44100; ++i)
+    {
+        const auto [ls, rs] = runOneStereoSample (shortDecay, { 0.0f, 0.0f, 69.0f, 0.05f, 1.0f, 0.0f, 0.5f, 0.0f });
+        const auto [ll, rl] = runOneStereoSample (longDecay, { 0.0f, 0.0f, 69.0f, 3.0f, 1.0f, 0.0f, 0.5f, 0.0f });
+        juce::ignoreUnused (rs, rl);
+        if (i >= 44100 - window)
+        {
+            rmsShort += ls * ls;
+            rmsLong += ll * ll;
+        }
+    }
+
+    CHECK (rmsLong > rmsShort);
+}
+
+TEST_CASE ("ResonatorModalNode's maxModes structurally caps how many modes of the Data buffer are used",
+           "[engine][nodes][ResonatorModalNode][PMCore]")
+{
+    ResonatorModalNode capped, uncapped;
+    capped.setParameter ("resonator.modal.maxModes", 1.0f);
+    capped.prepare ({ 44100.0, 512 });
+    uncapped.prepare ({ 44100.0, 512 }); // default maxModes (64)
+
+    // Same first mode in both; the capped node's buffer ALSO has 2 more modes it must ignore.
+    SyntheticModalSet threeModes ({ 1.0f, 1.0f, 1.0f, 2.0f, 1.0f, 1.0f, 3.0f, 1.0f, 1.0f });
+    SyntheticModalSet oneMode ({ 1.0f, 1.0f, 1.0f });
+    capped.setDataInput ("modes", &threeModes.publisher);
+    uncapped.setDataInput ("modes", &oneMode.publisher);
+
+    for (int i = 0; i < 500; ++i)
+    {
+        const auto inputs = i == 0 ? std::vector<float> { 1.0f, 0.0f, 69.0f, 2.0f, 1.0f, 0.0f, 0.5f, 0.0f }
+                                    : std::vector<float> { 0.0f, 0.0f, 69.0f, 2.0f, 1.0f, 0.0f, 0.5f, 0.0f };
+        const auto cappedOut = runOneStereoSample (capped, inputs);
+        const auto uncappedOut = runOneStereoSample (uncapped, inputs);
+        CHECK (cappedOut.first == Catch::Approx (uncappedOut.first).margin (1e-5f));
+        CHECK (cappedOut.second == Catch::Approx (uncappedOut.second).margin (1e-5f));
+    }
+}
+
+TEST_CASE ("ResonatorModalNode's spread pans multi-mode output: 0 is mono-centred, >0 splits left/right",
+           "[engine][nodes][ResonatorModalNode][PMCore]")
+{
+    ResonatorModalNode mono, spread;
+    mono.prepare ({ 44100.0, 512 });
+    spread.prepare ({ 44100.0, 512 });
+    SyntheticModalSet modesA ({ 1.0f, 1.0f, 1.0f, 2.3f, 1.0f, 1.0f, 3.7f, 1.0f, 1.0f });
+    SyntheticModalSet modesB ({ 1.0f, 1.0f, 1.0f, 2.3f, 1.0f, 1.0f, 3.7f, 1.0f, 1.0f });
+    mono.setDataInput ("modes", &modesA.publisher);
+    spread.setDataInput ("modes", &modesB.publisher);
+    mono.setParameter ("resonator.modal.spread", 0.0f);
+    spread.setParameter ("resonator.modal.spread", 1.0f);
+
+    bool everDiffered = false;
+    for (int i = 0; i < 500; ++i)
+    {
+        const auto inputs = i == 0 ? std::vector<float> { 1.0f, 0.0f, 69.0f, 2.0f, 1.0f, 0.0f, 0.5f, kNaN }
+                                    : std::vector<float> { 0.0f, 0.0f, 69.0f, 2.0f, 1.0f, 0.0f, 0.5f, kNaN };
+
+        auto monoInputs = inputs; monoInputs[7] = 0.0f;
+        auto spreadInputs = inputs; spreadInputs[7] = 1.0f;
+
+        const auto [ml, mr] = runOneStereoSample (mono, monoInputs);
+        CHECK (ml == Catch::Approx (mr)); // spread == 0 is always exactly mono
+
+        const auto [sl, sr] = runOneStereoSample (spread, spreadInputs);
+        if (std::fabs (sl - sr) > 1e-4f)
+            everDiffered = true;
+    }
+
+    CHECK (everDiffered);
+}
+
+TEST_CASE ("ResonatorModalNode stays finite and bounded over a long run at full maxModes",
+           "[engine][nodes][ResonatorModalNode][PMCore]")
+{
+    ResonatorModalNode node;
+    node.prepare ({ 44100.0, 512 });
+
+    std::vector<float> sixtyFourModes;
+    for (int i = 0; i < 64; ++i)
+    {
+        sixtyFourModes.push_back ((float) (i + 1));
+        sixtyFourModes.push_back (1.0f / (float) (i + 1));
+        sixtyFourModes.push_back (1.0f);
+    }
+    SyntheticModalSet modes (sixtyFourModes);
+    node.setDataInput ("modes", &modes.publisher);
+    node.setParameter ("resonator.modal.inharmonicity", 1.0f);
+    node.setParameter ("resonator.modal.brightness", 0.2f);
+
+    for (int i = 0; i < 44100 * 2; ++i)
+    {
+        const auto inputs = i < 10
+            ? std::vector<float> { 1.0f, 0.0f, 100.0f, 2.0f, 0.2f, 1.0f, 0.5f, 0.7f }
+            : std::vector<float> { 0.0f, 0.0f, 100.0f, 2.0f, 0.2f, 1.0f, 0.5f, 0.7f };
+        const auto [l, r] = runOneStereoSample (node, inputs);
+        REQUIRE (std::isfinite (l));
+        REQUIRE (std::isfinite (r));
+        REQUIRE (std::fabs (l) < 1000.0f);
+        REQUIRE (std::fabs (r) < 1000.0f);
+    }
 }

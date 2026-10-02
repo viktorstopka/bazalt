@@ -46,7 +46,7 @@ are telemetry outputs for live visualization, not ports.
 | `sampler.*` | player, granular | 📋 both |
 | `noise.*` | colored, dust | 📋 both |
 | `excite.*` | impulse, burst, pluck, mallet, stickSlip, breath, contact, **vocalFolds** (Correction 1) | ✅ impulse, burst — 📋 the other 6 |
-| `resonator.*` | modal, string, tube, plate, comb, **junction**, **tract** (Correction 1) | ✅ comb — 📋 the other 6 |
+| `resonator.*` | modal, string, tube, plate, comb, **junction**, **tract** (Correction 1) | ✅ comb, modal — 📋 the other 5 |
 | `filter.*` | svf, ladder, onepole, allpass, shelf, peak, formant, dcBlock | ✅ svf, ladder, onepole, allpass, shelf, peak, dcBlock — 📋 formant |
 | `shape.*` | waveshaper, clip, fold, rectify, crush | 📋 all 5 |
 | `delay.*` | line | ✅ |
@@ -61,7 +61,7 @@ are telemetry outputs for live visualization, not ports.
 | `math.*` | add, subtract, multiply, divide, abs, clamp, minmax, power, round, modulo, slew | ✅ all 11 |
 | `logic.*` | boolean, not, compare, toggle, select | ✅ all 5 |
 | `adapt.*` | map, remap, normalise, threshold, sampleHold, **audioToControl** (AudioControlBridge), **controlToAudio** (ControlToAudioBridge), **boolToControl**, **pitchToFrequency**, **frequencyToPitch**, **gateLength** (all new, direct-feedback sweep) | ✅ all 11 |
-| `data.*` | load, table, scale, material, analyseModes, lookup, **record**, **eqToCurve** (Correction 2) | ✅ table, scale, lookup — 📋 load, material, analyseModes, record, eqToCurve |
+| `data.*` | load, table, scale, material, analyseModes, lookup, **record**, **eqToCurve** (Correction 2) | ✅ table, scale, material, lookup — 📋 load, analyseModes, record, eqToCurve |
 | `analysis.*` | onset, pitch, level, centroid | 📋 all 4 |
 | `instance.*` | allocate.voice, allocate.swarmPopulation, allocate.swarmTransient, allocate.trigger, sum | ✅ all five — Domain Extensions batch done 2026-10-01 |
 | `util.*` | constant, macro, reroute | ✅ all 3 (`macro` real as of `wiki/plans/UtilMacro.md` — ADR-0030 amends ADR-0015, doesn't reverse it) |
@@ -172,8 +172,8 @@ A self-oscillating two-mass valve — frequency **emerges** from pressure/mass/s
 
 ## resonator — resonating bodies
 
-#### `resonator.modal` — Modal Bank 📋
-The centre of the physical-modelling set. **In:** `excite` — `Audio`; `modes` — `Data(modal-set)`, required; `pitch [audio]`; `decay`; `brightness`; `inharmonicity`; `position` (pickup point); `spread`. **Out:** `left`, `right` — `Audio`. **Structural:** `maxModes` (default 64). **Native:** inner loop scales with mode count; delicate resonant filters.
+#### `resonator.modal` — Modal Bank ✅ *(PM Core batch 2)*
+The centre of the physical-modelling set. **In:** `excite` — `Audio`; `modes` — `Data(modal-set)`, required; `pitch [audio]` (absolute semitones, same `440·2^((pitch-69)/12)` convention `osc.analog` uses); `decay`; `brightness`; `inharmonicity`; `position` (pickup point); `spread`. **Out:** `out` — `Audio` (`Channels::Stereo`, primary — one real stereo cable; the catalog's own `left`/`right` pair predates the stereo redesign, `NODES.System.md` §9, which made one `Channels::Stereo` port the catalog-wide rule for every node, including ones not yet built when it landed). **Structural:** `maxModes` (default 64). **Native:** inner loop scales with mode count; delicate resonant filters — a bank of real two-pole resonators (`y[n] = 2r·cos(w)y[n-1] - r²y[n-2] + excite[n]·gain`), coefficients recomputed per mode per sample, the single most expensive node in this catalog by construction. `position` uses the textbook string mode-shape weighting (`|sin((k+1)πposition)|`) as a documented generalization across every geometry; `position == 0` is a real physical null (total silence), not a bug. `spread` pans each mode deterministically via a golden-angle constant — no `seed` needed, the same mode always lands at the same stereo position on every run.
 
 #### `resonator.string` — String 📋
 A waveguide string, the playable version of Karplus-Strong. **In:** `excite` — `Audio`; `pitch [audio]`; `decay`; `damping`; `stiffness`; `position`; `release`. **Out:** `out` — `Audio`; `motion` — `Audio` (feeds back into `excite.stickSlip`/`excite.mallet`). **Native:** single-sample feedback; tuning/interpolation delicate.
@@ -584,10 +584,10 @@ Reads a file from disk into a `Data` buffer, tagged by what it's interpreted as
 #### `data.scale` — Scale ✅
 **In:** `root`. **Out:** `data` — `Data(scale)`. **Structural:** `scale` (enum: major, the church modes, pentatonics, blues, whole tone, chromatic — **12 named scales**; "harmonic series" and "custom" are the two catalog items deliberately deferred, both real gaps not silent ones — see below), `octaveSize` (generalizes the 12-tone patterns to other divisions by proportional scaling, not just padding). **A real, documented RT-safety limit:** `root` is a genuine wireable port, but its *live* cable value is never read on the audio thread — rebuilding a `Data` buffer means a heap allocation, forbidden there (CLAUDE.md rule 2); only the value applied via `setParameter()` (the node's own inline slider) actually republishes. A real worker-thread content-rebuild pipeline (`NODES.System.md` §8's own still-open item) is what closes this properly — not built as a side effect of this one node.
 
-#### `data.material` — Material 📋
+#### `data.material` — Material ✅ *(PM Core batch 2)*
 The physical-modelling counterpart of `data.scale` — describes a resonating
 object's mode set from a handful of physical parameters rather than a
-frequency list. **In:** `stiffness`; `density`; `damping`; `size`; `inharmonicity`; `irregularity`. **Out:** `data` — `Data(modal-set)`. **Structural:** `geometry` (enum: string, bar, tube, membrane, plate, irregular solid), `modeCount` (default 32), `preset` (enum: wood, glass, metal, stone, ceramic, bone, ice, custom), `seed`. **M23.**
+frequency list. **In:** `stiffness`; `density`; `damping`; `size`; `inharmonicity`; `irregularity`. **Out:** `data` — `Data(modal-set)`, `stride = 3` per mode (`ratio`, `amplitudeWeight`, `decayWeight`). **Structural:** `geometry` (enum: string, bar, tube, membrane, plate, irregular solid), `modeCount` (default 32, max 64), `preset` (enum: wood, glass, metal, stone, ceramic, bone, ice, custom; each sets a fixed amplitude-rolloff exponent, this node's own documented material characterization), `seed`. **A concrete, tested contract this session had to design** (the catalog names six knobs, not what they do): `string`/`tube`/`bar`/`membrane` use real or closely-approximated closed-form mode ratios (plain harmonics, odd harmonics, the free-free-beam asymptotic formula, hardcoded Bessel-zero ratios); `plate` reuses the membrane's own table squared (a documented simplification — a `k²` bending dispersion over the membrane's own `k¹` nodal pattern, not a literal 2D mesh solve); `irregularSolid` has no closed form at all, built from deterministic seeded gaps. `stiffness`/`inharmonicity` jointly stretch higher modes sharp (the classic stiff-string formula); `irregularity` adds deterministic per-mode jitter; `density`×`damping` sets a per-mode relative decay falloff. Same RT-safety limit `data.scale`'s own `root` port has: every input is a real wireable port, but only a `setParameter()`-driven change actually rebuilds/republishes. **`size` is a declared port, not yet consumed** — a real, deliberate MVP gap, not a silent one.
 
 #### `data.analyseModes` — Analyse Modes 📋
 Extracts a mode set directly from a recorded sample — the real-world
