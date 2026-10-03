@@ -579,10 +579,17 @@ namespace bazalt
             portExists = portExists || planHasPort (plan, nodeId, portId);
 
         if (! portExists)
+        {
+            logDiagnostic ("subscribeVisualizationTap: " + nodeId + ":" + portId + " - PORT DOES NOT EXIST in any plan, rejected");
             return false;
+        }
 
         PreviewSubscription subscription { nodeId, portId, kind };
-        attachPreviewSubscription (subscription, globalPlan, voicePlans); // unresolved is fine: pending
+        const auto attached = attachPreviewSubscription (subscription, globalPlan, voicePlans); // unresolved is fine: pending
+        logDiagnostic ("subscribeVisualizationTap: " + nodeId + ":" + portId + " kind=" + juce::String ((int) kind)
+                        + " portExists=true attached=" + juce::String (attached ? "true" : "false")
+                        + " (hasGlobal=" + juce::String (globalPlan != nullptr ? "true" : "false")
+                        + ", activeVoicePlans=" + juce::String ((int) voicePlans.size()) + ")");
 
         // Remember it (replacing any earlier entry for the same port, which is
         // how a kind change takes effect) so a recompile can re-attach it.
@@ -601,6 +608,7 @@ namespace bazalt
 
     void BazaltAudioProcessor::unsubscribeVisualizationTap (const juce::String& nodeId, const juce::String& portId)
     {
+        logDiagnostic ("unsubscribeVisualizationTap: " + nodeId + ":" + portId);
         bazalt::engine::Tap* removedTap = nullptr;
         for (const auto& existing : previewSubscriptions)
             if (existing.nodeId == nodeId && existing.portId == portId)
@@ -632,8 +640,25 @@ namespace bazalt
     void BazaltAudioProcessor::applyPreviewSubscriptions (const std::vector<bazalt::engine::ExecutionPlan*>& voicePlans,
                                                           bazalt::engine::ExecutionPlan* globalPlan)
     {
+        // TEMPORARY diagnostic — visualization investigation (direct
+        // feedback: "scopes only ever work for one thing at a time,"
+        // "glance will just often not work... for random"). This runs on
+        // EVERY recompile (every graph edit) — logs, per currently-live
+        // subscription, whether re-attaching it to the FRESHLY compiled
+        // plan(s) succeeded or not, which is exactly the moment a
+        // connect/disconnect-triggered domain change could silently drop
+        // one.
+        if (! previewSubscriptions.empty())
+            logDiagnostic ("applyPreviewSubscriptions: re-attaching " + juce::String ((int) previewSubscriptions.size())
+                            + " live subscription(s) (hasGlobal=" + juce::String (globalPlan != nullptr ? "true" : "false")
+                            + ", activeVoicePlans=" + juce::String ((int) voicePlans.size()) + ")");
+
         for (auto& subscription : previewSubscriptions)
-            attachPreviewSubscription (subscription, globalPlan, voicePlans);
+        {
+            const auto attached = attachPreviewSubscription (subscription, globalPlan, voicePlans);
+            logDiagnostic ("  re-attach " + subscription.nodeId + ":" + subscription.portId
+                            + " -> " + juce::String (attached ? "OK" : "FAILED (port not found in any plan this compile)"));
+        }
 
         // Point each active origin's own voice taps at ITS current voice
         // before the plans go live. A default-on plan would otherwise push
