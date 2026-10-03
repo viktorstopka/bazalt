@@ -10,6 +10,7 @@
 #include "bazalt/engine/graph/NodeFactory.h"
 #include "bazalt/engine/patch/PatchDocument.h"
 #include "bazalt/engine/NanGuard.h"
+#include "bazalt/engine/OutputLimiter.h"
 #include "bazalt/engine/telemetry/TelemetryHub.h"
 #include "bazalt/engine/telemetry/AnalysisThread.h"
 #include "MacroParameters.h"
@@ -210,6 +211,22 @@ namespace bazalt
             crash from it yet.
         */
         const juce::Uuid& getInstanceId() const noexcept { return instanceId; }
+
+        /** Testing-only escape hatch. The master-output safety limiter
+            (`OutputLimiter`, `processBlock()`'s own final stage) is
+            unconditionally ON for every real use — but a number of
+            existing tests deliberately read a Control-rate value (a
+            transport tempo, a MIDI CC's raw mapped 0..1 value, ...) back
+            through the MAIN OUTPUT BUFFER as a generic numeric-inspection
+            channel, a pre-existing, legitimate testing technique that
+            predates the limiter and pushes values well outside the
+            ordinary ±1 audio range it's designed to protect (a tempo of
+            120 BPM reads back as a literal `2.0`, for instance). A real
+            patch never needs this; only a test inspecting a non-audio
+            value via that same buffer path does. Defaults to enabled
+            (safe) — tests opt out explicitly, real use never does.
+        */
+        void setOutputLimiterEnabledForTesting (bool enabled) noexcept { outputLimiterEnabled = enabled; }
         void setHasGlobalDomain (bool hasIt) noexcept { hasGlobalDomain.store (hasIt, std::memory_order_release); }
 
         /** M21: true while the graph has no active origin at all (no
@@ -415,6 +432,20 @@ namespace bazalt
         bazalt::engine::NodeFactory nodeFactory;
         const juce::Uuid instanceId; // see getInstanceId()'s own doc comment
 
+        // TEMPORARY diagnostic (2026-10-03) — real-host audio glitch
+        // investigation ("retriggered constantly" / heavy delay, reported
+        // only under Ableton, never reproduced under the Standalone app).
+        // Logs every prepareToPlay() call (message thread — a real file
+        // write there is fine) and a periodic processBlock() call-rate
+        // summary (the counter itself is just an atomic increment, audio-
+        // thread-safe; the actual file write happens on the EXISTING 50ms
+        // timerCallback(), never on the audio thread). Remove once the
+        // root cause is confirmed and fixed — not meant to ship.
+        void logDiagnostic (const juce::String& line) const;
+        int prepareToPlayCallCount = 0;
+        std::atomic<uint64_t> processBlockCallCount { 0 };
+        uint64_t lastLoggedProcessBlockCallCount = 0;
+
         // wiki/plans/DomainRedesign.md Batch 2: up to maxOrigins independent
         // origin bundles, replacing the single voiceManager + 8
         // voicePlanSwappers a graph used to be limited to. Plus one global
@@ -431,6 +462,8 @@ namespace bazalt
 
         MacroParameters macroParameters;
         bazalt::engine::NanGuard outputGuard;
+        bazalt::engine::OutputLimiter outputLimiter; // real safety ceiling — see OutputLimiter.h's own doc comment
+        bool outputLimiterEnabled = true; // see setOutputLimiterEnabledForTesting()'s own doc comment
 
         // M17: fixed, sensible defaults for the generic per-voice silence
         // detector (VoiceManager::updateSilenceAndCheckFinished) — reading
@@ -521,6 +554,7 @@ namespace bazalt
 
         double currentSampleRate = 44100.0;
         int currentBlockSize = 512;
+        bool hasBeenPrepared = false; // see prepareToPlay()'s own "redundant repeat" guard
 
         JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (BazaltAudioProcessor)
     };

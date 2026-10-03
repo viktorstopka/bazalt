@@ -2227,3 +2227,85 @@ NOT part of this batch, left open as planned: `excite.burst`'s own `tone`/
 `contact`, `resonator.tube`) and PM Voice (`osc.glottal`, `excite.vocalFolds`,
 `resonator.junction`/`tract`, `filter.formant`) batches `wiki/NODES.Status.md`'s
 own build order already sequences after this one.
+
+---
+
+# Real-host hardening — 2026-10-03
+
+A cluster of fixes found by actually loading the plugin in a real DAW (Ableton)
+for the first time in this project's history — every prior "Standalone app
+sanity-checked" verification used JUCE's own Standalone wrapper, which never
+exercised several real-host-only code paths at all.
+
+**A real crash, confirmed and fixed**: `resonator.plate.quality` — see
+`wiki/NODES_Gaps.md`'s own entry (allocating a structural parameter's state
+from its just-constructed default, not its declared ceiling, since
+`GraphCompiler.cpp` calls `prepare()` before applying a fresh node's own
+stored parameters).
+
+**A real multi-instance gap, found by audit and fixed**: every plugin
+instance's WebView2 shared one fixed user-data folder — see
+`wiki/NODES_Gaps.md`'s own entry (`BazaltAudioProcessor::getInstanceId()`,
+a per-instance folder).
+
+**A real, previously-undiagnosable gap, found by audit and fixed**: Release
+builds had zero debug symbols anywhere (no `/Z7`/`/DEBUG` for that config) —
+the top-level `CMakeLists.txt` now generates real `.pdb`s for Release too,
+covering JUCE's own code as well as Bazalt's.
+
+**`prepareToPlay()` made idempotent.** Found while investigating a real-host-
+only symptom ("retriggered constantly" / heavy delay, direct feedback — never
+reproduced under the Standalone app, and ultimately resolved on the user's own
+machine without this fix landing first, so it's recorded as a real, safe,
+independently-justified improvement rather than a confirmed root-cause fix).
+Every call used to unconditionally redo a full graph recompile, reset every
+origin bundle's own active/voice state, snap every macro's smoothing back to
+0.0, and stop/restart `analysisThread` with up to a 2-second blocking
+timeout — even when called again with identical `sampleRate`/`samplesPerBlock`.
+Many real hosts call `prepareToPlay()` more than once during ordinary
+operation; nothing in the JUCE/VST3 contract ever promised otherwise. Now
+skipped as a safe no-op when nothing's actually changed. A temporary
+diagnostic (`BazaltDiagnostics.log` in `%TEMP%`, logging every
+`prepareToPlay()` call and a periodic `processBlock()` call-rate summary) was
+added alongside this and is still in the tree, deliberately not yet removed —
+genuinely useful if a similar symptom ever needs investigating again, and
+cheap to leave in (a few atomic increments and an occasional message-thread
+file write, never on the audio thread).
+
+**A real safety gap, direct feedback ("getting my ears blown off once every
+few seconds" while testing) — closed two ways:**
+- `bazalt::engine::OutputLimiter` (new) — a real peak limiter (fast attack,
+  slower release, a final hard-clamp backstop) wired into
+  `PluginProcessor::processBlock()`'s own final stage, right after the
+  existing `NanGuard`. Unconditional for every real use; a
+  `setOutputLimiterEnabledForTesting(false)` escape hatch was added for the
+  handful of pre-existing tests that deliberately read a raw Control-rate
+  value (a transport tempo, a MIDI CC's mapped value) back through the main
+  output buffer as a generic numeric-inspection technique that predates the
+  limiter and pushes values outside the ordinary audio range on purpose.
+- `shape.clip` (new, real node) — the catalog's own planned "node you put in
+  a feedback loop so a slider can't destroy a speaker," pulled forward out of
+  the Shaping batch since it's exactly what was asked for. Three modes:
+  `hard` (exact clamp with a real quadratic soft-knee), `soft` (`tanh`
+  saturation, never hard-clips), `limiter` (the same smoothed gain-reduction
+  envelope as `OutputLimiter`, plus the same hard-clamp backstop). Complements
+  the plugin-level limiter rather than replacing it — this one can be
+  inserted mid-chain, the plugin-level one can't.
+
+**Two real bugs caught by this session's own tests, not shipped**: the
+quadratic soft-knee formula's first draft increased the signal instead of
+reducing it for any magnitude between the knee's lower bound and the ceiling
+(a sign error — `mag - t²·(mag - ceiling)` flips the wrong way whenever
+`mag < ceiling`); a later edit adding the limiter mode's own hard-clamp
+backstop accidentally deleted the three lines that actually compute and apply
+the gain-reduction update, leaving `gainReduction` permanently stuck at `1.0`.
+Both caught by `tests/ShapeClipNodeTests.cpp` failing exactly where they
+should, fixed, and re-verified.
+
+**Verified:** full rebuild clean (Debug and Release, engine + plugin +
+Standalone + VST3). `ctest --test-dir build -C Debug` 592/592 green (24 new
+cases: 5 `OutputLimiterTests.cpp`, 9 `ShapeClipNodeTests.cpp`, 1 multi-instance
+identity test, plus 4 existing `HostInputTests.cpp` cases updated with the new
+testing opt-out rather than weakening the real safety feature). `wiki/NODES.md`/
+`wiki/NODES.Status.md` updated to match (`shape.clip` ✅, the Karplus-Strong
+stock-group reference patch now fully buildable).

@@ -10,7 +10,7 @@ TEST_CASE ("NodeFactory::describeAll() returns a descriptor for every registered
     auto factory = buildDefaultNodeFactory();
     const auto descriptors = factory.describeAll();
 
-    REQUIRE (descriptors.size() == 90); // 88 as of PM Core batch 3 (see git history for the full running tally before this) + 2 PM Core batch 4 (excite.mallet, resonator.plate)
+    REQUIRE (descriptors.size() == 91); // 90 as of PM Core batch 4 (see git history for the full running tally before this) + 1 shape.clip (direct feedback: a real, wireable mid-chain safety limiter)
 
     auto findByTypeId = [&] (const juce::String& typeId) -> const NodeDescriptor*
     {

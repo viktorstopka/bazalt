@@ -82,6 +82,27 @@ namespace bazalt
                 swapper.reclaim();
 
         globalPlanSwapper.reclaim();
+
+        // TEMPORARY diagnostic — see the member declarations' own comment.
+        const auto current = processBlockCallCount.load (std::memory_order_relaxed);
+        if (current != lastLoggedProcessBlockCallCount)
+        {
+            logDiagnostic ("processBlock total calls so far: " + juce::String ((juce::int64) current)
+                            + " (sampleRate=" + juce::String (currentSampleRate)
+                            + ", blockSize=" + juce::String (currentBlockSize) + ")");
+            lastLoggedProcessBlockCallCount = current;
+        }
+    }
+
+    // TEMPORARY diagnostic — see the member declarations' own comment.
+    // Message-thread only (called from prepareToPlay()/timerCallback(),
+    // never from processBlock() itself). Appends one line, with a
+    // millisecond timestamp, to a fixed, easy-to-find log file.
+    void BazaltAudioProcessor::logDiagnostic (const juce::String& line) const
+    {
+        auto file = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("BazaltDiagnostics.log");
+        file.appendText ("[" + juce::String (juce::Time::getCurrentTime().toMilliseconds()) + "] [instance "
+                          + instanceId.toString().substring (0, 8) + "] " + line + "\n");
     }
 
     void BazaltAudioProcessor::commitOriginBundleAssignments (const std::array<juce::String, maxOrigins>& originIdBySlot) noexcept
@@ -118,8 +139,43 @@ namespace bazalt
 
     void BazaltAudioProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
     {
+        // TEMPORARY diagnostic — see the member declarations' own comment.
+        ++prepareToPlayCallCount;
+
+        // A real, confirmed-live gap, found while investigating a real-host-only
+        // audio glitch ("retriggered constantly" / heavy delay, reported only
+        // under Ableton, never reproduced under the Standalone app): every call
+        // here used to unconditionally do a full re-initialization, regardless
+        // of whether sampleRate/samplesPerBlock had actually changed since the
+        // last call — a full graph recompile (GraphCompiler's own previousPlan
+        // reuse keeps each UNCHANGED node's own internal state, e.g. an
+        // oscillator's phase, but the recompile itself is still real, non-free
+        // work), EVERY origin bundle's own active/voice state reset to
+        // inactive, every macro's smoother snapped back to 0.0 (MacroParameters
+        // ::prepare() calls reset(0.0f)) even if the host parameter itself is
+        // non-zero, AND analysisThread stopped and restarted with up to a
+        // 2-SECOND blocking timeout. Many real hosts call prepareToPlay() more
+        // than "only once, at startup, and again only on a genuine sample-rate/
+        // buffer-size change" — the JUCE/VST3 contract never promised otherwise.
+        // Skip all of it when nothing has actually changed: a safe, correct,
+        // no-op repeat, not a special case for any one host.
+        const auto isRedundantRepeat = hasBeenPrepared
+                                        && sampleRate == currentSampleRate
+                                        && samplesPerBlock == currentBlockSize;
+
+        logDiagnostic ("prepareToPlay() call #" + juce::String (prepareToPlayCallCount)
+                        + " sampleRate=" + juce::String (sampleRate)
+                        + " samplesPerBlock=" + juce::String (samplesPerBlock)
+                        + (isRedundantRepeat ? " (REDUNDANT - skipped)" : " (real re-init)"));
+
+        if (isRedundantRepeat)
+            return;
+
+        hasBeenPrepared = true;
         currentSampleRate = sampleRate;
         currentBlockSize = samplesPerBlock;
+
+        outputLimiter.prepare (sampleRate);
 
         monoRenderScratchBuffer.setSize (1, samplesPerBlock);
 
@@ -1055,6 +1111,12 @@ namespace bazalt
     {
         juce::ScopedNoDenormals noDenormals;
 
+        // TEMPORARY diagnostic — see the member declarations' own comment.
+        // A plain atomic increment, relaxed ordering — audio-thread-safe,
+        // no allocation, no lock; the actual file write happens later, on
+        // the message thread's own timerCallback().
+        processBlockCallCount.fetch_add (1, std::memory_order_relaxed);
+
         const auto numSamples = buffer.getNumSamples();
 
         // M21: snapshot the host's input BEFORE clearing anything. This used to
@@ -1175,7 +1237,9 @@ namespace bazalt
         if (auto* mainTap = tapPointers[0])
             mainTap->push (buffer.getReadPointer (0), buffer.getNumSamples());
 
-        outputGuard.process (buffer);
+        outputGuard.process (buffer); // first: NaN/Inf -> silence, so the limiter's own gain-reduction envelope never gets poisoned
+        if (outputLimiterEnabled)
+            outputLimiter.process (buffer); // then: a real safety ceiling (NanGuard alone never capped loud-but-finite signals)
     }
 
     juce::AudioProcessorEditor* BazaltAudioProcessor::createEditor()

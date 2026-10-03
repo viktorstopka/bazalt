@@ -142,11 +142,11 @@ rather than waiting; every `factory.*` node still does want the real thing.
 | `filter.svf` | MVP | | (standalone) | Needs the 5-simultaneous-output redesign (lowpass/bandpass/highpass/notch/peak port group) — currently one mode-switched `out`. Structural, not tied to a batch. |
 | `filter.formant` | To be implemented | **B2** | PM Voice | Bank of bandpass filters over `Data(modal-set)`/vowel table. |
 
-### `shape.*` — nonlinearities — 5 to build
+### `shape.*` — nonlinearities — 1 Implemented, 4 to build
 
 | Node | Status | Necessity | Batch | Notes |
 |---|---|---|---|---|
-| `shape.clip` | To be implemented | **B1** | Shaping | Safety clipper/limiter — build early, useful everywhere. |
+| `shape.clip` | Implemented | | | Done, direct feedback (2026-10-03) — pulled forward out of the Shaping batch, same "build early, useful everywhere" reasoning this row already gave it. Real hard/soft/limiter modes, a real quadratic soft-knee. |
 | `shape.rectify` | To be implemented | **B1** | Shaping | Trivial half/full rectify. |
 | `shape.crush` | To be implemented | **B1** | Shaping | Bit/sample-rate reduction. |
 | `shape.waveshaper` | To be implemented | **B2** | Shaping | Multiple curve types + oversampling. |
@@ -345,12 +345,21 @@ building for real, not simplified.
 
 | Status | Count |
 |---|---|
-| Implemented | 81 |
+| Implemented | 82 |
 | MVP | 4 (`osc.analog`, `filter.svf`, `excite.burst`, `seq.steps`) |
-| To be implemented | 41 |
+| To be implemented | 40 |
 | **Total native node types** | **126** |
 
-By necessity, among the 41 still to build: **A** 4 · **B** 24 · **C** 7 · **D** 6.
+By necessity, among the 40 still to build: **A** 4 · **B** 23 · **C** 7 · **D** 6.
+
+**`shape.clip` — done, 2026-10-03, direct feedback.** Pulled forward out of the
+Shaping batch: a real, wireable, mid-chain safety limiter (hard/soft/limiter modes,
+a real quadratic soft-knee), built in response to "it gets very tedious trying to
+test this and getting my ears blown off." Complements, not replaces, the plugin's
+own new always-on master-output `OutputLimiter` (`PluginProcessor.cpp`), which
+protects the final mix unconditionally but can't be inserted mid-chain (e.g. to
+tame a resonant feedback loop before it hits another node). See
+`wiki/MILESTONES.md`'s own entry.
 
 **The whole PM Core batch is now closed** (2026-10-02): `excite.impulse`/`pluck`/
 `mallet`, `resonator.comb`/`modal`/`string`/`plate`, and `data.material` are all
@@ -438,7 +447,7 @@ but sit at the top of the recommended order below because `note.quantize` (A),
 | **PM Voice** | `osc.glottal`, `excite.vocalFolds`, `resonator.junction`, `resonator.tract`, `filter.formant` | Correction 1's vocal-modelling cluster — the hardest batch, targets the "cat purr" reference patch. Build last within Physical Modelling. |
 | **Noise & Grain** | `noise.colored`, `noise.dust`, `sampler.granular` | Stochastic/granular sources sharing test approach. |
 | **Sampler** | `sampler.player`, `data.load` | `sampler.player` needs what `data.load` produces. |
-| **Shaping** | `shape.clip`, `shape.rectify`, `shape.crush`, `shape.waveshaper`, `shape.fold` | All single-in/single-out nonlinear audio shapers — one shared distortion-test harness. |
+| **Shaping** | `shape.rectify`, `shape.crush`, `shape.waveshaper`, `shape.fold` | All single-in/single-out nonlinear audio shapers — one shared distortion-test harness. `shape.clip` (its own former member) already shipped separately, direct feedback. |
 | **Space** | `space.diffuser`, `space.reverb` | Spatial effects; diffuser reuses `filter.allpass`. |
 | **Env/LFO Shapes** | `env.curve`, `lfo.shape` | Both are "`Data(curve)`-driven modulation source" nodes — same dependency, same shape. |
 | **Analysis** | `analysis.level`, `analysis.onset`, `analysis.centroid`, `analysis.pitch`, `data.analyseModes` | Audio-input analysis nodes tested together; `note.assemble` (its originally-planned capstone) is already built — this batch's job now is just feeding it a real tracked pitch instead of an algorithmic one. |
@@ -547,7 +556,7 @@ not with the A/B/C/D/Batch treatment above.
 | Group | Status | Blocked on |
 |---|---|---|
 | **Init Patch** | ✅ real hand-built graph (not yet a loadable `stock.*` asset) | Nothing for the graph itself; needs `stock.*` loading (M29) and `space.reverb` for its tail. |
-| **Karplus-Strong** | 📋 | Only `shape.clip` (Shaping batch) is missing — everything else it uses is already Implemented. |
+| **Karplus-Strong** | ✅ buildable now | `shape.clip` Implemented (2026-10-03) — every ingredient this patch uses is now real. |
 | **Scale Quantize** | ✅ buildable now | `data.scale` and `note.quantize` both Implemented. |
 | **Arpeggiator** | 📋 — blocked | `clock.pulse`/`clock.counter` Implemented, but `note.hold`/`note.select` hit the real one-Note-port-per-node engine limit (deferred, not just unbuilt). |
 | **Chord** | 📋 — blocked | `data.scale` Implemented, but `note.chord` hits the same real engine limit as `note.hold`/`note.select`. |

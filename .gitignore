@@ -43,3 +43,6 @@ scratchpad/
 # exportSnapshotToFile, PluginEditor.cpp) — always the live graph as of
 # whenever it was last exported, never meant to be committed
 /exported-patch.json
+
+# Ableton crash report dumps the user shared for debugging - never project content
+/crash/

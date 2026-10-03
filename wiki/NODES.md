@@ -234,8 +234,8 @@ without a physical tract model. **In:** `in`; `vowel [audio]`; `formants` — `D
 Passes a signal through a fixed or user-drawn transfer curve for distortion and
 saturation — the general-purpose nonlinearity node. **In:** `in` — `Audio`; `drive [audio]`; `bias`; `mix`; `curve` — `Data(curve)` (optional). **Out:** `out` — `Audio`. **Structural:** `shape` (enum: tanh, arctan, sine fold, asymmetric, hard, custom), `oversampling`. **Native:** oversampling, delicate.
 
-#### `shape.clip` — Clip / Safety 📋
-**In:** `in`; `ceiling`; `knee`. **Out:** `out`; `clipping` — `bool`. **Structural:** `mode` (enum: hard, soft, limiter). **Behavior:** the node you put in a feedback loop so a slider can't destroy a speaker.
+#### `shape.clip` — Clip / Safety ✅ *(direct feedback: real, wireable, mid-chain safety)*
+**In:** `in`; `ceiling`; `knee`. **Out:** `out`; `clipping` — `bool`. **Structural:** `mode` (enum: hard, soft, limiter). **Behavior:** the node you put in a feedback loop so a slider can't destroy a speaker. `hard` is an exact clamp to `±ceiling` with a real quadratic soft-knee region (`knee`, 0–1, scaled by `ceiling`) smoothing the approach; `soft` is a `tanh` saturation that asymptotically approaches `ceiling` and never hard-clips at all; `limiter` reuses the same attack(~1ms)/release(~100ms) smoothed gain-reduction envelope the plugin's own always-on master-output `OutputLimiter` uses, plus the same hard-clamp backstop underneath it for a single isolated spike the envelope can't react to in time. `clipping` is live, not static — true only while this sample is actually being altered. A real, wireable complement to the plugin-level safety net (`PluginProcessor.cpp`'s `OutputLimiter`), which protects the final mix unconditionally but can't be inserted mid-chain.
 
 #### `shape.fold` — Wavefolder 📋
 Folds a signal back on itself past a threshold instead of clipping it, producing

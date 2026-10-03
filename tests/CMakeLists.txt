@@ -39,6 +39,7 @@ add_executable(EngineTests
     ModulatablePortsTests.cpp
     MultiplicityResolverTests.cpp
     NanGuardTests.cpp
+    OutputLimiterTests.cpp
     NodeDescriptorTests.cpp
     NoteEventTests.cpp
     NoteStreamNodesTests.cpp
@@ -51,6 +52,7 @@ add_executable(EngineTests
     RandomNodesTests.cpp
     RtAllocationTrapTests.cpp
     SampleRateCoverageTests.cpp
+    ShapeClipNodeTests.cpp
     SineOscillatorNodeTests.cpp
     SmoothedParameterTests.cpp
     SpaceNodesTests.cpp

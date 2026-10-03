@@ -89,6 +89,7 @@
 #include "bazalt/engine/nodes/ResonatorStringNode.h"
 #include "bazalt/engine/nodes/ExciteMalletNode.h"
 #include "bazalt/engine/nodes/ResonatorPlateNode.h"
+#include "bazalt/engine/nodes/ShapeClipNode.h"
 
 namespace bazalt::engine
 {
@@ -225,6 +226,11 @@ namespace bazalt::engine
         // via resonator.string's own "motion" output) + resonator.plate.
         factory.registerType ("excite.mallet", [] { return std::make_unique<nodes::ExciteMalletNode>(); });
         factory.registerType ("resonator.plate", [] { return std::make_unique<nodes::ResonatorPlateNode>(); });
+        // Direct feedback: a real, wireable, mid-chain safety limiter -
+        // the catalog's own "the node you put in a feedback loop so a
+        // slider can't destroy a speaker," complementing (not replacing)
+        // the plugin's own always-on master-output OutputLimiter.
+        factory.registerType ("shape.clip", [] { return std::make_unique<nodes::ShapeClipNode>(); });
         return factory;
     }
 

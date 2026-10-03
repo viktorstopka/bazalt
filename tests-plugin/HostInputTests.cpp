@@ -388,6 +388,11 @@ TEST_CASE ("io.control follows a MIDI CC sample-accurately, and holds it across 
            "[plugin][host-input][mono]")
 {
     BazaltAudioProcessor processor;
+    // This test reads io.control's own raw 0..1 value back through the main
+    // output buffer - a real, deliberate value (up to 1.0) that the master
+    // safety limiter (ceiling ~0.891) would otherwise quietly reduce; opt out
+    // for this inspection-only use, see the method's own doc comment.
+    processor.setOutputLimiterEnabledForTesting (false);
     processor.prepareToPlay (44100.0, 256);
     REQUIRE (processor.getGraphEditController().setGraph (
                  singleNodeGraph ("io.control", { { "io.control.source", 0.0f }, { "io.control.cc", 20.0f }, { "io.control.smoothing", 0.0f } }, "value")).success);
@@ -409,6 +414,7 @@ TEST_CASE ("io.control maps the mod wheel, channel pressure and pitch bend onto 
     auto valueFor = [] (float source, const juce::MidiMessage& message)
     {
         BazaltAudioProcessor processor;
+        processor.setOutputLimiterEnabledForTesting (false); // see the previous test's own comment
         processor.prepareToPlay (44100.0, 128);
         REQUIRE (processor.getGraphEditController().setGraph (
                      singleNodeGraph ("io.control", { { "io.control.source", source }, { "io.control.smoothing", 0.0f } }, "value")).success);
@@ -434,6 +440,7 @@ TEST_CASE ("io.transport runs an internal 120 BPM transport when there is no hos
     auto outputFor = [] (const juce::String& port)
     {
         BazaltAudioProcessor processor;
+        processor.setOutputLimiterEnabledForTesting (false); // reads tempo (e.g. "2.0") back raw - see HostInputTests.cpp's earlier io.control test comment
         processor.prepareToPlay (44100.0, 512);
         REQUIRE (processor.getGraphEditController().setGraph (singleNodeGraph ("io.transport", {}, port)).success);
         return processWithMainInput (processor, 0.0f, 0.0f, 512);
@@ -444,6 +451,7 @@ TEST_CASE ("io.transport runs an internal 120 BPM transport when there is no hos
 
     // Beats: a pulse every 22050 samples, none dropped or doubled across block edges.
     BazaltAudioProcessor processor;
+    processor.setOutputLimiterEnabledForTesting (false);
     processor.prepareToPlay (44100.0, 512);
     REQUIRE (processor.getGraphEditController().setGraph (singleNodeGraph ("io.transport", {}, "beat")).success);
 
@@ -459,6 +467,7 @@ TEST_CASE ("io.transport runs an internal 120 BPM transport when there is no hos
 
     // Position advances with the samples it has processed.
     BazaltAudioProcessor positionProcessor;
+    positionProcessor.setOutputLimiterEnabledForTesting (false);
     positionProcessor.prepareToPlay (44100.0, 441);
     REQUIRE (positionProcessor.getGraphEditController().setGraph (singleNodeGraph ("io.transport", {}, "position")).success);
     for (int block = 0; block < 100; ++block) // exactly one second
@@ -487,6 +496,12 @@ TEST_CASE ("Switching between a mono graph and a voice graph and back leaves bot
            "[plugin][host-input][mono]")
 {
     BazaltAudioProcessor processor;
+    // This test checks exact passthrough after switching graphs, not output
+    // safety - a real loud note earlier in the test would otherwise leave
+    // the master limiter's gain reduction still releasing by the time the
+    // later exact-passthrough assertion runs. See HostInputTests.cpp's
+    // earlier io.control test comment for the opt-out's own reasoning.
+    processor.setOutputLimiterEnabledForTesting (false);
     processor.prepareToPlay (44100.0, 512);
     auto& controller = processor.getGraphEditController();
     // 0.x arc, 2026-09-29: the constructor default is a plain master-out-only
