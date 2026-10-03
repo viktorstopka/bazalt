@@ -52,7 +52,6 @@ namespace bazalt::engine::nodes
         static constexpr int numOutputs = 2; // out, changed
 
         enum class Distribution { Uniform, Gaussian, Exponential, Bimodal };
-        enum class OutputPolarity { Bipolar, Unipolar };
 
         void prepare (const NodePrepareInfo& info) override { sampleRate = info.sampleRate; }
 
@@ -123,15 +122,6 @@ namespace bazalt::engine::nodes
                                        .enumOptions = { { "uniform", "Uniform" }, { "gaussian", "Gaussian" },
                                                          { "exponential", "Exponential" }, { "bimodal", "Bimodal" } },
                                        .isStructural = true },
-                ParameterDescriptor { .id = "random.stepped.polarity",
-                                       .minValue = 0.0f,
-                                       .maxValue = 1.0f,
-                                       .defaultValue = 0.0f,
-                                       .displayName = "Polarity",
-                                       .isInteger = true,
-                                       .kind = ValueKind::Enum,
-                                       .enumOptions = { { "bipolar", "Bipolar" }, { "unipolar", "Unipolar" } },
-                                       .isStructural = true },
                 ParameterDescriptor { .id = "random.stepped.seed",
                                        .minValue = 0.0f,
                                        .maxValue = 999999.0f,
@@ -162,8 +152,6 @@ namespace bazalt::engine::nodes
                 storedChance = juce::jlimit (0.0f, 1.0f, value);
             else if (parameterId == "random.stepped.distribution")
                 distribution = (Distribution) juce::jlimit (0, 3, (int) std::lround (value));
-            else if (parameterId == "random.stepped.polarity")
-                polarity = std::lround (value) == 1 ? OutputPolarity::Unipolar : OutputPolarity::Bipolar;
             else if (parameterId == "random.stepped.seed")
             {
                 seed = (int) std::lround (value);
@@ -217,7 +205,11 @@ namespace bazalt::engine::nodes
             const auto glideTimeSeconds = (double) smooth / (double) rate;
             current += (target - current) * (1.0f - coefficientFor (rate, smooth, glideTimeSeconds));
 
-            outputs[0] = polarity == OutputPolarity::Unipolar ? current * 0.5f + 0.5f : current;
+            // wiki/plans/PropsAndMacroRedesign.md Batch D: the old
+            // Unipolar/Bipolar selector was a redundant 2-line remap the
+            // generic adapt.remap/util.bipolarToUnipolar already cover —
+            // modulation output is always bipolar now.
+            outputs[0] = current;
             outputs[1] = changedThisSample ? 1.0f : 0.0f;
         }
 
@@ -280,7 +272,6 @@ namespace bazalt::engine::nodes
         float storedSteps = 0.0f;
         float storedChance = 1.0f;
         Distribution distribution = Distribution::Uniform;
-        OutputPolarity polarity = OutputPolarity::Bipolar;
         int seed = 1;
         juce::Random random { (juce::int64) 1 };
         CoefficientCache cache;

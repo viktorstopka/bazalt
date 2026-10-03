@@ -45,8 +45,6 @@ namespace bazalt::engine::nodes
         static constexpr int numInputs = 2;  // tick, reset
         static constexpr int numOutputs = 4; // value, gate, trigger, index
 
-        enum class Range { Bipolar, Unipolar };
-
         void reset() override { currentIndex = 0; }
 
         int getNumInputPorts() const noexcept override { return numInputs; }
@@ -83,11 +81,6 @@ namespace bazalt::engine::nodes
                                        .minValue = 1.0f, .maxValue = (float) maxSteps, .defaultValue = 8.0f,
                                        .displayName = "Length", .isInteger = true, .quantity = Quantity::Count,
                                        .step = 1.0f, .isStructural = true },
-                ParameterDescriptor { .id = "seq.steps.range",
-                                       .minValue = 0.0f, .maxValue = 1.0f, .defaultValue = 0.0f,
-                                       .displayName = "Range", .isInteger = true, .kind = ValueKind::Enum,
-                                       .enumOptions = { { "bipolar", "Bipolar" }, { "unipolar", "Unipolar" } },
-                                       .isStructural = true },
             };
 
             for (int i = 0; i < maxSteps; ++i)
@@ -110,8 +103,6 @@ namespace bazalt::engine::nodes
         {
             if (parameterId == "seq.steps.length")
                 storedLength = juce::jlimit (1, maxSteps, (int) std::lround (value));
-            else if (parameterId == "seq.steps.range")
-                range = std::lround (value) == 1 ? Range::Unipolar : Range::Bipolar;
             else if (parameterId.startsWith ("seq.steps.step."))
             {
                 const auto index = parameterId.fromLastOccurrenceOf (".", false, false).getIntValue();
@@ -136,10 +127,14 @@ namespace bazalt::engine::nodes
                 triggered = true;
             }
 
+            // wiki/plans/PropsAndMacroRedesign.md Batch D: the old
+            // Unipolar/Bipolar "Range" selector was a redundant 2-line
+            // remap the generic adapt.remap/util.bipolarToUnipolar already
+            // cover — step values are always bipolar now, matching how
+            // they're always hand-edited (-1..1).
             const auto raw = stepValues[(size_t) juce::jlimit (0, maxSteps - 1, currentIndex)];
-            const auto value = range == Range::Unipolar ? raw * 0.5f + 0.5f : raw;
 
-            outputs[0] = value;
+            outputs[0] = raw;
             outputs[1] = std::fabs (raw) > 1.0e-6f ? 1.0f : 0.0f;
             outputs[2] = triggered ? 1.0f : 0.0f;
             outputs[3] = (float) currentIndex;
@@ -148,7 +143,6 @@ namespace bazalt::engine::nodes
     private:
         int currentIndex = 0;
         int storedLength = 8;
-        Range range = Range::Bipolar;
         std::array<float, maxSteps> stepValues {};
     };
 }

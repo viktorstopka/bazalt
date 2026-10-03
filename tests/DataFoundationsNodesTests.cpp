@@ -153,9 +153,14 @@ TEST_CASE ("DataTableNode's data tag is Curve", "[engine][nodes][DataTableNode][
 
 // ---- data.lookup ----
 
-TEST_CASE ("DataLookupNode nearest/interpolate modes read a position across the buffer",
+TEST_CASE ("DataLookupNode nearest/interpolate modes read a bipolar -1..1 position across the buffer",
            "[engine][nodes][DataLookupNode][DataFoundations]")
 {
+    // wiki/plans/PropsAndMacroRedesign.md Batch D: the old per-node
+    // Unipolar/Bipolar "polarity" selector is gone - `in` is always
+    // remapped from -1..1 now ("mod values are always bipolar"), replacing
+    // this test's old 0..1-direct inputs and the separate "polarity remaps"
+    // test case that used to exercise the non-default setting.
     DataPublisher publisher;
     publisher.publish (std::make_unique<DataBuffer> (DataTag::Curve, std::vector<float> { 10, 20, 30, 40 }, 1));
 
@@ -163,30 +168,15 @@ TEST_CASE ("DataLookupNode nearest/interpolate modes read a position across the 
     node.setDataInput ("data", &publisher);
     node.setParameter ("data.lookup.mode", 1.0f); // interpolate (also the default)
 
-    CHECK (lookupOnce (node, 0.0f) == Catch::Approx (10.0f));
-    CHECK (lookupOnce (node, 1.0f) == Catch::Approx (40.0f));
-    CHECK (lookupOnce (node, 0.5f) == Catch::Approx (25.0f)); // halfway between index 1 (20) and 2 (30)
+    CHECK (lookupOnce (node, -1.0f) == Catch::Approx (10.0f)); // pos01=0.0
+    CHECK (lookupOnce (node, 1.0f) == Catch::Approx (40.0f));  // pos01=1.0
+    CHECK (lookupOnce (node, 0.0f) == Catch::Approx (25.0f));  // pos01=0.5, halfway between index 1 (20) and 2 (30)
 
     node.setParameter ("data.lookup.mode", 0.0f); // nearest
-    CHECK (lookupOnce (node, 0.6f) == Catch::Approx (30.0f)); // raw = 0.6*3 = 1.8 -> rounds to index 2
+    CHECK (lookupOnce (node, 0.2f) == Catch::Approx (30.0f)); // pos01=0.6, raw = 0.6*3 = 1.8 -> rounds to index 2
 }
 
-TEST_CASE ("DataLookupNode's polarity remaps -1..1 input to a 0..1 position",
-           "[engine][nodes][DataLookupNode][DataFoundations]")
-{
-    DataPublisher publisher;
-    publisher.publish (std::make_unique<DataBuffer> (DataTag::Curve, std::vector<float> { 10, 20, 30, 40 }, 1));
-
-    DataLookupNode node;
-    node.setDataInput ("data", &publisher);
-    node.setParameter ("data.lookup.polarity", 1.0f); // bipolar
-
-    CHECK (lookupOnce (node, -1.0f) == Catch::Approx (10.0f));
-    CHECK (lookupOnce (node, 1.0f) == Catch::Approx (40.0f));
-    CHECK (lookupOnce (node, 0.0f) == Catch::Approx (25.0f)); // pos01=0.5, same midpoint as the unipolar test
-}
-
-TEST_CASE ("DataLookupNode's index/wrapIndex modes read a literal index, ignoring polarity",
+TEST_CASE ("DataLookupNode's index/wrapIndex modes read a literal index, no position remap applied",
            "[engine][nodes][DataLookupNode][DataFoundations]")
 {
     DataPublisher publisher;
@@ -282,7 +272,9 @@ TEST_CASE ("A real compiled graph wires data.table's publisher into data.lookup 
     graph.addNode ({ "table", "data.table", {}, { { "data.table.point.0", -1.0f }, { "data.table.point.1", 1.0f },
                                                     { "data.table.resolution", 2.0f } },
                       {} });
-    graph.addNode ({ "position", "util.constant", {}, { { "util.constant.value", 0.5f } }, {} }); // midpoint
+    // position is bipolar (-1..1 -> 0..1, wiki/plans/PropsAndMacroRedesign.md
+    // Batch D) - 0.0 is the midpoint now, not 0.5.
+    graph.addNode ({ "position", "util.constant", {}, { { "util.constant.value", 0.0f } }, {} }); // midpoint
     graph.addNode ({ "lookup", "data.lookup", {}, {}, {} }); // interpolate mode (default)
     graph.addConnection ({ "table", "data", "lookup", "data" });
     graph.addConnection ({ "position", "out", "lookup", "in" });

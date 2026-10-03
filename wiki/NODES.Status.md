@@ -310,13 +310,15 @@ edit. Every later `data.*`/`osc.wavetable`/`sampler.*` node rides on this for fr
 | `instance.allocate.swarmTransient` | Implemented | **A2** | Domain Extensions | Event-triggered spawn, closest to Voice's own shape. Done 2026-10-01. |
 | `instance.allocate.trigger` | Implemented | **A2** | Domain Extensions | Event-triggered, one instance at a time. Done 2026-10-01. |
 
-### `util.*` — 3/3 Implemented
+### `util.*` — 5/5 Implemented
 
 | Node | Status | Necessity | Batch | Notes |
 |---|---|---|---|---|
 | `util.constant` | Implemented | | | |
 | `util.reroute` | Implemented | | | |
 | `util.macro` | Implemented | | | `wiki/plans/UtilMacro.md` — ADR-0030 amends ADR-0015 (the 32-fixed-slot pool stays; the macro node becomes its own mapping target with a real wireable output, instead of a side-channel poke onto a foreign node). |
+| `util.unipolarToBipolar` | Implemented | | | `wiki/plans/PropsAndMacroRedesign.md` Batch D — new, replacing `random.stepped`/`seq.steps`/`data.lookup`'s old per-node Unipolar/Bipolar selectors. Manual placement only, never auto-inserted. |
+| `util.bipolarToUnipolar` | Implemented | | | Same batch, the inverse direction. |
 
 ### `view.*` — 5/5 Implemented
 
@@ -345,10 +347,10 @@ building for real, not simplified.
 
 | Status | Count |
 |---|---|
-| Implemented | 82 |
+| Implemented | 84 |
 | MVP | 4 (`osc.analog`, `filter.svf`, `excite.burst`, `seq.steps`) |
 | To be implemented | 40 |
-| **Total native node types** | **126** |
+| **Total native node types** | **128** |
 
 By necessity, among the 40 still to build: **A** 4 · **B** 23 · **C** 7 · **D** 6.
 

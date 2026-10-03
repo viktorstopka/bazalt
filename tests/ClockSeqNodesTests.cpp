@@ -487,19 +487,24 @@ TEST_CASE ("SeqStepsNode's gate reflects whether the current step is a rest (exa
     CHECK (outputs1[1] == 1.0f); // step 1: gate high
 }
 
-TEST_CASE ("SeqStepsNode's range=unipolar remaps stored bipolar values to 0..1",
+TEST_CASE ("SeqStepsNode's value output is always bipolar, no Range selector",
            "[engine][nodes][SeqStepsNode][ClockSeq]")
 {
+    // wiki/plans/PropsAndMacroRedesign.md Batch D: the old "range"
+    // Unipolar/Bipolar selector (and the unipolar remap it used to apply)
+    // is gone - a stored step value passes straight through now, matching
+    // how it's always hand-edited (-1..1, "mod values are always
+    // bipolar"). util.bipolarToUnipolar covers the old unipolar case
+    // explicitly, if ever wanted downstream.
     SeqStepsNode node;
     node.reset();
     node.setParameter ("seq.steps.length", 1.0f);
     node.setParameter ("seq.steps.step.0", -1.0f);
-    node.setParameter ("seq.steps.range", 1.0f); // unipolar
 
     float inputs[2] = { 0.0f, 0.0f };
     float outputs[4] = {};
     node.processSample (inputs, outputs);
-    CHECK (outputs[0] == Catch::Approx (0.0f)); // -1 bipolar -> 0 unipolar
+    CHECK (outputs[0] == Catch::Approx (-1.0f));
 }
 
 TEST_CASE ("SeqStepsNode's reset returns to step 0", "[engine][nodes][SeqStepsNode][ClockSeq]")

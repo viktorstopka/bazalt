@@ -90,6 +90,8 @@
 #include "bazalt/engine/nodes/ExciteMalletNode.h"
 #include "bazalt/engine/nodes/ResonatorPlateNode.h"
 #include "bazalt/engine/nodes/ShapeClipNode.h"
+#include "bazalt/engine/nodes/UnipolarToBipolarNode.h"
+#include "bazalt/engine/nodes/BipolarToUnipolarNode.h"
 
 namespace bazalt::engine
 {
@@ -231,6 +233,13 @@ namespace bazalt::engine
         // slider can't destroy a speaker," complementing (not replacing)
         // the plugin's own always-on master-output OutputLimiter.
         factory.registerType ("shape.clip", [] { return std::make_unique<nodes::ShapeClipNode>(); });
+        // wiki/plans/PropsAndMacroRedesign.md Batch D: explicit, manual-
+        // placement-only converters replacing the three nodes' old
+        // Unipolar/Bipolar selector parameters - never auto-inserted by
+        // connectWithAutoAdapt (adapt.remap's own generic fallback already
+        // covers a Unipolar<->Bipolar quantity mismatch).
+        factory.registerType ("util.unipolarToBipolar", [] { return std::make_unique<nodes::UnipolarToBipolarNode>(); });
+        factory.registerType ("util.bipolarToUnipolar", [] { return std::make_unique<nodes::BipolarToUnipolarNode>(); });
         return factory;
     }
 

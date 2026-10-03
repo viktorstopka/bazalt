@@ -13,11 +13,12 @@ namespace bazalt::engine::nodes
 
         **Mode semantics, this node's own concrete design** (the catalog
         names the four modes but not their exact contract):
-        - `nearest`/`interpolate`: `in` is a normalised **position** —
-          remapped through `polarity` (unipolar 0..1, or bipolar -1..1 → 0..1)
-          then scaled across the buffer's own length.
+        - `nearest`/`interpolate`: `in` is a normalised bipolar **position**
+          (-1..1 → 0..1, wiki/plans/PropsAndMacroRedesign.md Batch D — "mod
+          values are always bipolar," replacing the old per-node Unipolar/
+          Bipolar selector) then scaled across the buffer's own length.
         - `index`/`wrapIndex`: `in` is a **literal element index** — read
-          directly, `polarity` doesn't apply (an index has no natural
+          directly, no position remap applies (an index has no natural
           "normalised" meaning). `wrapIndex` always wraps regardless of
           `edgeMode`; plain `index` respects it (clamp or wrap).
         - `edgeMode` (clamp/wrap) governs what happens at the buffer's own
@@ -46,11 +47,6 @@ namespace bazalt::engine::nodes
         static constexpr int numOutputs = 1; // out
 
         enum class Mode { Nearest, Interpolate, Index, WrapIndex };
-        // Named PositionPolarity, not Polarity, to avoid shadowing
-        // bazalt::engine::Polarity (PortDescriptor.h) - RandomSteppedNode.h's
-        // own OutputPolarity establishes the same avoidance for the same
-        // reason.
-        enum class PositionPolarity { Unipolar, Bipolar };
         enum class EdgeMode { Clamp, Wrap };
 
         void reset() override { currentA = nullptr; currentB = nullptr; }
@@ -89,11 +85,6 @@ namespace bazalt::engine::nodes
                                        .enumOptions = { { "nearest", "Nearest" }, { "interpolate", "Interpolate" },
                                                          { "index", "Index" }, { "wrapIndex", "Wrap Index" } },
                                        .isStructural = true },
-                ParameterDescriptor { .id = "data.lookup.polarity",
-                                       .minValue = 0.0f, .maxValue = 1.0f, .defaultValue = 0.0f,
-                                       .displayName = "Polarity", .isInteger = true, .kind = ValueKind::Enum,
-                                       .enumOptions = { { "unipolar", "Unipolar" }, { "bipolar", "Bipolar" } },
-                                       .isStructural = true },
                 ParameterDescriptor { .id = "data.lookup.edgeMode",
                                        .minValue = 0.0f, .maxValue = 1.0f, .defaultValue = 0.0f,
                                        .displayName = "Edge Mode", .isInteger = true, .kind = ValueKind::Enum,
@@ -108,8 +99,6 @@ namespace bazalt::engine::nodes
                 storedMorph = juce::jlimit (0.0f, 1.0f, value);
             else if (parameterId == "data.lookup.mode")
                 mode = (Mode) juce::jlimit (0, 3, (int) std::lround (value));
-            else if (parameterId == "data.lookup.polarity")
-                polarity = std::lround (value) == 1 ? PositionPolarity::Bipolar : PositionPolarity::Unipolar;
             else if (parameterId == "data.lookup.edgeMode")
                 edgeMode = std::lround (value) == 1 ? EdgeMode::Wrap : EdgeMode::Clamp;
         }
@@ -187,7 +176,8 @@ namespace bazalt::engine::nodes
                 }
                 case Mode::Nearest:
                 {
-                    const auto pos01 = polarity == PositionPolarity::Bipolar ? in * 0.5f + 0.5f : in;
+                    // Batch D: position is always bipolar now (-1..1 -> 0..1).
+                    const auto pos01 = in * 0.5f + 0.5f;
                     const auto raw = pos01 * (float) (length - 1);
                     const auto idx = wrapOrClampIndex ((int) std::lround (raw), length, edgeMode);
                     return buffer.at (idx);
@@ -195,7 +185,7 @@ namespace bazalt::engine::nodes
                 case Mode::Interpolate:
                 default:
                 {
-                    const auto pos01 = polarity == PositionPolarity::Bipolar ? in * 0.5f + 0.5f : in;
+                    const auto pos01 = in * 0.5f + 0.5f;
                     const auto raw = pos01 * (float) (length - 1);
                     const auto lower = wrapOrClampIndex ((int) std::floor (raw), length, edgeMode);
                     const auto upper = wrapOrClampIndex (lower + 1, length, edgeMode);
@@ -211,7 +201,6 @@ namespace bazalt::engine::nodes
         const DataBuffer* currentB = nullptr;
         float storedMorph = 0.0f;
         Mode mode = Mode::Interpolate;
-        PositionPolarity polarity = PositionPolarity::Unipolar;
         EdgeMode edgeMode = EdgeMode::Clamp;
     };
 }

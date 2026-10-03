@@ -10,7 +10,7 @@ TEST_CASE ("NodeFactory::describeAll() returns a descriptor for every registered
     auto factory = buildDefaultNodeFactory();
     const auto descriptors = factory.describeAll();
 
-    REQUIRE (descriptors.size() == 91); // 90 as of PM Core batch 4 (see git history for the full running tally before this) + 1 shape.clip (direct feedback: a real, wireable mid-chain safety limiter)
+    REQUIRE (descriptors.size() == 93); // 91 as of shape.clip (see git history for the full running tally before this) + util.unipolarToBipolar + util.bipolarToUnipolar (wiki/plans/PropsAndMacroRedesign.md Batch D)
 
     auto findByTypeId = [&] (const juce::String& typeId) -> const NodeDescriptor*
     {

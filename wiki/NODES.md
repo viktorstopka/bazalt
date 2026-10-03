@@ -330,7 +330,7 @@ driver. **In:** `rate [audio]`; `shape`/`shapeB` — `Data(curve)` (optional); `
 Generates a new random value on each trigger (or free-running at `rate` when
 unconnected), with control over smoothing, distribution, spread, and how many
 discrete steps it lands on — the general sample-and-hold-style randomness
-source. **In:** `trigger : Event` (free-runs at `rate` when unconnected); `rate [audio]`; `amount`; `smooth` (0 = hard steps, 1 = fully glided); `bias`; `spread`; `steps` (0 = continuous); `chance`. **Out:** `out` — `float·Bipolar [audio]`; `changed` — `Event`. **Structural:** `distribution` (enum: uniform, gaussian, exponential, bimodal), `seed`, `polarity`.
+source. **In:** `trigger : Event` (free-runs at `rate` when unconnected); `rate [audio]`; `amount`; `smooth` (0 = hard steps, 1 = fully glided); `bias`; `spread`; `steps` (0 = continuous); `chance`. **Out:** `out` — `float·Bipolar [audio]`; `changed` — `Event`. **Structural:** `distribution` (enum: uniform, gaussian, exponential, bimodal), `seed`. Output is always bipolar as of `wiki/plans/PropsAndMacroRedesign.md` Batch D (the old `polarity` selector is gone — `util.bipolarToUnipolar` covers the unipolar case explicitly if ever wanted downstream).
 
 #### `random.drift` — Drift ✅
 Slow, correlated, natural wander. **In:** `rate`; `amount`; `centering` (0 = free Brownian walk, 1 = strongly pulled to centre — literally the leak coefficient of a one-pole leaky-integrated walk). **Out:** `out` — `float·Bipolar [audio]`. **Structural:** `spectrum` (enum: brown, pink, white-filtered), `seed`. **Behavior:** clamped to stay in range.
@@ -352,7 +352,7 @@ generic sequencing engine behind step sequencers and arpeggiators. **In:** `tick
 
 #### `seq.steps` — Step Sequencer 🚧
 A classic step sequencer — a bank of per-step values stepped through by an
-incoming clock, with gate derived from whether each step is non-zero. **In:** `tick : Event`; `reset : Event`. **Out:** `value` — `float·Bipolar [audio]`; `gate`; `trigger` — `Event`; `index`. **Structural:** `length` (1–**16**, not the catalog's 1–64 — see below), `range` (enum: bipolar, unipolar), plus `step.0`…`step.15` (the node's own editable step bank). **Two deliberate, documented deviations from the catalog spec** (not silently narrower): the catalog's `steps` input (`Data(curve)`, optional) isn't built — no node in the engine produces a real `Data` value yet (`wiki/NODES.Status.md`'s cross-cutting prerequisite note) — so this node only has the fallback the catalog itself names, "the node's own editable step data," as fixed `ParameterDescriptor`s rather than a real `NodeContent`-backed bank; and `length` is capped at 16 instead of 64 (trivial to raise later — these are plain, individually-numbered parameters, not a wire-format array size). **Behavior:** `gate` is `abs(currentStepValue) > epsilon` — a step storing exactly 0.0 is a rest, since this data model has no separate per-step enable flag. Holds at step 0 until the first tick (which advances to step 1) — classic hardware step-sequencer "power-on shows step 1" behaviour, not an off-by-one bug.
+incoming clock, with gate derived from whether each step is non-zero. **In:** `tick : Event`; `reset : Event`. **Out:** `value` — `float·Bipolar [audio]`; `gate`; `trigger` — `Event`; `index`. **Structural:** `length` (1–**16**, not the catalog's 1–64 — see below), plus `step.0`…`step.15` (the node's own editable step bank, always bipolar as of `wiki/plans/PropsAndMacroRedesign.md` Batch D — the old `range` selector is gone). **Two deliberate, documented deviations from the catalog spec** (not silently narrower): the catalog's `steps` input (`Data(curve)`, optional) isn't built — no node in the engine produces a real `Data` value yet (`wiki/NODES.Status.md`'s cross-cutting prerequisite note) — so this node only has the fallback the catalog itself names, "the node's own editable step data," as fixed `ParameterDescriptor`s rather than a real `NodeContent`-backed bank; and `length` is capped at 16 instead of 64 (trivial to raise later — these are plain, individually-numbered parameters, not a wire-format array size). **Behavior:** `gate` is `abs(currentStepValue) > epsilon` — a step storing exactly 0.0 is a rest, since this data model has no separate per-step enable flag. Holds at step 0 until the first tick (which advances to step 1) — classic hardware step-sequencer "power-on shows step 1" behaviour, not an off-by-one bug.
 
 #### `seq.euclid` — Euclidean ✅
 Generates an evenly-spread (Euclidean) rhythm of pulses across a step count —
@@ -594,7 +594,7 @@ Extracts a mode set directly from a recorded sample — the real-world
 counterpart of `data.material`'s hand-specified physics. **In:** `data` — `Data(sample)`. **Out:** `data` — `Data(modal-set)`. **Structural:** `modeCount`, `windowStart`, `windowLength`, `decayEstimation`. **Behavior:** hit a rock, drop in the file, play the rock. **M23.**
 
 #### `data.lookup` — Lookup ✅
-**In:** `in [audio]`; `data` — `Data`, required (accepts `Curve` or `Scale` — the two tags this batch's producers actually emit); `dataB` — `Data` (optional morph target; a tag mismatch silently falls back to `data` alone rather than rejecting at runtime, since nothing enforces "required" ports today); `morph [audio]`. **Out:** `out`. **Structural:** `mode` (enum: nearest, interpolate, index, wrap-index), `polarity`, `edgeMode` (clamp, wrap). **Behavior — this node's own concrete mode contract** (the catalog names the four modes, not their exact semantics): `nearest`/`interpolate` treat `in` as a normalised position (remapped 0..1 via `polarity`, then scaled across the buffer); `index`/`wrapIndex` treat `in` as a literal element index, ignoring `polarity` entirely (an index has no natural normalised meaning); `wrapIndex` always wraps regardless of `edgeMode`, plain `index` respects it. Only `stride() == 1` buffers (both real producers) are meaningfully supported today.
+**In:** `in [audio]`; `data` — `Data`, required (accepts `Curve` or `Scale` — the two tags this batch's producers actually emit); `dataB` — `Data` (optional morph target; a tag mismatch silently falls back to `data` alone rather than rejecting at runtime, since nothing enforces "required" ports today); `morph [audio]`. **Out:** `out`. **Structural:** `mode` (enum: nearest, interpolate, index, wrap-index), `edgeMode` (clamp, wrap). **Behavior — this node's own concrete mode contract** (the catalog names the four modes, not their exact semantics): `nearest`/`interpolate` treat `in` as a normalised bipolar position (-1..1 remapped to 0..1, then scaled across the buffer — always bipolar as of `wiki/plans/PropsAndMacroRedesign.md` Batch D, the old `polarity` selector is gone); `index`/`wrapIndex` treat `in` as a literal element index, no position remap applied (an index has no natural normalised meaning); `wrapIndex` always wraps regardless of `edgeMode`, plain `index` respects it. Only `stride() == 1` buffers (both real producers) are meaningfully supported today.
 
 #### `data.record` — Record 📋 *(Correction 2)*
 Captures live audio into a `Data(sample)` buffer, real-time-safe — the node
@@ -729,6 +729,18 @@ further step needed.
 #### `util.reroute` — Reroute ✅
 A pure passthrough with no fixed type of its own — a cable-routing waypoint for
 untangling a busy layout, nothing else. **In:** `in`. **Out:** `out` (adopts the source's signal type *and* quantity — a real, polymorphic port, not hardcoded Audio). Layout waypoint. "Not connectable" reports against this node are tracked as a UI-layer bug in `NODES_Gaps.md`, not a missing feature — the engine-side implementation reads correctly.
+
+#### `util.unipolarToBipolar` / `util.bipolarToUnipolar` — Unipolar to Bipolar / Bipolar to Unipolar ✅ *(`wiki/plans/PropsAndMacroRedesign.md` Batch D)*
+Thin, explicit, self-labeled converters between the two normalised modulation
+ranges — `in [0..1] -> out [-1..1]` and the inverse, clamped not extrapolated.
+**In:** `in`. **Out:** `out`. No structural parameters. Added alongside
+removing `random.stepped`/`seq.steps`/`data.lookup`'s old per-node Unipolar/
+Bipolar selectors (modulation is always bipolar by default now) — a thin
+wrapper over what `adapt.remap` already does (same shape as `adapt.normalise`/
+`adapt.map`/`adapt.pitchToFrequency`), for readability in the Add-menu rather
+than filling a capability gap: a Unipolar<->Bipolar quantity mismatch already
+auto-resolves via `adapt.remap`'s own generic fallback. **Deliberately not
+auto-inserted** by `connectWithAutoAdapt` — manual placement only.
 
 ## view — listening and looking — all ✅
 
