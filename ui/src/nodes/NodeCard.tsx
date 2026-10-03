@@ -13,6 +13,7 @@ import { tokens } from '../theme/tokens'
 import { ValueSlider } from './ValueSlider'
 import { resolveSkew } from './sliderCurve'
 import { TriggerSelect } from './TriggerSelect'
+import { ToggleSwitch } from '../controls/ToggleSwitch'
 import { NodePreview } from './NodePreview'
 import { frameTypeForPreviewKind } from '../graph/previewSubscriptions'
 import { withRevealedGroupPorts } from '../graph/portGroups'
@@ -301,11 +302,15 @@ function PortRow({
   // unchanged. Which control renders depends on the *shape* of the
   // fallback: a numeric range gets a ValueSlider, a discrete preset list
   // (an event-type port with `options`, e.g. Random's Trigger dropdown)
-  // gets a TriggerSelect instead — both read/write the same value/onCommit
-  // slot, a plain option index in TriggerSelect's case.
+  // gets a TriggerSelect instead, and a Boolean port gets a ToggleSwitch
+  // (wiki/plans/PropsAndMacroRedesign.md Batch B — env.adsr's own "gate"
+  // port already declares hasFallbackWhenUnconnected and had no in-node
+  // control at all until this existed) — all three read/write the same
+  // value/onCommit slot.
   const editable = direction === 'input' && !connected && isEditableInNode(port)
   const showSlider = editable && hasNumericFallback(port)
-  const showTriggerSelect = editable && !showSlider && port.type === 'event' && !!port.options?.length
+  const showToggle = editable && !showSlider && classifyPortUiKind(port, isPoly) === 'boolean'
+  const showTriggerSelect = editable && !showSlider && !showToggle && port.type === 'event' && !!port.options?.length
   return (
     <div className={`node-row node-row-port node-row-${direction}`}>
       {direction === 'input' && <PortGlyph port={port} side="left" instanceId={instanceId} connected={connected} isPoly={isPoly} />}
@@ -321,6 +326,13 @@ function PortRow({
           isInteger={port.isInteger}
           unit={port.unit}
           skew={resolveSkew(port.curve, port.quantity)}
+          color={portUiStyle(port, isPoly).color}
+          onCommit={onCommit}
+        />
+      ) : showToggle ? (
+        <ToggleSwitch
+          label={port.label || humanizeId(port.id)}
+          value={value ?? port.defaultValue}
           color={portUiStyle(port, isPoly).color}
           onCommit={onCommit}
         />
@@ -397,6 +409,7 @@ function ParameterRow({
   isInteger,
   unit,
   skew,
+  isBool,
   options,
   onCommit,
 }: {
@@ -411,6 +424,13 @@ function ParameterRow({
   isInteger: boolean
   unit: string
   skew?: number
+  /** `kind === 'bool'` (wiki/plans/PropsAndMacroRedesign.md Batch B) —
+      renders a ToggleSwitch instead of a numeric ValueSlider. Closes the
+      same gap PortRow's own boolean branch closes, for a structural
+      ParameterDescriptor rather than a port (e.g. util.macro.isInteger
+      already declares `kind: ValueKind::Bool` engine-side and used to
+      render as a plain 0/1 slider for lack of this branch). */
+  isBool?: boolean
   options?: string[]
   onCommit?: (value: number) => void
 }) {
@@ -419,6 +439,8 @@ function ParameterRow({
     <div className="node-row node-row-parameter" key={id}>
       {options && options.length > 0 ? (
         <TriggerSelect label={displayName} options={options} selectedIndex={value} color={color} onCommit={onCommit} />
+      ) : isBool ? (
+        <ToggleSwitch label={displayName} value={value} color={color} onCommit={onCommit} />
       ) : (
         <ValueSlider
           label={displayName}
@@ -569,6 +591,7 @@ function StandardBody({ descriptor, state, instanceId }: { descriptor: NodeDescr
           isInteger={p.isInteger}
           unit={p.unit}
           skew={resolveSkew(p.curve, p.quantity, p.skew)}
+          isBool={p.kind === 'bool'}
           options={parameterOptions(p)}
           onCommit={parameterRowCommit(descriptor, state, p.id)}
         />
@@ -656,6 +679,7 @@ function HorizontalBody({ descriptor, state, instanceId }: { descriptor: NodeDes
             isInteger={p.isInteger}
             unit={p.unit}
             skew={resolveSkew(p.curve, p.quantity, p.skew)}
+            isBool={p.kind === 'bool'}
             options={parameterOptions(p)}
             onCommit={parameterRowCommit(descriptor, state, p.id)}
           />

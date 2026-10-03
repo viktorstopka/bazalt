@@ -69,6 +69,33 @@ TEST_CASE ("LogicToggleNode's reset forces false and wins over a coincident trig
     CHECK (step (1.0f, 0.0f) == 1.0f); // and a lone trigger works again afterwards
 }
 
+TEST_CASE ("LogicToggleNode's initialState parameter starts true and reset()/reset-port both return to it",
+           "[engine][nodes][logic][props-edit]")
+{
+    LogicToggleNode node;
+    node.setParameter ("logic.toggle.initialState", 1.0f);
+
+    float out = -1.0f;
+    auto step = [&] (float trigger, float reset)
+    {
+        const float inputs[2] = { trigger, reset };
+        node.processSample (inputs, &out);
+        return out;
+    };
+
+    CHECK (step (0.0f, 0.0f) == 1.0f); // starts true, not the old hardcoded false
+    CHECK (step (1.0f, 0.0f) == 0.0f); // flips off
+    CHECK (step (0.0f, 1.0f) == 1.0f); // reset -> initialState (true), not unconditionally false
+
+    node.reset();
+    CHECK (step (0.0f, 0.0f) == 1.0f); // voice-restart reset() also returns to initialState
+
+    // Re-arming initialState to false still works (not a one-way latch).
+    node.setParameter ("logic.toggle.initialState", 0.0f);
+    node.reset();
+    CHECK (step (0.0f, 0.0f) == 0.0f);
+}
+
 TEST_CASE ("LogicToggleNode ignores NaN as an event, and reset() returns it to false", "[engine][nodes][logic][M21]")
 {
     const auto nan = std::numeric_limits<float>::quiet_NaN();

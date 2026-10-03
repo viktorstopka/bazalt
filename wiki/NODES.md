@@ -463,7 +463,7 @@ rejected by `canConnect`.
 | `logic.boolean` | `in.0…in.N` (growable); structural `op` (AND/OR/XOR/NAND/NOR) | one node, not five |
 | `logic.not` | `in` → `out` (bool) | inverts a boolean signal |
 | `logic.compare` | `a`, `b`, `tolerance`; structural `op` | `=` uses `tolerance`, not exact float equality |
-| `logic.toggle` | `trigger`, `reset : Event` → `out` (bool) | flips on each trigger and holds until the next one or a reset — a button-like latched state |
+| `logic.toggle` | `trigger`, `reset : Event` → `out` (bool); structural `initialState` (bool) | flips on each trigger and holds until the next one or a reset — a button-like latched state; reset and voice-restart both return to `initialState`, not unconditionally false |
 | `logic.select` | `condition` (bool), `whenTrue`, `whenFalse` → `out` | a two-way switch/crossfade between two signals, driven by a boolean; audio crossfades over a few samples to avoid clicks |
 
 ## adapt — the conversion family — all ✅

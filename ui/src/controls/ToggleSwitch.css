@@ -1,0 +1,58 @@
+/* Same shell as .value-slider/.trigger-select — one pill visual language
+   for every in-node fallback control, numeric, discrete, or boolean. */
+.toggle-switch {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  height: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  padding: 0 8px;
+  border: var(--stroke-thin) solid;
+  border-radius: var(--radius-sm);
+  background: var(--color-panel);
+  cursor: pointer;
+  user-select: none;
+}
+
+.toggle-switch-label {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+
+/* A small rounded track + sliding thumb — the standard on/off switch shape,
+   distinct from TriggerSelect's dropdown-value text so the two discrete
+   controls don't read as the same thing at a glance. */
+.toggle-switch-track {
+  position: relative;
+  flex-shrink: 0;
+  width: 24px;
+  height: 12px;
+  border: var(--stroke-thin) solid;
+  border-radius: 999px;
+  background: transparent;
+  transition: background 0.1s ease;
+}
+
+.toggle-switch-thumb {
+  position: absolute;
+  top: 1px;
+  left: 1px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--color-textPrimary);
+  transition: transform 0.1s ease;
+}
+
+.toggle-switch-track-on .toggle-switch-thumb {
+  transform: translateX(12px);
+  /* Thumb reads against the now-filled track in the panel background
+     colour rather than the track's own colour, so it stays visible at any
+     port colour rather than disappearing into a same-coloured track. */
+  background: var(--color-panel);
+}
