@@ -15,9 +15,18 @@ import { tokens } from '../theme/tokens'
 // branch below is; callers pass it in as `isPoly`.
 export type PortUiKind = 'audio-scalar' | 'audio-poly' | 'modulation' | 'value' | 'integer' | 'trigger' | 'boolean' | 'note' | 'data'
 
-/** SignalType::Control ports with no unit and a 0-1 range render as
-    Modulation (orange); anything else numeric renders as Value (white),
-    or Integer (yellow) if isInteger is set. See NODE_EDITOR.md §5.
+/** SignalType::Control ports tagged Quantity::Unipolar/Bipolar render as
+    Modulation (orange); anything else numeric renders as Value (white), or
+    Integer (yellow) if isInteger is set. See NODE_EDITOR.md §5.
+
+    wiki/plans/PropsAndMacroRedesign.md Batch A5: this used to be a numeric
+    coincidence (`!unit && minValue===0 && maxValue===1`) that never read
+    `quantity` at all — wiki/NODES.System.md §2 is explicit that "this
+    [Unipolar/Bipolar] distinction, not the signal type, is what the UI
+    colours," so a genuinely Bipolar -1..1 port (which that old check
+    missed entirely) now gets the Modulation colour it was always supposed
+    to, and the colour no longer depends on a port coincidentally declaring
+    the literal bounds 0/1.
 
     `isPoly` (default false) picks Audio's Scalar-vs-Poly colour split
     (wiki/plans/DomainRedesign.md Batch 4) — irrelevant to every other
@@ -27,7 +36,7 @@ export type PortUiKind = 'audio-scalar' | 'audio-poly' | 'modulation' | 'value' 
     `port.isPolyPlaceholder` field through as this same argument.
 */
 export function classifyPortUiKind(
-  port: Pick<PortDescriptor, 'type' | 'unit' | 'minValue' | 'maxValue' | 'isInteger'>,
+  port: Pick<PortDescriptor, 'type' | 'isInteger' | 'quantity'>,
   isPoly = false
 ): PortUiKind {
   const type: SignalType = port.type
@@ -56,16 +65,7 @@ export function classifyPortUiKind(
 
   if (port.isInteger) return 'integer'
 
-  // Direct feedback: an UNDECLARED range must not be treated the same as a
-  // genuinely-declared 0-1 one — a port with no minValue/maxValue at all
-  // (adapt.remap's "out", math.add/math.multiply's "out", any node whose
-  // output range is inherently context-dependent) was rendering as
-  // Modulation-orange purely because null happened to satisfy this check,
-  // not because it's actually a normalised 0-1 signal. "They're just
-  // numbers" (white/Value) is the correct default for an unknown range;
-  // Modulation is reserved for a port that actually declares 0-1.
-  const isNormalisedZeroToOne = port.minValue === 0 && port.maxValue === 1
-  if (!port.unit && isNormalisedZeroToOne) return 'modulation'
+  if (port.quantity === 'unipolar' || port.quantity === 'bipolar') return 'modulation'
 
   return 'value'
 }
@@ -94,7 +94,7 @@ export const PORT_UI_STYLE: Record<PortUiKind, PortUiStyle> = {
 }
 
 export function portUiStyle(
-  port: Pick<PortDescriptor, 'type' | 'unit' | 'minValue' | 'maxValue' | 'isInteger'>,
+  port: Pick<PortDescriptor, 'type' | 'isInteger' | 'quantity'>,
   isPoly = false
 ): PortUiStyle {
   return PORT_UI_STYLE[classifyPortUiKind(port, isPoly)]

@@ -11,6 +11,7 @@ import { classifyPortUiKind, portUiStyle, parameterUiColor, resolvePortIsPoly } 
 import type { NodeMultiplicityBadge, PortMultiplicityInfo } from '../graph/graphCommands'
 import { tokens } from '../theme/tokens'
 import { ValueSlider } from './ValueSlider'
+import { resolveSkew } from './sliderCurve'
 import { TriggerSelect } from './TriggerSelect'
 import { NodePreview } from './NodePreview'
 import { frameTypeForPreviewKind } from '../graph/previewSubscriptions'
@@ -319,6 +320,7 @@ function PortRow({
           defaultValue={port.defaultValue}
           isInteger={port.isInteger}
           unit={port.unit}
+          skew={resolveSkew(port.curve, port.quantity)}
           color={portUiStyle(port, isPoly).color}
           onCommit={onCommit}
         />
@@ -394,6 +396,7 @@ function ParameterRow({
   defaultValue,
   isInteger,
   unit,
+  skew,
   options,
   onCommit,
 }: {
@@ -407,6 +410,7 @@ function ParameterRow({
   defaultValue?: number
   isInteger: boolean
   unit: string
+  skew?: number
   options?: string[]
   onCommit?: (value: number) => void
 }) {
@@ -426,6 +430,7 @@ function ParameterRow({
           defaultValue={defaultValue}
           isInteger={isInteger}
           unit={unit}
+          skew={skew}
           color={color}
           onCommit={onCommit}
         />
@@ -563,6 +568,7 @@ function StandardBody({ descriptor, state, instanceId }: { descriptor: NodeDescr
           defaultValue={p.defaultValue}
           isInteger={p.isInteger}
           unit={p.unit}
+          skew={resolveSkew(p.curve, p.quantity, p.skew)}
           options={parameterOptions(p)}
           onCommit={parameterRowCommit(descriptor, state, p.id)}
         />
@@ -649,6 +655,7 @@ function HorizontalBody({ descriptor, state, instanceId }: { descriptor: NodeDes
             defaultValue={p.defaultValue}
             isInteger={p.isInteger}
             unit={p.unit}
+            skew={resolveSkew(p.curve, p.quantity, p.skew)}
             options={parameterOptions(p)}
             onCommit={parameterRowCommit(descriptor, state, p.id)}
           />

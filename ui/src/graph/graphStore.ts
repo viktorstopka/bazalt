@@ -970,7 +970,7 @@ export function spliceInsert(wireIdToSplice: string, typeId: string, x: number, 
     stay invisible for the single most common case and only misencode the
     other nine.
 */
-const QUANTITY_ORDER: readonly Quantity[] = [
+export const QUANTITY_ORDER: readonly Quantity[] = [
   'dimensionless',
   'frequency',
   'pitch',
@@ -985,6 +985,18 @@ const QUANTITY_ORDER: readonly Quantity[] = [
 function quantityOrdinal(quantity: Quantity): number {
   const index = QUANTITY_ORDER.indexOf(quantity)
   return index >= 0 ? index : 0
+}
+/** The decode direction of the same table — reading a macro's own stored
+    `util.macro.quantity` ordinal back out (App.tsx's macro top panel,
+    NodeCard.tsx's in-node rows) rather than hand-keeping a second copy of
+    this order-sensitive array. Out-of-range (shouldn't happen, but a
+    corrupt/future patch file is still just data) falls back to
+    Dimensionless, same as the engine's own `juce::jlimit` clamp in
+    MacroNode::setParameter does for an out-of-range value.
+*/
+export function quantityFromOrdinal(value: number): Quantity {
+  const index = Math.round(value)
+  return QUANTITY_ORDER[index] ?? 'dimensionless'
 }
 
 interface MacroSeed {

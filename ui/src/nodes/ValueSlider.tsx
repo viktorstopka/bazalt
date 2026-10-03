@@ -67,6 +67,7 @@
 // for everything regardless of what the descriptor actually says.
 import { useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, type WheelEvent as ReactWheelEvent } from 'react'
 import './ValueSlider.css'
+import { fromNormalizedPosition, toNormalizedPosition } from './sliderCurve'
 
 export interface ValueSliderProps {
   label: string
@@ -103,6 +104,23 @@ export interface ValueSliderProps {
   isInteger: boolean
   unit: string
   color: string
+  /** Pre-resolved drag/wheel/fill curve exponent (sliderCurve.ts's
+      resolveSkew — ValueSlider itself stays agnostic of Curve/Quantity
+      vocabulary, matching its existing "range is the caller's choice"
+      philosophy). 1 (the default) is plain linear, unchanged from before
+      this existed. Direct feedback: attack/decay/release etc. already
+      declare Curve::Logarithmic engine-side (ValueTypes::timeSecondsPort)
+      and had since M14 — this was a wiring gap, not a missing feature.
+  */
+  skew?: number
+  /** Display-only decimal count override (wiki/plans/PropsAndMacroRedesign.md
+      Batch A2/A3) — defaults to the existing `isInteger ? 0 : 2` when
+      omitted, so every call site that doesn't pass one keeps today's
+      behaviour exactly. Never affects what's actually stored/committed,
+      only `formatValue`'s non-editing display text — see `commit()` below
+      for why storage itself is no longer rounded to this count at all.
+  */
+  decimals?: number
   /** Omitted (the M9 gallery's static call sites): the slider still drags/
       types locally so it's visually demonstrable, it just never persists
       anywhere — see the internal `uncontrolledValue` fallback below.
@@ -118,18 +136,32 @@ const PRECISION_FACTOR = 0.15 // holding Shift: drag/scroll move the value at ~1
 function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value))
 }
-function roundTo(value: number, decimals: number): number {
-  const factor = 10 ** decimals
-  return Math.round(value * factor) / factor
-}
+// Display-only rounding (Batch A2) — never applied to a committed/stored
+// value, only to the non-editing <span>'s text. See ValueSlider's own
+// `quantize()` for what actually gates the stored value (clamp + integer
+// rounding only, no decimal truncation for a float).
 function formatValue(value: number, decimals: number): string {
   return value.toFixed(decimals)
 }
+// Full-precision text for the edit <input>'s initial value — opening the
+// field to nudge a value must never silently snap it to the 2-decimal
+// display string first (an integer is already exact, so it still goes
+// through formatValue for a clean "5" rather than "5.000000000001").
+function formatForEditing(value: number, isInteger: boolean, decimals: number): string {
+  return isInteger ? formatValue(value, decimals) : String(value)
+}
 
-export function ValueSlider({ label, value, min, max, hardMin, hardMax, defaultValue, isInteger, unit, color, onCommit }: ValueSliderProps) {
-  const decimals = isInteger ? 0 : 2
+export function ValueSlider({ label, value, min, max, hardMin, hardMax, defaultValue, isInteger, unit, color, skew, decimals: decimalsProp, onCommit }: ValueSliderProps) {
+  const decimals = decimalsProp ?? (isInteger ? 0 : 2)
+  const curveSkew = skew ?? 1
   const clampMin = hardMin ?? -Infinity
   const clampMax = hardMax ?? Infinity
+  // Direct feedback: "the prop is saved in much more [precision than the
+  // 2-decimal display]" — a real hard bound (hardMin/hardMax both declared)
+  // still clamps the stored value fully, this only gates whether the fill
+  // bar renders at all (Batch A4 — a genuinely unbounded port, e.g.
+  // adapt.remap's own in/out, shouldn't imply a range that doesn't exist).
+  const hasBounds = hardMin !== undefined && hardMax !== undefined
 
   // No onCommit (gallery demo context): the slider becomes its own
   // uncontrolled source of truth instead of silently doing nothing on
@@ -185,19 +217,38 @@ export function ValueSlider({ label, value, min, max, hardMin, hardMax, defaultV
   }, [])
 
   const displayValue = liveValue ?? committedValue
-  const fraction = clamp((displayValue - min) / (max - min || 1), 0, 1)
+  // Curve-aware (sliderCurve.ts) — skew===1 (everything that doesn't
+  // declare a real curve) reduces to the old plain-linear fraction exactly.
+  // toNormalizedPosition itself stays unclamped past [0,1] for a linear
+  // slider (so drag/wheel can keep moving an unbounded value past its
+  // visual range — see that function's own comment); the fill width is the
+  // one place that must still cap at 0%/100%, same as before this change.
+  const fraction = clamp(toNormalizedPosition(displayValue, min, max, curveSkew), 0, 1)
+
+  // Direct feedback: "the prop is saved in much more [precision]... the
+  // display when not editing is rounded to 2 decimal places" — commit/live-
+  // preview only clamp (and, for an integer value, round to a whole
+  // number); a float is never rounded to `decimals` on the way to storage,
+  // only `formatValue` below rounds for the non-editing display text.
+  const quantize = (next: number): number => {
+    const clamped = clamp(next, clampMin, clampMax)
+    return isInteger ? Math.round(clamped) : clamped
+  }
 
   const commit = (next: number): void => {
-    commitOut(roundTo(clamp(next, clampMin, clampMax), decimals))
+    commitOut(quantize(next))
   }
 
   // Distance (px) the drag needs to cover, on either axis, to sweep the
-  // full min-max range — the slider's own current width, so a wider/taller
-  // instance naturally gets proportionally coarser-per-pixel movement
-  // instead of a fixed magic-number sensitivity.
+  // full 0..1 drag/wheel POSITION (not the raw value range — see
+  // sliderCurve.ts: a curved slider's drag feel stays constant-per-pixel in
+  // position-space, only the position->value warp is curved) — the
+  // slider's own current width, so a wider/taller instance naturally gets
+  // proportionally coarser-per-pixel movement instead of a fixed
+  // magic-number sensitivity.
   const sensitivity = (): number => {
     const width = rootRef.current?.getBoundingClientRect().width || 150
-    return (max - min) / width
+    return 1 / width
   }
 
   const onMouseDown = (e: ReactMouseEvent<HTMLDivElement>): void => {
@@ -241,8 +292,10 @@ export function ValueSlider({ label, value, min, max, hardMin, hardMax, defaultV
       // precise").
       const factor = ev.shiftKey ? PRECISION_FACTOR : 1
       const current = liveValueRef.current ?? startValue
-      const next = current + (stepDx - stepDy) * sensitivity() * factor
-      updateLiveValue(roundTo(clamp(next, clampMin, clampMax), decimals))
+      const currentPosition = toNormalizedPosition(current, min, max, curveSkew)
+      const nextPosition = currentPosition + (stepDx - stepDy) * sensitivity() * factor
+      const next = fromNormalizedPosition(nextPosition, min, max, curveSkew)
+      updateLiveValue(quantize(next))
     }
     const onUp = (): void => {
       window.removeEventListener('mousemove', onMove)
@@ -271,9 +324,10 @@ export function ValueSlider({ label, value, min, max, hardMin, hardMax, defaultV
     e.preventDefault()
     e.stopPropagation()
     const factor = e.shiftKey ? PRECISION_FACTOR : 1
-    const step = (max - min) * WHEEL_STEP_FRACTION * factor
+    const step = WHEEL_STEP_FRACTION * factor // a position-space fraction now, not a value-space one — see sliderCurve.ts
     const direction = e.deltaY < 0 ? 1 : -1 // scrolling "up"/away increases, matching most DAW conventions
-    const next = roundTo(clamp((liveValueRef.current ?? committedValue) + direction * step, clampMin, clampMax), decimals)
+    const currentPosition = toNormalizedPosition(liveValueRef.current ?? committedValue, min, max, curveSkew)
+    const next = quantize(fromNormalizedPosition(currentPosition + direction * step, min, max, curveSkew))
     updateLiveValue(next)
     if (wheelTimeoutRef.current !== null) window.clearTimeout(wheelTimeoutRef.current)
     wheelTimeoutRef.current = window.setTimeout(() => {
@@ -346,12 +400,12 @@ export function ValueSlider({ label, value, min, max, hardMin, hardMax, defaultV
       }}
       onContextMenu={(e) => e.stopPropagation()}
     >
-      <div className="value-slider-fill" style={{ width: `${fraction * 100}%`, background: color }} />
+      {hasBounds && <div className="value-slider-fill" style={{ width: `${fraction * 100}%`, background: color }} />}
       {editing ? (
         <input
           className="value-slider-input"
           autoFocus
-          defaultValue={formatValue(committedValue, decimals)}
+          defaultValue={formatForEditing(committedValue, isInteger, decimals)}
           onFocus={(e) => e.currentTarget.select()}
           onMouseDown={(e) => e.stopPropagation()}
           onClick={(e) => e.stopPropagation()}

@@ -1,11 +1,12 @@
 import { useRef, useState } from 'react'
 import { InfiniteCanvas, type InfiniteCanvasHandle, type SnapSettings } from './canvas/InfiniteCanvas'
 import { AnalysisPanel } from './analysis/AnalysisPanel'
-import { redo, undo, type GraphNode } from './graph/graphStore'
+import { redo, undo, quantityFromOrdinal, type GraphNode } from './graph/graphStore'
 import { graphExportSnapshot } from './graph/graphCommands'
 import { useGraphSnapshot } from './graph/useGraphSnapshot'
 import { MacroKnob } from './controls/MacroKnob'
 import { classifyPortUiKind, PORT_UI_STYLE } from './graph/portUiKind'
+import type { Quantity } from './graph/descriptorTypes'
 import './App.css'
 
 /** A plain curved-arrow pair, not an icon font/library — small enough not
@@ -48,6 +49,7 @@ const MACRO_SLOT_PARAM = 'util.macro.slot'
 const MACRO_MIN_PARAM = 'util.macro.min'
 const MACRO_MAX_PARAM = 'util.macro.max'
 const MACRO_IS_INTEGER_PARAM = 'util.macro.isInteger'
+const MACRO_QUANTITY_PARAM = 'util.macro.quantity'
 
 interface MacroEntry {
   slot: number
@@ -56,6 +58,7 @@ interface MacroEntry {
   max: number
   isInteger: boolean
   unit: string
+  quantity: Quantity
   color: string
 }
 
@@ -80,7 +83,8 @@ function macroEntriesFrom(nodes: readonly GraphNode[]): MacroEntry[] {
     const max = node.parameterValues?.[MACRO_MAX_PARAM] ?? 1
     const isInteger = (node.parameterValues?.[MACRO_IS_INTEGER_PARAM] ?? 0) >= 0.5
     const unit = node.macroUnit ?? ''
-    const kind = classifyPortUiKind({ type: 'control', unit, minValue: min, maxValue: max, isInteger })
+    const quantity = quantityFromOrdinal(node.parameterValues?.[MACRO_QUANTITY_PARAM] ?? 0)
+    const kind = classifyPortUiKind({ type: 'control', isInteger, quantity })
 
     entries.push({
       slot,
@@ -89,6 +93,7 @@ function macroEntriesFrom(nodes: readonly GraphNode[]): MacroEntry[] {
       max,
       isInteger,
       unit,
+      quantity,
       color: PORT_UI_STYLE[kind].color,
     })
   }
