@@ -7,7 +7,8 @@
 // source of truth.
 import { useMemo } from 'react'
 import type { NodeDescriptor, ParameterDescriptor, PortDescriptor } from '../graph/descriptorTypes'
-import { classifyPortUiKind, portUiStyle, parameterUiColor, resolvePortIsPoly } from '../graph/portUiKind'
+import { classifyPortUiKind, portUiStyle, portUiStyleForEndpoint, parameterUiColor, resolvePortIsPoly } from '../graph/portUiKind'
+import { getEndpoint } from '../graph/graphStore'
 import type { NodeMultiplicityBadge, PortMultiplicityInfo } from '../graph/graphCommands'
 import { tokens } from '../theme/tokens'
 import { ValueSlider } from './ValueSlider'
@@ -201,6 +202,25 @@ function hasNumericFallback(port: PortDescriptor): boolean {
   return kind === 'modulation' || kind === 'value' || kind === 'integer'
 }
 
+/** wiki/plans/PropsAndMacroRedesign.md Batch C: a polymorphic port's own
+    static descriptor only carries its unconnected DEFAULT type/colour
+    (Glance's own "in"/"out" default to Audio-pink, even though it accepts
+    Audio/Control/Boolean/Event) — the same live resolution
+    InfiniteCanvas.tsx's cables already use (graphStore.ts's getEndpoint())
+    is needed here too, closing a real asymmetry: a wired Glance's cable
+    recoloured live while its own node-body dot stayed frozen at the stale
+    default. No-ops (falls back to the plain static style) for a
+    non-polymorphic port, or with no `instanceId` (the M9 gallery's static
+    call sites, which have no live graph to resolve against).
+*/
+function resolvedPortStyle(port: PortDescriptor, instanceId: string | undefined, direction: 'input' | 'output', isPoly?: boolean) {
+  if (instanceId && port.polymorphism && port.polymorphism !== 'none') {
+    const endpoint = getEndpoint(instanceId, port.id, direction)
+    if (endpoint) return portUiStyleForEndpoint(endpoint, isPoly)
+  }
+  return portUiStyle(port, isPoly)
+}
+
 /** A port's glyph has two states, independent of its type colour: an
     unconnected, editable-in-node INPUT renders as a plain dot ("supposed to
     be a dot, more so than a capsule shape" — direct feedback) meaning
@@ -223,11 +243,11 @@ function PortGlyph({
   connected: boolean
   isPoly?: boolean
 }) {
-  const style = portUiStyle(port, isPoly)
-  const color = style.color
   // "side" is a 1:1 proxy for direction at every call site in this file
   // (input always renders left, output always right).
   const direction = side === 'left' ? 'input' : 'output'
+  const style = resolvedPortStyle(port, instanceId, direction, isPoly)
+  const color = style.color
   const showDot = direction === 'input' && !connected && isEditableInNode(port)
   // Every port glyph is the SAME size everywhere, full stop — no per-row
   // variant (direct feedback: "the arrows vary in size... this needs to be
@@ -252,8 +272,22 @@ function PortGlyph({
   )
 }
 
-function PortLabel({ port, connected, demoValue, isPoly }: { port: PortDescriptor; connected: boolean; demoValue?: string; isPoly?: boolean }) {
-  const style = portUiStyle(port, isPoly)
+function PortLabel({
+  port,
+  direction,
+  instanceId,
+  connected,
+  demoValue,
+  isPoly,
+}: {
+  port: PortDescriptor
+  direction: 'input' | 'output'
+  instanceId?: string
+  connected: boolean
+  demoValue?: string
+  isPoly?: boolean
+}) {
+  const style = resolvedPortStyle(port, instanceId, direction, isPoly)
   return (
     <span className="node-port-label" style={{ color: style.color }}>
       {port.label || humanizeId(port.id)}
@@ -345,7 +379,7 @@ function PortRow({
           onCommit={onCommit}
         />
       ) : (
-        <PortLabel port={port} connected={connected} demoValue={demoValue} isPoly={isPoly} />
+        <PortLabel port={port} direction={direction} instanceId={instanceId} connected={connected} demoValue={demoValue} isPoly={isPoly} />
       )}
       {direction === 'output' && <PortGlyph port={port} side="right" instanceId={instanceId} connected isPoly={isPoly} />}
     </div>
@@ -375,7 +409,7 @@ function MergedRowView({
   // text covers it.
   const label = row.output.label || row.input.label || humanizeId(row.output.id)
   const isPolyOutput = resolvePortIsPoly(row.output, multiplicity)
-  const lineColor = portUiStyle(row.output, isPolyOutput).color
+  const lineColor = resolvedPortStyle(row.output, instanceId, 'output', isPolyOutput).color
   return (
     <div className="node-row node-row-port node-row-merged">
       <span className="node-merged-line" aria-hidden="true" style={{ background: lineColor }} />
@@ -720,7 +754,7 @@ function SingletonGlyph({
   connected: boolean
   isPoly?: boolean
 }) {
-  const style = portUiStyle(port, isPoly)
+  const style = resolvedPortStyle(port, instanceId, direction, isPoly)
   const color = style.color
   const showDot = direction === 'input' && !connected && isEditableInNode(port)
   // Deliberately NOT the border-piercing PortGlyph used elsewhere: adjacent

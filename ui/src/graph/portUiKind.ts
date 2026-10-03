@@ -3,6 +3,7 @@
 // than being a separate type system the engine and UI could drift apart on.
 import type { PortDescriptor, SignalType } from './descriptorTypes'
 import type { PortMultiplicityInfo } from './graphCommands'
+import type { ConnectionEndpoint } from './canConnect'
 import { tokens } from '../theme/tokens'
 
 // wiki/plans/DomainRedesign.md Batch 4: 'audio' splits into 'audio-scalar'/
@@ -98,6 +99,24 @@ export function portUiStyle(
   isPoly = false
 ): PortUiStyle {
   return PORT_UI_STYLE[classifyPortUiKind(port, isPoly)]
+}
+
+/** wiki/plans/PropsAndMacroRedesign.md Batch C: a polymorphic port
+    (`polymorphism !== 'none'` — view.glance, util.reroute, logic.select,
+    adapt.sampleHold, view.scope/meter) with nothing resolvable feeding it
+    yet has no real type to colour by — its declared default (e.g. Glance's
+    own Audio) is just a fallback for the compiler, not a claim "this only
+    takes Audio." graphStore.ts's endpointFor() already computes exactly
+    this as `unresolved: true`; this is the one place that turns it into
+    the right colour (Value/white) instead of classifying the stale
+    default — used by both the canvas's live cable colouring and
+    NodeCard.tsx's own port dot, so the two always agree (closing a real
+    asymmetry: the cable used to recolour live while the node's own dot
+    stayed frozen at the static per-typeId descriptor).
+*/
+export function portUiStyleForEndpoint(endpoint: Pick<ConnectionEndpoint, 'port' | 'unresolved'>, isPoly = false): PortUiStyle {
+  if (endpoint.unresolved) return PORT_UI_STYLE.value
+  return portUiStyle(endpoint.port, isPoly)
 }
 
 /** Scalar-vs-Poly for one port, live per-port multiplicity data first

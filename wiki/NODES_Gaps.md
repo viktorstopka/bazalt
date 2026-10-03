@@ -767,6 +767,73 @@ identities") confirms two separately-constructed processors never collide.
 launched, confirmed a genuinely new, uniquely-named subfolder appears under
 `%TEMP%/Bazalt/WebView2/` for that run.
 
+## Part 5 — found during `wiki/plans/PropsAndMacroRedesign.md`'s implementation
+
+### Every committed float value was lossily truncated to 2 decimals — FIXED (Batch A, 2026-10-03)
+
+`ValueSlider.tsx`'s `commit()` rounded every committed value to the same
+decimal count used for its non-editing *display* (`isInteger ? 0 : 2`)
+before ever calling `onCommit` — i.e. the real stored/engine value was
+truncated, not just shown that way. A value like a fine frequency tweak
+landing on 1234.567 Hz got silently stored as 1234.57. Storage is now full
+precision (clamp + integer-rounding only); the 2dp display is unaffected.
+
+### Attack/decay/release etc. already declared a logarithmic curve the UI never read — FIXED (Batch A, 2026-10-03)
+
+`env.adsr`'s attack/decay/release have declared `Curve::Logarithmic`
+(`ValueTypes::timeSecondsPort`) since M14, but `ValueSlider.tsx`'s drag/
+wheel/fill math was pure linear regardless — a textbook case for a
+log-feeling slider (short, musically-common attack times like 0.05s were
+nearly unreachable on a 0-10s linear drag) went unwired for several
+milestones. New `ui/src/nodes/sliderCurve.ts` + a `skew` prop (JUCE's own
+power-curve convention, matching `ParameterDescriptor.skew`) finish the
+wiring — no engine change needed, the metadata already existed.
+
+### Dropdown row spacing cramped — FIXED (Batch A, 2026-10-03)
+
+`TriggerSelect.css`'s `.trigger-select-option` rows used `padding: 5px 8px`
+with no explicit `line-height`, reading as cramped/cut-off. Different root
+cause from the earlier "Dropdowns not opening" entry above (that one was
+the whole menu clipped to zero height by an inherited `overflow: hidden`,
+already fixed) — this is plain insufficient spacing on an already-visible
+menu. Bumped to `padding: 8px 10px; line-height: 1.4`.
+
+### A genuinely unbounded port's fill bar implied a range that doesn't exist — FIXED (Batch A, 2026-10-03)
+
+`ValueSlider.tsx` rendered its fill bar unconditionally against whatever
+fallback 0-10 visual range the caller passed for a port with no real
+`minValue`/`maxValue` (`adapt.remap`'s own `in`/`out`, any Control with an
+inherently context-dependent range) — looking exactly like a declared,
+meaningful bound. Now gated on `hardMin !== undefined && hardMax !==
+undefined` (a `ParameterDescriptor` is never genuinely unbounded by
+construction, so this only ever changes behavior for ports).
+
+### Modulation colouring was a numeric coincidence, missing real Bipolar ports — FIXED (Batch A, 2026-10-03)
+
+`classifyPortUiKind` decided "Modulation" (orange) from
+`!unit && minValue===0 && maxValue===1`, never reading `quantity` at all —
+`wiki/NODES.System.md` §2 is explicit the Unipolar/Bipolar *quantity*, not
+a coincidental numeric range, is what should drive this. A genuinely
+Bipolar -1..1 port rendered plain white ('value') instead of orange. Now
+reads `quantity === 'unipolar' | 'bipolar'` directly.
+
+### A polymorphic port's own node-body dot stayed frozen while its cable recoloured live — FIXED (Batch C, 2026-10-03)
+
+`view.glance` and the other `signalAndQuantity`-polymorphic nodes
+(`util.reroute`, `logic.select`, `adapt.sampleHold`, `view.scope`/`meter`)
+declare a default SignalType (Glance: Audio) purely as an unconnected
+fallback — but an unwired Glance rendered Audio-pink regardless, implying
+it only accepts Audio. Worse: `InfiniteCanvas.tsx`'s cables already
+recoloured live via `graphStore.ts`'s `endpointFor()`/`unresolved`
+resolution, but `NodeCard.tsx`'s own `PortGlyph`/`PortLabel`/
+`SingletonGlyph` read color from the static per-typeId descriptor, so a
+WIRED Glance's cable showed the real live type while its own node-body dot
+stayed stuck at the stale default — a real, user-visible asymmetry. Fixed
+with one shared `portUiStyleForEndpoint()` (white when `unresolved`) and a
+`resolvedPortStyle()` helper in `NodeCard.tsx` that calls the same live
+`getEndpoint()` resolution the canvas already used, for any port declaring
+`polymorphism !== 'none'`.
+
 ## Full node list checked (55 files, `engine/include/bazalt/engine/nodes/`)
 
 ConstantNode, OutputNode, DelayNode, ListenNode, NoiseBurstNode, NormaliseNode,

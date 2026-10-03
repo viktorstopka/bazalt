@@ -6,7 +6,7 @@ import { hexToRgb, type Camera } from './webgl/webglUtils'
 import { GraphSurface } from '../graph/GraphSurface'
 import { AddMenu } from '../graph/AddMenu'
 import { buildAnchorMap, measureNodeLocalPortOffsets, portKey, type PortAnchor } from '../graph/portAnchors'
-import { portUiStyle, resolvePortIsPoly } from '../graph/portUiKind'
+import { portUiStyleForEndpoint, resolvePortIsPoly } from '../graph/portUiKind'
 import { canConnect, type ConnectionEndpoint } from '../graph/canConnect'
 import {
   addNode,
@@ -496,7 +496,7 @@ export const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, InfiniteCanvasPro
       // snapshot's `multiplicity` map) now renders green too, not only a
       // gallery/mock cable.
       const isPoly = resolvePortIsPoly(endpoint.port, getGraphSnapshot().multiplicity.get(endpoint.nodeId)?.ports)
-      return hexToRgb(portUiStyle(endpoint.port, isPoly).color)
+      return hexToRgb(portUiStyleForEndpoint(endpoint, isPoly).color)
     }
 
     const distanceToSegment = (p: Point, a: Point, b: Point): number => {
