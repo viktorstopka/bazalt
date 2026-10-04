@@ -644,6 +644,23 @@ namespace bazalt
         return result;
     }
 
+    bool GraphEditController::isLiveEditable (const juce::String& nodeId, const juce::String& parameterId) const
+    {
+        const auto* instance = graph.findNode (nodeId);
+        if (instance == nullptr)
+            return false;
+        const auto node = processor.getNodeFactory().create (instance->type);
+        if (node == nullptr)
+            return false;
+        for (const auto& port : node->getInputPorts())
+            if (port.id == parameterId)
+                return port.hasFallbackWhenUnconnected;
+        for (const auto& parameter : node->getParameters())
+            if (parameter.id == parameterId)
+                return ! parameter.isStructural;
+        return false;
+    }
+
     GraphEditController::CommandResult GraphEditController::setParameterValue (const juce::String& nodeId,
                                                                                 const juce::String& parameterId,
                                                                                 float value)

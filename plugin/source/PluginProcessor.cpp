@@ -207,6 +207,7 @@ namespace bazalt
         graphEditController.prepare (sampleRate, samplesPerBlock);
 
         macroParameters.prepare (sampleRate);
+        liveParameterEdits.prepare (sampleRate);
 
         // Always stop before re-preparing: prepareToPlay can be called
         // again (e.g. sample rate change) while the thread is running, and
@@ -1178,12 +1179,14 @@ namespace bazalt
         // comment for why calling the old combined applyToPlans() once per
         // domain used to over-advance every macro's ~20ms ramp.
         macroParameters.advanceSmoothers (numSamples);
+        liveParameterEdits.advance (numSamples);
 
         if (monoOnly)
         {
             monoPlan = globalPlanSwapper.getCurrentPlanForAudioThread();
             bazalt::engine::ExecutionPlan* monoPlans[1] = { monoPlan };
             macroParameters.applyToPlans (monoPlans, 1, numSamples);
+            liveParameterEdits.applyToPlans (monoPlans, 1);
         }
         else
         {
@@ -1200,6 +1203,7 @@ namespace bazalt
                     plans[(size_t) i] = bundle.voicePlanSwappers[(size_t) i].getCurrentPlanForAudioThread();
 
                 macroParameters.applyToPlans (plans.data(), numVoices, numSamples);
+                liveParameterEdits.applyToPlans (plans.data(), numVoices);
 
                 // ADR-0029: switch the preview taps on for exactly one voice plan
                 // per origin. Cheap (8 relaxed loads), and it also corrects the
@@ -1223,8 +1227,11 @@ namespace bazalt
                 globalPlanForThisBlock = globalPlanSwapper.getCurrentPlanForAudioThread();
                 bazalt::engine::ExecutionPlan* globalPlans[1] = { globalPlanForThisBlock };
                 macroParameters.applyToPlans (globalPlans, 1, numSamples);
+                liveParameterEdits.applyToPlans (globalPlans, 1);
             }
         }
+
+        liveParameterEdits.retireFinished();
 
         auto renderRange = [&] (int start, int count)
         {

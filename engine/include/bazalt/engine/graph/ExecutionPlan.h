@@ -383,6 +383,27 @@ namespace bazalt::engine
         };
         MovableAtomicBool previewTapsEnabled;
 
+        /** A value-only edit (non-structural parameters / port fallback
+            values) keeps the running node instead of replacing it — no
+            click, no lost filter memory or oscillator phase. The compiler
+            must never touch a node the audio thread may be running, so the
+            new values travel with the plan and the AUDIO thread applies them
+            itself at the start of this plan's first process() — a block
+            boundary (CLAUDE.md rule 5). Built on the message thread at
+            compile time; never resized afterwards. */
+        struct PendingParameterUpdate
+        {
+            Node* node = nullptr;
+            juce::String parameterId;
+            float value = 0.0f;
+        };
+        std::vector<PendingParameterUpdate> pendingParameterUpdates;
+
+        /** Set by the audio thread once pendingParameterUpdates ran; read by
+            the compiler so a plan replaced before it ever played hands its
+            unapplied updates on to the next one. */
+        MovableAtomicBool pendingParametersApplied;
+
         void setPreviewTapsEnabled (bool enabled) noexcept { previewTapsEnabled.value.store (enabled, std::memory_order_relaxed); }
         bool arePreviewTapsEnabled() const noexcept { return previewTapsEnabled.value.load (std::memory_order_relaxed); }
 

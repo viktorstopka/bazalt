@@ -309,7 +309,32 @@ namespace bazalt
         {
             auto& controller = processor.getGraphEditController();
             const auto result = controller.setParameterValue (argString (args, 0), argString (args, 1), argFloat (args, 2));
+            // A commit ends any live drag of the same value (LiveParameterEdits.h):
+            // its slot glides to the final value and frees itself.
+            processor.getLiveParameterEdits().release (argString (args, 0), argString (args, 1));
             completion (commandResultToVar (result));
+        });
+
+        // While a slider is dragged: stream the value to the running nodes,
+        // smoothed, without recompiling (LiveParameterEdits.h). Only values a
+        // running node can take live — a port's fallback value or a
+        // non-structural parameter; anything else waits for the commit.
+        options = options.withNativeFunction ("graphSetParameterLive", [&processor] (Args args, Completion completion)
+        {
+            const auto nodeId = argString (args, 0);
+            const auto parameterId = argString (args, 1);
+            auto& live = processor.getLiveParameterEdits();
+            const auto ok = (live.isActive (nodeId, parameterId) || processor.getGraphEditController().isLiveEditable (nodeId, parameterId))
+                            && live.set (nodeId, parameterId, argFloat (args, 2));
+            completion (ok);
+        });
+
+        // The drag ended (with or without a commit): the slot glides to its
+        // last value and frees itself.
+        options = options.withNativeFunction ("graphReleaseParameterLive", [&processor] (Args args, Completion completion)
+        {
+            processor.getLiveParameterEdits().release (argString (args, 0), argString (args, 1));
+            completion (true);
         });
 
         options = options.withNativeFunction ("graphSetOutput", [&processor] (Args args, Completion completion)

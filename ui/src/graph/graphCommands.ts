@@ -70,6 +70,18 @@ export function graphSetParameterValue(nodeId: string, parameterId: string, valu
   return callCommand('graphSetParameterValue', nodeId, parameterId, value)
 }
 
+/** While a slider is dragged: the value goes to the running nodes, smoothed,
+    with no recompile and no undo step (plugin/source/LiveParameterEdits.h).
+    Resolves false for a value that can't change live (a structural
+    parameter) — that one simply takes effect on commit. */
+export async function graphSetParameterLive(nodeId: string, parameterId: string, value: number): Promise<boolean> {
+  return (await getNativeFunction('graphSetParameterLive')(nodeId, parameterId, value)) as boolean
+}
+
+export async function graphReleaseParameterLive(nodeId: string, parameterId: string): Promise<void> {
+  await getNativeFunction('graphReleaseParameterLive')(nodeId, parameterId)
+}
+
 export function graphMoveNode(nodeId: string, x: number, y: number): Promise<CommandResult> {
   return callCommand('graphMoveNode', nodeId, x, y)
 }

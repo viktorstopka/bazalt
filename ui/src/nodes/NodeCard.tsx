@@ -129,6 +129,9 @@ export interface NodeCardState {
   viewerCenterOverride?: number
   onSetViewerCenter?: (value: number) => void
   /** Phase-locked preview playhead mode: 0 Auto (default), 1 On, 2 Off. */
+  /** A slider mid-drag (value) or released (null) — streamed to the engine
+      live, smoothed, without a recompile (graphStore.ts's setParameterLive). */
+  onParameterLive?: (id: string, value: number | null) => void
   previewPlayheadMode?: number
   onSetPreviewPlayheadMode?: (mode: number) => void
   /** MacroEditTypeModal's own portal target (GraphSurface.tsx's
@@ -534,6 +537,7 @@ function ParameterRow({
   isBool,
   options,
   onCommit,
+  onLiveChange,
 }: {
   id: string
   displayName: string
@@ -564,6 +568,7 @@ function ParameterRow({
   isBool?: boolean
   options?: string[]
   onCommit?: (value: number) => void
+  onLiveChange?: (value: number | null) => void
 }) {
   const color = parameterUiColor({ isBool: isBool ?? false, isInteger, quantity })
   return (
@@ -586,6 +591,7 @@ function ParameterRow({
           skew={skew}
           color={color}
           onCommit={onCommit}
+          onLiveChange={onLiveChange}
         />
       )}
     </div>
@@ -709,16 +715,18 @@ function StandardBody({ descriptor, state, instanceId }: { descriptor: NodeDescr
   const connected = state.connectedPortIds ?? new Set<string>()
   const diagram = INLINE_DIAGRAMS[descriptor.typeId]
   const [liveValues, setLiveValues] = useState<Readonly<Record<string, number>>>({})
-  const liveChangeFor = (portId: string) =>
-    diagram
-      ? (value: number | null) =>
-          setLiveValues((previous) => {
-            const next = { ...previous }
-            if (value === null) delete next[portId]
-            else next[portId] = value
-            return next
-          })
-      : undefined
+  // Every slider streams its in-progress value to the engine while dragged
+  // (heard live, smoothed); a node with an inline diagram also redraws it.
+  const liveChangeFor = (portId: string) => (value: number | null) => {
+    state.onParameterLive?.(portId, value)
+    if (diagram)
+      setLiveValues((previous) => {
+        const next = { ...previous }
+        if (value === null) delete next[portId]
+        else next[portId] = value
+        return next
+      })
+  }
 
   return (
     <>
@@ -757,6 +765,7 @@ function StandardBody({ descriptor, state, instanceId }: { descriptor: NodeDescr
           isBool={p.kind === 'bool'}
           options={parameterOptions(p)}
           onCommit={parameterRowCommit(descriptor, state, p.id)}
+          onLiveChange={p.isStructural ? undefined : liveChangeFor(p.id)}
         />
       ))}
       {outputs.map((row) => (

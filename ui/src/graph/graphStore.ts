@@ -73,6 +73,8 @@ import {
   graphRestoreSnapshot,
   graphSetOutput,
   graphSetParameterValue,
+  graphSetParameterLive,
+  graphReleaseParameterLive,
   graphSetProperty,
   type CommandResult,
   type NodeMultiplicityBadge,
@@ -1078,6 +1080,32 @@ export function setParameterValue(nodeId: string, parameterId: string, value: nu
       if (node) nodes.set(nodeId, { ...node, parameterValues: { ...node.parameterValues, [parameterId]: value } })
     },
   )
+}
+
+/** A slider mid-drag (value) or just released (null): streams the value to
+    the running engine without a recompile or an undo step — the commit on
+    release (setParameterValue) is still what's saved. Coalesced to at most
+    one message per animation frame per (node, parameter); the engine glides
+    between them (LiveParameterEdits.h), so the sweep sounds continuous. */
+const pendingLiveValues = new Map<string, { nodeId: string; parameterId: string; value: number }>()
+let liveFlushScheduled = false
+
+export function setParameterLive(nodeId: string, parameterId: string, value: number | null): void {
+  const key = `${nodeId}\u0000${parameterId}`
+  if (value === null) {
+    pendingLiveValues.delete(key)
+    graphReleaseParameterLive(nodeId, parameterId).catch(() => undefined)
+    return
+  }
+  pendingLiveValues.set(key, { nodeId, parameterId, value })
+  if (liveFlushScheduled) return
+  liveFlushScheduled = true
+  requestAnimationFrame(() => {
+    liveFlushScheduled = false
+    for (const live of pendingLiveValues.values())
+      graphSetParameterLive(live.nodeId, live.parameterId, live.value).catch(() => undefined)
+    pendingLiveValues.clear()
+  })
 }
 
 export function setSelection(ids: readonly string[]): void {

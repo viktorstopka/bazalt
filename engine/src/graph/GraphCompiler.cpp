@@ -231,6 +231,42 @@ namespace bazalt::engine
                 signature.emplace_back ((int) port.type, (int) port.quantity);
             return signature;
         }
+
+        /** True when `before` -> `after` changes only values the audio thread
+            can apply to a running node with setParameter(): a port's
+            in-node fallback value, or a non-structural parameter (the same
+            things a macro already modulates live). The same set of keys is
+            required — a key appearing or disappearing means "back to a
+            default" the node would have to be rebuilt to honour — and any
+            structural parameter (a mode count, a table size, a waveform
+            table) keeps the old fresh-node behaviour. */
+        bool onlyLiveApplicableChanges (const Node* node,
+                                        const std::unordered_map<juce::String, float>& before,
+                                        const std::unordered_map<juce::String, float>& after)
+        {
+            if (node == nullptr || before.size() != after.size())
+                return false;
+
+            const auto parameters = node->getParameters();
+            const auto inputs = node->getInputPorts();
+
+            for (const auto& [id, value] : after)
+            {
+                const auto previous = before.find (id);
+                if (previous == before.end())
+                    return false;
+                if (previous->second == value)
+                    continue;
+
+                const auto isFallbackPort = std::any_of (inputs.begin(), inputs.end(), [&id] (const PortDescriptor& port)
+                                                         { return port.id == id && port.hasFallbackWhenUnconnected; });
+                const auto isLiveParameter = std::any_of (parameters.begin(), parameters.end(), [&id] (const ParameterDescriptor& p)
+                                                          { return p.id == id && ! p.isStructural; });
+                if (! isFallbackPort && ! isLiveParameter)
+                    return false;
+            }
+            return true;
+        }
     }
 
     CompileResult GraphCompiler::compile (const NodeGraph& graph,
@@ -313,7 +349,9 @@ namespace bazalt::engine
 
                 if (typeIt != previousPlan->nodeIdToType.end() && typeIt->second == instance.type
                     && paramsIt != previousPlan->nodeIdToAppliedParameters.end()
-                    && paramsIt->second == instance.parameters)
+                    && (paramsIt->second == instance.parameters
+                        || onlyLiveApplicableChanges (previousPlan->nodes[(size_t) previousPlan->nodeIdToSlot.at (instance.id)].get(),
+                                                      paramsIt->second, instance.parameters)))
                 {
                     const auto slotIt = previousPlan->nodeIdToSlot.find (instance.id);
                     if (slotIt != previousPlan->nodeIdToSlot.end())
@@ -343,6 +381,26 @@ namespace bazalt::engine
                         reused = (node != nullptr && ! node->hasPolymorphicPorts()
                                    && node->getGroupPortCount() == requiredPortGroupCount (*node, incomingPortIdsFor (instance.id)));
                     }
+                }
+            }
+
+            if (reused)
+            {
+                // A value-only edit: the new values ride with the plan and the
+                // audio thread applies them (ExecutionPlan::pendingParameterUpdates).
+                // A previous plan replaced before it ever played never applied
+                // its own pending values: hand those on first, so newer ones win.
+                if (! previousPlan->pendingParametersApplied.value.load (std::memory_order_acquire))
+                    for (const auto& update : previousPlan->pendingParameterUpdates)
+                        if (update.node == node.get())
+                            plan.pendingParameterUpdates.push_back (update);
+
+                const auto& previousParameters = previousPlan->nodeIdToAppliedParameters.at (instance.id);
+                for (const auto& [paramId, value] : instance.parameters)
+                {
+                    const auto previous = previousParameters.find (paramId);
+                    if (previous == previousParameters.end() || previous->second != value)
+                        plan.pendingParameterUpdates.push_back ({ node.get(), paramId, value });
                 }
             }
 
@@ -1053,6 +1111,7 @@ namespace bazalt::engine
         plan.tapForBufferIndex = std::make_unique<std::atomic<Tap*>[]> (plan.blockBuffers.size() * (size_t) ExecutionPlan::maxTapsPerBuffer);
 
         plan.resolvePhaseSources();
+        plan.pendingParametersApplied.value.store (plan.pendingParameterUpdates.empty(), std::memory_order_relaxed);
         result.success = true;
         return result;
     }

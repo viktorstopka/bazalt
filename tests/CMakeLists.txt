@@ -68,6 +68,7 @@ add_executable(EngineTests
     ViewScopeControlNodeTests.cpp
     ViewHistoryViewerTests.cpp
     PhaseLockedPreviewTests.cpp
+    ValueOnlyEditTests.cpp
     VoiceManagerTests.cpp
 )
 

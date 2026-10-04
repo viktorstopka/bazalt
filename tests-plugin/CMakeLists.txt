@@ -28,6 +28,7 @@ target_sources(PluginTests
         ${CMAKE_SOURCE_DIR}/plugin/source/GraphEditController.cpp
         ${CMAKE_SOURCE_DIR}/plugin/source/NodeDescriptorJson.cpp
         BusLayoutTests.cpp
+        LiveParameterEditsTests.cpp
         ConnectWithAutoAdaptTests.cpp
         DomainRedesignTests.cpp
         GraphEditControllerTests.cpp

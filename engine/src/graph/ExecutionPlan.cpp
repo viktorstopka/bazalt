@@ -6,6 +6,13 @@ namespace bazalt::engine
     {
         jassert (numSamples <= maxBlockSize);
 
+        if (! pendingParametersApplied.value.load (std::memory_order_relaxed))
+        {
+            for (const auto& update : pendingParameterUpdates)
+                update.node->setParameter (update.parameterId, update.value);
+            pendingParametersApplied.value.store (true, std::memory_order_release);
+        }
+
         const float* inputPtrs[maxPortsPerNode];
         float* outputPtrs[maxPortsPerNode];
 

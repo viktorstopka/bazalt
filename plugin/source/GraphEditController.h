@@ -77,6 +77,11 @@ namespace bazalt
 
         CommandResult disconnect (const juce::String& fromNodeId, const juce::String& fromPortId,
                                    const juce::String& toNodeId, const juce::String& toPortId);
+        /** Whether a running node can take this value live (a port's
+            fallback value or a non-structural parameter) — see
+            LiveParameterEdits.h. Message thread. */
+        bool isLiveEditable (const juce::String& nodeId, const juce::String& parameterId) const;
+
         CommandResult setParameterValue (const juce::String& nodeId, const juce::String& parameterId, float value);
 
         /** Adds one fully-configured `util.macro` node (id/position/every
