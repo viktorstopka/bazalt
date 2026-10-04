@@ -71,6 +71,13 @@
 #include "bazalt/engine/nodes/WidthNode.h"
 #include "bazalt/engine/nodes/DiffuserNode.h"
 #include "bazalt/engine/nodes/ReverbNode.h"
+#include "bazalt/engine/nodes/NoiseColoredNode.h"
+#include "bazalt/engine/nodes/NoiseDustNode.h"
+#include "bazalt/engine/nodes/ShapeNodes.h"
+#include "bazalt/engine/nodes/LfoNode.h"
+#include "bazalt/engine/nodes/AnalysisLevelNode.h"
+#include "bazalt/engine/nodes/DynamicsNodes.h"
+#include "bazalt/engine/nodes/FreqShiftNode.h"
 #include "bazalt/engine/nodes/StereoSplitNode.h"
 #include "bazalt/engine/nodes/StereoCombineNode.h"
 #include "bazalt/engine/nodes/ClockPulseNode.h"
@@ -208,6 +215,18 @@ namespace bazalt::engine
         // wiki/plans/Reverb.md
         factory.registerType ("space.diffuser", [] { return std::make_unique<nodes::DiffuserNode>(); });
         factory.registerType ("space.reverb", [] { return std::make_unique<nodes::ReverbNode>(); });
+        // wiki/plans/SoundPalette.md
+        factory.registerType ("noise.colored", [] { return std::make_unique<nodes::NoiseColoredNode>(); });
+        factory.registerType ("noise.dust", [] { return std::make_unique<nodes::NoiseDustNode>(); });
+        factory.registerType ("shape.rectify", [] { return std::make_unique<nodes::ShapeRectifyNode>(); });
+        factory.registerType ("shape.crush", [] { return std::make_unique<nodes::ShapeCrushNode>(); });
+        factory.registerType ("shape.waveshaper", [] { return std::make_unique<nodes::ShapeWaveshaperNode>(); });
+        factory.registerType ("shape.fold", [] { return std::make_unique<nodes::ShapeFoldNode>(); });
+        factory.registerType ("lfo.shape", [] { return std::make_unique<nodes::LfoNode>(); });
+        factory.registerType ("analysis.level", [] { return std::make_unique<nodes::AnalysisLevelNode>(); });
+        factory.registerType ("dyn.compress", [] { return std::make_unique<nodes::DynCompressNode>(); });
+        factory.registerType ("dyn.gate", [] { return std::make_unique<nodes::DynGateNode>(); });
+        factory.registerType ("fx.freqShift", [] { return std::make_unique<nodes::FreqShiftNode>(); });
         factory.registerType ("stereo.split", [] { return std::make_unique<nodes::StereoSplitNode>(); });
         factory.registerType ("stereo.combine", [] { return std::make_unique<nodes::StereoCombineNode>(); });
         // Clock+Seq batch (wiki/NODES.Status.md's own build-next order, step 1).
