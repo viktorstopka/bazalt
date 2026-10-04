@@ -817,6 +817,9 @@ classification that colours the port.
 #### `view.ripple` — Ripple ✅ *(design/Visualization/Ripple.png)*
 **In/Out:** `Event`. Expanding rings, one per event.
 
+#### `view.tune` — Tune ✅ *(design/Visualization/Tune.png)*
+The default viewer for Pitch — Ctrl/Cmd-click any Pitch-quantity Control output to spawn it already wired. **In:** `in` — `Control` (Pitch, semitones). **Out:** `out` — the same value, passed through unchanged. **Visual:** no title; ports at the top corners; a centre-zero deviation meter (tick = the nearest note, the band grows toward the deviation, ±50 cents to the strip's end); the nearest note and octave large (`C#2`, MIDI 60 = C4) with signed cents beside it (`+38`, `-4`); a muted monospace footer with the raw semitones (`60st`, `60.38st`) and the frequency (`69.30 Hz`). Within ±5 cents the readout and meter are white, outside red. **Behavior:** reads the newest Oscilloscope bucket (the same tap view.count uses) every frame, straight into the DOM, so bends and glides move smoothly; note, cents and Hz all derive from that one value (`ui/src/nodes/pitchReadout.ts`), never from each other after rounding.
+
 #### `view.count` — Count ✅ *(design/Visualization/Count.png)*
 **In/Out:** integer `Control`. The current value as a number, editable Min/Max footer.
 

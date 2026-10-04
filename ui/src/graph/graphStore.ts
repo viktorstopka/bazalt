@@ -1600,6 +1600,9 @@ const DEFAULT_VIEWER_BY_PORT_KIND: Partial<Record<PortUiKind, string>> = {
 }
 
 export function defaultViewerTypeForPort(port: PortDescriptor): string | undefined {
+  // A Pitch-quantity Control port gets the tuner (design/Visualization/Tune.png),
+  // not the generic Control scope.
+  if (port.type === 'control' && port.quantity === 'pitch') return 'view.tune'
   // classifyPortUiKind falls back to 'value' for a type it has no colour for
   // (Spectral) — only a genuine Control port gets the Control scope.
   const kind = classifyPortUiKind(port)

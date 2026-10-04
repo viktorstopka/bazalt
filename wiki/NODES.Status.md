@@ -328,11 +328,11 @@ edit. Every later `data.*`/`osc.wavetable`/`sampler.*` node rides on this for fr
 | `util.unipolarToBipolar` | Implemented | | | `wiki/plans/PropsAndMacroRedesign.md` Batch D — new, replacing `random.stepped`/`seq.steps`/`data.lookup`'s old per-node Unipolar/Bipolar selectors. Manual placement only, never auto-inserted. |
 | `util.bipolarToUnipolar` | Implemented | | | Same batch, the inverse direction. |
 
-### `view.*` — 9/9 Implemented
+### `view.*` — 10/10 Implemented
 
 `view.listen`, `view.spectrum`, `view.meter`, `view.ripple`, `view.count`,
-`view.scope.control`, `view.scope.modulation`, `view.gate`, `view.cycle` — all
-Implemented. `view.scope` and `view.glance` were removed 2026-10-04, replaced
+`view.scope.control`, `view.scope.modulation`, `view.gate`, `view.cycle`,
+`view.tune` (2026-10-04, design/Visualization/Tune.png) — all Implemented. `view.scope` and `view.glance` were removed 2026-10-04, replaced
 by the phase-locked `view.cycle` (old patches migrate on load).
 
 ### `factory.*` — content-owning nodes — 6 to build (none started)

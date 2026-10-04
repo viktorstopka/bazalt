@@ -21,6 +21,7 @@ import { withRevealedGroupPorts } from '../graph/portGroups'
 import { MacroBody, ConstantBody } from './MacroBody'
 import { RippleBody } from './RippleBody'
 import { CountBody } from './CountBody'
+import { TuneBody } from './TuneBody'
 import { ScopeControlBody } from './ScopeControlBody'
 import { ScopeModulationBody } from './ScopeModulationBody'
 import { GateBody } from './GateBody'
@@ -1024,6 +1025,8 @@ export function NodeCard({ descriptor: declaredDescriptor, state = {}, instanceI
   // reports an ordinary Glance layoutVariant too; this is a visual swap
   // only.
   if (descriptor.typeId === 'view.count') return <CountBody descriptor={descriptor} state={state} instanceId={instanceId} />
+  // design/Visualization/Tune.png: the Pitch viewer, same dispatch.
+  if (descriptor.typeId === 'view.tune') return <TuneBody descriptor={descriptor} state={state} instanceId={instanceId} />
   // design/Visualization/Scope1.png: same client-side-only typeId dispatch
   // as view.ripple/view.count just above.
   if (descriptor.typeId === 'view.scope.control') return <ScopeControlBody descriptor={descriptor} state={state} instanceId={instanceId} />

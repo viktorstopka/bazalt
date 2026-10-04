@@ -1,0 +1,94 @@
+/* design/Visualization/Tune.png: "A rectangular panel, wider than tall,
+   near-black fill, thin hairline border. No title." Same fixed-rectangle
+   override of .node-card as CountBody.css (its header comment explains the
+   190px floor). */
+.view-tune-card {
+  --tune-colour: #ffffff;
+  display: flex;
+  flex-direction: column;
+  width: 210px;
+  height: 140px;
+  padding: 0;
+}
+
+.view-tune-card.view-tune-out {
+  --tune-colour: var(--color-error);
+}
+
+/* Ports at the top corners, drawn as gaps in the border with the arrow
+   glyph — the same zero-size-anchor trick as .view-count-port. */
+.view-tune-port {
+  position: absolute;
+  top: 18px;
+  width: 0;
+  height: 0;
+}
+
+.view-tune-port-left {
+  left: 0;
+}
+
+.view-tune-port-right {
+  right: 0;
+}
+
+/* The deviation meter: a strip across the top, the centre tick at the
+   nearest note, the band growing from it toward the deviation. */
+.view-tune-meter {
+  position: relative;
+  height: 10px;
+  margin: 13px 40px 0;
+}
+
+.view-tune-tick {
+  position: absolute;
+  left: 50%;
+  top: 0;
+  width: 2px;
+  height: 100%;
+  margin-left: -1px;
+  background: var(--tune-colour);
+}
+
+.view-tune-band {
+  position: absolute;
+  top: 2px;
+  height: 6px;
+  left: 50%;
+  width: 0;
+  background: var(--tune-colour);
+  opacity: 0.45;
+}
+
+.view-tune-readout {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  color: var(--tune-colour);
+  font-family: var(--font-secondary);
+  user-select: none;
+}
+
+.view-tune-note {
+  font-size: 40px;
+  font-weight: 600;
+  line-height: 1;
+}
+
+.view-tune-cents {
+  font-size: 15px;
+  align-self: center;
+  margin-top: -8px;
+  min-width: 3ch;
+}
+
+.view-tune-footer {
+  display: flex;
+  justify-content: space-between;
+  padding: var(--space-xs) var(--space-sm);
+  font-family: var(--font-secondary);
+  font-size: 11px;
+  color: var(--color-textSecondary);
+}

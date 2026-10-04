@@ -78,6 +78,7 @@
 #include "bazalt/engine/nodes/AnalysisLevelNode.h"
 #include "bazalt/engine/nodes/DynamicsNodes.h"
 #include "bazalt/engine/nodes/FreqShiftNode.h"
+#include "bazalt/engine/nodes/ViewTuneNode.h"
 #include "bazalt/engine/nodes/StereoSplitNode.h"
 #include "bazalt/engine/nodes/StereoCombineNode.h"
 #include "bazalt/engine/nodes/ClockPulseNode.h"
@@ -227,6 +228,7 @@ namespace bazalt::engine
         factory.registerType ("dyn.compress", [] { return std::make_unique<nodes::DynCompressNode>(); });
         factory.registerType ("dyn.gate", [] { return std::make_unique<nodes::DynGateNode>(); });
         factory.registerType ("fx.freqShift", [] { return std::make_unique<nodes::FreqShiftNode>(); });
+        factory.registerType ("view.tune", [] { return std::make_unique<nodes::ViewTuneNode>(); }); // design/Visualization/Tune.png
         factory.registerType ("stereo.split", [] { return std::make_unique<nodes::StereoSplitNode>(); });
         factory.registerType ("stereo.combine", [] { return std::make_unique<nodes::StereoCombineNode>(); });
         // Clock+Seq batch (wiki/NODES.Status.md's own build-next order, step 1).
