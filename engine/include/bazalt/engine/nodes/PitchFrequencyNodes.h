@@ -7,7 +7,7 @@
 namespace bazalt::engine::nodes
 {
     /** Stable type id: "adapt.pitchToFrequency". Direct feedback: `canConnect`
-        was auto-inserting `adapt.remap` — a plain LINEAR interpolation
+        was auto-inserting `adapt.map` — a plain LINEAR interpolation
         between two ranges — for a `Pitch -> Frequency` connection (e.g.
         pitch-tracking a filter's cutoff, `CanConnect.cpp`'s own long-standing
         example). Pitch-to-Hz is exponential (each semitone is ×2^(1/12)), so

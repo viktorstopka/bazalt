@@ -79,12 +79,16 @@ TEST_CASE ("connectWithAutoAdapt inserts and seeds a real adapt.map node for Uni
 
     REQUIRE (mapNode != nullptr);
 
-    // Seeded from the destination port's own range — delay.line's default
-    // maxDelaySamples is 4096 (DelayNode.h's constructor default).
-    REQUIRE (mapNode->parameters.count ("adapt.map.min") == 1);
-    CHECK (mapNode->parameters.at ("adapt.map.min") == 1.0f);
-    REQUIRE (mapNode->parameters.count ("adapt.map.max") == 1);
-    CHECK (mapNode->parameters.at ("adapt.map.max") == 4096.0f);
+    // Output range seeded from the destination port's own range —
+    // delay.line's default maxDelaySamples is 4096 (DelayNode.h's
+    // constructor default); input range from the Unipolar source, 0..1.
+    REQUIRE (mapNode->parameters.count ("adapt.map.outMin") == 1);
+    CHECK (mapNode->parameters.at ("adapt.map.outMin") == 1.0f);
+    REQUIRE (mapNode->parameters.count ("adapt.map.outMax") == 1);
+    CHECK (mapNode->parameters.at ("adapt.map.outMax") == 4096.0f);
+    REQUIRE (mapNode->parameters.count ("adapt.map.inMin") == 1);
+    CHECK (mapNode->parameters.at ("adapt.map.inMin") == 0.0f);
+    CHECK (mapNode->parameters.at ("adapt.map.inMax") == 1.0f);
 
     bool sourceToAdapter = false, adapterToDestination = false;
     for (const auto& c : graph.getConnections())
@@ -271,8 +275,13 @@ TEST_CASE ("connectWithAutoAdapt inserts adapt.audioToControl then adapt.map for
 
     // adapt.map seeded from the destination's own range (filter.svf.cutoff),
     // exactly like every other seedFromDestinationRange step.
-    REQUIRE (mapNode->parameters.count ("adapt.map.min") == 1);
-    REQUIRE (mapNode->parameters.count ("adapt.map.max") == 1);
+    REQUIRE (mapNode->parameters.count ("adapt.map.outMin") == 1);
+    REQUIRE (mapNode->parameters.count ("adapt.map.outMax") == 1);
+    // The input range comes from adapt.audioToControl's own Bipolar output,
+    // not from the raw Audio source.
+    REQUIRE (mapNode->parameters.count ("adapt.map.inMin") == 1);
+    CHECK (mapNode->parameters.at ("adapt.map.inMin") == -1.0f);
+    CHECK (mapNode->parameters.at ("adapt.map.inMax") == 1.0f);
 
     bool sourceToBridge = false, bridgeToMap = false, mapToDestination = false;
     for (const auto& c : graph.getConnections())

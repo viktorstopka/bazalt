@@ -90,7 +90,7 @@ export interface ValueSliderProps {
       past these, because doing so would be physically/semantically
       meaningless for this specific quantity (a filter cutoff can't go
       negative, a pitch can't exceed 127). Omitted entirely means
-      unbounded: no real limit exists (e.g. a Remap node's own inMin/
+      unbounded: no real limit exists (e.g. a Map node's own inMin/
       inMax/outMin/outMax), so nothing here should invent one — this is
       NOT the same as `min`/`max` above being absent, which still fall
       back to a generic 0-10 visual range at the call site.
@@ -127,6 +127,10 @@ export interface ValueSliderProps {
       anywhere — see the internal `uncontrolledValue` fallback below.
   */
   onCommit?: (value: number) => void
+  /** Called with the in-progress value while a drag/wheel gesture is live,
+      and with null when it ends — for a readout that must follow the drag
+      before anything is committed (design/Map.png's diagram). */
+  onLiveChange?: (value: number | null) => void
 }
 
 const DRAG_THRESHOLD_PX = 3
@@ -152,7 +156,7 @@ function formatForEditing(value: number, isInteger: boolean, decimals: number): 
   return isInteger ? formatValue(value, decimals) : String(value)
 }
 
-export function ValueSlider({ label, value, min, max, hardMin, hardMax, defaultValue, isInteger, unit, color, skew, decimals: decimalsProp, onCommit }: ValueSliderProps) {
+export function ValueSlider({ label, value, min, max, hardMin, hardMax, defaultValue, isInteger, unit, color, skew, decimals: decimalsProp, onCommit, onLiveChange }: ValueSliderProps) {
   const decimals = decimalsProp ?? (isInteger ? 0 : 2)
   const curveSkew = skew ?? 1
   const clampMin = hardMin ?? -Infinity
@@ -161,7 +165,7 @@ export function ValueSlider({ label, value, min, max, hardMin, hardMax, defaultV
   // 2-decimal display]" — a real hard bound (hardMin/hardMax both declared)
   // still clamps the stored value fully, this only gates whether the fill
   // bar renders at all (Batch A4 — a genuinely unbounded port, e.g.
-  // adapt.remap's own in/out, shouldn't imply a range that doesn't exist).
+  // adapt.map's own in/out, shouldn't imply a range that doesn't exist).
   const hasBounds = hardMin !== undefined && hardMax !== undefined
 
   // No onCommit (gallery demo context): the slider becomes its own
@@ -189,9 +193,16 @@ export function ValueSlider({ label, value, min, max, hardMin, hardMax, defaultV
   const wheelTimeoutRef = useRef<number | null>(null)
   const editResolvedRef = useRef(false)
 
+  // Read through a ref: the drag listeners capture updateLiveValue once at
+  // mousedown, but must always report to the current callback.
+  const onLiveChangeRef = useRef(onLiveChange)
+  useEffect(() => {
+    onLiveChangeRef.current = onLiveChange
+  })
   const updateLiveValue = (next: number | null): void => {
     liveValueRef.current = next
     setLiveValue(next)
+    onLiveChangeRef.current?.(next)
   }
 
   useEffect(

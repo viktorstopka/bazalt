@@ -8,6 +8,7 @@
 #include "bazalt/engine/nodes/InstanceOriginNode.h"
 #include "bazalt/engine/nodes/InstanceSwarmPopulationNode.h"
 #include "bazalt/engine/patch/PatchSerializer.h"
+#include <optional>
 #include <algorithm>
 #include <array>
 
@@ -169,6 +170,21 @@ namespace bazalt
                 mappings.push_back ({ slot, node.id, "util.macro.value", 0.0f, 1.0f });
             }
             return mappings;
+        }
+
+        /** adapt.map's input range when auto-inserted: the feeding port's own
+            declared bounds, else its polarity (a Modulation port that
+            declares no bounds is still -1..1 or 0..1 by definition), else
+            nothing — the node's own 0..1 default stands. */
+        std::optional<std::pair<float, float>> seedRangeForMapInput (const bazalt::engine::PortDescriptor& feeder)
+        {
+            if (feeder.minValue.has_value() && feeder.maxValue.has_value())
+                return std::make_pair (*feeder.minValue, *feeder.maxValue);
+            if (feeder.quantity == bazalt::engine::Quantity::Bipolar)
+                return std::make_pair (-1.0f, 1.0f);
+            if (feeder.quantity == bazalt::engine::Quantity::Unipolar)
+                return std::make_pair (0.0f, 1.0f);
+            return std::nullopt;
         }
 
         const bazalt::engine::PortDescriptor* findInputPort (const bazalt::engine::NodeFactory& factory,
@@ -484,8 +500,7 @@ namespace bazalt
             return connect (fromNodeId, fromPortId, toNodeId, toPortId);
 
         // NeedsAdapters. A 1- or 2-step, single-input chain can be spliced
-        // in generically (adapt.map/adapt.normalise/adapt.threshold/
-        // adapt.remap, and — since the real stereo cable redesign made it a
+        // in generically (adapt.map/adapt.normalise/adapt.threshold, and — since the real stereo cable redesign made it a
         // genuine 1-in-1-out node — mix.downmix too now; ADR-0019's later
         // waves — Envelope Follower, Sample & Hold, Note gate/value — may
         // need the 2-step path this loop already supports). Every step is a
@@ -524,28 +539,36 @@ namespace bazalt
                 // Seeding (SIGNAL_TYPES.md §5's "Seeding" column) — by
                 // convention every min/max-seeded adapter this milestone
                 // ships names its parameters "<typeId>.min"/"<typeId>.max"
-                // (adapt.map, adapt.normalise both do); a future adapter
-                // that doesn't follow this convention needs its own branch
-                // here, not a silent wrong guess. adapt.remap is exactly
-                // that case — it seeds from BOTH ends at once (its own
-                // four-parameter inMin/inMax/outMin/outMax shape, not a
-                // single min/max pair), since seedFromSourceRange and
-                // seedFromDestinationRange are both set on its step
-                // (CanConnect.cpp). Every other step still seeds itself
-                // independently from the ORIGINAL endpoints' own ranges
-                // (fromPort/toPort), not from whatever the previous step in
-                // the chain happens to be.
-                if (step.typeId == "adapt.remap")
+                // (adapt.normalise does); a future adapter that doesn't
+                // follow this convention needs its own branch here, not a
+                // silent wrong guess. adapt.map is exactly that case — it
+                // seeds from BOTH ends at once (its own four-range
+                // inMin/inMax/outMin/outMax shape). Its INPUT range comes
+                // from whatever actually feeds it: the original source for a
+                // one-step chain, the previous adapter's own output in a
+                // two-step one (adapt.audioToControl -> adapt.map, whose
+                // Audio source has no meaningful range of its own). Every
+                // other step still seeds itself independently from the
+                // ORIGINAL endpoints' own ranges (fromPort/toPort).
+                if (step.typeId == "adapt.map")
                 {
-                    if (fromPort->minValue.has_value() && fromPort->maxValue.has_value())
+                    std::vector<bazalt::engine::PortDescriptor> feederStorage;
+                    const bazalt::engine::PortDescriptor* feeder = fromPort;
+                    if (i > 0)
+                        if (auto previous = factory.create (connectivity.adapterChain[(size_t) (i - 1)].typeId))
+                            for (const auto& port : (feederStorage = previous->getOutputPorts()))
+                                if (port.id == connectivity.adapterChain[(size_t) (i - 1)].outputPortId)
+                                    feeder = &port;
+
+                    if (const auto range = seedRangeForMapInput (*feeder))
                     {
-                        instance.parameters["adapt.remap.inMin"] = *fromPort->minValue;
-                        instance.parameters["adapt.remap.inMax"] = *fromPort->maxValue;
+                        instance.parameters["adapt.map.inMin"] = range->first;
+                        instance.parameters["adapt.map.inMax"] = range->second;
                     }
                     if (toPort->minValue.has_value() && toPort->maxValue.has_value())
                     {
-                        instance.parameters["adapt.remap.outMin"] = *toPort->minValue;
-                        instance.parameters["adapt.remap.outMax"] = *toPort->maxValue;
+                        instance.parameters["adapt.map.outMin"] = *toPort->minValue;
+                        instance.parameters["adapt.map.outMax"] = *toPort->maxValue;
                     }
                 }
                 else if (step.seedFromDestinationRange && toPort->minValue.has_value() && toPort->maxValue.has_value())

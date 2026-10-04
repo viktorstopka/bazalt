@@ -5,7 +5,7 @@
 // WebGL-background + DOM-overlay" node body approach is deliberately
 // deferred; see ADR-0008's Amendment (M10) for why DOM stays the layout
 // source of truth.
-import { useMemo } from 'react'
+import { Fragment, useMemo, useState, type ReactNode } from 'react'
 import type { NodeDescriptor, ParameterDescriptor, PortDescriptor, Quantity } from '../graph/descriptorTypes'
 import { classifyPortUiKind, portUiStyle, portUiStyleForEndpoint, parameterUiColor, resolvePortIsPoly, type PortUiStyle } from '../graph/portUiKind'
 import { getEndpoint } from '../graph/graphStore'
@@ -24,6 +24,7 @@ import { CountBody } from './CountBody'
 import { ScopeControlBody } from './ScopeControlBody'
 import { ScopeModulationBody } from './ScopeModulationBody'
 import { GateBody } from './GateBody'
+import { MapDiagram } from './MapDiagram'
 import './NodeCard.css'
 
 /** PortDescriptor.h's own contract: "falls back to id in the UI if empty" —
@@ -382,7 +383,7 @@ function PortLabel({
     default drag range — passed as ValueSlider's plain min/max, which only
     drives the fill bar and drag sensitivity, never clamps. A port with no
     declared bounds at all (common for a mock/demo port, or a real one like
-    adapt.remap's own range ports, which are genuinely unbounded) falls
+    adapt.map's own range ports, which are genuinely unbounded) falls
     back to a plain 0-10 *visual* range and no hard clamp at all — direct
     feedback, citing Blender: a value should still be enterable past
     whatever the slider visually shows as its typical range.
@@ -395,6 +396,7 @@ function PortRow({
   instanceId,
   value,
   onCommit,
+  onLiveChange,
   isPoly,
 }: {
   direction: 'input' | 'output'
@@ -404,6 +406,7 @@ function PortRow({
   instanceId?: string
   value?: number
   onCommit?: (value: number) => void
+  onLiveChange?: (value: number | null) => void
   isPoly?: boolean
 }) {
   // Only an unconnected, editable-in-node INPUT falls back to a shown
@@ -441,6 +444,7 @@ function PortRow({
           skew={resolveSkew(port.curve, port.quantity)}
           color={portUiStyle(port, isPoly).color}
           onCommit={onCommit}
+          onLiveChange={onLiveChange}
         />
       ) : showToggle ? (
         <ToggleSwitch
@@ -680,25 +684,56 @@ function parameterRowCommit(descriptor: NodeDescriptor, state: NodeCardState, id
   return paramCommit(state, id)
 }
 
+/** A live diagram drawn between two of a standard node's own rows — the
+    one thing a few nodes add to the ordinary row layout (design/Map.png's
+    mapping diagram between "In Max" and "Out Min"), keyed by typeId the same
+    way the bespoke bodies above are, but keeping every row, title and port
+    exactly as StandardBody already renders them. `liveValues` carries a
+    range slider's in-progress value mid-drag, before anything is committed,
+    so the diagram follows the drag rather than jumping on release. */
+interface InlineDiagram {
+  afterPortId: string
+  render: (props: { descriptor: NodeDescriptor; state: NodeCardState; instanceId?: string; liveValues: Readonly<Record<string, number>> }) => ReactNode
+}
+
+const INLINE_DIAGRAMS: Readonly<Record<string, InlineDiagram>> = {
+  'adapt.map': { afterPortId: 'adapt.map.inMax', render: (props) => <MapDiagram {...props} /> },
+}
+
 function StandardBody({ descriptor, state, instanceId }: { descriptor: NodeDescriptor; state: NodeCardState; instanceId?: string }) {
   const { merged, inputs, outputs } = useMemo(() => splitPorts(descriptor), [descriptor])
   const connected = state.connectedPortIds ?? new Set<string>()
+  const diagram = INLINE_DIAGRAMS[descriptor.typeId]
+  const [liveValues, setLiveValues] = useState<Readonly<Record<string, number>>>({})
+  const liveChangeFor = (portId: string) =>
+    diagram
+      ? (value: number | null) =>
+          setLiveValues((previous) => {
+            const next = { ...previous }
+            if (value === null) delete next[portId]
+            else next[portId] = value
+            return next
+          })
+      : undefined
 
   return (
     <>
       {merged && <MergedRowView row={merged} instanceId={instanceId} connected={connected.has(merged.id)} multiplicity={state.portMultiplicity} />}
       {inputs.map((row) => (
-        <PortRow
-          key={row.port.id}
-          direction="input"
-          port={row.port}
-          connected={connected.has(row.port.id)}
-          demoValue={state.demoConnectedValue}
-          instanceId={instanceId}
-          value={paramValue(state, row.port.id, row.port.defaultValue)}
-          onCommit={paramCommit(state, row.port.id)}
-          isPoly={resolvePortIsPoly(row.port, state.portMultiplicity)}
-        />
+        <Fragment key={row.port.id}>
+          <PortRow
+            direction="input"
+            port={row.port}
+            connected={connected.has(row.port.id)}
+            demoValue={state.demoConnectedValue}
+            instanceId={instanceId}
+            value={paramValue(state, row.port.id, row.port.defaultValue)}
+            onCommit={paramCommit(state, row.port.id)}
+            onLiveChange={liveChangeFor(row.port.id)}
+            isPoly={resolvePortIsPoly(row.port, state.portMultiplicity)}
+          />
+          {diagram?.afterPortId === row.port.id && diagram.render({ descriptor, state, instanceId, liveValues })}
+        </Fragment>
       ))}
       {descriptor.parameters.map((p) => (
         <ParameterRow

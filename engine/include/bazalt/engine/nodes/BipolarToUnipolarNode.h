@@ -7,7 +7,7 @@ namespace bazalt::engine::nodes
 {
     /** Stable type id: "util.bipolarToUnipolar" (wiki/plans/
         PropsAndMacroRedesign.md Batch D). A thin, self-labeled wrapper
-        over what `adapt.remap` can already do (`inMin=-1,inMax=1,
+        over what `adapt.map` can already do (`inMin=-1,inMax=1,
         outMin=0,outMax=1`) — same shape as `adapt.normalise`/`adapt.map`/
         `adapt.pitchToFrequency`: a generic mechanism already covers the
         capability, this exists purely so "Bipolar -> Unipolar" reads
@@ -16,7 +16,7 @@ namespace bazalt::engine::nodes
 
         Deliberately NOT auto-inserted by `GraphEditController::
         connectWithAutoAdapt` — a Unipolar<->Bipolar quantity mismatch
-        already resolves today via the generic `adapt.remap` fallback in
+        already resolves today via the generic `adapt.map` fallback in
         `CanConnect.cpp`, so this node adds readability, not connectivity.
         Manual placement only, per direct instruction.
     */

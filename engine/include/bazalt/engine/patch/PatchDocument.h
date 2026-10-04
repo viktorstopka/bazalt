@@ -117,7 +117,7 @@ namespace bazalt::engine
         // `macroValues` stays: each of the 32 AudioParameterFloats' own
         // current automated value is real, independent state, unrelated
         // to which nodes claim which slot.
-        static constexpr int currentSchemaVersion = 7;
+        static constexpr int currentSchemaVersion = 8;
 
         int schemaVersion = currentSchemaVersion;
         std::vector<NodeInstance> nodes;

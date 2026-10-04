@@ -7,7 +7,7 @@
 #include "bazalt/engine/nodes/RerouteNode.h"
 #include "bazalt/engine/nodes/InstanceMixNode.h"
 #include "bazalt/engine/nodes/ViewGlanceNode.h"
-#include "bazalt/engine/nodes/RemapNode.h"
+#include "bazalt/engine/nodes/MapNode.h"
 
 using namespace bazalt;
 using namespace bazalt::engine;
@@ -52,11 +52,11 @@ TEST_CASE ("nodeDescriptorToVar serializes a node with an unbounded numeric outp
     // PropsAndMacroRedesign.md Batch E gave it a real, configurable range
     // contract, so its own output port is bounded by default now (see the
     // dedicated util.constant descriptor test below).
-    const auto descriptor = describeNode ("adapt.remap", nodes::RemapNode {});
+    const auto descriptor = describeNode ("adapt.map", nodes::MapNode {});
     const auto var = nodeDescriptorToVar (descriptor);
 
     REQUIRE (var.isObject());
-    CHECK (var["typeId"].toString() == "adapt.remap");
+    CHECK (var["typeId"].toString() == "adapt.map");
 
     const auto* outputs = var["outputs"].getArray();
     REQUIRE (outputs != nullptr);

@@ -9,7 +9,7 @@ namespace bazalt::engine::nodes
         PropsAndMacroRedesign.md Batch D) — the inverse of
         `BipolarToUnipolarNode.h`; see that file's own header comment for
         the full reasoning (a thin, self-labeled wrapper over what
-        `adapt.remap` already does, manual placement only, never
+        `adapt.map` already does, manual placement only, never
         auto-inserted).
     */
     class UnipolarToBipolarNode : public Node

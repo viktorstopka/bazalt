@@ -17,7 +17,6 @@
 #include "bazalt/engine/nodes/MultiplyNode.h"
 #include "bazalt/engine/nodes/RoundNode.h"
 #include "bazalt/engine/nodes/ClampNode.h"
-#include "bazalt/engine/nodes/RemapNode.h"
 #include "bazalt/engine/nodes/ListenNode.h"
 #include "bazalt/engine/nodes/ViewNodes.h"
 #include "bazalt/engine/nodes/ViewGlanceNode.h"
@@ -124,7 +123,6 @@ namespace bazalt::engine
         factory.registerType ("math.multiply", [] { return std::make_unique<nodes::MultiplyNode>(); });
         factory.registerType ("math.round", [] { return std::make_unique<nodes::RoundNode>(); });
         factory.registerType ("math.clamp", [] { return std::make_unique<nodes::ClampNode>(); });
-        factory.registerType ("adapt.remap", [] { return std::make_unique<nodes::RemapNode>(); });
         factory.registerType ("view.listen", [] { return std::make_unique<nodes::ListenNode>(); });
         factory.registerType ("view.scope", [] { return std::make_unique<nodes::ViewScopeNode>(); });
         factory.registerType ("view.spectrum", [] { return std::make_unique<nodes::ViewSpectrumNode>(); });
@@ -146,7 +144,7 @@ namespace bazalt::engine
         // into control and ints... annoying").
         factory.registerType ("adapt.boolToControl", [] { return std::make_unique<nodes::BoolToControlNode>(); });
         // Exact Pitch<->Frequency conversion (direct feedback found the
-        // generic adapt.remap fallback was quietly wrong for this pair —
+        // generic adapt.map fallback was quietly wrong for this pair —
         // linear where the real relationship is exponential).
         factory.registerType ("adapt.pitchToFrequency", [] { return std::make_unique<nodes::PitchToFrequencyNode>(); });
         factory.registerType ("adapt.frequencyToPitch", [] { return std::make_unique<nodes::FrequencyToPitchNode>(); });
@@ -246,7 +244,7 @@ namespace bazalt::engine
         // wiki/plans/PropsAndMacroRedesign.md Batch D: explicit, manual-
         // placement-only converters replacing the three nodes' old
         // Unipolar/Bipolar selector parameters - never auto-inserted by
-        // connectWithAutoAdapt (adapt.remap's own generic fallback already
+        // connectWithAutoAdapt (adapt.map's own generic fallback already
         // covers a Unipolar<->Bipolar quantity mismatch).
         factory.registerType ("util.unipolarToBipolar", [] { return std::make_unique<nodes::UnipolarToBipolarNode>(); });
         factory.registerType ("util.bipolarToUnipolar", [] { return std::make_unique<nodes::BipolarToUnipolarNode>(); });

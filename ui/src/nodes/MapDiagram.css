@@ -1,0 +1,26 @@
+/* design/Map.png's mapping diagram: a fixed-size box centred in the card —
+   never resized by the values it shows, so dragging a range can't change
+   the node's height. 60x120 MUST match MapDiagram.tsx's WIDTH/HEIGHT. */
+.map-diagram {
+  display: flex;
+  justify-content: center;
+  padding: var(--space-sm) 0;
+}
+
+.map-diagram-svg {
+  display: block;
+  width: 60px;
+  height: 120px;
+  overflow: visible;
+}
+
+/* "Thin strokes, no fill, the same weight as the node's border":
+   non-scaling-stroke keeps it exactly one screen pixel at every canvas
+   zoom, the same thing --canvas-hairline does for the border. */
+.map-diagram-svg path {
+  fill: none;
+  stroke: var(--color-textPrimary);
+  stroke-width: 1;
+  stroke-linejoin: miter;
+  vector-effect: non-scaling-stroke;
+}

@@ -217,3 +217,50 @@ TEST_CASE ("A hand-written schema v6 patch's macroMappings content migrates away
     auto compileResult = GraphCompiler::compile (graph, factory, { 44100.0, 64 }, 1);
     REQUIRE (compileResult.success);
 }
+
+TEST_CASE ("v7 -> v8 migration rewrites adapt.remap into adapt.map and the old two-parameter adapt.map into the four-range one",
+           "[engine][patch][adapt.map]")
+{
+    // design/Map.png: adapt.remap became adapt.map and the old Map stopped
+    // existing. patches/CatPurr.json has a real adapt.remap (node73) — this
+    // is the shape it and the user's other saved patches arrive in.
+    const juce::String json = R"({
+        "schemaVersion": 7,
+        "nodes": [
+            { "id": "oldMap", "type": "adapt.map", "parameters": { "adapt.map.min": 200.0, "adapt.map.max": 8000.0 } },
+            { "id": "remap", "type": "adapt.remap", "parameters": { "adapt.remap.outMin": 1.0, "adapt.remap.outMax": 0.0 } },
+            { "id": "src", "type": "util.constant", "parameters": {} }
+        ],
+        "connections": [ { "fromNodeId": "src", "fromPortId": "out", "toNodeId": "remap", "toPortId": "adapt.remap.inMax" } ]
+    })";
+
+    const auto result = parsePatchFromJson (json);
+    REQUIRE (result.success);
+    CHECK (result.document.schemaVersion == PatchDocument::currentSchemaVersion);
+
+    auto find = [&] (const juce::String& id) -> const NodeInstance&
+    {
+        for (const auto& node : result.document.nodes)
+            if (node.id == id)
+                return node;
+        FAIL ("no node " << id);
+        return result.document.nodes.front();
+    };
+
+    const auto& oldMap = find ("oldMap");
+    CHECK (oldMap.type == "adapt.map");
+    CHECK (oldMap.parameters.count ("adapt.map.min") == 0);
+    CHECK (oldMap.parameters.at ("adapt.map.inMin") == 0.0f);
+    CHECK (oldMap.parameters.at ("adapt.map.inMax") == 1.0f);
+    CHECK (oldMap.parameters.at ("adapt.map.outMin") == 200.0f);
+    CHECK (oldMap.parameters.at ("adapt.map.outMax") == 8000.0f);
+
+    const auto& remap = find ("remap");
+    CHECK (remap.type == "adapt.map");
+    CHECK (remap.parameters.at ("adapt.map.outMin") == 1.0f);
+    CHECK (remap.parameters.at ("adapt.map.outMax") == 0.0f);
+    CHECK (remap.parameters.count ("adapt.remap.outMin") == 0);
+
+    REQUIRE (result.document.connections.size() == 1);
+    CHECK (result.document.connections[0].toPortId == "adapt.map.inMax");
+}

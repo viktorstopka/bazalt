@@ -534,6 +534,82 @@ namespace bazalt::engine
             return root;
         }
 
+        // 2026-10-04, design/Map.png: `adapt.remap` became `adapt.map` and the
+        // old two-parameter `adapt.map` stopped existing (MapNode.h). Unlike
+        // the bump-only migrations above, this one rewrites ids, because the
+        // user's own saved patches (patches/CatPurr.json among them) use
+        // both nodes:
+        //   - old adapt.map {min, max} -> new adapt.map with inMin/inMax 0..1
+        //     and outMin/outMax = min/max. The old node also rescaled a
+        //     Bipolar source from -1..1; a migrated one fed by a Bipolar
+        //     source needs its In Min edited to -1 by hand (the polarity of
+        //     the source isn't knowable from the document alone).
+        //   - adapt.remap -> adapt.map, every "adapt.remap.*" parameter and
+        //     connection port id renamed to "adapt.map.*".
+        // Old adapt.map nodes are rewritten FIRST, so a renamed remap is never
+        // mistaken for one.
+        juce::var migrateV7ToV8 (juce::var v7Root)
+        {
+            auto root = v7Root.clone();
+
+            auto renameKeys = [] (juce::DynamicObject& object, const juce::String& from, const juce::String& to)
+            {
+                juce::NamedValueSet renamed;
+                for (const auto& property : object.getProperties())
+                {
+                    const auto name = property.name.toString();
+                    renamed.set (name.startsWith (from) ? to + name.substring (from.length()) : name, property.value);
+                }
+                object.clear();
+                for (const auto& property : renamed)
+                    object.setProperty (property.name, property.value);
+            };
+
+            if (auto* nodes = root["nodes"].getArray())
+            {
+                for (auto& node : *nodes)
+                {
+                    auto* object = node.getDynamicObject();
+                    if (object == nullptr)
+                        continue;
+
+                    const auto type = object->getProperty ("type").toString();
+                    auto* parameters = object->getProperty ("parameters").getDynamicObject();
+
+                    if (type == "adapt.map" && parameters != nullptr)
+                    {
+                        const auto min = parameters->hasProperty ("adapt.map.min") ? parameters->getProperty ("adapt.map.min") : juce::var (0.0f);
+                        const auto max = parameters->hasProperty ("adapt.map.max") ? parameters->getProperty ("adapt.map.max") : juce::var (1.0f);
+                        parameters->removeProperty ("adapt.map.min");
+                        parameters->removeProperty ("adapt.map.max");
+                        parameters->setProperty ("adapt.map.inMin", 0.0f);
+                        parameters->setProperty ("adapt.map.inMax", 1.0f);
+                        parameters->setProperty ("adapt.map.outMin", min);
+                        parameters->setProperty ("adapt.map.outMax", max);
+                    }
+                    else if (type == "adapt.remap")
+                    {
+                        object->setProperty ("type", "adapt.map");
+                        if (parameters != nullptr)
+                            renameKeys (*parameters, "adapt.remap.", "adapt.map.");
+                    }
+                }
+            }
+
+            if (auto* connections = root["connections"].getArray())
+                for (auto& connection : *connections)
+                    if (auto* object = connection.getDynamicObject())
+                        for (const auto* key : { "fromPortId", "toPortId" })
+                        {
+                            const auto portId = object->getProperty (key).toString();
+                            if (portId.startsWith ("adapt.remap."))
+                                object->setProperty (key, "adapt.map." + portId.fromFirstOccurrenceOf ("adapt.remap.", false, false));
+                        }
+
+            root.getDynamicObject()->setProperty ("schemaVersion", 8);
+            return root;
+        }
+
         // vN -> vN+1 migrations, keyed by the version they migrate FROM.
         using Migration = std::function<juce::var (juce::var)>;
 
@@ -546,6 +622,7 @@ namespace bazalt::engine
                 { 4, migrateV4ToV5 },
                 { 5, migrateV5ToV6 },
                 { 6, migrateV6ToV7 },
+                { 7, migrateV7ToV8 },
             };
             return migrations;
         }

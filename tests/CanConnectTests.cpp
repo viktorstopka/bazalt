@@ -64,7 +64,7 @@ TEST_CASE ("canConnect: Unipolar/Bipolar into a real quantity needs Map, seeded 
     REQUIRE (result.adapterChain.size() == 1);
     CHECK (result.adapterChain[0].typeId == "adapt.map");
     CHECK (result.adapterChain[0].seedFromDestinationRange);
-    CHECK_FALSE (result.adapterChain[0].seedFromSourceRange);
+    CHECK (result.adapterChain[0].seedFromSourceRange); // adapt.map seeds its input range too (design/Map.png)
 
     // Bipolar behaves the same way.
     CHECK (canConnect (controlPort (Quantity::Bipolar), to).outcome == ConnectionOutcome::NeedsAdapters);
@@ -84,7 +84,7 @@ TEST_CASE ("canConnect: a real quantity into Unipolar/Bipolar needs Normalise, s
     CHECK_FALSE (result.adapterChain[0].seedFromDestinationRange);
 }
 
-TEST_CASE ("canConnect: two different real quantities insert adapt.remap, seeded from both sides at once",
+TEST_CASE ("canConnect: two different real quantities insert adapt.map, seeded from both sides at once",
            "[engine][CanConnect][M20]")
 {
     // Time<->Gain, not Pitch<->Frequency (this test's own original M20
@@ -99,7 +99,7 @@ TEST_CASE ("canConnect: two different real quantities insert adapt.remap, seeded
     REQUIRE (result.outcome == ConnectionOutcome::NeedsAdapters);
     REQUIRE (result.adapterChain.size() == 1);
 
-    CHECK (result.adapterChain[0].typeId == "adapt.remap");
+    CHECK (result.adapterChain[0].typeId == "adapt.map");
     CHECK (result.adapterChain[0].seedFromSourceRange);
     CHECK (result.adapterChain[0].seedFromDestinationRange);
     CHECK (result.reason.isNotEmpty());
@@ -181,7 +181,7 @@ TEST_CASE ("canConnect: mono Audio into a real-quantity Control needs Audio to M
     CHECK (result.adapterChain[0].typeId == "adapt.audioToControl");
     CHECK (result.adapterChain[1].typeId == "adapt.map");
     CHECK (result.adapterChain[1].seedFromDestinationRange);
-    CHECK_FALSE (result.adapterChain[1].seedFromSourceRange);
+    CHECK (result.adapterChain[1].seedFromSourceRange); // from adapt.audioToControl's Bipolar output
 }
 
 TEST_CASE ("canConnect: stereo Audio into Control is a hard reject, not a 3-step chain",

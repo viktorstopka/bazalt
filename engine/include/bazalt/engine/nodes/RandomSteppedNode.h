@@ -207,7 +207,7 @@ namespace bazalt::engine::nodes
 
             // wiki/plans/PropsAndMacroRedesign.md Batch D: the old
             // Unipolar/Bipolar selector was a redundant 2-line remap the
-            // generic adapt.remap/util.bipolarToUnipolar already cover —
+            // generic adapt.map/util.bipolarToUnipolar already cover —
             // modulation output is always bipolar now.
             outputs[0] = current;
             outputs[1] = changedThisSample ? 1.0f : 0.0f;

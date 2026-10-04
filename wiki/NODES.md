@@ -60,7 +60,7 @@ are telemetry outputs for live visualization, not ports.
 | `note.*` | gate, value, quantize, transpose, chord, hold, select, humanize, filter, assemble | ✅ gate, value, quantize, transpose, humanize, filter, assemble — 📋 chord, hold, select (real engine limit — see the `note.filter`/`note.hold` entries below) |
 | `math.*` | add, subtract, multiply, divide, abs, clamp, minmax, power, round, modulo, slew | ✅ all 11 |
 | `logic.*` | boolean, not, compare, toggle, select | ✅ all 5 |
-| `adapt.*` | map, remap, normalise, threshold, sampleHold, **audioToControl** (AudioControlBridge), **controlToAudio** (ControlToAudioBridge), **boolToControl**, **pitchToFrequency**, **frequencyToPitch**, **gateLength** (all new, direct-feedback sweep) | ✅ all 11 |
+| `adapt.*` | map (absorbed remap, 2026-10-04), normalise, threshold, sampleHold, **audioToControl** (AudioControlBridge), **controlToAudio** (ControlToAudioBridge), **boolToControl**, **pitchToFrequency**, **frequencyToPitch**, **gateLength** (all new, direct-feedback sweep) | ✅ all 10 |
 | `data.*` | load, table, scale, material, analyseModes, lookup, **record**, **eqToCurve** (Correction 2) | ✅ table, scale, material, lookup — 📋 load, analyseModes, record, eqToCurve |
 | `analysis.*` | onset, pitch, level, centroid | 📋 all 4 |
 | `instance.*` | allocate.voice, allocate.swarmPopulation, allocate.swarmTransient, allocate.trigger, sum | ✅ all five — Domain Extensions batch done 2026-10-01 |
@@ -479,20 +479,28 @@ These are the nodes `canConnect` inserts automatically where it can (see
 `NODES.System.md` §4's matrix for exactly which pairs really auto-insert today vs.
 still need placing by hand). Ordinary nodes the user can also place directly.
 
-#### `adapt.map` — Map
-Rescales a normalised (Unipolar/Bipolar) modulation value into a real-quantity
-range — the modulation-to-parameter mapper `canConnect` auto-inserts, seeded
-from the destination port's own range. `in` is polymorphic on quantity, Unipolar
-by default until a genuinely Bipolar source resolves it otherwise, in which
-case it rescales −1…1 into 0…1 before applying `min`/`max` rather than
-clamping the whole negative half away — a real, previously latent gap fixed
-by `wiki/plans/AudioControlBridge.md`, whose own new node was the first
-Bipolar source ever actually wired through this exact path end to end.
-**In:** `in` — `Control [audio]`; `inLow`/`inHigh`/`outLow`/`outHigh`; `curve`; `shape` — `Data(curve)` (optional). **Out:** `out`. **Structural:** `clip` (enum: clip, wrap, fold, none).
-
-#### `adapt.remap` — Remap
-The drawn-curve shaper with the editor in its own body — internally `data.table` +
-`data.lookup`, exists for immediacy. **In:** `in [audio]`; `curve`/`curveB` — `Data(curve)` (optional); `morph [audio]`; `amount`. **Out:** `out`. **Structural:** its own drawn curve, `polarity`, `edgeMode`.
+#### `adapt.map` — Map ✅ *(design/Map.png — redesigned 2026-10-04)*
+The one rescaling adapter: `in` mapped linearly from **In Min…In Max** onto
+**Out Min…Out Max**, clamped. Formerly `adapt.remap` ("Remap"); the old
+two-parameter Map (a fixed 0–1 / −1–1 input onto `min`/`max`) was the special
+case of this with the input range seeded from the source, so it no longer
+exists. `canConnect` auto-inserts it for modulation → real quantity and for two
+different real quantities (Pitch ↔ Frequency excepted), and
+`connectWithAutoAdapt` seeds **both** ranges: the input range from whatever
+feeds it (its declared bounds, else its polarity: Bipolar −1…1, Unipolar 0…1 —
+for `adapt.audioToControl → adapt.map` that's the bridge's own Bipolar output),
+the output range from the destination. Patches saved with either old node are
+rewritten on load (`PatchSerializer` v7 → v8; an old Map fed by a Bipolar
+source comes back with In Min 0 and needs it set to −1 by hand).
+**In:** `in` — `Control` (the merged "In" pass-through row); `inMin`, `inMax`,
+`outMin`, `outMax` — all real, wireable ports. **Out:** `out`.
+**Body:** between In Max and Out Min, a fixed-size mapping diagram — the input
+range as a vertical segment on the left, the output range on the right, both on
+one common scale, joined end to end: a triangle when one range dwarfs the
+other, a bowtie when the mapping inverts. A live readout of committed values,
+in-progress slider drags, and (for wired ranges) the engine's own telemetry.
+**Later:** the drawn-curve shaping NODE_CATALOG.md describes (`curve`, `morph`,
+`clip` modes) grows this node rather than adding another one.
 
 #### `adapt.normalise` — Normalise
 Rescales a real-quantity value down into the 0–1 Unipolar range — the inverse of
@@ -547,14 +555,14 @@ default against a destination range that's always exactly ±1.
 #### `adapt.boolToControl` — From Bool ✅ *(new — direct feedback: "bool not being pluggable into control and ints... annoying")*
 Maps a Boolean to either of two editable numbers — the mechanical Boolean → Control
 bridge `canConnect` auto-inserts, replacing the `logic.select` + two `util.constant`
-workaround outright rather than just easing it. **In:** `in` — `Boolean`. **Out:** `out` — `Control` (Dimensionless — a free pass into any destination, since the two edited values are what actually target it). **Structural:** `whenFalse` (default 0), `whenTrue` (default 1) — plain numbers, not wireable ports, matching `adapt.map`/`adapt.normalise`'s own `min`/`max` convention.
+workaround outright rather than just easing it. **In:** `in` — `Boolean`. **Out:** `out` — `Control` (Dimensionless — a free pass into any destination, since the two edited values are what actually target it). **Structural:** `whenFalse` (default 0), `whenTrue` (default 1) — plain numbers, not wireable ports, matching `adapt.normalise`'s own `min`/`max` convention.
 
 #### `adapt.pitchToFrequency` — Pitch to Frequency ✅ *(new — a real correctness fix, see below)*
 #### `adapt.frequencyToPitch` — Frequency to Pitch ✅ *(new, the inverse)*
 The exact exponential MIDI-pitch↔Hz conversion (A4 = pitch 69 = 440Hz) — `canConnect`
-now prefers these over the generic `adapt.remap` specifically for a `Pitch ↔
+now prefers these over the generic `adapt.map` specifically for a `Pitch ↔
 Frequency` connection. Direct feedback surfaced a real, previously undiscovered
-correctness gap: `adapt.remap` is a plain *linear* interpolation between two seeded
+correctness gap: `adapt.map` is a plain *linear* interpolation between two seeded
 endpoints, but pitch-to-Hz is exponential (each semitone is ×2^(1/12)) — the old
 auto-inserted remap was quietly wrong for every pitch value between its two seed
 points. **In:** `pitch : float·Pitch·0–127·60` / **In:** `frequency : float·Frequency·0.01–20000Hz·440`.
@@ -743,10 +751,10 @@ ranges — `in [0..1] -> out [-1..1]` and the inverse, clamped not extrapolated.
 **In:** `in`. **Out:** `out`. No structural parameters. Added alongside
 removing `random.stepped`/`seq.steps`/`data.lookup`'s old per-node Unipolar/
 Bipolar selectors (modulation is always bipolar by default now) — a thin
-wrapper over what `adapt.remap` already does (same shape as `adapt.normalise`/
+wrapper over what `adapt.map` already does (same shape as `adapt.normalise`/
 `adapt.map`/`adapt.pitchToFrequency`), for readability in the Add-menu rather
 than filling a capability gap: a Unipolar<->Bipolar quantity mismatch already
-auto-resolves via `adapt.remap`'s own generic fallback. **Deliberately not
+auto-resolves via `adapt.map`'s own generic fallback. **Deliberately not
 auto-inserted** by `connectWithAutoAdapt` — manual placement only.
 
 ## view — listening and looking — all ✅
@@ -835,7 +843,7 @@ A multi-band parametric EQ with its own editor, that unwraps into ordinary
 
 #### `factory.curve` — Curve Factory
 A drawn-curve editor that publishes a `Data(curve)` and unwraps into
-`data.table` plus whatever reads it. **Content:** points + per-segment tension, loop/polarity, optional morph-target shape. **In:** `morph [audio]`. **Out:** `data` — `Data(curve)`. **Structural:** `resolution`. **Unwrap:** → `data.table` + the implied consumer (`lfo.shape`/`env.curve`/`adapt.remap`/`shape.waveshaper`).
+`data.table` plus whatever reads it. **Content:** points + per-segment tension, loop/polarity, optional morph-target shape. **In:** `morph [audio]`. **Out:** `data` — `Data(curve)`. **Structural:** `resolution`. **Unwrap:** → `data.table` + the implied consumer (`lfo.shape`/`env.curve`/`adapt.map`/`shape.waveshaper`).
 
 #### `factory.wave` — Wave Factory
 A single-cycle waveform/harmonic editor for building a wavetable, unwrapping
