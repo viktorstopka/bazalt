@@ -1,4 +1,5 @@
 #include "PluginEditor.h"
+#include "UserPatchLibrary.h"
 #include "NodeDescriptorJson.h"
 #include "bazalt/engine/patch/PatchSerializer.h"
 #include "bazalt/engine/telemetry/TelemetryFrame.h"
@@ -410,6 +411,54 @@ namespace bazalt
             obj->setProperty ("errorMessage", result.errorMessage);
             obj->setProperty ("path", file.getFullPathName());
             completion (juce::var (obj));
+        });
+
+        // ---- The user's patch library (UserPatchLibrary.h): saved in the
+        // per-user app-data folder, so the VST3 and the Standalone share it.
+        options = options.withNativeFunction ("patchList", [] (Args, Completion completion)
+        {
+            juce::Array<juce::var> list;
+            for (const auto& entry : bazalt::UserPatchLibrary().list())
+            {
+                auto* obj = new juce::DynamicObject();
+                obj->setProperty ("name", entry.name);
+                obj->setProperty ("fileName", entry.fileName);
+                obj->setProperty ("modifiedAtMs", (double) entry.modifiedAtMs);
+                list.add (juce::var (obj));
+            }
+            completion (juce::var (list));
+        });
+
+        options = options.withNativeFunction ("patchExists", [] (Args args, Completion completion)
+        {
+            completion (bazalt::UserPatchLibrary().exists (argString (args, 0)));
+        });
+
+        // Saves the CURRENT graph under a name (overwriting a same-named
+        // user patch — the UI asks first).
+        options = options.withNativeFunction ("patchSave", [&processor] (Args args, Completion completion)
+        {
+            juce::String error;
+            const auto document = bazalt::engine::PatchDocument::fromNodeGraph (processor.getGraphEditController().getGraph());
+            const auto fileName = bazalt::UserPatchLibrary().save (argString (args, 0), document, error);
+
+            auto* obj = new juce::DynamicObject();
+            obj->setProperty ("success", fileName.isNotEmpty());
+            obj->setProperty ("errorMessage", error);
+            obj->setProperty ("fileName", fileName);
+            completion (juce::var (obj));
+        });
+
+        // Returns the patch's JSON; the UI loads it through graphRestoreSnapshot
+        // like any other patch (one undo step, same path as a factory patch).
+        options = options.withNativeFunction ("patchLoad", [] (Args args, Completion completion)
+        {
+            completion (bazalt::UserPatchLibrary().load (argString (args, 0)));
+        });
+
+        options = options.withNativeFunction ("patchDelete", [] (Args args, Completion completion)
+        {
+            completion (bazalt::UserPatchLibrary().remove (argString (args, 0)));
         });
 
         options = options.withNativeFunction ("graphRestoreSnapshot", [&processor] (Args args, Completion completion)

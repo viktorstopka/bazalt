@@ -5,6 +5,9 @@
    actual centring), not stretch to fill whatever space is left. */
 .patch-menu {
   position: relative;
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
   width: 360px;
 }
 
@@ -22,9 +25,9 @@
   background: var(--color-background);
   border: var(--stroke-thin) solid var(--color-panelBorder);
   border-radius: var(--radius-sm);
-  /* The shown name is a selected VALUE (same reasoning TriggerSelect's own
-     .trigger-select-value carries), not a UI label — secondary/value face. */
-  font-family: var(--font-secondary);
+  /* Primary face (direct instruction, 2026-10-04 — was the secondary/value
+     face). */
+  font-family: var(--font-primary);
   font-size: 13px;
   color: var(--color-textPrimary);
   cursor: pointer;
@@ -58,10 +61,12 @@
 .patch-menu-item {
   all: unset;
   box-sizing: border-box;
-  display: block;
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
   width: 100%;
   padding: 8px var(--space-sm);
-  font-family: var(--font-secondary);
+  font-family: var(--font-primary);
   font-size: 13px;
   color: var(--color-textPrimary);
   cursor: pointer;
@@ -70,4 +75,103 @@
 .patch-menu-item:hover,
 .patch-menu-item-active {
   background: var(--color-panelBorder);
+}
+
+.patch-menu-button {
+  flex: 1;
+  min-width: 0;
+}
+
+.patch-menu-save {
+  flex-shrink: 0;
+}
+
+.patch-menu-status {
+  position: absolute;
+  left: calc(100% + var(--space-sm));
+  white-space: nowrap;
+  font-size: 12px;
+  color: var(--color-textSecondary);
+}
+
+.patch-menu-item-name {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Where the patch came from: "Factory" or "You". */
+.patch-menu-item-author {
+  flex-shrink: 0;
+  font-size: 11px;
+  color: var(--color-textSecondary);
+}
+
+.patch-menu-item-delete {
+  all: unset;
+  flex-shrink: 0;
+  width: 14px;
+  text-align: center;
+  color: var(--color-textSecondary);
+  cursor: pointer;
+  visibility: hidden;
+}
+
+.patch-menu-item:hover .patch-menu-item-delete {
+  visibility: visible;
+}
+
+.patch-menu-item-delete:hover {
+  color: var(--color-error);
+}
+
+.patch-menu-divider {
+  height: var(--stroke-thin);
+  margin: 4px 0;
+  background: var(--color-panelBorder);
+}
+
+.patch-menu-action {
+  color: var(--color-textSecondary);
+}
+
+.patch-menu-save-form {
+  flex-direction: row;
+  gap: var(--space-xs);
+  padding: var(--space-xs);
+}
+
+.patch-menu-name-input {
+  flex: 1;
+  min-width: 0;
+  height: 26px;
+  padding: 0 var(--space-sm);
+  background: var(--color-background);
+  border: var(--stroke-thin) solid var(--color-panelBorder);
+  border-radius: var(--radius-sm);
+  font-family: var(--font-primary);
+  font-size: 13px;
+  color: var(--color-textPrimary);
+  outline: none;
+}
+
+.patch-menu-name-input:focus {
+  border-color: var(--color-textSecondary);
+}
+
+.patch-menu-save-submit {
+  all: unset;
+  padding: 0 var(--space-sm);
+  border: var(--stroke-thin) solid var(--color-panelBorder);
+  border-radius: var(--radius-sm);
+  font-family: var(--font-primary);
+  font-size: 13px;
+  color: var(--color-textPrimary);
+  cursor: pointer;
+}
+
+.patch-menu-save-submit:disabled {
+  color: var(--color-textSecondary);
+  cursor: default;
 }
