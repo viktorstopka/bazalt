@@ -33,12 +33,16 @@
   right: 0;
 }
 
-.scope-history-canvas-wrap {
-  position: absolute;
-  inset: 0;
-}
-
-.scope-history-canvas {
+/* The <svg viewBox="0 0 190 130"> itself — no separate measured wrapper
+   needed (unlike the old <canvas> version this replaced): SVG has no
+   backing-store-resolution concept to protect from measuring its own box,
+   so there's no feedback loop to guard against by keeping the measured
+   element and the sized element separate. inset:0 + the viewBox handles
+   100% of the scaling; see ScopeHistoryBody.tsx's own top-of-file comment
+   for the full "doesn't fit the frame" / zoom-parallax history this fixes
+   — the same fix, for the same reason, RippleBody.css's own
+   .view-ripple-visual already made first. */
+.scope-history-visual {
   display: block;
   position: absolute;
   inset: 0;

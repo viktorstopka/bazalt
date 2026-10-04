@@ -26,10 +26,28 @@ import { registerPreviewRenderer, unregisterPreviewRenderer } from '../analysis/
 import { findWireAtInput, getEndpoint } from '../graph/graphStore'
 import { niceRange } from '../format/niceRange'
 import { EditableStat } from './EditableStat'
-import { getCamera } from '../canvas/interactionStore'
 import './ScopeHistoryBody.css'
 
 const VISIBILITY_ROOT_MARGIN = '200px'
+
+// The panel's own logical coordinate space, and the <svg>'s own viewBox
+// size — MUST match .scope-history-card's declared width/height in
+// ScopeHistoryBody.css exactly (both files read these same numbers right
+// next to a comment pointing at the other one). Rendered as SVG, not
+// <canvas>, for the same reason RippleBody.tsx's own header comment gives
+// in full: a direct, reproducible bug ("doesn't fit the frame", and the
+// trace visibly drifting relative to the panel while zooming — the exact
+// signature RippleBody.tsx's own comment describes, "offset grows zooming
+// in, shrinks zooming out") traced back to a <canvas>'s backing-store
+// resolution disagreeing with the browser's own zoom transform by a small
+// zoom-proportional amount. An <svg> with a viewBox has no such concept at
+// all — the same transform/paint pipeline that already correctly scales
+// every border, cable and grid dot in this editor does 100% of the
+// scaling natively, removing the whole bug class rather than chasing its
+// next symptom, same fix RippleBody.tsx already made for the identical
+// reason.
+const PANEL_WIDTH = 190
+const PANEL_HEIGHT = 130
 
 // design/Visualization/Scope1.png: "On connection they autofill... derives
 // a range... and then stops adjusting" + "[the time window's] default
@@ -124,7 +142,7 @@ export function ScopeHistoryBody({
   maxTimeWindowSeconds,
   defaultTimeWindowSeconds,
 }: ScopeHistoryBodyProps) {
-  const canvasRef = useRef<HTMLCanvasElement | null>(null)
+  const pathRef = useRef<SVGPathElement | null>(null)
   const rootRef = useRef<HTMLDivElement | null>(null)
   const [visible, setVisible] = useState(false)
   const id = `${descriptor.typeId}:${instanceId ?? 'gallery'}`
@@ -185,7 +203,6 @@ export function ScopeHistoryBody({
     declaredMax,
     hasDeclaredRange,
     currentTimeWindow,
-    traceColor,
     timeWindowParameterId,
     minTimeWindowSeconds,
     maxTimeWindowSeconds,
@@ -195,7 +212,9 @@ export function ScopeHistoryBody({
   // (StrictMode, concurrent features) without this component's props
   // actually changing, and writing a ref mid-render risks the ref
   // reflecting a render that never committed. No dependency array: this
-  // one is meant to run after EVERY render, unconditionally.
+  // one is meant to run after EVERY render, unconditionally. traceColor is
+  // NOT in this bundle — it's a fixed prop for this node variant (set once
+  // directly in JSX's own `stroke`), never read from the render loop.
   useEffect(() => {
     latestRef.current = {
       state,
@@ -203,7 +222,6 @@ export function ScopeHistoryBody({
       declaredMax,
       hasDeclaredRange,
       currentTimeWindow,
-      traceColor,
       timeWindowParameterId,
       minTimeWindowSeconds,
       maxTimeWindowSeconds,
@@ -225,10 +243,7 @@ export function ScopeHistoryBody({
   }, [visible, instanceId, outputPort.id])
 
   useEffect(() => {
-    const canvas = canvasRef.current
-    if (!visible || !canvas || !instanceId) return
-    const ctx = canvas.getContext('2d')
-    if (!ctx) return
+    if (!visible || !instanceId) return
 
     const tap = tapNameForPreview(instanceId, outputPort.id)
 
@@ -292,42 +307,22 @@ export function ScopeHistoryBody({
       const effectiveMin = latest.state.viewerRangeMinOverride ?? latest.declaredMin ?? observedRangeRef.current?.min ?? 0
       const effectiveMax = latest.state.viewerRangeMaxOverride ?? latest.declaredMax ?? observedRangeRef.current?.max ?? 1
 
-      // Same dpr*zoom backing-store sizing NodePreview.tsx's own render()
-      // already establishes (that file's own comment has the full "why" —
-      // a transform runs after layout, so clientWidth/Height never reflect
-      // it, and a <canvas> is a genuinely fixed-resolution bitmap that
-      // needs the zoom folded into its own backing store rather than
-      // stretched after the fact).
-      const sizeSource = canvas.parentElement
-      if (!sizeSource) return
-      const dpr = (window.devicePixelRatio || 1) * Math.max(getCamera().zoom, 1)
-      const width = sizeSource.clientWidth
-      const height = sizeSource.clientHeight
-      if (width === 0 || height === 0) return
-      const targetWidth = Math.round(width * dpr)
-      const targetHeight = Math.round(height * dpr)
-      if (canvas.width !== targetWidth || canvas.height !== targetHeight) {
-        canvas.width = targetWidth
-        canvas.height = targetHeight
-      }
-      ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
-      ctx.clearRect(0, 0, width, height)
-
-      if (!interpolated) return
+      const path = pathRef.current
+      if (!path || !interpolated) return
       const payload = interpolated.payload
       const numColumns = payload.length / 2
       const span = effectiveMax - effectiveMin || 1
-      const yOf = (value: number) => height - ((value - effectiveMin) / span) * height
+      const yOf = (value: number) => PANEL_HEIGHT - ((value - effectiveMin) / span) * PANEL_HEIGHT
 
       // "The trace is a thin continuous white line... peaks between pixel
-      // columns are preserved by min/max decimation" — one continuous
-      // path tracing each column's (lo, hi) envelope in sequence (NaN
-      // columns, not yet written, are simply skipped — a gap in the path,
-      // never drawn as 0).
-      ctx.strokeStyle = latest.traceColor
-      ctx.lineWidth = 1
-      ctx.lineJoin = 'round'
-      ctx.beginPath()
+      // columns are preserved by min/max decimation" — one continuous SVG
+      // path tracing each column's (lo, hi) envelope in sequence, in the
+      // panel's own fixed PANEL_WIDTH/PANEL_HEIGHT coordinate space (NOT
+      // measured pixels — see this file's own top comment on why). NaN
+      // columns (never yet written) start a fresh subpath (a real "M",
+      // not drawn as a line through 0) rather than being skipped outright,
+      // so a gap reads as a gap.
+      let d = ''
       let started = false
       for (let c = 0; c < numColumns; c++) {
         const lo = payload[c * 2]
@@ -336,16 +331,14 @@ export function ScopeHistoryBody({
           continue
         }
         const hi = payload[c * 2 + 1]
-        const x = (c / numColumns) * width
-        if (!started) {
-          ctx.moveTo(x, yOf(lo))
-          started = true
-        } else {
-          ctx.lineTo(x, yOf(lo))
-        }
-        ctx.lineTo(x, yOf(hi))
+        const x = (c / numColumns) * PANEL_WIDTH
+        d += started ? `L ${x} ${yOf(lo)} ` : `M ${x} ${yOf(lo)} `
+        started = true
+        d += `L ${x} ${yOf(hi)} `
       }
-      ctx.stroke()
+      // stroke colour is set once in JSX below (a fixed prop for this
+      // node variant, never changes live) — only `d` needs touching here.
+      path.setAttribute('d', d)
     }
 
     registerPreviewRenderer(id, render)
@@ -381,9 +374,9 @@ export function ScopeHistoryBody({
       <div className="scope-history-port scope-history-port-right">
         <PortGlyph port={outputPort} side="right" instanceId={instanceId} connected={outputConnected} isPoly={false} />
       </div>
-      <div className="scope-history-canvas-wrap">
-        <canvas className="scope-history-canvas" ref={canvasRef} />
-      </div>
+      <svg className="scope-history-visual" viewBox={`0 0 ${PANEL_WIDTH} ${PANEL_HEIGHT}`}>
+        <path ref={pathRef} fill="none" stroke={traceColor} strokeWidth={1} strokeLinejoin="round" />
+      </svg>
       <div className="scope-history-range">
         <EditableStat label="" value={effectiveMaxForDisplay} decimals={2} onCommit={commitRangeMax} />
         <EditableStat label="" value={effectiveMinForDisplay} decimals={2} onCommit={commitRangeMin} />
