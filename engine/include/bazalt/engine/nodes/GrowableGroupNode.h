@@ -6,7 +6,7 @@
 namespace bazalt::engine::nodes
 {
     /** Shared base for the nodes that take "N of the same thing" through a
-        growable port group (math.add, math.multiply, mix.sum, logic.boolean)
+        growable port group (math.add, math.multiply, mix.sum, logic.and/or/xor)
         — see PortGroups.h for the whole mechanism. Holds the live group
         size and clamps it to the node's [min, max]; a subclass declares its
         ports from `getGroupPortCount()` and reads that many inputs in

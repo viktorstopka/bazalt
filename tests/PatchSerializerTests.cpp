@@ -297,3 +297,37 @@ TEST_CASE ("v8 -> v9 migration drops view.scope and splices view.glance out of i
     CHECK (c.toPortId == "audio");
     CHECK (result.document.outputNodeId == "osc");
 }
+
+TEST_CASE ("v9 -> v10 migration turns logic.boolean's Op into logic.and / logic.or / logic.xor (+ Invert)",
+           "[engine][patch][logic]")
+{
+    const juce::String json = R"({
+        "schemaVersion": 9,
+        "nodes": [
+            { "id": "a", "type": "logic.boolean", "parameters": {} },
+            { "id": "o", "type": "logic.boolean", "parameters": { "logic.boolean.op": 1 } },
+            { "id": "x", "type": "logic.boolean", "parameters": { "logic.boolean.op": 2 } },
+            { "id": "na", "type": "logic.boolean", "parameters": { "logic.boolean.op": 3 } },
+            { "id": "no", "type": "logic.boolean", "parameters": { "logic.boolean.op": 4 } }
+        ],
+        "connections": []
+    })";
+    const auto result = parsePatchFromJson (json);
+    REQUIRE (result.success);
+
+    auto check = [&] (const juce::String& id, const juce::String& type, bool inverted)
+    {
+        for (const auto& node : result.document.nodes)
+            if (node.id == id)
+            {
+                CHECK (node.type == type);
+                CHECK (node.parameters.count (type + ".invert") == (inverted ? 1u : 0u));
+                CHECK (node.parameters.count ("logic.boolean.op") == 0);
+            }
+    };
+    check ("a", "logic.and", false);
+    check ("o", "logic.or", false);
+    check ("x", "logic.xor", false);
+    check ("na", "logic.and", true);
+    check ("no", "logic.or", true);
+}

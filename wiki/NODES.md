@@ -59,7 +59,7 @@ are telemetry outputs for live visualization, not ports.
 | `seq.*` | steps, euclid | ✅ euclid — 🚧 steps |
 | `note.*` | gate, value, quantize, transpose, chord, hold, select, humanize, filter, assemble | ✅ gate, value, quantize, transpose, humanize, filter, assemble — 📋 chord, hold, select (real engine limit — see the `note.filter`/`note.hold` entries below) |
 | `math.*` | add, subtract, multiply, divide, abs, clamp, minmax, power, round, modulo, slew | ✅ all 11 |
-| `logic.*` | boolean, not, compare, toggle, select | ✅ all 5 |
+| `logic.*` | and, or, xor, not, compare, toggle, latch, select, edge, eventGroup | ✅ all 10 |
 | `adapt.*` | map (absorbed remap, 2026-10-04), normalise, threshold, sampleHold, **audioToControl** (AudioControlBridge), **controlToAudio** (ControlToAudioBridge), **boolToControl**, **pitchToFrequency**, **frequencyToPitch**, **gateLength** (all new, direct-feedback sweep) | ✅ all 10 |
 | `data.*` | load, table, scale, material, analyseModes, lookup, **record**, **eqToCurve** (Correction 2) | ✅ table, scale, material, lookup — 📋 load, analyseModes, record, eqToCurve |
 | `analysis.*` | onset, pitch, level, centroid | 📋 all 4 |
@@ -484,7 +484,10 @@ rejected by `canConnect`.
 
 | Node | Ports | Notes |
 |---|---|---|
-| `logic.boolean` | `in.0…in.N` (growable); structural `op` (AND/OR/XOR/NAND/NOR) | one node, not five |
+| `logic.and`, `logic.or`, `logic.xor` | `in.0…in.N` (growable bool, like `math.add`) → `out` (bool); `invert` (bool) | separate nodes since 2026-10-04 (replacing `logic.boolean`'s Op menu; patches migrate, `PatchSerializer` v9 → v10). Only wired inputs count; Xor over >2 is parity; `invert` gives Nand / Nor / Xnor |
+| `logic.eventGroup` — Event Group | `in.0…in.N` (growable Event) → `out` (Event) | fires when any input fires; same-sample events merge into the strongest |
+| `logic.edge` — Edge | `in` (bool) → `out` (Event); `mode` Rising / Falling / Both | a state's change as a moment |
+| `logic.latch` — Latch | `set`, `reset` (Event) → `out` (bool) | set/reset flip-flop: repeated sets are harmless (unlike Toggle); reset wins a tie |
 | `logic.not` | `in` → `out` (bool) | inverts a boolean signal |
 | `logic.compare` | `a`, `b`, `tolerance`; structural `op` | `=` uses `tolerance`, not exact float equality |
 | `logic.toggle` | `trigger`, `reset : Event` → `out` (bool); structural `initialState` (bool) | flips on each trigger and holds until the next one or a reset — a button-like latched state; reset and voice-restart both return to `initialState`, not unconditionally false |

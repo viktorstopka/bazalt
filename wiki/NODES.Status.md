@@ -249,7 +249,7 @@ intended use (an audio input playable as an instrument) once `analysis.pitch`/
 | `note.select` | To be implemented | **A2** | *(blocked)* | Same real engine limit as `note.hold` — pairs with `clock.counter` once buildable. |
 | `note.chord` | To be implemented | **A2** | *(blocked)* | Same real engine limit — needs to emit several simultaneous notes from one input note. |
 
-### `math.*` / `logic.*` / `adapt.*` — 26/26 Implemented
+### `math.*` / `logic.*` / `adapt.*` — all Implemented (logic grew to 10 on 2026-10-04: and/or/xor replaced boolean; eventGroup, edge, latch added; adapt.remap folded into adapt.map)
 
 All done — no rows needed (count unaffected by `wiki/plans/DomainRedesign.md` Batch 3:
 `math.add`/`math.multiply` gained real Audio/Poly polymorphism and absorbed

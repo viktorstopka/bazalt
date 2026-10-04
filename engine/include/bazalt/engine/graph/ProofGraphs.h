@@ -50,7 +50,8 @@
 #include "bazalt/engine/nodes/CrossfadeNode.h"
 #include "bazalt/engine/nodes/LogicNotNode.h"
 #include "bazalt/engine/nodes/LogicToggleNode.h"
-#include "bazalt/engine/nodes/LogicBooleanNode.h"
+#include "bazalt/engine/nodes/LogicGateNodes.h"
+#include "bazalt/engine/nodes/LogicEventNodes.h"
 #include "bazalt/engine/nodes/LogicSelectNode.h"
 #include "bazalt/engine/nodes/LogicCompareNode.h"
 #include "bazalt/engine/nodes/SampleHoldNode.h"
@@ -168,7 +169,12 @@ namespace bazalt::engine
         factory.registerType ("mix.crossfade", [] { return std::make_unique<nodes::CrossfadeNode>(); });
         factory.registerType ("logic.not", [] { return std::make_unique<nodes::LogicNotNode>(); });
         factory.registerType ("logic.toggle", [] { return std::make_unique<nodes::LogicToggleNode>(); });
-        factory.registerType ("logic.boolean", [] { return std::make_unique<nodes::LogicBooleanNode>(); });
+        factory.registerType ("logic.and", [] { return std::make_unique<nodes::LogicAndNode>(); });
+        factory.registerType ("logic.or", [] { return std::make_unique<nodes::LogicOrNode>(); });
+        factory.registerType ("logic.xor", [] { return std::make_unique<nodes::LogicXorNode>(); });
+        factory.registerType ("logic.eventGroup", [] { return std::make_unique<nodes::LogicEventGroupNode>(); });
+        factory.registerType ("logic.edge", [] { return std::make_unique<nodes::LogicEdgeNode>(); });
+        factory.registerType ("logic.latch", [] { return std::make_unique<nodes::LogicLatchNode>(); });
         factory.registerType ("logic.select", [] { return std::make_unique<nodes::LogicSelectNode>(); });
         factory.registerType ("logic.compare", [] { return std::make_unique<nodes::LogicCompareNode>(); });
         factory.registerType ("adapt.sampleHold", [] { return std::make_unique<nodes::SampleHoldNode>(); });

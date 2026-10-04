@@ -10,7 +10,7 @@ namespace bazalt::engine
         PortDescriptor.h) — the shared, node-agnostic half of the mechanism.
 
         How it fits together: a node that takes "N of the same thing"
-        (math.add, mix.sum, logic.boolean) tags each of its group ports with
+        (math.add, mix.sum, logic.and/or/xor) tags each of its group ports with
         a `PortGroup` and reports how many it currently declares via
         `Node::getGroupPortCount()`. The graph never stores that count — it
         is DERIVED, at compile time, from the connections: the highest

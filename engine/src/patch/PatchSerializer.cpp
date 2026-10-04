@@ -679,6 +679,37 @@ namespace bazalt::engine
             return root;
         }
 
+        // 2026-10-04: logic.boolean (one node, an Op menu AND/OR/XOR/NAND/NOR)
+        // became separate logic.and / logic.or / logic.xor nodes with an
+        // Invert switch (LogicGateNodes.h). Ports (in.N, out) are unchanged.
+        juce::var migrateV9ToV10 (juce::var v9Root)
+        {
+            auto root = v9Root.clone();
+            if (auto* nodes = root["nodes"].getArray())
+            {
+                for (auto& node : *nodes)
+                {
+                    auto* object = node.getDynamicObject();
+                    if (object == nullptr || object->getProperty ("type").toString() != "logic.boolean")
+                        continue;
+
+                    auto* parameters = object->getProperty ("parameters").getDynamicObject();
+                    const auto op = parameters != nullptr && parameters->hasProperty ("logic.boolean.op")
+                                        ? juce::roundToInt ((float) parameters->getProperty ("logic.boolean.op")) : 0;
+                    // 0 AND, 1 OR, 2 XOR, 3 NAND, 4 NOR
+                    const juce::String type = (op == 1 || op == 4) ? "logic.or" : op == 2 ? "logic.xor" : "logic.and";
+                    object->setProperty ("type", type);
+
+                    auto* fresh = new juce::DynamicObject();
+                    if (op >= 3)
+                        fresh->setProperty (type + ".invert", 1.0f);
+                    object->setProperty ("parameters", juce::var (fresh));
+                }
+            }
+            root.getDynamicObject()->setProperty ("schemaVersion", 10);
+            return root;
+        }
+
         // vN -> vN+1 migrations, keyed by the version they migrate FROM.
         using Migration = std::function<juce::var (juce::var)>;
 
@@ -693,6 +724,7 @@ namespace bazalt::engine
                 { 6, migrateV6ToV7 },
                 { 7, migrateV7ToV8 },
                 { 8, migrateV8ToV9 },
+                { 9, migrateV9ToV10 },
             };
             return migrations;
         }
