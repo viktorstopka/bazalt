@@ -274,12 +274,13 @@ building block behind delays, chorus, and feedback networks. **In:** `in` — `A
 
 ## space
 
-#### `space.reverb` — Reverb 📋
-A feedback-delay-network reverb — diffuse decay with size, damping, predelay, and
-tone controls, the general-purpose space/ambience node. **In:** `left`, `right` — `Audio`; `size`; `decay`; `damping`; `predelay`; `diffusion`; `modulation`; `lowCut`, `highCut`; `mix`. **Out:** `left`, `right` — `Audio`. **Structural:** `quality` (enum: low, medium, high — FDN size). **Native:** inner loop scales with network size; cheap enough at low quality to use per voice. **M28.**
+#### `space.reverb` — Reverb ✅
+A feedback-delay-network reverb with physical controls — the general-purpose
+space/ambience node (`wiki/plans/Reverb.md`). **In:** `in` — `Audio` (`Channels::Stereo`); `size` (m, 1–50); `decay` (RT60, s, 0.1–60); `decayLow`, `decayHigh` (×decay below 250 Hz / above 3 kHz); `predelay` (ms); `diffusion`; `modulation`, `modRate`; `early`; `lowCut`, `highCut`; `width`; `mix` (default 0.3 — inserting in a patch is the common case); `freeze` (`Boolean`). **Out:** `out` — `Audio` (`Channels::Stereo`). **Structural:** `quality` (8 or 16 lines). **Behavior:** input tone → predelay → multichannel diffuser (its early sound) → 8/16-line FDN (Householder matrix, per-line shelves derived from the per-band RT60, slowly wandering line lengths read through lossless allpass interpolation) → decorrelated stereo → width → mix. The measured decay per band is what the controls say (±10 %, tested); loudness of a sustained signal is independent of `decay`; `freeze` = lossless loop, muted input. Tested against `Reverb.md` §5's bar in `tests/ReverbTests.cpp`.
 
-#### `space.diffuser` — Diffuser 📋
-**In:** `in`; `size`; `amount`. **Out:** `out`. **Structural:** `stages` (2–8). **Behavior:** an allpass chain — early reflections, transient smearing. **M28.**
+#### `space.diffuser` — Diffuser ✅
+Smears a stereo signal into dense, uncoloured texture without adding a tail —
+the first half of a reverb on its own. **In:** `in` — `Audio` (`Channels::Stereo`); `size` (ms); `diffusion`; `modulation`. **Out:** `out` — `Audio` (`Channels::Stereo`). **Structural:** `stages` (1–6). **Behavior:** eight internal channels through Hadamard diffusion stages with seeded per-channel delays and polarity flips (Geraint Luff's design, the same code `space.reverb` runs); lossless.
 
 #### `space.pan` — Pan ✅
 Positions a mono (or already-stereo) source in the stereo field and outputs one

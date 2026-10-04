@@ -70,6 +70,7 @@ add_executable(EngineTests
     PhaseLockedPreviewTests.cpp
     ValueOnlyEditTests.cpp
     StereoLaneTests.cpp
+    ReverbTests.cpp
     VoiceManagerTests.cpp
 )
 

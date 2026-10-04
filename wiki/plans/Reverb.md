@@ -1,6 +1,15 @@
 # Reverb — `space.diffuser` and `space.reverb`, built to a measured standard
 
-**Status:** Proposed, 2026-10-04. No code yet. Depends on `StereoChannels.md` (the
+**Status:** Built, 2026-10-04 — `engine/include/bazalt/engine/ReverbDsp.h`,
+`nodes/DiffuserNode.h`, `nodes/ReverbNode.h`; measurements in §10. Deviations from
+the design below, each found by measuring: lines span **1–2×** (not 0.5–1×) the
+room's crossing time, because the sparser network's low modes stood out (§10);
+lines are read with **allpass** interpolation, because cubic interpolation damped
+the high band ~0.5 dB per pass (12 kHz decay 15 % short, freeze drained 2 dB in 24 s);
+second-order shelves at fixed 250 Hz / 3 kHz crossovers; `mix` defaults to 0.3
+(inserting in a patch is the common case); early reflections are the diffuser's
+own output rather than a separate tap pattern. Character modes and shimmer remain
+later work. Depends on `StereoChannels.md` (the
 reverb is a fixed-stereo node; everything feeding it should stay stereo). Feeds
 `SpatialScene.md` (which drives this node's physical parameters from a scene) and the
 later convolution work (§8).
@@ -186,3 +195,21 @@ Gets its own plan file when it's next.
 - Geraint Luff, *Let's Write a Reverb* (ADC 2021) — the practical modern recipe this
   design follows.
 - Sean Costello's Valhalla DSP blog — design notes from the VintageVerb author.
+
+## 10. Measured (2026-10-04, 48 kHz, `tests/ReverbTests.cpp`)
+
+| Measure | Result | Bar |
+|---|---|---|
+| Decay at 1 kHz, 0.3–20 s, 8 and 16 lines | within 1–5 % | ±10 % |
+| Per band, decay 2 s, ×2 low / ×0.4 high | 63 Hz 3.96 s (4.0), 1 kHz 1.97 s (2.0), 12 kHz 0.80 s (0.8) | ±10 % |
+| Echo density reaches 0.9 | 25 ms (5 m), 50 ms (12 m), 105 ms (30 m) | < 150 ms |
+| Tail peak-to-local-median | 8 lines 15–17 dB, 16 lines 13–14 dB (decaying white noise: 11 dB; before the 1–2× lines: 24–25 dB) | < 18 dB |
+| L/R correlation of the tail, width 1 | ≈ 0.01 | \|ρ\| < 0.3 |
+| Mono sum | −3.0 dB | > −4 dB |
+| Freeze, 4–5 s vs 28–29 s | −0.1 dB | ±0.5 dB |
+| 60 s of noise at every extreme | finite, peak < 4 | bounded |
+| Block size 1 / 64 / 509 | bit-exact | bit-exact |
+| CPU, 10 s stereo, Debug build | 8 lines ≈ 2.5 s, 16 lines ≈ 5 s | recorded |
+
+Listening renders: `BAZALT_RENDER_DIR=<dir> EngineTests "[.render]"` writes a dry
+source and room / hall / plate / huge presets.

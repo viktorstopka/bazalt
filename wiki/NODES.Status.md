@@ -156,7 +156,7 @@ rather than waiting; every `factory.*` node still does want the real thing.
 
 `delay.line` — Implemented.
 
-### `space.*` / `stereo.*` — 4 Implemented, 2 to build
+### `space.*` / `stereo.*` — 6/6 Implemented
 
 | Node | Status | Necessity | Batch | Notes |
 |---|---|---|---|---|
@@ -164,8 +164,8 @@ rather than waiting; every `factory.*` node still does want the real thing.
 | `space.width` | Implemented | | | |
 | `stereo.split` | Implemented | | | |
 | `stereo.combine` | Implemented | | | |
-| `space.diffuser` | To be implemented | **B2** | Space | Allpass chain — reuses `filter.allpass`. |
-| `space.reverb` | To be implemented | **B3** | Space | FDN reverb — the hardest effect node; cheap enough at low quality to run per-voice. |
+| `space.diffuser` | Implemented | | Space | Done 2026-10-04 (`wiki/plans/Reverb.md`) — Hadamard multichannel diffuser, shared `ReverbDsp.h` code. |
+| `space.reverb` | Implemented | | Space | Done 2026-10-04 (`wiki/plans/Reverb.md`) — 8/16-line FDN, physical controls, measured quality bar (`tests/ReverbTests.cpp`). 8 lines ≈ 25 % of a core in a Debug build for 10 s stereo; Release is far lower. |
 
 ### `mix.*` — 3/3 Implemented
 

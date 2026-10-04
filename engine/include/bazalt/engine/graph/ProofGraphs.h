@@ -69,6 +69,8 @@
 #include "bazalt/engine/nodes/RandomDriftNode.h"
 #include "bazalt/engine/nodes/PanNode.h"
 #include "bazalt/engine/nodes/WidthNode.h"
+#include "bazalt/engine/nodes/DiffuserNode.h"
+#include "bazalt/engine/nodes/ReverbNode.h"
 #include "bazalt/engine/nodes/StereoSplitNode.h"
 #include "bazalt/engine/nodes/StereoCombineNode.h"
 #include "bazalt/engine/nodes/ClockPulseNode.h"
@@ -203,6 +205,9 @@ namespace bazalt::engine
         // real stereo nodes raised.
         factory.registerType ("space.pan", [] { return std::make_unique<nodes::PanNode>(); });
         factory.registerType ("space.width", [] { return std::make_unique<nodes::WidthNode>(); });
+        // wiki/plans/Reverb.md
+        factory.registerType ("space.diffuser", [] { return std::make_unique<nodes::DiffuserNode>(); });
+        factory.registerType ("space.reverb", [] { return std::make_unique<nodes::ReverbNode>(); });
         factory.registerType ("stereo.split", [] { return std::make_unique<nodes::StereoSplitNode>(); });
         factory.registerType ("stereo.combine", [] { return std::make_unique<nodes::StereoCombineNode>(); });
         // Clock+Seq batch (wiki/NODES.Status.md's own build-next order, step 1).
