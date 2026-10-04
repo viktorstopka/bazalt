@@ -44,7 +44,7 @@
 /* ---- Box: purely visual, behind everything ---- */
 .deco-box {
   border: var(--canvas-hairline, var(--stroke-thin)) solid color-mix(in srgb, var(--deco-colour) 55%, transparent);
-  background: color-mix(in srgb, var(--deco-colour) 9%, transparent);
+  background: color-mix(in srgb, var(--deco-colour) 14%, transparent);
   border-radius: var(--radius-sm);
 }
 
@@ -165,7 +165,9 @@
   cursor: ew-resize;
 }
 
-/* ---- Reroute: a dot; left half is its input, right half its output ---- */
+/* ---- Reroute: drag the dot to move it; drag out of the thin zone just past
+   its right edge for a new cable; drop a cable anywhere on it (the drop
+   target is found by distance, so its input anchor needs no hit area). ---- */
 .deco-reroute {
   position: relative;
   width: 14px;
@@ -188,14 +190,17 @@
   position: absolute;
   top: 0;
   height: 100%;
-  width: 50%;
-  cursor: crosshair;
 }
 
 .deco-reroute-in {
   left: 0;
+  width: 2px;
+  pointer-events: none;
 }
 
 .deco-reroute-out {
-  left: 50%;
+  left: 100%;
+  width: 8px;
+  margin-left: -3px;
+  cursor: crosshair;
 }

@@ -955,7 +955,14 @@ export const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, InfiniteCanvasPro
       input.type = 'file'
       input.accept = 'image/*'
       input.multiple = true
-      input.onchange = () => void importImagesAt([...(input.files ?? [])], canvasX, canvasY)
+      // Attached while the dialog is open: some WebViews (WebKitGTK) never
+      // fire `change` on a file input that isn't in the document.
+      input.style.display = 'none'
+      document.body.appendChild(input)
+      input.onchange = () => {
+        void importImagesAt([...(input.files ?? [])], canvasX, canvasY)
+        input.remove()
+      }
       input.click()
     }
 

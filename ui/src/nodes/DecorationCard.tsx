@@ -243,9 +243,8 @@ function ImageCard({ node, selected }: { node: GraphNode; selected: boolean }) {
   )
 }
 
-/** A dot for cable management: drop a cable on its left half (its input),
-    drag a new one out of its right half (its output). It takes the colour
-    of whatever feeds it. */
+/** A dot for cable management: drag it to move it, drop a cable onto it to
+    feed it, drag a new cable out of the thin zone just past its right edge. */
 function RerouteDot({ node, descriptor, selected, connectedPortIds }: DecorationCardProps) {
   const input = descriptor.inputs[0]
   const output = descriptor.outputs[0]
