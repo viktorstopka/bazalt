@@ -27,6 +27,9 @@ namespace bazalt::engine::nodes
         a client-side-only interpretation of existing data, not a new
         producer.
     */
+    // Ports are quantity-neutral (Dimensionless, the wildcard): a viewer
+    // shows any integer as it is. Declaring Count here made an Int macro of
+    // another quantity get a Map inserted just to be looked at.
     class ViewCountNode : public Node
     {
     public:
@@ -47,14 +50,14 @@ namespace bazalt::engine::nodes
         std::vector<PortDescriptor> getInputPorts() const override
         {
             return { PortDescriptor { .id = "in", .type = SignalType::Control, .label = "In",
-                                       .isInteger = true, .kind = ValueKind::Int, .quantity = Quantity::Count,
+                                       .isInteger = true, .kind = ValueKind::Int,
                                        .step = 1.0f } };
         }
 
         std::vector<PortDescriptor> getOutputPorts() const override
         {
             return { PortDescriptor { .id = "out", .type = SignalType::Control, .label = "Out", .isPrimaryOutput = true,
-                                       .isInteger = true, .kind = ValueKind::Int, .quantity = Quantity::Count,
+                                       .isInteger = true, .kind = ValueKind::Int,
                                        .step = 1.0f } };
         }
 

@@ -146,7 +146,9 @@ export function RippleBody({ descriptor, state, instanceId }: { descriptor: Node
           continue
         }
         const t = Math.min(1, (now - ring.bornAtMs) / RING_LIFETIME_MS)
-        circle.setAttribute('r', String(t * MAX_RADIUS))
+        // Born at the dot's edge, not its centre: a ring growing out from
+        // r=0 spends its first fifth hidden under the dot and reads late.
+        circle.setAttribute('r', String(DOT_RADIUS + t * (MAX_RADIUS - DOT_RADIUS)))
         circle.setAttribute('stroke-opacity', String(1 - t))
       }
     }

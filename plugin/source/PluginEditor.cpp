@@ -274,7 +274,7 @@ namespace bazalt
 
         // wiki/plans/UtilMacro.md P2.1 (post-ship sweep): one call that adds
         // a fully-configured util.macro node (id, x, y, slot, min, max,
-        // isInteger, quantity, unit, value) in a single recompile, replacing
+        // isInteger, quantity, unit, value, type) in a single recompile, replacing
         // what used to be graphAddNode + 5x graphSetParameterValue +
         // graphSetProperty (6 separate recompiles) for the same gesture. The
         // caller still follows up with graphConnectWithAutoAdapt separately
@@ -286,7 +286,7 @@ namespace bazalt
             const auto result = controller.createMacro (argString (args, 0), argFloat (args, 1), argFloat (args, 2),
                                                            (int) argFloat (args, 3), argFloat (args, 4), argFloat (args, 5),
                                                            argFloat (args, 6) >= 0.5f, (int) argFloat (args, 7),
-                                                           argString (args, 8), argFloat (args, 9));
+                                                           argString (args, 8), argFloat (args, 9), (int) argFloat (args, 10));
             completion (commandResultToVar (result));
         });
 

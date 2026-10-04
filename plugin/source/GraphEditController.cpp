@@ -13,6 +13,7 @@
 #include <optional>
 #include <algorithm>
 #include <array>
+#include <map>
 
 namespace bazalt
 {
@@ -258,6 +259,70 @@ namespace bazalt
             }
         }
 
+        /** Every node of `g` as GraphCompiler would see it once its
+            polymorphic ports are resolved: parameters applied, growable
+            groups sized from the connections, and the same fixed-point pass
+            as GraphCompiler.cpp's "Resolve polymorphic port types" (a
+            type-following node takes on what is wired into it, one hop per
+            pass). Message thread only — a throwaway set of nodes, never a plan.
+        */
+        std::map<juce::String, std::unique_ptr<bazalt::engine::Node>> resolveGraphPorts (const bazalt::engine::NodeGraph& g,
+                                                                                          const bazalt::engine::NodeFactory& factory)
+        {
+            std::map<juce::String, std::unique_ptr<bazalt::engine::Node>> nodes;
+            for (const auto& instance : g.getNodes())
+            {
+                auto node = factory.create (instance.type);
+                if (node == nullptr)
+                    continue;
+
+                std::vector<juce::String> incoming;
+                for (const auto& connection : g.getConnections())
+                    if (connection.toNodeId == instance.id)
+                        incoming.push_back (connection.toPortId);
+                if (const auto groupCount = bazalt::engine::requiredPortGroupCount (*node, incoming); groupCount >= 0)
+                    node->setGroupPortCount (groupCount);
+
+                applyInstanceParameters (*node, instance);
+                nodes[instance.id] = std::move (node);
+            }
+
+            const auto signature = [] (const bazalt::engine::Node& node)
+            {
+                std::vector<std::pair<int, int>> result;
+                for (const auto& port : node.getInputPorts())
+                    result.emplace_back ((int) port.type, (int) port.quantity);
+                for (const auto& port : node.getOutputPorts())
+                    result.emplace_back ((int) port.type, (int) port.quantity);
+                return result;
+            };
+
+            for (size_t pass = 0; pass < nodes.size(); ++pass)
+            {
+                bool anyChanged = false;
+                for (const auto& connection : g.getConnections())
+                {
+                    const auto from = nodes.find (connection.fromNodeId);
+                    const auto to = nodes.find (connection.toNodeId);
+                    if (from == nodes.end() || to == nodes.end() || ! to->second->hasPolymorphicPorts())
+                        continue;
+
+                    const auto sourcePorts = from->second->getOutputPorts();
+                    const auto source = std::find_if (sourcePorts.begin(), sourcePorts.end(),
+                                                      [&] (const auto& port) { return port.id == connection.fromPortId; });
+                    if (source == sourcePorts.end())
+                        continue;
+
+                    const auto before = signature (*to->second);
+                    to->second->resolveIncomingPort (connection.toPortId, *source);
+                    anyChanged = anyChanged || signature (*to->second) != before;
+                }
+                if (! anyChanged)
+                    break;
+            }
+            return nodes;
+        }
+
         // wiki/plans/DomainRedesign.md Batch 2: which numbered
         // BazaltAudioProcessor::OriginBundle slot each of THIS compile's
         // origins should occupy — computed purely by reading the
@@ -474,17 +539,14 @@ namespace bazalt
         if (toPort == nullptr)
             return { false, "Node '" + toNodeId + "' has no input port '" + toPortId + "'" };
 
-        // A polymorphic-port node (deco.reroute) has no fixed port type to
-        // pre-check against: what its ports report is decided by what's wired
-        // to them, which only GraphCompiler's resolution pass knows (Node.h,
-        // hasPolymorphicPorts()). The default descriptor read above says
-        // "Audio", so canConnect() against it would reject a Control cable
-        // into a Reroute outright — and did, until this check existed.
-        // GraphCompiler is the authority on validity anyway (its own canConnect
-        // pass runs on the resolved types and rejects a real mismatch with the
-        // same reason text), so for these endpoints go straight to connect().
-        // The cost is that no adapter is auto-inserted across a Reroute; the
-        // user gets the compiler's rejection instead of a silent conversion.
+        // A type-following node (math.add/multiply, logic.select/compare,
+        // adapt.sampleHold, the viewers, deco.reroute — hasPolymorphicPorts())
+        // has no fixed port type: what it reports is decided by what's wired
+        // to it, and its default descriptor read above is a guess (a Reroute
+        // says "Audio", an Add "Dimensionless"). Resolve both ends the way
+        // GraphCompiler will, with this cable already in place, so a real
+        // mismatch through one (a Time-valued Add into a Frequency cutoff)
+        // still gets its Map instead of the compiler's flat refusal.
         auto isPolymorphic = [&factory] (const bazalt::engine::NodeInstance& instance)
         {
             const auto node = factory.create (instance.type);
@@ -492,7 +554,34 @@ namespace bazalt
         };
 
         if (isPolymorphic (*fromNode) || isPolymorphic (*toNode))
-            return connect (fromNodeId, fromPortId, toNodeId, toPortId);
+        {
+            auto proposed = graph;
+            replaceExistingInputConnection (proposed, toNodeId, toPortId);
+            proposed.addConnection ({ fromNodeId, fromPortId, toNodeId, toPortId });
+            const auto resolved = resolveGraphPorts (proposed, factory);
+
+            const auto pick = [] (std::vector<bazalt::engine::PortDescriptor>& storage, const juce::String& portId)
+                -> const bazalt::engine::PortDescriptor*
+            {
+                for (const auto& port : storage)
+                    if (port.id == portId)
+                        return &port;
+                return nullptr;
+            };
+
+            if (const auto from = resolved.find (fromNodeId); from != resolved.end())
+            {
+                fromStorage = from->second->getOutputPorts();
+                fromPort = pick (fromStorage, fromPortId);
+            }
+            if (const auto to = resolved.find (toNodeId); to != resolved.end())
+            {
+                toStorage = to->second->getInputPorts();
+                toPort = pick (toStorage, toPortId);
+            }
+            if (fromPort == nullptr || toPort == nullptr)
+                return connect (fromNodeId, fromPortId, toNodeId, toPortId);
+        }
 
         const auto connectivity = bazalt::engine::canConnect (*fromPort, *toPort);
 
@@ -624,7 +713,7 @@ namespace bazalt
     GraphEditController::CommandResult GraphEditController::createMacro (
         const juce::String& macroNodeId, float x, float y,
         int slot, float min, float max, bool isInteger, int quantity,
-        const juce::String& unit, float value)
+        const juce::String& unit, float value, int type)
     {
         if (macroNodeId.isEmpty())
             return { false, "Node id must not be empty" };
@@ -643,6 +732,7 @@ namespace bazalt
             instance.position = { x, y };
             instance.parameters = {
                 { "util.macro.slot", (float) slot },
+                { "util.macro.type", (float) type },
                 { "util.macro.min", min },
                 { "util.macro.max", max },
                 { "util.macro.isInteger", isInteger ? 1.0f : 0.0f },
