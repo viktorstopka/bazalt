@@ -142,16 +142,16 @@ TEST_CASE ("SvfFilterNode's cutoff/resonance ports live-modulate instead of only
     SvfFilterNode lowCutoff;
     lowCutoff.prepare (info);
     float lowInputs[3] = { 1.0f, 200.0f, 0.7071f }; // an impulse through a low cutoff
-    float lowOut = 0.0f;
-    lowCutoff.processSample (lowInputs, &lowOut);
+    float lowOut[5] = { 0.0f, 0.0f, 0.0f, 0.0f, 0.0f }; // 5 outputs: lowpass/bandpass/highpass/notch/peak
+    lowCutoff.processSample (lowInputs, lowOut);
 
     SvfFilterNode highCutoff;
     highCutoff.prepare (info);
     float highInputs[3] = { 1.0f, 15000.0f, 0.7071f }; // the same impulse through a high cutoff
-    float highOut = 0.0f;
-    highCutoff.processSample (highInputs, &highOut);
+    float highOut[5] = { 0.0f, 0.0f, 0.0f, 0.0f, 0.0f };
+    highCutoff.processSample (highInputs, highOut);
 
-    CHECK (lowOut != highOut); // the live cutoff value must actually reach the filter
+    CHECK (lowOut[0] != highOut[0]); // the live cutoff value must actually reach the filter (lowpass/"out")
 }
 
 TEST_CASE ("OnePoleFilterNode's coefficient port live-modulates instead of only reading setParameter's static value",
