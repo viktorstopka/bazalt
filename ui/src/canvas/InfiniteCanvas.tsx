@@ -711,7 +711,8 @@ export const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, InfiniteCanvasPro
           alpha = 1
           dashed = !ghostSpliceValid
         }
-        cables.push({ from, to, color, alpha, dashed })
+        const stereo = graphNow.stereoOutputs.get(wire.fromNodeId)?.has(wire.fromPortId) ?? false
+        cables.push({ from, to, color, alpha, dashed, stereo })
       }
 
       if (g?.kind === 'wireDrag') {

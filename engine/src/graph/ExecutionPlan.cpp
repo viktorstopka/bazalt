@@ -94,12 +94,8 @@ namespace bazalt::engine
                             regionScalars[(size_t) outIndices[(size_t) o]] = sampleOut[o];
                     }
 
-                    if (region.externalOutputBufferIndex >= 0)
-                    {
-                        const auto& regionOutputIndices = region.outputScalarIndices[(size_t) region.outputRegionPosition];
-                        const auto value = regionScalars[(size_t) regionOutputIndices[(size_t) region.outputPortIndexInNode]];
-                        blockBuffers[(size_t) region.externalOutputBufferIndex].getBlock().getChannelPointer (0)[s] = value;
-                    }
+                    for (const auto& external : region.externalOutputs)
+                        blockBuffers[(size_t) external.bufferIndex].getBlock().getChannelPointer (0)[s] = regionScalars[(size_t) external.scalarIndex];
                 }
             }
         }

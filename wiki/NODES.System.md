@@ -757,3 +757,52 @@ to bind pairwise instead of broadcasting) crashed on a debug assertion rather th
 silently passing, confirming it's load-bearing. 365/365 engine+plugin tests green,
 `pluginval --strictness-level 10` SUCCESS, UI `npm run build`/`npm run lint` clean
 with zero `ui/src` changes.
+
+### 9.6 Channel lanes — width follows the cable (2026-10-04)
+
+**Status: built** (`wiki/plans/StereoChannels.md`). §9 made stereo one cable but left
+every filter, delay, gain and shaper mono-only, so a stereo signal reaching one got a
+silently auto-inserted `mix.downmix`. Now:
+
+- **`Channels::Inherited` is real.** A node whose Audio ports are all per-channel
+  (`perChannel()` in `PortDescriptor.h`; no fixed-Stereo port, at least one Inherited
+  input and output) is *lane-able*. `GraphCompiler`'s channel-lane pass resolves each
+  such node's lane count from what is wired into it (a fixed point, like polymorphic
+  types) and builds one node instance per lane, appended after the graph's own slots
+  (`ExecutionPlan::laneSlotsBySlot`). The node's author writes mono DSP; each lane has
+  its own state. Lane `k` of a per-channel input reads source channel `k` (a mono
+  source broadcasts); every other input (Control, Event, Data, Note) is shared by all
+  lanes. Non-lane outputs are visible from lane 0 only. `maxLanes = 2` today; the
+  width is a count, not an enum.
+- **Per-channel today:** `filter.svf/ladder/onepole/allpass/peak/shelf`,
+  `util.dcBlock`, `delay.line`, `mix.gain`, `shape.clip`, `mix.crossfade`,
+  `resonator.comb/string`, and — through their resolved Audio type — `math.add`,
+  `math.multiply`, `util.reroute`, `view.cycle`. Viewers (`view.listen`, the meter)
+  accept any width and read the first channel.
+- **Feedback regions** expand per lane too, and publish *every* channel something
+  outside reads (`PerSampleRegionStep::externalOutputs`) — this also fixed an older
+  limit where only one region output could ever reach the rest of the graph.
+- **State reuse and live edits are per lane**: M17 reuse carries every lane forward
+  under lane 0's rule; `pendingParameterUpdates`, `LiveParameterEdits` and macros
+  address all lanes (`ExecutionPlan::setParameterOnAllLanes`). Bypass is per lane, so
+  a bypassed per-channel node passes stereo through intact.
+- **No silent downmix.** Stereo into a port that is genuinely one signal (a detector,
+  an exciter input, `space.pan`'s input) returns `NeedsAdapters` with
+  `CanConnectResult::choices` (`mid/left/right/side`); `connectWithAutoAdapt` makes
+  no change without a choice, and the editor asks with a small chooser at the drop
+  (`ConnectionChoiceMenu.tsx`). The pick becomes a visible `mix.downmix` in that mode.
+- **Voices are stereo end to end.** A voice plan whose output is stereo is summed
+  into a two-channel scratch buffer; `instance.sum` carries two channels when its
+  voices do (a driver-set `instance.sum.channels`, not a user parameter); the
+  no-voices render path keeps its right channel. Before this a per-voice pan lost
+  its right channel at the voice sum.
+- **Visible width.** Compiled plans list their stereo outputs
+  (`stereoOutputPortsByNode`, returned with `graphGetNodeMultiplicity`); the editor
+  draws those cables as two thin strands.
+
+Tests: `tests/StereoLaneTests.cpp` (lanes, mono unchanged, stereo feedback loop,
+per-lane reuse/edits, stereo bypass), `tests-plugin/StereoVoiceTests.cpp` (per-voice
+pan through the voice sum, with and without `instance.sum` + a global filter),
+`ConnectWithAutoAdaptTests.cpp` (direct stereo into a per-channel port; choose-then-
+insert for a mono-only port), `CanConnectTests.cpp`. Known limits: `space.pan` has no
+stereo-input (balance) mode yet; per-channel previews show the first channel.

@@ -1,10 +1,12 @@
 #include "GraphEditController.h"
+#include <optional>
 #include "PluginProcessor.h"
 #include "bazalt/engine/graph/CanConnect.h"
 #include "bazalt/engine/graph/MultiplicityResolver.h"
 #include "bazalt/engine/graph/GraphCompiler.h"
 #include "bazalt/engine/graph/PortGroups.h"
 #include "bazalt/engine/graph/ProofGraphs.h"
+#include "bazalt/engine/nodes/InstanceMixNode.h"
 #include "bazalt/engine/nodes/InstanceOriginNode.h"
 #include "bazalt/engine/nodes/InstanceSwarmPopulationNode.h"
 #include "bazalt/engine/patch/PatchSerializer.h"
@@ -451,7 +453,8 @@ namespace bazalt
 
     GraphEditController::CommandResult GraphEditController::connectWithAutoAdapt (
         const juce::String& fromNodeId, const juce::String& fromPortId,
-        const juce::String& toNodeId, const juce::String& toPortId)
+        const juce::String& toNodeId, const juce::String& toPortId,
+        const juce::String& choice)
     {
         const auto* fromNode = graph.findNode (fromNodeId);
         if (fromNode == nullptr)
@@ -509,6 +512,27 @@ namespace bazalt
         // whole premise).
         if (connectivity.adapterChain.empty() || connectivity.adapterChain.size() > 2)
             return { false, "No auto-insertable adapter for this connection: " + connectivity.reason };
+
+        // A lossy reduction is the user's call (wiki/plans/StereoChannels.md
+        // §3): ask first, then set the first adapter's enum mode parameter to
+        // the option they picked.
+        std::optional<std::pair<juce::String, float>> choiceParameter;
+        if (! connectivity.choices.empty())
+        {
+            if (std::find (connectivity.choices.begin(), connectivity.choices.end(), choice) == connectivity.choices.end())
+            {
+                CommandResult needsChoice { false, connectivity.reason };
+                for (const auto& option : connectivity.choices)
+                    needsChoice.choices.add (option);
+                return needsChoice;
+            }
+
+            if (const auto adapter = factory.create (connectivity.adapterChain.front().typeId))
+                for (const auto& parameter : adapter->getParameters())
+                    for (size_t option = 0; option < parameter.enumOptions.size(); ++option)
+                        if (parameter.kind == bazalt::engine::ValueKind::Enum && parameter.enumOptions[option].id == choice)
+                            choiceParameter = std::make_pair (parameter.id, (float) option);
+        }
 
         const auto numSteps = (int) connectivity.adapterChain.size();
 
@@ -581,6 +605,9 @@ namespace bazalt
                     instance.parameters[step.typeId + ".min"] = *fromPort->minValue;
                     instance.parameters[step.typeId + ".max"] = *fromPort->maxValue;
                 }
+
+                if (i == 0 && choiceParameter.has_value())
+                    instance.parameters[choiceParameter->first] = choiceParameter->second;
 
                 g.addNode (std::move (instance));
                 g.addConnection ({ currentFromNodeId, currentFromPortId, adapterId, step.inputPortId });
@@ -828,6 +855,7 @@ namespace bazalt
                 return { false, monoCompile.errorMessage };
 
             auto monoPlan = std::make_unique<bazalt::engine::ExecutionPlan> (std::move (monoCompile.plan));
+            auto newStereoOutputs = monoPlan->stereoOutputPortsByNode;
 
             // ADR-0029: re-attach live preview taps to the new plan while
             // nothing else can see it (a tap pointer lives on a plan).
@@ -850,6 +878,7 @@ namespace bazalt
             markAllPorts (newPortMultiplicity, factory, split.globalGraph, "scalar", {});
             portMultiplicity = std::move (newPortMultiplicity);
             originBundleIndexByNodeId.clear();
+            stereoOutputs = std::move (newStereoOutputs);
 
             processor.setMacroMappings (deriveMacroMappings (graph));
 
@@ -997,6 +1026,22 @@ namespace bazalt
         // published regardless (harmless: the audio thread never runs it
         // while hasGlobalDomain is false, exactly as before this fix), so
         // that malformed content still fails the compile and rolls back.
+        // wiki/plans/StereoChannels.md: each origin's instance.sum carries as
+        // many channels as that origin's voices produce, known only now that
+        // the voice plans are compiled.
+        for (const auto& origin : split.origins)
+        {
+            if (origin.instanceSumNodeId.isEmpty())
+                continue;
+            const auto slot = bundleSlotOf (slotForOrigin, origin.originId);
+            if (slot < 0)
+                continue;
+            const auto& voicePlan = newVoicePlansBySlot[(size_t) slot][0];
+            if (auto* sumNode = split.globalGraph.findNode (origin.instanceSumNodeId); sumNode != nullptr && voicePlan != nullptr)
+                sumNode->parameters[bazalt::engine::nodes::InstanceMixNode::channelsParameterId] =
+                    voicePlan->finalOutputBufferIndexRight >= 0 ? 2.0f : 1.0f;
+        }
+
         if (! split.globalGraph.getNodes().empty())
         {
             // Real, found-live bug (direct feedback: "moving a node's
@@ -1053,6 +1098,22 @@ namespace bazalt
 
             processor.applyPreviewSubscriptions (voicePlanPointers, newGlobalPlan.get());
         }
+
+        // A node lives in one origin's voice plans (identical across its
+        // voices) or in the global plan; collect before the plans are handed off.
+        std::unordered_map<juce::String, std::vector<juce::String>> newStereoOutputs;
+        for (const auto& origin : split.origins)
+        {
+            const auto slot = bundleSlotOf (slotForOrigin, origin.originId);
+            if (slot < 0)
+                continue;
+            if (const auto& plan = newVoicePlansBySlot[(size_t) slot][0])
+                for (const auto& [nodeId, ports] : plan->stereoOutputPortsByNode)
+                    newStereoOutputs[nodeId] = ports;
+        }
+        if (newGlobalPlan)
+            for (const auto& [nodeId, ports] : newGlobalPlan->stereoOutputPortsByNode)
+                newStereoOutputs[nodeId] = ports;
 
         // Every compile succeeded — publish. Never partially publish on a
         // failure path above; this is the point past which the edit is
@@ -1137,6 +1198,7 @@ namespace bazalt
 
         portMultiplicity = std::move (newPortMultiplicity);
         originBundleIndexByNodeId = std::move (newOriginBundleIndexByNodeId);
+        stereoOutputs = std::move (newStereoOutputs);
 
         processor.setMacroMappings (deriveMacroMappings (graph));
 

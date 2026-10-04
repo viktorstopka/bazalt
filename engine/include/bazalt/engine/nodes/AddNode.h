@@ -139,6 +139,7 @@ namespace bazalt::engine::nodes
                 auto port = makeNumericGroupPort (group, i, 0.0f);
                 port.type = resolvedType;
                 port.quantity = resolvedQuantity;
+                port.channels = Channels::Inherited;
                 port.polymorphism = PortPolymorphism::SignalAndQuantity;
                 ports.push_back (port);
             }
@@ -148,7 +149,7 @@ namespace bazalt::engine::nodes
         std::vector<PortDescriptor> getOutputPorts() const override
         {
             return { PortDescriptor { .id = "out", .type = resolvedType, .isPrimaryOutput = true,
-                                       .quantity = resolvedQuantity, .polymorphism = PortPolymorphism::SignalAndQuantity } };
+                                       .quantity = resolvedQuantity, .channels = Channels::Inherited, .polymorphism = PortPolymorphism::SignalAndQuantity } };
         }
 
         void setParameter (const juce::String& parameterId, float value) override

@@ -111,8 +111,7 @@ namespace bazalt
                     continue;
                 for (int i = 0; i < numPlans; ++i)
                     if (plans[i] != nullptr)
-                        if (auto* node = plans[i]->getNodeById (slot.nodeId))
-                            node->setParameter (slot.parameterId, slot.current);
+                        plans[i]->setParameterOnAllLanes (slot.nodeId, slot.parameterId, slot.current);
             }
         }
 

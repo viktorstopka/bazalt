@@ -4,6 +4,7 @@ import { AnalysisPanel } from './analysis/AnalysisPanel'
 import { redo, undo, loadPatch, quantityFromOrdinal, type GraphNode } from './graph/graphStore'
 import { graphExportSnapshot } from './graph/graphCommands'
 import { useGraphSnapshot } from './graph/useGraphSnapshot'
+import { ConnectionChoiceMenu } from './graph/ConnectionChoiceMenu'
 import { MacroKnob } from './controls/MacroKnob'
 import { classifyPortUiKind, PORT_UI_STYLE } from './graph/portUiKind'
 import type { Quantity } from './graph/descriptorTypes'
@@ -177,7 +178,7 @@ function App() {
   // Undo/Redo is the one keyboard-only action (Ctrl+Z/Shift+Z/Y) that never
   // got a visible UI fallback (M10_REVIEW.md §16/§23's retrospective) — the
   // most likely shortcut to be intercepted by a host DAW's own accelerators.
-  const { canUndo, canRedo, lastError, nodes } = useGraphSnapshot()
+  const { canUndo, canRedo, lastError, nodes, pendingConnectionChoice } = useGraphSnapshot()
 
   // Dev-convenience export (direct instruction — see graphCommands.ts's
   // graphExportSnapshot doc comment for the full scope). Purely local,
@@ -232,6 +233,7 @@ function App() {
   return (
     <div id="app-root">
       <InfiniteCanvas ref={canvasHandleRef} snapSettings={snapSettings}>
+        {pendingConnectionChoice && <ConnectionChoiceMenu pending={pendingConnectionChoice} />}
         <div className="top-bar">
           <span className="top-bar-title">Bazalt</span>
           {/* M19 (NODE_EDITOR.md §6): "a rejected command surfaces as an

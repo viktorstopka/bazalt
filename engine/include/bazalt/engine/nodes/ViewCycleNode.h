@@ -45,13 +45,13 @@ namespace bazalt::engine::nodes
         std::vector<PortDescriptor> getInputPorts() const override
         {
             return { PortDescriptor { .id = "in", .type = resolvedType, .label = "In", .quantity = resolvedQuantity,
-                                      .polymorphism = PortPolymorphism::SignalAndQuantity } };
+                                      .channels = Channels::Inherited, .polymorphism = PortPolymorphism::SignalAndQuantity } };
         }
 
         std::vector<PortDescriptor> getOutputPorts() const override
         {
             return { PortDescriptor { .id = "out", .type = resolvedType, .label = "Out", .isPrimaryOutput = true,
-                                      .quantity = resolvedQuantity, .polymorphism = PortPolymorphism::SignalAndQuantity } };
+                                      .quantity = resolvedQuantity, .channels = Channels::Inherited, .polymorphism = PortPolymorphism::SignalAndQuantity } };
         }
 
         std::vector<PreviewDescriptor> getPreviews() const override

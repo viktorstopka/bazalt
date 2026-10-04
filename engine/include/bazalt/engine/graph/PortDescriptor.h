@@ -308,4 +308,14 @@ namespace bazalt::engine
         std::optional<float> softMax;
         bool isStructural = false;
     };
+
+    /** wiki/plans/StereoChannels.md: an Audio port that follows the width of
+        what is wired to it. A node whose Audio ports are all per-channel runs
+        once per channel (a "lane"), so its mono DSP becomes stereo without the
+        node knowing — GraphCompiler.cpp's channel-lane pass. */
+    inline PortDescriptor perChannel (PortDescriptor port)
+    {
+        port.channels = Channels::Inherited;
+        return port;
+    }
 }

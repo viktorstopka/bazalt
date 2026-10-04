@@ -1,8 +1,12 @@
 # Stereo Channels — width belongs to the cable, not the node
 
-**Status:** Proposed, 2026-10-04. No code yet. Prerequisite for the basic sound
-palette (`noise.colored`, `shape.*`, `space.diffuser`, `space.reverb` —
-`Reverb.md`), so every new effect is born channel-aware instead of retrofitted.
+**Status:** Built, 2026-10-04 — see `wiki/NODES.System.md` §9.6 for what shipped
+and the tests. Deviations from the sketch below: the stereo→mono chooser offers
+Mid/Left/Right/Side through `CanConnectResult::choices` (no new outcome enum); a
+generator's own `stereo` option is left to the nodes that need it (`noise.colored`).
+Prerequisite for the basic sound palette (`noise.colored`, `shape.*`,
+`space.diffuser`, `space.reverb` — `Reverb.md`), so every new effect is born
+channel-aware instead of retrofitted.
 
 ---
 

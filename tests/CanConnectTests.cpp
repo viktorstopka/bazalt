@@ -246,12 +246,13 @@ TEST_CASE ("canConnect: Audio channels, mono->mono, mono->stereo (free), stereo-
     CHECK (canConnect (audioPort (Channels::Stereo), audioPort (Channels::Stereo)).outcome == ConnectionOutcome::Ok);
 }
 
-TEST_CASE ("canConnect: stereo->mono needs mix.downmix", "[engine][CanConnect][channels]")
+TEST_CASE ("canConnect: stereo->mono needs mix.downmix, and the user's choice of how", "[engine][CanConnect][channels]")
 {
     const auto result = canConnect (audioPort (Channels::Stereo), audioPort (Channels::Mono));
     REQUIRE (result.outcome == ConnectionOutcome::NeedsAdapters);
     REQUIRE (result.adapterChain.size() == 1);
     CHECK (result.adapterChain[0].typeId == "mix.downmix");
+    CHECK (result.choices == std::vector<juce::String> { "mid", "left", "right", "side" });
 }
 
 TEST_CASE ("canConnect: Inherited channels are always compatible", "[engine][CanConnect][channels]")

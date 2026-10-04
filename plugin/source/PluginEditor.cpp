@@ -223,6 +223,13 @@ namespace bazalt
             auto* obj = new juce::DynamicObject();
             obj->setProperty ("success", result.success);
             obj->setProperty ("errorMessage", result.errorMessage);
+            if (! result.choices.isEmpty())
+            {
+                juce::Array<juce::var> choices;
+                for (const auto& choice : result.choices)
+                    choices.add (choice);
+                obj->setProperty ("choices", choices);
+            }
             return juce::var (obj);
         }
 
@@ -369,7 +376,7 @@ namespace bazalt
         {
             auto& controller = processor.getGraphEditController();
             const auto result = controller.connectWithAutoAdapt (argString (args, 0), argString (args, 1),
-                                                                   argString (args, 2), argString (args, 3));
+                                                                   argString (args, 2), argString (args, 3), argString (args, 4));
             completion (commandResultToVar (result));
         });
 
@@ -532,9 +539,21 @@ namespace bazalt
                 badgesObj->setProperty (nodeId, juce::var (badgeObj));
             }
 
+            // wiki/plans/StereoChannels.md: which outputs carry stereo, so the
+            // editor can draw those cables as stereo.
+            auto* stereoObj = new juce::DynamicObject();
+            for (const auto& [nodeId, portIds] : controller.getStereoOutputs())
+            {
+                juce::Array<juce::var> ids;
+                for (const auto& portId : portIds)
+                    ids.add (portId);
+                stereoObj->setProperty (nodeId, ids);
+            }
+
             auto* root = new juce::DynamicObject();
             root->setProperty ("ports", juce::var (portsObj));
             root->setProperty ("badges", juce::var (badgesObj));
+            root->setProperty ("stereo", juce::var (stereoObj));
             completion (juce::JSON::toString (juce::var (root), true));
         });
 

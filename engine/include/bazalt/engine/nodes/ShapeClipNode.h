@@ -77,7 +77,7 @@ namespace bazalt::engine::nodes
         std::vector<PortDescriptor> getInputPorts() const override
         {
             return {
-                { "in", SignalType::Audio },
+                perChannel ({ "in", SignalType::Audio }),
                 PortDescriptor { .id = "shape.clip.ceiling", .type = SignalType::Control, .label = "Ceiling",
                                   .minValue = minCeiling, .maxValue = maxCeiling, .defaultValue = 1.0f,
                                   .hasFallbackWhenUnconnected = true, .quantity = Quantity::Dimensionless },
@@ -91,7 +91,7 @@ namespace bazalt::engine::nodes
         std::vector<PortDescriptor> getOutputPorts() const override
         {
             return {
-                PortDescriptor { .id = "out", .type = SignalType::Audio, .label = "Out", .isPrimaryOutput = true },
+                perChannel (PortDescriptor { .id = "out", .type = SignalType::Audio, .label = "Out", .isPrimaryOutput = true }),
                 PortDescriptor { .id = "clipping", .type = SignalType::Boolean, .label = "Clipping" },
             };
         }

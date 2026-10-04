@@ -10,6 +10,10 @@ import { getNativeFunction } from '@juce-framework/webview'
 export interface CommandResult {
   success: boolean
   errorMessage: string
+  /** graphConnectWithAutoAdapt only: the connection loses information
+      (stereo into a mono-only port) and needs one of these choices —
+      call again passing it. */
+  choices?: string[]
 }
 
 const NOT_IN_WEBVIEW: CommandResult = { success: false, errorMessage: 'Not running inside the plugin WebView' }
@@ -62,8 +66,8 @@ export function graphDisconnect(fromNodeId: string, fromPortId: string, toNodeId
     succeeds or fails outright. See canConnect.ts for the client-side
     prediction used for live drag feedback before a drop is attempted.
 */
-export function graphConnectWithAutoAdapt(fromNodeId: string, fromPortId: string, toNodeId: string, toPortId: string): Promise<CommandResult> {
-  return callCommand('graphConnectWithAutoAdapt', fromNodeId, fromPortId, toNodeId, toPortId)
+export function graphConnectWithAutoAdapt(fromNodeId: string, fromPortId: string, toNodeId: string, toPortId: string, choice = ''): Promise<CommandResult> {
+  return callCommand('graphConnectWithAutoAdapt', fromNodeId, fromPortId, toNodeId, toPortId, choice)
 }
 
 export function graphSetParameterValue(nodeId: string, parameterId: string, value: number): Promise<CommandResult> {
@@ -185,6 +189,9 @@ export interface NodeMultiplicityBadge {
 export interface GraphMultiplicity {
   ports: Record<string, Record<string, PortMultiplicityInfo>>
   badges: Record<string, NodeMultiplicityBadge>
+  /** Node id -> its output ports carrying stereo in the compiled graph
+      (wiki/plans/StereoChannels.md). */
+  stereo?: Record<string, string[]>
 }
 
 export async function graphGetNodeMultiplicity(): Promise<GraphMultiplicity | null> {

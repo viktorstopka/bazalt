@@ -374,7 +374,7 @@ TEST_CASE ("GraphCompiler routes a feedback cycle into a per-sample region", "[e
     // mix, delay, damp are the cycle; excite is external and must NOT be
     // scheduled inside the region.
     CHECK (region.nodeSlotsInOrder.size() == 3);
-    REQUIRE (region.externalOutputBufferIndex >= 0); // damp's output is the graph's designated output
+    REQUIRE (! region.externalOutputs.empty()); // damp's output is the graph's designated output
 }
 
 TEST_CASE ("GraphCompiler rejects a cycle containing a node that can't run per-sample", "[engine][GraphCompiler]")

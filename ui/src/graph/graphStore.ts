@@ -268,6 +268,20 @@ export interface GraphSnapshot {
       start of the next user gesture, not on a timer.
   */
   lastError: string | null
+  /** A connection waiting for the user to say how stereo becomes mono
+      (wiki/plans/StereoChannels.md §3) — the chooser shows while set. */
+  pendingConnectionChoice: PendingConnectionChoice | null
+  /** Node id -> output port ids that carry stereo, as compiled — stereo
+      cables draw doubled (wiki/plans/StereoChannels.md). */
+  stereoOutputs: ReadonlyMap<string, ReadonlySet<string>>
+}
+
+export interface PendingConnectionChoice {
+  fromNodeId: string
+  fromPortId: string
+  toNodeId: string
+  toPortId: string
+  choices: readonly string[]
 }
 
 // ---- Wire shape from the engine's own PatchDocument JSON -----------------
@@ -360,6 +374,8 @@ let descriptors: NodeDescriptor[] = []
 let descriptorsLoaded = false
 let multiplicity = new Map<string, NodeMultiplicity>()
 let lastError: string | null = null
+let pendingConnectionChoice: PendingConnectionChoice | null = null
+let stereoOutputs: ReadonlyMap<string, ReadonlySet<string>> = new Map()
 
 /** Fetched in parallel with graphGetSnapshot everywhere that's refreshed
     (see the header comment for why: both are "resync local state from the
@@ -406,6 +422,8 @@ async function fetchMultiplicity(): Promise<Map<string, NodeMultiplicity>> {
   const result = await graphGetNodeMultiplicity()
   const map = new Map<string, NodeMultiplicity>()
   if (!result) return map
+  // Same fetch, same moment: which compiled outputs are stereo.
+  stereoOutputs = new Map(Object.entries(result.stereo ?? {}).map(([nodeId, ports]) => [nodeId, new Set(ports)]))
   for (const [nodeId, ports] of Object.entries(result.ports)) {
     map.set(nodeId, { ports: new Map(Object.entries(ports)), badge: result.badges[nodeId] })
   }
@@ -464,6 +482,8 @@ function buildSnapshot(): GraphSnapshot {
     canUndo: past.length > 0,
     canRedo: future.length > 0,
     lastError,
+    pendingConnectionChoice,
+    stereoOutputs,
   }
 }
 
@@ -1136,10 +1156,37 @@ export function commitNodeMoves(updates: ReadonlyArray<{ id: string; x: number; 
   )
 }
 
+/** Connects with auto-adapt; a connection that would throw information away
+    (stereo into a mono-only port) isn't made — it becomes the pending choice
+    the chooser asks about, then resolveConnectionChoice() finishes it. */
+async function connectOrAsk(fromNodeId: string, fromPortId: string, toNodeId: string, toPortId: string): Promise<boolean> {
+  const result = await graphConnectWithAutoAdapt(fromNodeId, fromPortId, toNodeId, toPortId)
+  if (!result.success && result.choices && result.choices.length > 0) {
+    pendingConnectionChoice = { fromNodeId, fromPortId, toNodeId, toPortId, choices: result.choices }
+    return false
+  }
+  if (!result.success) lastError = result.errorMessage
+  return result.success
+}
+
+/** The chooser's answer: `choice` makes the connection through a visible
+    adapter in that mode; null cancels it. */
+export function resolveConnectionChoice(choice: string | null): void {
+  const pending = pendingConnectionChoice
+  pendingConnectionChoice = null
+  notify()
+  if (!pending || choice === null) return
+  void withHistory(async () => {
+    if (await fireCommand(() => graphConnectWithAutoAdapt(pending.fromNodeId, pending.fromPortId, pending.toNodeId, pending.toPortId, choice))) {
+      await designateOutputIfMasterOut(pending.toNodeId)
+    }
+  })
+}
+
 export function addWire(fromNodeId: string, fromPortId: string, toNodeId: string, toPortId: string): void {
   void withHistory(
     async () => {
-      if (await fireCommand(() => graphConnectWithAutoAdapt(fromNodeId, fromPortId, toNodeId, toPortId))) {
+      if (await connectOrAsk(fromNodeId, fromPortId, toNodeId, toPortId)) {
         await designateOutputIfMasterOut(toNodeId)
       }
     },
@@ -1180,7 +1227,7 @@ export function commitWireDrag(fromNodeId: string, fromPortId: string, target: {
   void withHistory(
     async () => {
       if (detachedWire) await fireCommand(() => graphDisconnect(detachedWire.fromNodeId, detachedWire.fromPortId, detachedWire.toNodeId, detachedWire.toPortId))
-      if (target && (await fireCommand(() => graphConnectWithAutoAdapt(fromNodeId, fromPortId, target.nodeId, target.portId)))) {
+      if (target && (await connectOrAsk(fromNodeId, fromPortId, target.nodeId, target.portId))) {
         await designateOutputIfMasterOut(target.nodeId)
       }
     },

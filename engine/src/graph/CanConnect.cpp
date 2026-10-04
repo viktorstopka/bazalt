@@ -55,18 +55,17 @@ namespace bazalt::engine
 
             if (from.channels == Channels::Stereo && to.channels == Channels::Mono)
             {
-                // Real stereo cable redesign (wiki/NODES.System.md §9):
-                // `mix.downmix` is now a genuine 1-in-1-out node (one real
-                // `Channels::Stereo` "in" port, one mono "out"), so this
-                // fits the same single-`AdapterStep` splice mechanism
-                // `adapt.map`/`adapt.normalise`/`adapt.threshold` already
-                // use — `GraphEditController::connectWithAutoAdapt` auto-
-                // inserts it now, closing the gap this comment used to flag
-                // (downmix used to be 2-in-1-out, which never fit).
+                // wiki/plans/StereoChannels.md §3: per-channel processors are
+                // Inherited now, so this only happens for a port that is
+                // genuinely one signal (a detector, an exciter, a bridge).
+                // Reducing stereo loses information, so it is never silent:
+                // the user picks how, and the choice becomes a visible
+                // mix.downmix node in that mode.
                 CanConnectResult result;
                 result.outcome = ConnectionOutcome::NeedsAdapters;
                 result.adapterChain = { AdapterStep { "mix.downmix", "in" } };
-                result.reason = "Stereo source into a mono-only port needs mix.downmix";
+                result.reason = "Stereo into a mono-only port: choose Mid, Left, Right or Side";
+                result.choices = { "mid", "left", "right", "side" };
                 return result;
             }
 

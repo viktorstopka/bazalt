@@ -88,8 +88,7 @@ namespace bazalt
 
             for (int i = 0; i < numPlans; ++i)
                 if (plans[i] != nullptr)
-                    if (auto* node = plans[i]->getNodeById (mapping.targetNodeId))
-                        node->setParameter (mapping.targetParameterId, targetValue);
+                    plans[i]->setParameterOnAllLanes (mapping.targetNodeId, mapping.targetParameterId, targetValue);
         }
     }
 }

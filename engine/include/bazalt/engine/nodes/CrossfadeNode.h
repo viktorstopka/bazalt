@@ -39,8 +39,8 @@ namespace bazalt::engine::nodes
         std::vector<PortDescriptor> getInputPorts() const override
         {
             return {
-                { "a", SignalType::Audio },
-                { "b", SignalType::Audio },
+                perChannel ({ "a", SignalType::Audio }),
+                perChannel ({ "b", SignalType::Audio }),
                 PortDescriptor { .id = "mix.crossfade.position", .type = SignalType::Control, .label = "Position",
                                   .minValue = 0.0f, .maxValue = 1.0f, .defaultValue = 0.5f,
                                   .hasFallbackWhenUnconnected = true, .quantity = Quantity::Unipolar },
@@ -49,7 +49,7 @@ namespace bazalt::engine::nodes
 
         std::vector<PortDescriptor> getOutputPorts() const override
         {
-            return { PortDescriptor { .id = "out", .type = SignalType::Audio, .isPrimaryOutput = true } };
+            return { perChannel (PortDescriptor { .id = "out", .type = SignalType::Audio, .isPrimaryOutput = true }) };
         }
 
         std::vector<ParameterDescriptor> getParameters() const override
