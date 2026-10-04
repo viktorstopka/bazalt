@@ -68,13 +68,13 @@ function connectControl(from: PortDescriptor, to: PortDescriptor): CanConnectRes
     return needsAdapters('Frequency into a Pitch-typed port needs an exact conversion, not a linear remap')
   }
 
-  // Two different real quantities (e.g. Frequency and Time) — composed via
-  // Normalise then Map, same as CanConnect.cpp's mirrored case. Live
+  // Two different real quantities (e.g. Frequency and Time) — rescaled by a
+  // Map seeded from both ranges, same as CanConnect.cpp's mirrored case. Live
   // wire-drag prediction only needs the outcome (NeedsAdapters renders
   // identically to Ok during a drag, per this file's own header comment);
-  // the actual two-node insertion happens engine-side, in
+  // the actual insertion happens engine-side, in
   // GraphEditController::connectWithAutoAdapt, once the drop commits.
-  return needsAdapters('Different real quantities — remapped via Normalise then Map')
+  return needsAdapters('Different real quantities — rescaled via Map')
 }
 
 function dataTagAccepted(produced: string, required: string): boolean {

@@ -47,8 +47,9 @@ export function graphCreateMacro(
   quantity: number,
   unit: string,
   value: number,
+  type = 0,
 ): Promise<CommandResult> {
-  return callCommand('graphCreateMacro', nodeId, x, y, slot, min, max, isInteger ? 1 : 0, quantity, unit, value)
+  return callCommand('graphCreateMacro', nodeId, x, y, slot, min, max, isInteger ? 1 : 0, quantity, unit, value, type)
 }
 
 /** wiki/plans/Decorations.md §4: a deco.image node showing `base64` (already

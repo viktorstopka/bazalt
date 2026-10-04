@@ -488,7 +488,11 @@ const MAX_HISTORY = 100
 
 let nextId = 1
 function makeId(prefix: string): string {
-  return `${prefix}${nextId++}`
+  // Never hand out an id the graph already has — a loaded patch, an undo or
+  // a pasted snapshot can bring in "node<N>" ids from anywhere.
+  let id = `${prefix}${nextId++}`
+  while (nodes.has(id)) id = `${prefix}${nextId++}`
+  return id
 }
 
 /** Re-seeds `nextId` past every "node<N>" id already present in a graph
@@ -877,6 +881,9 @@ async function withHistory(gesture: () => Promise<void>, optimistic?: () => void
     const state = patchJsonToLocalState(afterJson)
     nodes = state.nodes
     wires = state.wires
+    // A loaded patch (or any restored snapshot) can carry ids past the
+    // counter: keep it ahead, or the next placed node collides.
+    reseedNextIdPast([...state.nodes.values()])
     if (beforeJson !== null && beforeJson !== afterJson) {
       past.push(beforeJson)
       if (past.length > MAX_HISTORY) past.shift()
@@ -1469,6 +1476,9 @@ export function quantityFromOrdinal(value: number): Quantity {
 }
 
 interface MacroSeed {
+  /** Bool/Trigger for a Boolean/Event port, so the macro's own output IS
+      that type and wires straight in (no Control->Boolean adapter exists). */
+  type: MacroValueType
   min: number
   max: number
   isInteger: boolean
@@ -1512,68 +1522,70 @@ function macroConfigForPort(port: PortDescriptor, currentValue: number): MacroSe
 
   if (port.kind === 'enum' && port.enumOptions.length > 0) {
     const maxIndex = port.enumOptions.length - 1
-    return { min: 0, max: maxIndex, isInteger: true, quantity: 'dimensionless', defaultRaw: rawOf(Math.round(currentValue), 0, maxIndex) }
+    return { type: 'control', min: 0, max: maxIndex, isInteger: true, quantity: 'dimensionless', defaultRaw: rawOf(Math.round(currentValue), 0, maxIndex) }
   }
   if (port.type === 'event' && port.options && port.options.length > 0) {
     const maxIndex = port.options.length - 1
-    return { min: 0, max: maxIndex, isInteger: true, quantity: 'dimensionless', defaultRaw: rawOf(Math.round(currentValue), 0, maxIndex) }
+    return { type: 'control', min: 0, max: maxIndex, isInteger: true, quantity: 'dimensionless', defaultRaw: rawOf(Math.round(currentValue), 0, maxIndex) }
   }
-  if (port.type === 'event' || port.type === 'boolean') {
-    return { min: 0, max: 1, isInteger: true, quantity: 'dimensionless', defaultRaw: rawOf(Math.round(currentValue), 0, 1) }
+  if (port.type === 'boolean') {
+    return { type: 'bool', min: 0, max: 1, isInteger: false, quantity: 'dimensionless', defaultRaw: currentValue >= 0.5 ? 1 : 0 }
+  }
+  if (port.type === 'event') {
+    // A Trigger macro fires on its level's rising edge — start low.
+    return { type: 'trigger', min: 0, max: 1, isInteger: false, quantity: 'dimensionless', defaultRaw: 0 }
   }
 
   const hasClearBounds = port.minValue !== null && port.maxValue !== null
   if (hasClearBounds) {
     const min = port.minValue as number
     const max = port.maxValue as number
-    return { min, max, isInteger: port.isInteger, quantity: port.quantity, defaultRaw: rawOf(currentValue, min, max) }
+    return { type: 'control', min, max, isInteger: port.isInteger, quantity: port.quantity, defaultRaw: rawOf(currentValue, min, max) }
   }
 
   // Unclear metatype (e.g. math.add's "a"/"b" — no real bound ever set):
   // a generic Dimensionless 0..1 range, the same fallback the retired M10
   // gesture used for exactly this case.
-  return { min: 0, max: 1, isInteger: false, quantity: 'dimensionless', defaultRaw: clamp(currentValue, 0, 1) }
+  return { type: 'control', min: 0, max: 1, isInteger: false, quantity: 'dimensionless', defaultRaw: clamp(currentValue, 0, 1) }
 }
 
-/** Whether `port` could sensibly become a Macro's value at all. Control and
-    Event both have a meaningful macro shape (see macroConfigForPort above).
-    Audio and Note don't (a macro is a scalar/discrete automatable value,
-    not an audio-rate or event-stream signal), and Data never converts
-    implicitly to anything (SIGNAL_TYPES.md §5, canConnect.ts's own rule) —
-    a macro's plain float output is no exception. Spectral is reserved, not
-    real anywhere yet.
-
-    Deliberately NOT `Boolean`, even though a macro has a meaningful 0/1
-    shape for one (direct feedback bug: a real util.macro's own output port
-    is ALWAYS Control — MacroNode.h never declares a Boolean output — and
-    the real engine's CanConnect.cpp has an adapter for Boolean->Control but
-    none for the reverse Control->Boolean, so dragging out of e.g.
-    env.adsr's "gate" used to add the macro node, claim a slot, and seed its
-    config, only to have the final connect command hard-reject, leaving an
-    orphaned, disconnected macro on the canvas every single time. Revisit
-    once a real Control->Boolean adapter exists (a genuinely separate,
-    bigger feature, not a one-line fix) — until then this is exactly what
-    isMacroConnectable() below also guards, belt-and-suspenders.
+/** Whether `port` could sensibly become a Macro's value at all: Control,
+    Boolean and Event — a macro is Control, Bool or Trigger typed
+    (macroConfigForPort picks the matching one). Audio and Note don't (a
+    macro is a scalar/discrete automatable value, not an audio-rate or
+    event-stream signal), Data never converts implicitly, Spectral isn't real.
 */
 export function isMacroablePort(port: Pick<PortDescriptor, 'type'>): boolean {
-  return port.type === 'control' || port.type === 'event'
+  return port.type === 'control' || port.type === 'boolean' || port.type === 'event'
 }
 
 /** The authoritative check `createMacroFromPort` uses right before
-    committing — mirrors canSplice()'s own "check canConnectPorts against
-    the real candidate descriptor before sending any command" discipline,
-    which the original drag-to-macro gesture skipped (it only ever checked
-    isMacroablePort()'s coarse type-based gate, never actually asked whether
-    util.macro's own real declared output port could connect into this
-    specific target). Catches any future port-type mismatch the same way,
-    not just the Boolean case isMacroablePort() above already excludes by
-    type.
+    committing: would the macro this port seeds (its own type, range and
+    quantity — resolved the same way endpointFor resolves a placed macro's
+    output) actually connect into `port`? Check first, commit only if it
+    would work, so the gesture never leaves an orphaned macro behind.
 */
-function isMacroConnectable(port: PortDescriptor): boolean {
+function isMacroConnectable(port: PortDescriptor, seed: MacroSeed): boolean {
   const macroDescriptor = getDescriptor('util.macro')
-  const macroOutput = macroDescriptor && findPort(macroDescriptor, 'out', 'output')
-  if (!macroOutput) return false
+  const staticOutput = macroDescriptor && findPort(macroDescriptor, 'out', 'output')
+  if (!staticOutput) return false
+  const macroOutput = resolveTypedValueOutputPort(
+    { id: '', typeId: 'util.macro', x: 0, y: 0, bypassed: false, parameterValues: macroSeedParameters(seed, -1) },
+    staticOutput,
+  )
   return canConnectPorts(macroOutput, port).outcome !== 'reject'
+}
+
+function macroSeedParameters(seed: MacroSeed, slot: number): Record<string, number> {
+  return {
+    'util.macro.slot': slot,
+    'util.macro.type': macroTypeOrdinal(seed.type),
+    'util.macro.min': seed.min,
+    'util.macro.max': seed.max,
+    'util.macro.isInteger': seed.isInteger ? 1 : 0,
+    'util.macro.quantity': quantityOrdinal(seed.quantity),
+    'util.macro.value': seed.defaultRaw,
+  }
 }
 
 /** Scans the local node mirror for every placed util.macro's own claimed
@@ -1626,7 +1638,12 @@ export function pickFreeMacroSlot(): number | undefined {
 */
 export function createMacroFromPort(nodeId: string, portId: string, x: number, y: number): string | undefined {
   const endpoint = getEndpoint(nodeId, portId, 'input')
-  if (!endpoint || !isMacroablePort(endpoint.port) || !isMacroConnectable(endpoint.port)) return undefined
+  if (!endpoint || !isMacroablePort(endpoint.port)) return undefined
+
+  const node = nodes.get(nodeId)
+  const currentValue = node?.parameterValues?.[portId] ?? endpoint.port.defaultValue
+  const seed = macroConfigForPort(endpoint.port, currentValue)
+  if (!isMacroConnectable(endpoint.port, seed)) return undefined
 
   const slot = pickFreeMacroSlot()
   if (slot === undefined) {
@@ -1635,10 +1652,6 @@ export function createMacroFromPort(nodeId: string, portId: string, x: number, y
     return undefined
   }
 
-  const node = nodes.get(nodeId)
-  const currentValue = node?.parameterValues?.[portId] ?? endpoint.port.defaultValue
-  const seed = macroConfigForPort(endpoint.port, currentValue)
-  const isIntegerValue = seed.isInteger ? 1 : 0
   const quantityValue = quantityOrdinal(seed.quantity)
 
   const macroId = makeId('node')
@@ -1658,7 +1671,7 @@ export function createMacroFromPort(nodeId: string, portId: string, x: number, y
       // instruction, 2026-10-03): a macro's unit is derived from quantity
       // now (TypedValueNodeBase.h's unitForQuantity), never seeded.
       if (
-        !(await fireCommand(() => graphCreateMacro(macroId, x, y, slot, seed.min, seed.max, seed.isInteger, quantityValue, '', seed.defaultRaw)))
+        !(await fireCommand(() => graphCreateMacro(macroId, x, y, slot, seed.min, seed.max, seed.isInteger, quantityValue, '', seed.defaultRaw, macroTypeOrdinal(seed.type))))
       )
         return
       if (await fireCommand(() => graphConnectWithAutoAdapt(macroId, 'out', nodeId, portId))) {
@@ -1672,14 +1685,7 @@ export function createMacroFromPort(nodeId: string, portId: string, x: number, y
         x,
         y,
         bypassed: false,
-        parameterValues: {
-          'util.macro.slot': slot,
-          'util.macro.min': seed.min,
-          'util.macro.max': seed.max,
-          'util.macro.isInteger': isIntegerValue,
-          'util.macro.quantity': quantityValue,
-          'util.macro.value': seed.defaultRaw,
-        },
+        parameterValues: macroSeedParameters(seed, slot),
       })
       const newWireId = wireId(nodeId, portId)
       wires.set(newWireId, { id: newWireId, fromNodeId: macroId, fromPortId: 'out', toNodeId: nodeId, toPortId: portId })

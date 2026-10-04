@@ -152,7 +152,9 @@ function TimeDomainPreview({ nodeId, preview }: { nodeId: string; preview: Previ
       }
 
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
-      ctx.fillStyle = tokens.color.panel
+      // The node's own fill, so a preview (a meter above all) reads as part
+      // of the card rather than a lighter box set into it.
+      ctx.fillStyle = tokens.color.nodeFill
       ctx.fillRect(0, 0, width, height)
 
       const tapData = getInterpolatedTap(tap, frameType)

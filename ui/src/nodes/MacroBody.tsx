@@ -24,7 +24,7 @@
 // host automation every block) — that one goes straight through the same
 // JUCE WebSliderRelay mechanism MacroKnob.tsx already uses for the top-bar
 // panel, by this node's own claimed `util.macro.slot`.
-import { useEffect, useReducer, useState, type ReactNode } from 'react'
+import { useEffect, useReducer, useRef, useState, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { getSliderState } from '@juce-framework/webview'
 import type { NodeDescriptor } from '../graph/descriptorTypes'
@@ -345,6 +345,10 @@ export function MacroBody({ descriptor, state, instanceId }: { descriptor: NodeD
   // an invalid/absent slot still gets a (unused) subscription rather than a
   // conditional hook call.
   const relay = useMacroRelay(hasValidSlot ? slot : 0)
+  // Open while the Value slider is being dragged: the relay (the host slot)
+  // follows the drag, so the macro's output — and everything it feeds —
+  // moves in real time, not only on release. One host gesture per drag.
+  const relayDragOpen = useRef(false)
 
   // A macro's value lives in its host-automation slot, normalised 0..1
   // against the macro's own effective range.
@@ -356,6 +360,18 @@ export function MacroBody({ descriptor, state, instanceId }: { descriptor: NodeD
       ? {
           get: () => min + clamp01(relay.getNormalisedValue()) * (max - min),
           commit: (value) => commitRelayRealValue(relay, value, min, max),
+          live: (value) => {
+            if (value === null) {
+              if (relayDragOpen.current) relay.sliderDragEnded()
+              relayDragOpen.current = false
+              return
+            }
+            if (!relayDragOpen.current) {
+              relay.sliderDragStarted()
+              relayDragOpen.current = true
+            }
+            relay.setNormalisedValue(max > min ? clamp01((value - min) / (max - min)) : 0)
+          },
           fire: () => fireRelayTrigger(relay),
         }
       : null

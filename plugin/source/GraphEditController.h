@@ -110,7 +110,7 @@ namespace bazalt
         */
         CommandResult createMacro (const juce::String& macroNodeId, float x, float y,
                                      int slot, float min, float max, bool isInteger, int quantity,
-                                     const juce::String& unit, float value);
+                                     const juce::String& unit, float value, int type = 0);
 
         /** Designates which node's output port is the graph's audible
             output (NodeGraph::setOutput) — M8 addition: M7's own command

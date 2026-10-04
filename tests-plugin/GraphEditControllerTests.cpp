@@ -944,6 +944,35 @@ TEST_CASE ("createMacro adds a fully-configured util.macro node in one recompile
     CHECK (it->properties.at ("util.macro.unit").toString() == "Hz");
 }
 
+// A macro dragged out of a Boolean/Event input is created Bool/Trigger typed,
+// so its own output is that type and wires straight in (there is no
+// Control->Boolean adapter), and an Int macro reaches a view.count with no
+// Map inserted between them.
+TEST_CASE ("createMacro's type makes a Bool/Trigger macro wire straight into Boolean/Event inputs",
+           "[plugin][GraphEditController][macro]")
+{
+    BazaltAudioProcessor processor;
+    processor.prepareToPlay (44100.0, 512);
+
+    auto& controller = processor.getGraphEditController();
+    REQUIRE (controller.setGraph (bazalt::engine::buildMasterOutOnlyGraph()).success);
+    REQUIRE (controller.addNode ("view.gate", "gate", 0.0f, 0.0f).success);
+    REQUIRE (controller.addNode ("view.ripple", "ripple", 0.0f, 0.0f).success);
+    REQUIRE (controller.addNode ("view.count", "count", 0.0f, 0.0f).success);
+
+    REQUIRE (controller.createMacro ("bool", 0.0f, 0.0f, 0, 0.0f, 1.0f, false, 0, "", 1.0f, 1 /* Bool */).success);
+    REQUIRE (controller.createMacro ("trig", 0.0f, 0.0f, 1, 0.0f, 1.0f, false, 0, "", 0.0f, 2 /* Trigger */).success);
+    REQUIRE (controller.createMacro ("int", 0.0f, 0.0f, 2, 0.0f, 16.0f, true, 1 /* Frequency */, "", 0.25f).success);
+    CHECK (controller.getGraph().findNode ("bool")->parameters.at ("util.macro.type") == 1.0f);
+
+    const auto nodesBefore = controller.getGraph().getNodes().size();
+    CHECK (controller.connectWithAutoAdapt ("bool", "out", "gate", "in").success);
+    CHECK (controller.connectWithAutoAdapt ("trig", "out", "ripple", "in").success);
+    CHECK (controller.connectWithAutoAdapt ("int", "out", "count", "in").success);
+    // Direct wires only - no adapter node was needed for any of them.
+    CHECK (controller.getGraph().getNodes().size() == nodesBefore);
+}
+
 TEST_CASE ("createMacro rejects a slot collision as one atomic no-op - nothing is added at all",
            "[plugin][GraphEditController][macro]")
 {
@@ -1004,4 +1033,28 @@ TEST_CASE ("createMacro's slot survives into a real derived mapping, same as the
     const auto rmsLowCutoff = settleAndMeasure (0.0f);
     const auto rmsHighCutoff = settleAndMeasure (1.0f);
     CHECK (rmsHighCutoff > rmsLowCutoff * 1.5f);
+}
+
+// A type-following node (math.add here) takes on what's wired into it, so a
+// Time-valued Add into a Frequency cutoff is a real quantity mismatch: it
+// must get a Map, exactly as the same cable straight from the macro would —
+// not go through unadapted and be refused by the compiler.
+TEST_CASE ("connectWithAutoAdapt resolves a polymorphic source before choosing an adapter",
+           "[plugin][GraphEditController][adapter]")
+{
+    BazaltAudioProcessor processor;
+    processor.prepareToPlay (44100.0, 512);
+
+    auto& controller = processor.getGraphEditController();
+    REQUIRE (controller.setGraph (bazalt::engine::buildVoiceProofGraph()).success);
+    REQUIRE (controller.createMacro ("time", 0.0f, 0.0f, 0, 0.01f, 2.0f, false, 3 /* Time */, "", 0.5f).success);
+    REQUIRE (controller.addNode ("math.add", "add", 0.0f, 0.0f).success);
+    REQUIRE (controller.connectWithAutoAdapt ("time", "out", "add", "in.0").success);
+
+    const auto result = controller.connectWithAutoAdapt ("add", "out", "svf", "filter.svf.cutoff");
+    INFO (result.errorMessage);
+    REQUIRE (result.success);
+
+    const auto& nodes = controller.getGraph().getNodes();
+    CHECK (std::any_of (nodes.begin(), nodes.end(), [] (const auto& n) { return n.type == "adapt.map"; }));
 }

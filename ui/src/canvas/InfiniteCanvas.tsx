@@ -1093,10 +1093,8 @@ export const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, InfiniteCanvasPro
             // node type (graphStore.ts's header comment has the retirement/
             // revival history) — only for an unconnected input whose
             // SignalType could sensibly become a macro's value at all
-            // (isMacroablePort rules out Audio/Boolean/Data/Note/Spectral —
-            // Boolean excluded because a real util.macro's output is always
-            // Control and there's no Control->Boolean adapter yet; see that
-            // function's own comment).
+            // (isMacroablePort rules out Audio/Data/Note/Spectral; a
+            // Boolean/Event input gets a Bool/Trigger-typed macro).
             const endpoint = getEndpoint(port.nodeId, port.portId, 'input')
             if (endpoint && isMacroablePort(endpoint.port)) {
               setGesture({ kind: 'dragToMacro', nodeId: port.nodeId, portId: port.portId })

@@ -140,7 +140,7 @@ namespace bazalt::engine
             AdapterStep step { "adapt.map", "in" };
             step.seedFromSourceRange = true;
             step.seedFromDestinationRange = true;
-            return needsAdapter (step, "Different real quantities — remapped via Remap");
+            return needsAdapter (step, "Different real quantities — rescaled via Map");
         }
     }
 
