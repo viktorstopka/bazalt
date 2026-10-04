@@ -154,7 +154,7 @@ export interface ConnectionEndpoint {
   portId: string
   direction: 'input' | 'output'
   port: PortDescriptor
-  /** A polymorphic node (util.reroute) with nothing feeding it yet: its declared
+  /** A polymorphic node (deco.reroute) with nothing feeding it yet: its declared
       port type is only a default, so there is nothing real to predict with. See
       graphStore.endpointFor().
   */

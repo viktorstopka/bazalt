@@ -123,7 +123,7 @@ namespace bazalt::engine
             output feeding it — before that connection (or any connection
             from this node's own outputs) is validated. Only meaningful when
             hasPolymorphicPorts() is true. The node adopts whatever it wants
-            from `source` (its SignalType, its Quantity — util.reroute takes
+            from `source` (its SignalType, its Quantity — deco.reroute takes
             both; logic.select ignores its own `condition` port and adopts
             only for the two data inputs). The compiler calls this repeatedly,
             to a fixed point, so a source that is itself an unresolved

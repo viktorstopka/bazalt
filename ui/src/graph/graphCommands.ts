@@ -51,6 +51,12 @@ export function graphCreateMacro(
   return callCommand('graphCreateMacro', nodeId, x, y, slot, min, max, isInteger ? 1 : 0, quantity, unit, value)
 }
 
+/** wiki/plans/Decorations.md §4: a deco.image node showing `base64` (already
+    compressed), stored once per patch; refused past the patch's image limit. */
+export function graphAddImage(nodeId: string, x: number, y: number, mimeType: string, base64: string, width: number, height: number): Promise<CommandResult> {
+  return callCommand('graphAddImage', nodeId, x, y, mimeType, base64, width, height)
+}
+
 export function graphDeleteNode(nodeId: string): Promise<CommandResult> {
   return callCommand('graphDeleteNode', nodeId)
 }

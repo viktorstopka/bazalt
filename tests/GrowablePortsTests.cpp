@@ -276,7 +276,7 @@ TEST_CASE ("math.add sums a growable group of Audio inputs, holes and all - Doma
 }
 
 TEST_CASE ("math.add's ports report Audio + the source's quantity once an Audio source resolves them, "
-           "the same PortPolymorphism::SignalAndQuantity mechanism util.reroute already uses",
+           "the same PortPolymorphism::SignalAndQuantity mechanism deco.reroute already uses",
            "[engine][PortGroups][inheriting][DomainRedesign]")
 {
     const auto factory = makeFactory();
@@ -424,7 +424,7 @@ TEST_CASE ("Recompiling reuses a growable node while its size is unchanged and r
     // GraphCompiler's own reuse check already excludes ANY
     // hasPolymorphicPorts() node from reuse outright, regardless of group
     // size (GraphCompiler.cpp's own comment: "such a node holds no DSP
-    // state worth carrying forward") — the exact same rule util.reroute's
+    // state worth carrying forward") — the exact same rule deco.reroute's
     // node has always lived under. math.add now lives under it too; a
     // dedicated test for that is below. logic.or is a growable node
     // that stays fixed-Boolean (never polymorphic), so it's what still
@@ -459,7 +459,7 @@ TEST_CASE ("Recompiling reuses a growable node while its size is unchanged and r
 }
 
 TEST_CASE ("math.add is never reused across a recompile, even at an unchanged group size - "
-           "PortPolymorphism::SignalAndQuantity makes it a polymorphic node like util.reroute",
+           "PortPolymorphism::SignalAndQuantity makes it a polymorphic node like deco.reroute",
            "[engine][PortGroups][GraphCompiler][DomainRedesign]")
 {
     const auto factory = makeFactory();

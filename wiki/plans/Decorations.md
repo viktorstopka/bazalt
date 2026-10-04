@@ -1,7 +1,12 @@
 # Decorations — a canvas, not only an engineering space
 
-**Status:** Proposed, 2026-10-04. Planned only, no code. The next batch after the
-Tune viewer.
+**Status:** Built, 2026-10-04. Decisions on the open questions (direct answers):
+Box never moves its contents (box-select does that); Comment is plain text; an image
+over the limit is refused (5 MB of images per patch). Deviations from the sketch
+below: decorations are tagged at registration (`NodeFactory::registerDecoration`)
+rather than by a descriptor flag; a decoration's property edits don't recompile;
+the size cap is per patch (not a soft warning); placing "Image" from the Add menu
+opens a file dialog.
 
 ---
 

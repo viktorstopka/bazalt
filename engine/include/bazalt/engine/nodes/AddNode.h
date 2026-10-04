@@ -25,7 +25,7 @@ namespace bazalt::engine::nodes
         convenience, which an unwired Audio input never needed (silence is
         already the sum identity). Now genuinely polymorphic
         (`PortPolymorphism::SignalAndQuantity`, the same mechanism
-        `util.reroute`/`logic.select` already use — declared first among
+        `deco.reroute`/`logic.select` already use — declared first among
         the group's wired members wins if they disagree, InheritingPortsNode.h's
         own `offer()` rule, reimplemented here directly since this node's
         growable-group shape doesn't fit that class's fixed-arity one):

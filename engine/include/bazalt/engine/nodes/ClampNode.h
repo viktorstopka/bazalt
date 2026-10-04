@@ -24,7 +24,7 @@ namespace bazalt::engine::nodes
         (gain, LFO depth, ...) at least as often as it bounds an index/count
         — so this inherits isInteger/quantity/unit from whichever of
         in/low/high is wired instead, same "colour follows what's actually
-        there" answer util.reroute/view.glance/logic.compare already give:
+        there" answer deco.reroute/view.glance/logic.compare already give:
         clamping an integer (e.g. straight out of math.round) reads as
         integer end to end, clamping a float stays correctly value/
         modulation-coloured. The SignalType itself stays fixed Control

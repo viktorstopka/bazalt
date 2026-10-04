@@ -359,6 +359,16 @@ namespace bazalt
             completion (commandResultToVar (result));
         });
 
+        // wiki/plans/Decorations.md §4: (nodeId, x, y, mimeType, base64,
+        // width, height) — the UI has already compressed the image.
+        options = options.withNativeFunction ("graphAddImage", [&processor] (Args args, Completion completion)
+        {
+            auto& controller = processor.getGraphEditController();
+            const auto result = controller.addImage (argString (args, 0), argFloat (args, 1), argFloat (args, 2), argString (args, 3),
+                                                     argString (args, 4), argFloat (args, 5), argFloat (args, 6));
+            completion (commandResultToVar (result));
+        });
+
         options = options.withNativeFunction ("graphSetProperty", [&processor] (Args args, Completion completion)
         {
             auto& controller = processor.getGraphEditController();

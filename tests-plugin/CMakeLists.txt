@@ -36,6 +36,7 @@ target_sources(PluginTests
         HostInputTests.cpp
         InitPatchTests.cpp
         StereoVoiceTests.cpp
+        DecorationControllerTests.cpp
         InstanceSwarmPopulationTests.cpp
         InstanceSwarmTransientTests.cpp
         InstanceTriggerTests.cpp

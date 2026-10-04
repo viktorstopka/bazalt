@@ -144,6 +144,16 @@ namespace bazalt
         */
         CommandResult setProperty (const juce::String& nodeId, const juce::String& propertyKey, juce::var value);
 
+        /** The most image data one patch may carry (wiki/plans/Decorations.md
+            §4): an image that would take it past this is refused. */
+        static constexpr size_t maxPatchAssetBytes = 5 * 1024 * 1024;
+
+        /** Adds a deco.image node at (x, y) showing `base64` (already
+            compressed by the UI), `width` x `height` world units, in one
+            undo step. The image is stored once per patch, by content. */
+        CommandResult addImage (const juce::String& nodeId, float x, float y, const juce::String& mimeType,
+                                const juce::String& base64, float width, float height);
+
         /** Replaces the whole graph in one step (patch load) — rolled back
             to the previous graph, same as any other command, if the new
             one doesn't compile.

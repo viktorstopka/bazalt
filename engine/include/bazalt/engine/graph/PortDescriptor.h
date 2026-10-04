@@ -135,7 +135,7 @@ namespace bazalt::engine
     {
         None,
         Quantity,          // takes the source's Quantity; its SignalType is fixed (logic.compare, adapt.sampleHold)
-        SignalAndQuantity  // takes both (util.reroute, logic.select's data ports)
+        SignalAndQuantity  // takes both (deco.reroute, logic.select's data ports)
     };
 
     /** UI-facing metadata for one port, fully decoupled from the DSP

@@ -45,6 +45,11 @@ namespace bazalt::engine
         apply (the global-domain plan today; a graph being compiled
         somewhere with no prior generation).
     */
+    /** `graph` without its decorations (NodeFactory::registerDecoration —
+        headers, comments, boxes, images): what actually gets compiled.
+        Decorations have no ports, so no connection is lost. */
+    NodeGraph withoutDecorations (const NodeGraph& graph, const NodeFactory& factory);
+
     class GraphCompiler
     {
     public:

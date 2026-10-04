@@ -8,9 +8,12 @@ import { AddMenu } from '../graph/AddMenu'
 import { buildAnchorMap, measureNodeLocalPortOffsets, portKey, type PortAnchor } from '../graph/portAnchors'
 import { portUiStyleForEndpoint, resolvePortIsPoly } from '../graph/portUiKind'
 import { canConnect, type ConnectionEndpoint } from '../graph/canConnect'
+import { importImage } from '../graph/imageImport'
 import {
+  addImageAt,
   addNode,
   canSplice,
+  reportError,
   commitNodeMoves,
   commitWireDrag,
   createMacroFromPort,
@@ -149,7 +152,7 @@ function closestPortAnchor(target: EventTarget | null): PortHit | null {
     source, is the only place this can actually be stopped.
 */
 function isOwnGestureTarget(target: EventTarget | null): boolean {
-  return target instanceof Element && !!target.closest('.value-slider, .trigger-select')
+  return target instanceof Element && !!target.closest('.value-slider, .trigger-select, .deco-own-gesture')
 }
 
 // Module-level (not a component ref) for the same reason interactionStore's
@@ -456,6 +459,8 @@ export const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, InfiniteCanvasPro
     let panLastX = 0
     let panLastY = 0
     let ghostSpliceHoverWireId: string | null = null
+    // The anchor map of the last frame, for hit-testing wires outside frame().
+    let latestAnchors = new Map<string, PortAnchor>()
     let rightClickStart: { x: number; y: number; wasGhostActive: boolean } | null = null
     let lastMouseCanvasX = 0
     let lastMouseCanvasY = 0
@@ -572,6 +577,7 @@ export const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, InfiniteCanvasPro
             })
           : graphNow.nodes
       const anchors = buildAnchorMap(positionsForAnchors, nodeOffsetCache, camera)
+      latestAnchors = anchors
 
       // Wire-drag hover detection happens BEFORE the main cable list is
       // built, so a "will replace" hit can dim the existing wire it would
@@ -898,6 +904,92 @@ export const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, InfiniteCanvasPro
       if (document.hidden) onWindowBlur()
     }
 
+    /** The wire passing within `tolerance` screen pixels of a canvas-local
+        point, if any (the same tessellation the renderer draws). */
+    const wireNear = (point: Point, tolerance = 6): string | null => {
+      let nearest: string | null = null
+      let nearestDistance = tolerance
+      for (const wire of getGraphSnapshot().wires) {
+        const from = latestAnchors.get(portKey(wire.fromNodeId, wire.fromPortId, 'output'))
+        const to = latestAnchors.get(portKey(wire.toNodeId, wire.toPortId, 'input'))
+        if (!from || !to) continue
+        const points = tessellateCable({ from, to, color: [0, 0, 0], alpha: 1, dashed: false })
+        for (let i = 0; i < points.length - 1; i++) {
+          const d = distanceToSegment(point, points[i], points[i + 1])
+          if (d < nearestDistance) {
+            nearestDistance = d
+            nearest = wire.id
+          }
+        }
+      }
+      return nearest
+    }
+
+    /** wiki/plans/Decorations.md §3: a reroute dot dropped into a wire at a
+        canvas-local point, centred on it — one undo step. */
+    const rerouteWireAt = (wireId: string, canvasX: number, canvasY: number): void => {
+      const world = canvasToWorld(canvasX, canvasY)
+      spliceInsert(wireId, 'deco.reroute', world.x - 7, world.y - 7)
+      requestFrame()
+    }
+
+    /** Imports image files at a canvas-local point, cascading several. */
+    const importImagesAt = async (files: readonly Blob[], canvasX: number, canvasY: number): Promise<void> => {
+      const world = canvasToWorld(canvasX, canvasY)
+      let offset = 0
+      for (const file of files) {
+        if (!file.type.startsWith('image/')) continue
+        try {
+          const image = await importImage(file)
+          await addImageAt(Math.round(world.x + offset), Math.round(world.y + offset), image.mimeType, image.base64, image.width, image.height)
+        } catch (error) {
+          reportError(`Couldn't add the image: ${error instanceof Error ? error.message : String(error)}`)
+        }
+        offset += 24
+      }
+      requestFrame()
+    }
+
+    const pickImageAt = (canvasX: number, canvasY: number): void => {
+      const input = document.createElement('input')
+      input.type = 'file'
+      input.accept = 'image/*'
+      input.multiple = true
+      input.onchange = () => void importImagesAt([...(input.files ?? [])], canvasX, canvasY)
+      input.click()
+    }
+
+    const onDragOver = (e: DragEvent): void => {
+      if (e.dataTransfer?.types.includes('Files')) {
+        e.preventDefault()
+        e.dataTransfer.dropEffect = 'copy'
+      }
+    }
+
+    const onDrop = (e: DragEvent): void => {
+      const files = [...(e.dataTransfer?.files ?? [])].filter((f) => f.type.startsWith('image/'))
+      if (files.length === 0) return
+      e.preventDefault()
+      const rect = canvas.getBoundingClientRect()
+      void importImagesAt(files, e.clientX - rect.left, e.clientY - rect.top)
+    }
+
+    const onPaste = (e: ClipboardEvent): void => {
+      const target = e.target as HTMLElement | null
+      if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)) return
+      const files = [...(e.clipboardData?.items ?? [])].filter((item) => item.kind === 'file' && item.type.startsWith('image/')).map((item) => item.getAsFile()).filter((f): f is File => f !== null)
+      if (files.length === 0) return
+      e.preventDefault()
+      void importImagesAt(files, lastMouseCanvasX, lastMouseCanvasY)
+    }
+
+    const onDoubleClick = (e: MouseEvent): void => {
+      if (!isCanvasOrWorldTarget(e.target) || closestNodeId(e.target)) return
+      const rect = canvas.getBoundingClientRect()
+      const wireId = wireNear({ x: e.clientX - rect.left, y: e.clientY - rect.top })
+      if (wireId) rerouteWireAt(wireId, e.clientX - rect.left, e.clientY - rect.top)
+    }
+
     // ---- Pointer interaction ----
     const onMouseDown = (e: MouseEvent): void => {
       if (isOwnGestureTarget(e.target)) return
@@ -1037,6 +1129,16 @@ export const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, InfiniteCanvasPro
 
       // Opt-in: only the bare canvas/world background may start box-select.
       if (!isCanvasOrWorldTarget(e.target)) return
+
+      // Ctrl/Cmd-click on a wire drops a reroute dot into it (cable management).
+      if (e.ctrlKey || e.metaKey) {
+        const wireId = wireNear({ x: lastMouseCanvasX, y: lastMouseCanvasY })
+        if (wireId) {
+          e.preventDefault()
+          rerouteWireAt(wireId, lastMouseCanvasX, lastMouseCanvasY)
+          return
+        }
+      }
 
       setGesture({ kind: 'boxSelect', startX: e.clientX, startY: e.clientY, additive: e.shiftKey, baseSelection: new Set(getGraphSnapshot().selection) })
       if (selectionBoxRef.current) {
@@ -1222,6 +1324,12 @@ export const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, InfiniteCanvasPro
       const worldPos = canvasToWorld(lastMouseCanvasX, lastMouseCanvasY)
       const x = snapValue(worldPos.x, snapSettingsRef.current)
       const y = snapValue(worldPos.y, snapSettingsRef.current)
+      if (currentGhost.typeId === 'deco.image') {
+        // An image comes from a file: placing one opens the picker.
+        clearGhost()
+        pickImageAt(lastMouseCanvasX, lastMouseCanvasY)
+        return
+      }
       if (ghostSpliceHoverWireId && canSplice(ghostSpliceHoverWireId, currentGhost.typeId)) {
         spliceInsert(ghostSpliceHoverWireId, currentGhost.typeId, x, y)
       } else {
@@ -1283,6 +1391,10 @@ export const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, InfiniteCanvasPro
     container.addEventListener('click', onClick)
     container.addEventListener('wheel', onWheel, { passive: false })
     container.addEventListener('contextmenu', onContextMenu)
+    container.addEventListener('dblclick', onDoubleClick)
+    container.addEventListener('dragover', onDragOver)
+    container.addEventListener('drop', onDrop)
+    window.addEventListener('paste', onPaste)
 
     requestFrame()
 
@@ -1303,6 +1415,10 @@ export const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, InfiniteCanvasPro
       container.removeEventListener('click', onClick)
       container.removeEventListener('wheel', onWheel)
       container.removeEventListener('contextmenu', onContextMenu)
+      container.removeEventListener('dblclick', onDoubleClick)
+      container.removeEventListener('dragover', onDragOver)
+      container.removeEventListener('drop', onDrop)
+      window.removeEventListener('paste', onPaste)
       requestFrameRef.current = () => {}
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps

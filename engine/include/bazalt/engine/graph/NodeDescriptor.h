@@ -27,7 +27,7 @@ namespace bazalt::engine
 
         /** Node::hasPolymorphicPorts(): the declared port types here are just
             the unconnected defaults — a placed node's real types follow
-            what's wired to it (util.reroute). The UI needs to know, because
+            what's wired to it (deco.reroute). The UI needs to know, because
             predicting a connection against the default (Audio) would reject a
             Control cable the engine accepts.
         */

@@ -72,6 +72,7 @@ add_executable(EngineTests
     StereoLaneTests.cpp
     ReverbTests.cpp
     SoundPaletteTests.cpp
+    DecorationTests.cpp
     VoiceManagerTests.cpp
 )
 

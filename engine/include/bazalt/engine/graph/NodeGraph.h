@@ -2,6 +2,7 @@
 
 #include <juce_core/juce_core.h>
 #include <algorithm>
+#include <map>
 #include <vector>
 #include <unordered_map>
 
@@ -60,6 +61,19 @@ namespace bazalt::engine
         juce::String fromPortId;
         juce::String toNodeId;
         juce::String toPortId;
+    };
+
+    /** A binary file a patch carries — today an image a deco.image node shows
+        (wiki/plans/Decorations.md §4). Content-addressed: the id is a hash of
+        the data, so the same image used twice is stored once. `data` is
+        base64; the engine never decodes it. */
+    struct PatchAsset
+    {
+        juce::String mimeType;
+        juce::String data;
+
+        /** Decoded size in bytes (base64 is 4 characters per 3 bytes). */
+        size_t sizeInBytes() const noexcept { return (size_t) data.length() * 3 / 4; }
     };
 
     /** The editable graph representation (ARCHITECTURE.md §3.1). Lives on
@@ -138,10 +152,54 @@ namespace bazalt::engine
         const juce::String& getOutputNodeId() const noexcept { return outputNodeId; }
         const juce::String& getOutputPortId() const noexcept { return outputPortId; }
 
+        /** Assets (wiki/plans/Decorations.md §4), keyed by content id, sorted
+            so a saved patch is deterministic. A node refers to one through
+            its "asset" property. */
+        void setAsset (const juce::String& id, PatchAsset asset) { assets[id] = std::move (asset); }
+        const std::map<juce::String, PatchAsset>& getAssets() const noexcept { return assets; }
+
+        /** Drops every asset no node's "asset" property refers to any more. */
+        void pruneUnreferencedAssets()
+        {
+            for (auto it = assets.begin(); it != assets.end();)
+            {
+                const auto used = std::any_of (nodes.begin(), nodes.end(), [&] (const NodeInstance& n)
+                {
+                    const auto p = n.properties.find ("asset");
+                    return p != n.properties.end() && p->second.toString() == it->first;
+                });
+                it = used ? std::next (it) : assets.erase (it);
+            }
+        }
+
+        /** Total decoded bytes of the assets nodes still use. */
+        size_t referencedAssetBytes() const
+        {
+            auto copy = *this;
+            copy.pruneUnreferencedAssets();
+            size_t total = 0;
+            for (const auto& [id, asset] : copy.assets)
+                total += asset.sizeInBytes();
+            return total;
+        }
+
+        /** A content id for asset bytes: FNV-1a 64 of the base64 text, hex. */
+        static juce::String contentIdFor (const juce::String& base64)
+        {
+            uint64_t hash = 1469598103934665603ULL;
+            for (auto p = base64.getCharPointer(); ! p.isEmpty(); ++p)
+            {
+                hash ^= (uint64_t) *p;
+                hash *= 1099511628211ULL;
+            }
+            return juce::String::toHexString ((juce::int64) hash).paddedLeft ('0', 16);
+        }
+
     private:
         std::vector<NodeInstance> nodes;
         std::vector<Connection> connections;
         juce::String outputNodeId;
         juce::String outputPortId;
+        std::map<juce::String, PatchAsset> assets;
     };
 }

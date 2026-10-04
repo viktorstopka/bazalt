@@ -982,7 +982,7 @@ function GlanceBody({ descriptor, state, instanceId }: { descriptor: NodeDescrip
 }
 
 function DecorationBody({ descriptor }: { descriptor: NodeDescriptor }) {
-  if (descriptor.typeId === 'util.reroute') return <div className="node-knob" title="Reroute" />
+  if (descriptor.typeId === 'deco.reroute') return <div className="node-knob" title="Reroute" />
   if (descriptor.icon === 'header') return <span className="node-header-label node-title">{descriptor.title}</span>
   if (descriptor.icon === 'image')
     return (
@@ -1009,7 +1009,7 @@ export function NodeCard({ descriptor: declaredDescriptor, state = {}, instanceI
   if (descriptor.icon === 'ear') return <EarIcon title={descriptor.title} />
   // design/Macro.png / wiki/plans/PropsAndMacroRedesign.md Batch E: a
   // bespoke body, keyed by typeId exactly like DecorationBody's own
-  // util.reroute special-case below — util.macro's REAL engine descriptor
+  // deco.reroute special-case below — util.macro's REAL engine descriptor
   // still reports an ordinary layoutVariant ('standard'); this is a
   // client-side-only visual replacement, no engine change needed or made.
   if (descriptor.typeId === 'util.macro') return <MacroBody descriptor={descriptor} state={state} instanceId={instanceId} />

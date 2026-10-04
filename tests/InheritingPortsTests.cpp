@@ -283,8 +283,8 @@ TEST_CASE ("logic.select resolves through a Reroute chain declared sink-first, a
     NodeGraph graph;
     // Declared out of dependency order on purpose: select, rr2, rr1, sources.
     graph.addNode ({ "sel", "logic.select", {}, {}, {} });
-    graph.addNode ({ "rr2", "util.reroute", {}, {}, {} });
-    graph.addNode ({ "rr1", "util.reroute", {}, {}, {} });
+    graph.addNode ({ "rr2", "deco.reroute", {}, {}, {} });
+    graph.addNode ({ "rr1", "deco.reroute", {}, {}, {} });
     graph.addNode ({ "hz", "test.frequency", {}, { { "value", 440.0f } }, {} });
     graph.addNode ({ "other", "test.frequency", {}, { { "value", 220.0f } }, {} });
     graph.addNode ({ "cond", "logic.not", {}, {}, {} }); // unwired input reads false, so its NOT is true

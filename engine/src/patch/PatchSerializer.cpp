@@ -710,6 +710,19 @@ namespace bazalt::engine
             return root;
         }
 
+        // wiki/plans/Decorations.md: util.reroute moved to the Decorations
+        // family as deco.reroute. Ports (in/out) are unchanged.
+        juce::var migrateV10ToV11 (juce::var v10Root)
+        {
+            auto root = v10Root.clone();
+            if (auto* nodes = root["nodes"].getArray())
+                for (auto& node : *nodes)
+                    if (auto* object = node.getDynamicObject(); object != nullptr && object->getProperty ("type").toString() == "util.reroute")
+                        object->setProperty ("type", "deco.reroute");
+            root.getDynamicObject()->setProperty ("schemaVersion", 11);
+            return root;
+        }
+
         // vN -> vN+1 migrations, keyed by the version they migrate FROM.
         using Migration = std::function<juce::var (juce::var)>;
 
@@ -725,6 +738,7 @@ namespace bazalt::engine
                 { 7, migrateV7ToV8 },
                 { 8, migrateV8ToV9 },
                 { 9, migrateV9ToV10 },
+                { 10, migrateV10ToV11 },
             };
             return migrations;
         }
@@ -744,6 +758,10 @@ namespace bazalt::engine
 
             doc.view = viewFromVar (root["view"]);
             doc.meta = metaFromVar (root["meta"]);
+
+            if (auto* assets = root["assets"].getDynamicObject())
+                for (const auto& property : assets->getProperties())
+                    doc.assets[property.name.toString()] = PatchAsset { property.value["type"].toString(), property.value["data"].toString() };
             return doc;
         }
     }
@@ -764,6 +782,16 @@ namespace bazalt::engine
 
         obj->setProperty ("view", viewToVar (doc.view));
         obj->setProperty ("meta", metaToVar (doc.meta));
+
+        auto* assets = new juce::DynamicObject();
+        for (const auto& [id, asset] : doc.assets)
+        {
+            auto* entry = new juce::DynamicObject();
+            entry->setProperty ("type", asset.mimeType);
+            entry->setProperty ("data", asset.data);
+            assets->setProperty (id, juce::var (entry));
+        }
+        obj->setProperty ("assets", juce::var (assets));
 
         return juce::JSON::toString (juce::var (obj), ! prettyPrint);
     }

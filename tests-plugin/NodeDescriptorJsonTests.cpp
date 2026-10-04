@@ -126,7 +126,7 @@ TEST_CASE ("nodeDescriptorToVar serializes util.constant's new type-aware descri
 TEST_CASE ("nodeDescriptorToVar reports the Decoration layout variant",
            "[plugin][NodeDescriptorJson][NODE_EDITOR]")
 {
-    const auto descriptor = describeNode ("util.reroute", nodes::RerouteNode {});
+    const auto descriptor = describeNode ("deco.reroute", nodes::RerouteNode {});
     const auto var = nodeDescriptorToVar (descriptor);
     CHECK (var["layoutVariant"].toString() == "decoration");
 }
@@ -151,7 +151,7 @@ TEST_CASE ("nodeDescriptorToVar reports whether a node type is deprecated",
 {
     // The UI's Add menu hides deprecated types (they still load in an
     // existing patch) — the flag has to actually reach the JSON for that.
-    CHECK (nodeDescriptorToVar (describeNode ("util.reroute", nodes::RerouteNode {}))["deprecated"] == juce::var (false));
+    CHECK (nodeDescriptorToVar (describeNode ("deco.reroute", nodes::RerouteNode {}))["deprecated"] == juce::var (false));
 }
 
 TEST_CASE ("nodeDescriptorToVar serializes InstanceMixNode's port metadata intact",
@@ -251,8 +251,8 @@ TEST_CASE ("nodeDescriptorToVar flags a polymorphic-port node, and only that one
         return nodeDescriptorToVar (describeNode (typeId, *node)).getProperty ("hasPolymorphicPorts", juce::var());
     };
 
-    CHECK (flagFor ("util.reroute").isBool());
-    CHECK ((bool) flagFor ("util.reroute"));
+    CHECK (flagFor ("deco.reroute").isBool());
+    CHECK ((bool) flagFor ("deco.reroute"));
     CHECK (flagFor ("osc.analog").isBool());
     CHECK_FALSE ((bool) flagFor ("osc.analog"));
 }
@@ -277,7 +277,7 @@ TEST_CASE ("nodeDescriptorToVar reports each port's polymorphism, so the UI adop
     };
 
     // Reroute and select's data ports follow type AND quantity...
-    CHECK (polymorphismOf ("util.reroute", "inputs", "in") == "signalAndQuantity");
+    CHECK (polymorphismOf ("deco.reroute", "inputs", "in") == "signalAndQuantity");
     CHECK (polymorphismOf ("logic.select", "inputs", "whenTrue") == "signalAndQuantity");
     CHECK (polymorphismOf ("logic.select", "outputs", "out") == "signalAndQuantity");
     // ...but select's Boolean condition, on that same polymorphic node, stays fixed.

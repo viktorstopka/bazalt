@@ -79,6 +79,7 @@
 #include "bazalt/engine/nodes/DynamicsNodes.h"
 #include "bazalt/engine/nodes/FreqShiftNode.h"
 #include "bazalt/engine/nodes/ViewTuneNode.h"
+#include "bazalt/engine/nodes/DecorationNodes.h"
 #include "bazalt/engine/nodes/StereoSplitNode.h"
 #include "bazalt/engine/nodes/StereoCombineNode.h"
 #include "bazalt/engine/nodes/ClockPulseNode.h"
@@ -128,7 +129,7 @@ namespace bazalt::engine
         factory.registerType ("filter.onepole", [] { return std::make_unique<nodes::OnePoleFilterNode>(); });
         factory.registerType ("util.constant", [] { return std::make_unique<nodes::ConstantNode>(); });
         factory.registerType ("util.macro", [] { return std::make_unique<nodes::MacroNode>(); });
-        factory.registerType ("util.reroute", [] { return std::make_unique<nodes::RerouteNode>(); });
+        factory.registerType ("deco.reroute", [] { return std::make_unique<nodes::RerouteNode>(); });
         factory.registerType ("adapt.map", [] { return std::make_unique<nodes::MapNode>(); });
         factory.registerType ("math.add", [] { return std::make_unique<nodes::AddNode>(); });
         factory.registerType ("math.multiply", [] { return std::make_unique<nodes::MultiplyNode>(); });
@@ -229,6 +230,11 @@ namespace bazalt::engine
         factory.registerType ("dyn.gate", [] { return std::make_unique<nodes::DynGateNode>(); });
         factory.registerType ("fx.freqShift", [] { return std::make_unique<nodes::FreqShiftNode>(); });
         factory.registerType ("view.tune", [] { return std::make_unique<nodes::ViewTuneNode>(); }); // design/Visualization/Tune.png
+        // wiki/plans/Decorations.md — canvas-only, never compiled
+        factory.registerDecoration ("deco.header", [] { return std::make_unique<nodes::DecorationNode> ("Header", "heading"); });
+        factory.registerDecoration ("deco.comment", [] { return std::make_unique<nodes::DecorationNode> ("Comment", "comment"); });
+        factory.registerDecoration ("deco.box", [] { return std::make_unique<nodes::DecorationNode> ("Box", "box"); });
+        factory.registerDecoration ("deco.image", [] { return std::make_unique<nodes::DecorationNode> ("Image", "image"); });
         factory.registerType ("stereo.split", [] { return std::make_unique<nodes::StereoSplitNode>(); });
         factory.registerType ("stereo.combine", [] { return std::make_unique<nodes::StereoCombineNode>(); });
         // Clock+Seq batch (wiki/NODES.Status.md's own build-next order, step 1).

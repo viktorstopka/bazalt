@@ -471,7 +471,7 @@ rejected by `canConnect`.
 
 | Node | Ports | Notes |
 |---|---|---|
-| `math.add` | `in.0…in.N` (growable, min 2) | sums every connected input — genuinely polymorphic (`PortPolymorphism::SignalAndQuantity`, same mechanism as `util.reroute`/`logic.select`): Audio or Control, whichever's wired (SignalType follows the lowest-numbered still-wired input's priority); Quantity is LENIENT, not the same priority rule — only resolves to a specific quantity when every quantity-declaring input unanimously agrees, any disagreement (or nothing declared) falls back to Dimensionless, so summing genuinely different real quantities (a pitch offset + a raw modulation amount, say — `buildInitPatchGraph()`'s own detuneSum/cutoffSum do exactly this) still works. `mix.sum` (see the `mix` section above) folded into this node outright at the same time. |
+| `math.add` | `in.0…in.N` (growable, min 2) | sums every connected input — genuinely polymorphic (`PortPolymorphism::SignalAndQuantity`, same mechanism as `deco.reroute`/`logic.select`): Audio or Control, whichever's wired (SignalType follows the lowest-numbered still-wired input's priority); Quantity is LENIENT, not the same priority rule — only resolves to a specific quantity when every quantity-declaring input unanimously agrees, any disagreement (or nothing declared) falls back to Dimensionless, so summing genuinely different real quantities (a pitch offset + a raw modulation amount, say — `buildInitPatchGraph()`'s own detuneSum/cutoffSum do exactly this) still works. `mix.sum` (see the `mix` section above) folded into this node outright at the same time. |
 | `math.subtract` | `a`, `b` | `a − b` |
 | `math.multiply` | `in.0…in.N` (growable) | multiplies every connected input together — same polymorphism as `math.add` above (this doc previously claimed audio-rate ring-mod already worked here; verified false against the real source and fixed at the same time, Batch 3 — its ports were fixed Control until then). Two Poly Audio signals from the SAME voice-allocator origin into this node's growable ports is exactly detuned self-ring-mod per note, no special case needed. |
 | `math.divide` | `a`, `b`, `safeZero : bool·true` | division by zero returns 0, not NaN |
@@ -763,10 +763,6 @@ declares them), already wired in and slotted, in one undo step — and every
 claimed macro shows up as a knob in the top-bar panel automatically, no
 further step needed.
 
-#### `util.reroute` — Reroute ✅
-A pure passthrough with no fixed type of its own — a cable-routing waypoint for
-untangling a busy layout, nothing else. **In:** `in`. **Out:** `out` (adopts the source's signal type *and* quantity — a real, polymorphic port, not hardcoded Audio). Layout waypoint. "Not connectable" reports against this node are tracked as a UI-layer bug in `NODES_Gaps.md`, not a missing feature — the engine-side implementation reads correctly.
-
 #### `util.unipolarToBipolar` / `util.bipolarToUnipolar` — Unipolar to Bipolar / Bipolar to Unipolar ✅ *(`wiki/plans/PropsAndMacroRedesign.md` Batch D)*
 Thin, explicit, self-labeled converters between the two normalised modulation
 ranges — `in [0..1] -> out [-1..1]` and the inverse, clamped not extrapolated.
@@ -778,6 +774,25 @@ wrapper over what `adapt.map` already does (same shape as `adapt.normalise`/
 than filling a capability gap: a Unipolar<->Bipolar quantity mismatch already
 auto-resolves via `adapt.map`'s own generic fallback. **Deliberately not
 auto-inserted** by `connectWithAutoAdapt` — manual placement only.
+
+## deco — decorations ✅ *(wiki/plans/Decorations.md)*
+
+Canvas-only nodes that make a patch read like a page, not just a circuit. Category **Decorations**. Except Reroute, they're registered with `NodeFactory::registerDecoration`: the compiler never instantiates them (no ports, no cost), and what they show lives in their node properties (`text`, `width`, `height`, `colour`, `size`, `asset`), edited without a recompile. Boxes and images draw behind everything else.
+
+#### `deco.reroute` — Reroute ✅
+A dot for cable management — a pure, polymorphic pass-through (adopts the source's type and quantity). **In:** `in` (the dot's left half). **Out:** `out` (its right half; fan out as many cables as you like). **Gestures:** Ctrl/Cmd-click or double-click a wire to drop a reroute into it (one undo step); deleting a reroute reconnects what fed it to everything it fed. Was `util.reroute` (v10→v11 migration); its card used to draw a bare dot with no port anchors, so nothing could connect to it.
+
+#### `deco.header` — Header ✅
+Large text, no frame. Double-click to edit (Enter commits, Escape cancels). S/M/L size chips when selected.
+
+#### `deco.comment` — Comment ✅
+A plain-text paragraph that wraps to its width, muted, on a faint background. Double-click to edit (Shift+Enter for a new line); drag its side handle to change the width.
+
+#### `deco.box` — Box ✅
+A resizable, purely visual rectangle with an optional label (double-click it) and a colour from a muted palette. It owns nothing — to move a group, box-select it.
+
+#### `deco.image` — Image ✅
+A decal. Drop or paste an image onto the canvas (or pick Image in the Add menu for a file dialog). Compressed once on import — longest side ≤ 2048 px, WebP (JPEG/PNG where WebP can't be encoded); SVG and GIFs up to 1 MB kept as they are. Stored once per patch by content (`assets`); an image that would take the patch past 5 MB is refused. Resize from the corner (aspect locked; Shift frees it).
 
 ## view — listening and looking — all ✅
 

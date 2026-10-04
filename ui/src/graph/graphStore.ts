@@ -66,6 +66,7 @@ import {
   graphConnectWithAutoAdapt,
   graphCreateMacro,
   graphDeleteNode,
+  graphAddImage,
   graphDisconnect,
   graphGetNodeMultiplicity,
   graphGetSnapshot,
@@ -81,11 +82,27 @@ import {
   type PortMultiplicityInfo,
 } from './graphCommands'
 
+/** What a decoration (wiki/plans/Decorations.md) shows — its own
+    NodeInstance.properties, edited through graphSetProperty. */
+export interface DecorationProps {
+  text?: string
+  width?: number
+  height?: number
+  colour?: number // index into DECORATION_COLOURS
+  size?: number // deco.header: 0 small, 1 medium, 2 large
+  asset?: string // deco.image: content id into the snapshot's `assets`
+}
+
+export const DECORATION_TYPES = new Set(['deco.header', 'deco.comment', 'deco.box', 'deco.image'])
+/** Decorations drawn behind everything else. */
+export const BACKGROUND_DECORATIONS = new Set(['deco.box', 'deco.image'])
+
 export interface GraphNode {
   id: string
   typeId: string
   x: number
   y: number
+  decoration?: DecorationProps
   titleOverride?: string
   bypassed: boolean
   error?: string
@@ -271,6 +288,8 @@ export interface GraphSnapshot {
   /** A connection waiting for the user to say how stereo becomes mono
       (wiki/plans/StereoChannels.md §3) — the chooser shows while set. */
   pendingConnectionChoice: PendingConnectionChoice | null
+  /** Image data the patch carries, by content id (deco.image's `asset`). */
+  assets: ReadonlyMap<string, { type: string; data: string }>
   /** Node id -> output port ids that carry stereo, as compiled — stereo
       cables draw doubled (wiki/plans/StereoChannels.md). */
   stereoOutputs: ReadonlyMap<string, ReadonlySet<string>>
@@ -303,6 +322,19 @@ interface PatchConnectionJson {
 interface PatchDocumentJson {
   nodes?: PatchNodeJson[]
   connections?: PatchConnectionJson[]
+  assets?: Record<string, { type: string; data: string }>
+}
+
+function decorationFromProperties(properties: Record<string, unknown>): DecorationProps {
+  const num = (v: unknown) => (typeof v === 'number' ? v : undefined)
+  return {
+    text: typeof properties.text === 'string' ? properties.text : undefined,
+    width: num(properties.width),
+    height: num(properties.height),
+    colour: num(properties.colour),
+    size: num(properties.size),
+    asset: typeof properties.asset === 'string' ? properties.asset : undefined,
+  }
 }
 
 function wireId(toNodeId: string, toPortId: string): string {
@@ -331,6 +363,13 @@ function parseMacroEnumOptionLabels(raw: unknown): string[] | undefined {
 
 function patchJsonToLocalState(json: string): { nodes: Map<string, GraphNode>; wires: Map<string, GraphWire> } {
   const doc = JSON.parse(json) as PatchDocumentJson
+  // Content-addressed, so merging is always right (an id never changes
+  // meaning); an undo can still show an image a later edit dropped.
+  if (doc.assets) {
+    const merged = new Map(assets)
+    for (const [id, asset] of Object.entries(doc.assets)) merged.set(id, asset)
+    assets = merged
+  }
   const nodes = new Map<string, GraphNode>()
   for (const n of doc.nodes ?? []) {
     const properties = n.properties ?? {}
@@ -357,6 +396,7 @@ function patchJsonToLocalState(json: string): { nodes: Map<string, GraphNode>; w
       viewerRangeMaxOverride: typeof viewerRangeMax === 'number' ? viewerRangeMax : undefined,
       viewerCenterOverride: typeof viewerCenter === 'number' ? viewerCenter : undefined,
       previewPlayheadMode: typeof previewPlayhead === 'number' ? previewPlayhead : undefined,
+      decoration: DECORATION_TYPES.has(n.type) ? decorationFromProperties(properties) : undefined,
     })
   }
   const wires = new Map<string, GraphWire>()
@@ -376,6 +416,7 @@ let multiplicity = new Map<string, NodeMultiplicity>()
 let lastError: string | null = null
 let pendingConnectionChoice: PendingConnectionChoice | null = null
 let stereoOutputs: ReadonlyMap<string, ReadonlySet<string>> = new Map()
+let assets: ReadonlyMap<string, { type: string; data: string }> = new Map()
 
 /** Fetched in parallel with graphGetSnapshot everywhere that's refreshed
     (see the header comment for why: both are "resync local state from the
@@ -484,6 +525,7 @@ function buildSnapshot(): GraphSnapshot {
     lastError,
     pendingConnectionChoice,
     stereoOutputs,
+    assets,
   }
 }
 
@@ -630,7 +672,7 @@ export function getEndpoint(nodeId: string, portId: string, direction: 'input' |
   return endpointFor(nodeId, portId, direction, new Set())
 }
 
-/** A polymorphic node (util.reroute, logic.select/compare, adapt.sampleHold)
+/** A polymorphic node (deco.reroute, logic.select/compare, adapt.sampleHold)
     declares default port types, but a placed one's real types follow what is
     wired to it (Node.h, hasPolymorphicPorts(); the engine resolves it in
     GraphCompiler). Predicting a wire against the declared defaults would
@@ -884,12 +926,36 @@ export async function addNode(typeId: string, x: number, y: number): Promise<str
   return id
 }
 
-/** Removes the given nodes, one command per node, in one undo step. */
+/** Removes the given nodes, one command per node, in one undo step. A
+    deleted reroute (deco.reroute) reconnects what fed it to everything it fed
+    (wiki/plans/Decorations.md §3) — tidying cable routing never breaks the
+    patch. */
 export function deleteNodes(ids: readonly string[]): void {
   if (ids.length === 0) return
+  const deleting = new Set(ids)
+  // Follow chains of deleted reroutes back to a real source.
+  const sourceOf = (nodeId: string): GraphWire | undefined => {
+    let wire = findWireAtInput(nodeId, 'in')
+    const seen = new Set<string>()
+    while (wire && deleting.has(wire.fromNodeId) && nodes.get(wire.fromNodeId)?.typeId === 'deco.reroute' && !seen.has(wire.fromNodeId)) {
+      seen.add(wire.fromNodeId)
+      wire = findWireAtInput(wire.fromNodeId, 'in')
+    }
+    return wire && !deleting.has(wire.fromNodeId) ? wire : undefined
+  }
+  const reconnections: { fromNodeId: string; fromPortId: string; toNodeId: string; toPortId: string }[] = []
+  for (const id of ids) {
+    if (nodes.get(id)?.typeId !== 'deco.reroute') continue
+    const source = sourceOf(id)
+    if (!source) continue
+    for (const wire of wires.values())
+      if (wire.fromNodeId === id && !deleting.has(wire.toNodeId))
+        reconnections.push({ fromNodeId: source.fromNodeId, fromPortId: source.fromPortId, toNodeId: wire.toNodeId, toPortId: wire.toPortId })
+  }
   void withHistory(
     async () => {
       for (const id of ids) await fireCommand(() => graphDeleteNode(id))
+      for (const c of reconnections) await fireCommand(() => graphConnectWithAutoAdapt(c.fromNodeId, c.fromPortId, c.toNodeId, c.toPortId))
     },
     () => {
       for (const id of ids) {
@@ -1039,6 +1105,46 @@ export function setViewerCenter(id: string, value: number): void {
       if (node) nodes.set(id, { ...node, viewerCenterOverride: value })
     },
   )
+}
+
+/** Sets one or more of a decoration's own properties (text, size, colour,
+    width/height — wiki/plans/Decorations.md) in one undo step. The engine
+    stores them without recompiling. */
+export function setDecorationProperties(id: string, changes: Partial<DecorationProps>): void {
+  const entries = Object.entries(changes).filter(([, v]) => v !== undefined) as [string, string | number][]
+  if (entries.length === 0) return
+  void withHistory(
+    async () => {
+      for (const [key, value] of entries) await fireCommand(() => graphSetProperty(id, key, value))
+    },
+    () => {
+      const node = nodes.get(id)
+      if (node) nodes.set(id, { ...node, decoration: { ...node.decoration, ...changes } })
+    },
+  )
+}
+
+/** Adds an image decal at (x, y) — `base64` already compressed by
+    imageImport.ts. Resolves to the error message when the engine refuses it
+    (over the patch's image limit), else null. */
+export async function addImageAt(x: number, y: number, mimeType: string, base64: string, width: number, height: number): Promise<string | null> {
+  const id = makeId('node')
+  let error: string | null = null
+  await withHistory(async () => {
+    const result = await graphAddImage(id, x, y, mimeType, base64, width, height)
+    if (!result.success) {
+      error = result.errorMessage
+      lastError = result.errorMessage
+    } else selection = new Set([id])
+  })
+  return error
+}
+
+/** Shows a message in the top bar's error slot (e.g. an image that couldn't
+    be read) without any command having run. */
+export function reportError(message: string): void {
+  lastError = message
+  notify()
 }
 
 /** A phase-locked preview's playhead override: 0 Auto, 1 On, 2 Off. */

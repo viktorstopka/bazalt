@@ -318,15 +318,21 @@ edit. Every later `data.*`/`osc.wavetable`/`sampler.*` node rides on this for fr
 | `instance.allocate.swarmTransient` | Implemented | **A2** | Domain Extensions | Event-triggered spawn, closest to Voice's own shape. Done 2026-10-01. |
 | `instance.allocate.trigger` | Implemented | **A2** | Domain Extensions | Event-triggered, one instance at a time. Done 2026-10-01. |
 
-### `util.*` — 5/5 Implemented
+### `util.*` — 4/4 Implemented
 
 | Node | Status | Necessity | Batch | Notes |
 |---|---|---|---|---|
 | `util.constant` | Implemented | | | |
-| `util.reroute` | Implemented | | | |
 | `util.macro` | Implemented | | | `wiki/plans/UtilMacro.md` — ADR-0030 amends ADR-0015 (the 32-fixed-slot pool stays; the macro node becomes its own mapping target with a real wireable output, instead of a side-channel poke onto a foreign node). |
 | `util.unipolarToBipolar` | Implemented | | | `wiki/plans/PropsAndMacroRedesign.md` Batch D — new, replacing `random.stepped`/`seq.steps`/`data.lookup`'s old per-node Unipolar/Bipolar selectors. Manual placement only, never auto-inserted. |
 | `util.bipolarToUnipolar` | Implemented | | | Same batch, the inverse direction. |
+
+### `deco.*` — 5/5 Implemented *(2026-10-04, wiki/plans/Decorations.md)*
+
+`deco.reroute` (was `util.reroute` — now actually connectable, Ctrl/Cmd-click or
+double-click a wire to add one, delete reconnects), `deco.header`, `deco.comment`,
+`deco.box`, `deco.image` (compressed on import, stored once per patch, 5 MB cap) —
+all Implemented. Canvas-only except Reroute: the compiler never sees them.
 
 ### `view.*` — 10/10 Implemented
 

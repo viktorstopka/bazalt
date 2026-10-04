@@ -8,7 +8,7 @@
 // component gallery has something to render for every layout variant and
 // interaction the blueprint's design reference shows, since the real
 // engine registry (16 types as of M8) has only one Decoration node
-// (util.reroute) and no Horizontal or Singleton node at all yet.
+// (deco.reroute) and no Horizontal or Singleton node at all yet.
 //
 // Chosen to mirror docs/Frame 1 Bazalt.png's own example nodes directly
 // where possible (MIDI Note, Trigger by Threshold, Predelay, Random, Macro

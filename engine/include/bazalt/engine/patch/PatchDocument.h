@@ -117,7 +117,11 @@ namespace bazalt::engine
         // `macroValues` stays: each of the 32 AudioParameterFloats' own
         // current automated value is real, independent state, unrelated
         // to which nodes claim which slot.
-        static constexpr int currentSchemaVersion = 10;
+        //
+        // Schema v11 (wiki/plans/Decorations.md): util.reroute became
+        // deco.reroute (same ports), and patches carry `assets` — the
+        // content-addressed files deco.image nodes show.
+        static constexpr int currentSchemaVersion = 11;
 
         int schemaVersion = currentSchemaVersion;
         std::vector<NodeInstance> nodes;
@@ -127,6 +131,7 @@ namespace bazalt::engine
         std::vector<float> macroValues; // index-aligned with the macro pool
         PatchViewState view;
         PatchMeta meta;
+        std::map<juce::String, PatchAsset> assets;
 
         NodeGraph toNodeGraph() const
         {
@@ -136,6 +141,8 @@ namespace bazalt::engine
             for (const auto& connection : connections)
                 graph.addConnection (connection);
             graph.setOutput (outputNodeId, outputPortId);
+            for (const auto& [id, asset] : assets)
+                graph.setAsset (id, asset);
             return graph;
         }
 
@@ -146,6 +153,9 @@ namespace bazalt::engine
             doc.connections = graph.getConnections();
             doc.outputNodeId = graph.getOutputNodeId();
             doc.outputPortId = graph.getOutputPortId();
+            auto pruned = graph;
+            pruned.pruneUnreferencedAssets();
+            doc.assets = pruned.getAssets();
             return doc;
         }
     };

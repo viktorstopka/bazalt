@@ -474,7 +474,7 @@ namespace bazalt
         if (toPort == nullptr)
             return { false, "Node '" + toNodeId + "' has no input port '" + toPortId + "'" };
 
-        // A polymorphic-port node (util.reroute) has no fixed port type to
+        // A polymorphic-port node (deco.reroute) has no fixed port type to
         // pre-check against: what its ports report is decided by what's wired
         // to them, which only GraphCompiler's resolution pass knows (Node.h,
         // hasPolymorphicPorts()). The default descriptor read above says
@@ -745,6 +745,14 @@ namespace bazalt
         if (node == nullptr)
             return { false, "No such node: " + nodeId };
 
+        // A decoration's text, size or colour changes nothing a plan sees —
+        // no recompile while someone types a comment.
+        if (processor.getNodeFactory().isDecoration (node->type))
+        {
+            node->properties[propertyKey] = std::move (value);
+            return { true, {} };
+        }
+
         const auto previousGraph = graph;
         node->properties[propertyKey] = std::move (value);
 
@@ -753,6 +761,42 @@ namespace bazalt
             graph = previousGraph;
 
         return result;
+    }
+
+    GraphEditController::CommandResult GraphEditController::addImage (const juce::String& nodeId, float x, float y,
+                                                                       const juce::String& mimeType, const juce::String& base64,
+                                                                       float width, float height)
+    {
+        if (graph.findNode (nodeId) != nullptr)
+            return { false, "Node id already exists: " + nodeId };
+        if (! mimeType.startsWith ("image/") || base64.isEmpty())
+            return { false, "Not an image" };
+
+        const auto assetId = bazalt::engine::NodeGraph::contentIdFor (base64);
+        const bazalt::engine::PatchAsset asset { mimeType, base64 };
+
+        bazalt::engine::NodeInstance instance;
+        instance.id = nodeId;
+        instance.type = "deco.image";
+        instance.position = { x, y };
+        instance.properties["asset"] = assetId;
+        instance.properties["width"] = width;
+        instance.properties["height"] = height;
+
+        // Measured as the patch would be — the same image used again costs nothing.
+        auto proposed = graph;
+        proposed.setAsset (assetId, asset);
+        proposed.addNode (instance);
+        const auto total = proposed.referencedAssetBytes();
+        if (total > maxPatchAssetBytes)
+            return { false, "Image refused: the patch's images would take " + juce::String ((double) total / (1024.0 * 1024.0), 1)
+                                 + " MB, over the " + juce::String ((int) (maxPatchAssetBytes / (1024 * 1024))) + " MB limit" };
+
+        return applyBatch ([&] (bazalt::engine::NodeGraph& g)
+        {
+            g.setAsset (assetId, asset);
+            g.addNode (instance);
+        });
     }
 
     GraphEditController::CommandResult GraphEditController::setGraph (bazalt::engine::NodeGraph newGraph)
@@ -790,7 +834,8 @@ namespace bazalt
         if (const auto collisionError = macroSlotCollisionError (graph); collisionError.isNotEmpty())
             return { false, collisionError };
 
-        auto split = bazalt::engine::MultiplicityResolver::split (graph);
+        // Decorations never reach the resolver or a plan (wiki/plans/Decorations.md).
+        auto split = bazalt::engine::MultiplicityResolver::split (bazalt::engine::withoutDecorations (graph, processor.getNodeFactory()));
         if (! split.success)
             return { false, split.errorMessage };
 

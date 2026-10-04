@@ -224,7 +224,7 @@ export interface NodeDescriptor {
       read, same convention as isMock below.
   */
   previews?: PreviewDescriptor[]
-  /** Node::hasPolymorphicPorts() (util.reroute): the ports declared above are only
+  /** Node::hasPolymorphicPorts() (deco.reroute): the ports declared above are only
       the unconnected defaults; a placed node's real port types follow what's
       wired to it. Absent on mock descriptors (none are polymorphic). See
       graphStore.getEndpoint() for how the UI resolves them.

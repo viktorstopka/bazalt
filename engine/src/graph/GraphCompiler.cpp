@@ -274,12 +274,30 @@ namespace bazalt::engine
         }
     }
 
+    NodeGraph withoutDecorations (const NodeGraph& graph, const NodeFactory& factory)
+    {
+        NodeGraph stripped;
+        for (const auto& node : graph.getNodes())
+            if (! factory.isDecoration (node.type))
+                stripped.addNode (node);
+        for (const auto& connection : graph.getConnections())
+            stripped.addConnection (connection);
+        stripped.setOutput (graph.getOutputNodeId(), graph.getOutputPortId());
+        return stripped;
+    }
+
     CompileResult GraphCompiler::compile (const NodeGraph& graph,
                                            const NodeFactory& factory,
                                            const NodePrepareInfo& prepareInfo,
                                            uint64_t generation,
                                            const ExecutionPlan* previousPlan)
     {
+        // Decorations are canvas-only (wiki/plans/Decorations.md): never
+        // instantiated, never scheduled.
+        if (std::any_of (graph.getNodes().begin(), graph.getNodes().end(),
+                         [&factory] (const NodeInstance& n) { return factory.isDecoration (n.type); }))
+            return compile (withoutDecorations (graph, factory), factory, prepareInfo, generation, previousPlan);
+
         CompileResult result;
         auto& plan = result.plan;
 
