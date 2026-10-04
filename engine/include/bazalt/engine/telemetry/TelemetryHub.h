@@ -89,9 +89,9 @@ namespace bazalt::engine
             to ask again (no "the engine just reset" event reaches it), so
             the fix is here: an already-active slot's SUBSCRIPTION (name/
             settings/frameTypesMask/synthetic) survives a re-prepare
-            untouched — only its PHYSICAL buffers are rebuilt fresh below
-            (their pre-reprepare contents are stale/meaningless either way,
-            same as any other reprepare). A never-subscribed slot is still
+            untouched, and so does its Tap* (the same object, re-prepared in
+            place) — only the buffer CONTENTS are cleared below (stale/
+            meaningless after a reprepare either way). A never-subscribed slot is still
             reset to the same clean "nothing here" state as before.
         */
         void prepare (size_t tapCapacitySamples, size_t maxFrameBytes)
@@ -100,12 +100,21 @@ namespace bazalt::engine
             {
                 const auto wasActive = slot.active.load (std::memory_order_relaxed);
 
-                slot.tap = std::make_unique<Tap>();
+                // Allocated once, then re-prepared IN PLACE on every later
+                // call: a live ExecutionPlan (tapForBufferIndex) and
+                // PluginProcessor's tapPointers[] cache these Tap*s, so
+                // replacing the object here would leave the audio thread
+                // pushing into freed memory — and the analysis thread
+                // reading a fresh, never-written Tap (the real cause of
+                // "the ripple stopped responding" after a device switch).
+                if (slot.tap == nullptr)
+                    slot.tap = std::make_unique<Tap>();
                 slot.tap->prepare (tapCapacitySamples);
 
                 for (auto& buffer : slot.frameBuffers)
                 {
-                    buffer = std::make_unique<TelemetryFrameBuffer>();
+                    if (buffer == nullptr)
+                        buffer = std::make_unique<TelemetryFrameBuffer>();
                     buffer->prepare (maxFrameBytes);
                 }
 
