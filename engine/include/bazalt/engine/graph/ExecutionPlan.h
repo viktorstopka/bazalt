@@ -271,6 +271,21 @@ namespace bazalt::engine
         static constexpr int maxTapsPerBuffer = 4;
         std::unique_ptr<std::atomic<Tap*>[]> tapForBufferIndex;
 
+        /** PreviewKind::PhaseLocked's time base, one entry per blockBuffers
+            index: the node whose phase that buffer's signal follows, or
+            nullptr. "Phase follows the cable": a buffer produced by a phase
+            source (Node::isPhaseSource()) uses that node; any other buffer
+            inherits the phase source of its producer's FIRST connected input,
+            recursively — so a filter's output after a saw is drawn against
+            the saw's own phase, stationary and jitter-free, without ever
+            searching the signal for crossings. Filled once by
+            resolvePhaseSources() at compile time (message thread); the audio
+            thread only reads it. */
+        std::vector<Node*> phaseSourceForBuffer;
+
+        /** Message thread, after compile: fills phaseSourceForBuffer. */
+        void resolvePhaseSources();
+
         /** Message thread. Adds `tap` to a buffer's set; false if the index
             is out of range or all maxTapsPerBuffer places are taken. Adding a
             tap already present is a successful no-op.

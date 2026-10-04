@@ -161,22 +161,19 @@ TEST_CASE ("every history viewer exposes the same clamped time window under its 
     check (ViewGateNode {}, "view.gate.timeWindow");
 }
 
-TEST_CASE ("view.scope and view.glance are deprecated; every other registered node, including the new viewers, is not",
+TEST_CASE ("view.scope and view.glance are gone; view.cycle replaces them; nothing registered is deprecated",
            "[engine][nodes][deprecated]")
 {
     const auto factory = buildDefaultNodeFactory();
     REQUIRE (factory.isRegistered ("view.scope.modulation"));
     REQUIRE (factory.isRegistered ("view.gate"));
-
-    // Deprecated means "no longer placeable", never "no longer loadable":
-    // both stay registered so an existing patch still compiles.
-    REQUIRE (factory.isRegistered ("view.scope"));
-    REQUIRE (factory.isRegistered ("view.glance"));
+    REQUIRE (factory.isRegistered ("view.cycle"));
+    CHECK_FALSE (factory.isRegistered ("view.scope"));  // removed 2026-10-04 (PatchSerializer v8 -> v9 drops it)
+    CHECK_FALSE (factory.isRegistered ("view.glance")); // removed 2026-10-04 (spliced out of its cable on load)
 
     for (const auto& descriptor : factory.describeAll())
     {
-        const auto expected = descriptor.typeId == "view.scope" || descriptor.typeId == "view.glance";
         INFO (descriptor.typeId);
-        CHECK (descriptor.deprecated == expected);
+        CHECK_FALSE (descriptor.deprecated);
     }
 }

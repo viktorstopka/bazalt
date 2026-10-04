@@ -109,9 +109,70 @@ namespace bazalt::engine
             const auto numBuffers = (int) blockBuffers.size();
             for (int i = 0; i < numBuffers; ++i)
             {
+                // A phase source (PreviewKind::PhaseLocked) rides along with
+                // the samples in the same push, so a folded preview's phase
+                // can never disagree with its samples.
+                auto* phaseSource = (size_t) i < phaseSourceForBuffer.size() ? phaseSourceForBuffer[(size_t) i] : nullptr;
+                PhaseSnapshot snapshot;
+                bool snapshotTaken = false;
+
                 for (int n = 0; n < maxTapsPerBuffer; ++n)
+                {
                     if (auto* tap = tapForBufferIndex[(size_t) (i * maxTapsPerBuffer + n)].load (std::memory_order_acquire))
-                        tap->push (blockBuffers[(size_t) i].getBlock().getChannelPointer (0), numSamples);
+                    {
+                        tap->push (blockBuffers[(size_t) i].getBlock().getChannelPointer (0), numSamples,
+                                   phaseSource != nullptr ? phaseSource->getPhaseTrack() : nullptr);
+
+                        if (phaseSource != nullptr)
+                        {
+                            if (! snapshotTaken)
+                            {
+                                phaseSource->capturePhaseSnapshot (snapshot);
+                                snapshotTaken = true;
+                            }
+                            tap->publishSnapshot (snapshot);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    void ExecutionPlan::resolvePhaseSources()
+    {
+        phaseSourceForBuffer.assign (blockBuffers.size(), nullptr);
+
+        // Which node writes each buffer.
+        std::vector<juce::String> producerOfBuffer (blockBuffers.size());
+        for (const auto& [nodeId, ports] : outputBufferIndexByNodeAndPort)
+            for (const auto& [portId, bufferIndex] : ports)
+                if (bufferIndex >= 0 && (size_t) bufferIndex < producerOfBuffer.size())
+                    producerOfBuffer[(size_t) bufferIndex] = nodeId;
+
+        for (size_t buffer = 0; buffer < blockBuffers.size(); ++buffer)
+        {
+            // Walk upstream through first inputs; bounded, so a feedback
+            // loop just ends without a phase source.
+            auto nodeId = producerOfBuffer[buffer];
+            for (int depth = 0; depth < 32 && nodeId.isNotEmpty(); ++depth)
+            {
+                auto* node = getNodeById (nodeId);
+                if (node == nullptr)
+                    break;
+                if (node->isPhaseSource())
+                {
+                    phaseSourceForBuffer[buffer] = node;
+                    break;
+                }
+
+                const auto inputs = node->getInputPorts();
+                const auto sourcesIt = inputSourceBufferIndexByNodeAndPort.find (nodeId);
+                if (inputs.empty() || sourcesIt == inputSourceBufferIndexByNodeAndPort.end())
+                    break;
+                const auto sourceIt = sourcesIt->second.find (inputs.front().id);
+                if (sourceIt == sourcesIt->second.end() || sourceIt->second < 0 || (size_t) sourceIt->second >= producerOfBuffer.size())
+                    break;
+                nodeId = producerOfBuffer[(size_t) sourceIt->second];
             }
         }
     }

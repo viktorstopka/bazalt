@@ -258,6 +258,7 @@ namespace bazalt
                 case PreviewKind::EventImpulse:        return "eventImpulse";
                 case PreviewKind::Spectrogram:         return "spectrogram";
                 case PreviewKind::Goniometer:          return "goniometer";
+                case PreviewKind::PhaseLocked:         return "phaseLocked";
             }
             jassertfalse;
             return "waveform";
@@ -299,6 +300,7 @@ namespace bazalt
             obj->setProperty ("tiltDbPerOctave", preview.tiltDbPerOctave);
             obj->setProperty ("averaging", preview.averaging);
             obj->setProperty ("meterMode", meterModeToString (preview.meterMode));
+            obj->setProperty ("foldSamples", preview.foldSamples);
             return juce::var (obj);
         }
 
@@ -345,6 +347,7 @@ namespace bazalt
         if (kind == "eventImpulse")       return PreviewKind::EventImpulse;
         if (kind == "spectrogram")        return PreviewKind::Spectrogram;
         if (kind == "goniometer")         return PreviewKind::Goniometer;
+        if (kind == "phaseLocked")        return PreviewKind::PhaseLocked;
         return PreviewKind::Waveform; // "waveform", or an unrecognized string
     }
 }

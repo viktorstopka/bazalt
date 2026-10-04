@@ -264,3 +264,36 @@ TEST_CASE ("v7 -> v8 migration rewrites adapt.remap into adapt.map and the old t
     REQUIRE (result.document.connections.size() == 1);
     CHECK (result.document.connections[0].toPortId == "adapt.map.inMax");
 }
+
+TEST_CASE ("v8 -> v9 migration drops view.scope and splices view.glance out of its cable",
+           "[engine][patch][view.cycle]")
+{
+    const juce::String json = R"({
+        "schemaVersion": 8,
+        "nodes": [
+            { "id": "osc", "type": "osc.sine", "parameters": {} },
+            { "id": "glance", "type": "view.glance", "parameters": {} },
+            { "id": "scope", "type": "view.scope", "parameters": {} },
+            { "id": "gain", "type": "mix.gain", "parameters": {} }
+        ],
+        "connections": [
+            { "fromNodeId": "osc", "fromPortId": "out", "toNodeId": "glance", "toPortId": "in" },
+            { "fromNodeId": "glance", "fromPortId": "out", "toNodeId": "gain", "toPortId": "audio" },
+            { "fromNodeId": "osc", "fromPortId": "out", "toNodeId": "scope", "toPortId": "in" }
+        ],
+        "outputNodeId": "glance", "outputPortId": "out"
+    })";
+
+    const auto result = parsePatchFromJson (json);
+    REQUIRE (result.success);
+    REQUIRE (result.document.nodes.size() == 2);
+    for (const auto& node : result.document.nodes)
+        CHECK ((node.type == "osc.sine" || node.type == "mix.gain"));
+
+    REQUIRE (result.document.connections.size() == 1);
+    const auto& c = result.document.connections[0];
+    CHECK (c.fromNodeId == "osc");
+    CHECK (c.toNodeId == "gain");
+    CHECK (c.toPortId == "audio");
+    CHECK (result.document.outputNodeId == "osc");
+}

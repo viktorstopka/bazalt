@@ -610,6 +610,75 @@ namespace bazalt::engine
             return root;
         }
 
+        // 2026-10-04: view.scope and view.glance were removed outright (the
+        // phase-locked view.cycle replaces both). A view.scope was a dead end,
+        // so it and its connections simply go. A view.glance was a pass-
+        // through, so it is spliced OUT: whatever fed it now feeds everything
+        // it fed (and the graph output, if it was that), so the patch still
+        // sounds the same.
+        juce::var migrateV8ToV9 (juce::var v8Root)
+        {
+            auto root = v8Root.clone();
+            auto* nodes = root["nodes"].getArray();
+            auto* connections = root["connections"].getArray();
+
+            juce::StringArray removed, glances;
+            if (nodes != nullptr)
+            {
+                for (int i = nodes->size(); --i >= 0;)
+                {
+                    const auto type = (*nodes)[i]["type"].toString();
+                    if (type == "view.scope" || type == "view.glance")
+                    {
+                        removed.add ((*nodes)[i]["id"].toString());
+                        if (type == "view.glance")
+                            glances.add ((*nodes)[i]["id"].toString());
+                        nodes->remove (i);
+                    }
+                }
+            }
+
+            if (connections != nullptr && ! removed.isEmpty())
+            {
+                for (const auto& glance : glances)
+                {
+                    juce::var feeder;
+                    for (const auto& c : *connections)
+                        if (c["toNodeId"].toString() == glance)
+                            feeder = c;
+                    if (feeder.isVoid())
+                        continue;
+
+                    juce::Array<juce::var> bridged;
+                    for (const auto& c : *connections)
+                    {
+                        if (c["fromNodeId"].toString() != glance)
+                            continue;
+                        auto* bridge = new juce::DynamicObject();
+                        bridge->setProperty ("fromNodeId", feeder["fromNodeId"]);
+                        bridge->setProperty ("fromPortId", feeder["fromPortId"]);
+                        bridge->setProperty ("toNodeId", c["toNodeId"]);
+                        bridge->setProperty ("toPortId", c["toPortId"]);
+                        bridged.add (juce::var (bridge));
+                    }
+                    connections->addArray (bridged);
+
+                    if (root["outputNodeId"].toString() == glance)
+                    {
+                        root.getDynamicObject()->setProperty ("outputNodeId", feeder["fromNodeId"]);
+                        root.getDynamicObject()->setProperty ("outputPortId", feeder["fromPortId"]);
+                    }
+                }
+
+                for (int i = connections->size(); --i >= 0;)
+                    if (removed.contains ((*connections)[i]["fromNodeId"].toString()) || removed.contains ((*connections)[i]["toNodeId"].toString()))
+                        connections->remove (i);
+            }
+
+            root.getDynamicObject()->setProperty ("schemaVersion", 9);
+            return root;
+        }
+
         // vN -> vN+1 migrations, keyed by the version they migrate FROM.
         using Migration = std::function<juce::var (juce::var)>;
 
@@ -623,6 +692,7 @@ namespace bazalt::engine
                 { 5, migrateV5ToV6 },
                 { 6, migrateV6ToV7 },
                 { 7, migrateV7ToV8 },
+                { 8, migrateV8ToV9 },
             };
             return migrations;
         }

@@ -6,7 +6,7 @@
 #include "bazalt/engine/nodes/OscillatorNode.h"
 #include "bazalt/engine/nodes/RerouteNode.h"
 #include "bazalt/engine/nodes/InstanceMixNode.h"
-#include "bazalt/engine/nodes/ViewGlanceNode.h"
+#include "bazalt/engine/nodes/ViewCycleNode.h"
 #include "bazalt/engine/nodes/MapNode.h"
 
 using namespace bazalt;
@@ -134,7 +134,7 @@ TEST_CASE ("nodeDescriptorToVar reports the Decoration layout variant",
 TEST_CASE ("nodeDescriptorToVar reports the Glance layout variant and its declared preview",
            "[plugin][NodeDescriptorJson][M0.6]")
 {
-    const auto descriptor = describeNode ("view.glance", nodes::ViewGlanceNode {});
+    const auto descriptor = describeNode ("view.cycle", nodes::ViewCycleNode {});
     const auto var = nodeDescriptorToVar (descriptor);
     CHECK (var["layoutVariant"].toString() == "glance");
 
@@ -142,6 +142,8 @@ TEST_CASE ("nodeDescriptorToVar reports the Glance layout variant and its declar
     REQUIRE (previews != nullptr);
     REQUIRE (previews->size() == 1);
     CHECK ((*previews)[0]["portId"].toString() == "out");
+    CHECK ((*previews)[0]["kind"].toString() == "phaseLocked");
+    CHECK ((*previews)[0]["foldSamples"] == juce::var (true));
 }
 
 TEST_CASE ("nodeDescriptorToVar reports whether a node type is deprecated",
@@ -149,7 +151,6 @@ TEST_CASE ("nodeDescriptorToVar reports whether a node type is deprecated",
 {
     // The UI's Add menu hides deprecated types (they still load in an
     // existing patch) — the flag has to actually reach the JSON for that.
-    CHECK (nodeDescriptorToVar (describeNode ("view.glance", nodes::ViewGlanceNode {}))["deprecated"] == juce::var (true));
     CHECK (nodeDescriptorToVar (describeNode ("util.reroute", nodes::RerouteNode {}))["deprecated"] == juce::var (false));
 }
 

@@ -1,5 +1,7 @@
 #pragma once
 
+#include "bazalt/engine/telemetry/PhaseSnapshot.h"
+
 #include "bazalt/engine/graph/Data.h"
 #include "bazalt/engine/graph/HostInputs.h"
 #include "bazalt/engine/graph/PortDescriptor.h"
@@ -22,7 +24,7 @@ namespace bazalt::engine
         `Glance` (Milestone 0.6, wiki/NODES.md): the minimal inline preview
         variant — no title, no parameter list, just an input glyph, a
         compact live preview, and an output glyph (NodeCard.tsx's
-        `GlanceBody`) — see `ViewGlanceNode.h`.
+        `GlanceBody`) — see `ViewCycleNode.h` (view.glance, the first user, was removed 2026-10-04).
     */
     enum class NodeLayoutVariant
     {
@@ -88,6 +90,20 @@ namespace bazalt::engine
             replaced it.
         */
         virtual bool isDeprecated() const noexcept { return false; }
+
+        /** A node built on a phase accumulator (the oscillators, a future
+            LFO) — PreviewKind::PhaseLocked's time base. Such a node:
+            - fills getPhaseTrack() during processBlock with its accumulator
+              position per sample, as 0..phaseLockedCycles (cycle count mod
+              phaseLockedCycles plus the fraction), so samples anywhere
+              downstream can be folded by it;
+            - fills a PhaseSnapshot in capturePhaseSnapshot() (audio thread,
+              once per block, no allocation) so its own waveform can be drawn
+              at its current, fully modulated parameters.
+            Both are only read when a phase-locked preview is subscribed. */
+        virtual bool isPhaseSource() const noexcept { return false; }
+        virtual const float* getPhaseTrack() const noexcept { return nullptr; }
+        virtual void capturePhaseSnapshot (PhaseSnapshot&) const noexcept {}
 
         /** Growable port groups (SIGNAL_TYPES.md §6; PortGroups.h has the
             whole mechanism). -1 (the default) means this node has no

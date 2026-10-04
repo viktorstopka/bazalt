@@ -6,7 +6,7 @@
 #include "bazalt/engine/nodes/LogicSelectNode.h"
 #include "bazalt/engine/nodes/SampleHoldNode.h"
 #include "bazalt/engine/nodes/ClampNode.h"
-#include "bazalt/engine/nodes/ViewGlanceNode.h"
+#include "bazalt/engine/nodes/ViewCycleNode.h"
 #include <cmath>
 #include <limits>
 
@@ -434,10 +434,10 @@ TEST_CASE ("math.clamp inherits one quantity across in, low, high and out, by pr
     CHECK (out == 1.0f);
 }
 
-TEST_CASE ("view.glance adopts the wired type and quantity on both in and out, and passes the value through unchanged",
+TEST_CASE ("view.cycle adopts the wired type and quantity on both in and out, and passes the value through unchanged",
            "[engine][nodes][view][M0.6][inheriting]")
 {
-    ViewGlanceNode node;
+    ViewCycleNode node;
     REQUIRE (node.hasPolymorphicPorts());
 
     // Unconnected default.
@@ -456,14 +456,14 @@ TEST_CASE ("view.glance adopts the wired type and quantity on both in and out, a
     CHECK (out == in);
 }
 
-TEST_CASE ("view.glance through the real compiler: splices into a Control cable, passing the live value through unchanged",
+TEST_CASE ("view.cycle through the real compiler: splices into a Control cable, passing the live value through unchanged",
            "[engine][nodes][view][M0.6][inheriting][GraphCompiler]")
 {
     auto factory = makeFactory();
 
     NodeGraph graph;
     graph.addNode ({ "src", "test.frequency", {}, { { "value", 220.0f } }, {} });
-    graph.addNode ({ "glance", "view.glance", {}, {}, {} });
+    graph.addNode ({ "glance", "view.cycle", {}, {}, {} });
     graph.addConnection ({ "src", "out", "glance", "in" });
     graph.setOutput ("glance", "out");
 

@@ -1052,6 +1052,7 @@ namespace bazalt::engine
 
         plan.tapForBufferIndex = std::make_unique<std::atomic<Tap*>[]> (plan.blockBuffers.size() * (size_t) ExecutionPlan::maxTapsPerBuffer);
 
+        plan.resolvePhaseSources();
         result.success = true;
         return result;
     }

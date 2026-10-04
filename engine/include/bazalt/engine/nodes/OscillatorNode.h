@@ -3,6 +3,7 @@
 #include "bazalt/engine/graph/Node.h"
 #include "bazalt/engine/graph/ValueTypes.h"
 #include "bazalt/engine/PolyBlepOscillator.h"
+#include <vector>
 #include <algorithm>
 #include <cmath>
 
@@ -47,6 +48,9 @@ namespace bazalt::engine::nodes
         void prepare (const NodePrepareInfo& info) override
         {
             oscillator.prepare (info.sampleRate);
+            oscillator.setCycleWrap (phaseLockedCycles);
+            sampleRate = info.sampleRate;
+            phaseTrack.assign ((size_t) std::max (1, info.maxBlockSize), 0.0f);
 
             // Start at the frequency the card DISPLAYS (the port's own default,
             // 440 Hz). PolyBlepOscillator starts at 0 Hz - silent DC - so an
@@ -103,7 +107,7 @@ namespace bazalt::engine::nodes
             // ahead of time - this node's own doc comment already frames it
             // as the audio-rate oscillator, so audio-rate is what its own
             // preview is tuned for.
-            return { PreviewDescriptor { .kind = PreviewKind::Waveform, .portId = "out", .timeWindowSeconds = 0.015f } };
+            return { PreviewDescriptor { .kind = PreviewKind::PhaseLocked, .portId = "out" } };
         }
 
         std::vector<ParameterDescriptor> getParameters() const override
@@ -191,6 +195,15 @@ namespace bazalt::engine::nodes
             }
         }
 
+        static float renderCycle (const PhaseSnapshot& snapshot, double cyclePosition)
+        {
+            const auto dt = snapshot.sampleRate > 0.0 ? std::fabs (snapshot.frequencyHz) / snapshot.sampleRate : 0.0;
+            return (float) bandLimited::evaluate ((OscillatorWaveform) (int) snapshot.params[0], cyclePosition - std::floor (cyclePosition), dt);
+        }
+
         PolyBlepOscillator oscillator;
+        double sampleRate = 44100.0;
+        std::vector<float> phaseTrack;
+        size_t trackIndex = 0;
     };
 }

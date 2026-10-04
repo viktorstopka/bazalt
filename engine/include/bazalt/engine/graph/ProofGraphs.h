@@ -19,7 +19,7 @@
 #include "bazalt/engine/nodes/ClampNode.h"
 #include "bazalt/engine/nodes/ListenNode.h"
 #include "bazalt/engine/nodes/ViewNodes.h"
-#include "bazalt/engine/nodes/ViewGlanceNode.h"
+#include "bazalt/engine/nodes/ViewCycleNode.h"
 #include "bazalt/engine/nodes/ViewRippleNode.h"
 #include "bazalt/engine/nodes/ViewCountNode.h"
 #include "bazalt/engine/nodes/ViewScopeControlNode.h"
@@ -124,10 +124,9 @@ namespace bazalt::engine
         factory.registerType ("math.round", [] { return std::make_unique<nodes::RoundNode>(); });
         factory.registerType ("math.clamp", [] { return std::make_unique<nodes::ClampNode>(); });
         factory.registerType ("view.listen", [] { return std::make_unique<nodes::ListenNode>(); });
-        factory.registerType ("view.scope", [] { return std::make_unique<nodes::ViewScopeNode>(); });
         factory.registerType ("view.spectrum", [] { return std::make_unique<nodes::ViewSpectrumNode>(); });
         factory.registerType ("view.meter", [] { return std::make_unique<nodes::ViewMeterNode>(); });
-        factory.registerType ("view.glance", [] { return std::make_unique<nodes::ViewGlanceNode>(); });
+        factory.registerType ("view.cycle", [] { return std::make_unique<nodes::ViewCycleNode>(); }); // phase-locked viewer, replaces view.scope/view.glance
         factory.registerType ("view.ripple", [] { return std::make_unique<nodes::ViewRippleNode>(); });
         factory.registerType ("view.count", [] { return std::make_unique<nodes::ViewCountNode>(); }); // design/Visualization/Count.png
         factory.registerType ("view.scope.control", [] { return std::make_unique<nodes::ViewScopeControlNode>(); }); // design/Visualization/Scope1.png

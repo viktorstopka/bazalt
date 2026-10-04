@@ -438,11 +438,12 @@ namespace bazalt
             using bazalt::engine::PreviewKind;
             switch (kind)
             {
-                case PreviewKind::Waveform:       return { true, false, false, false, false };
-                case PreviewKind::Spectrum:       return { false, true, false, false, false };
-                case PreviewKind::Meter:          return { false, false, true, false, false };
-                case PreviewKind::EventImpulse:   return { false, false, false, true, false };
-                case PreviewKind::RollingHistory: return { false, false, false, false, true };
+                case PreviewKind::Waveform:       return { true, false, false, false, false, false };
+                case PreviewKind::Spectrum:       return { false, true, false, false, false, false };
+                case PreviewKind::Meter:          return { false, false, true, false, false, false };
+                case PreviewKind::EventImpulse:   return { false, false, false, true, false, false };
+                case PreviewKind::RollingHistory: return { false, false, false, false, true, false };
+                case PreviewKind::PhaseLocked:    return { false, false, false, false, false, true };
                 default:                          return {};
             }
         }

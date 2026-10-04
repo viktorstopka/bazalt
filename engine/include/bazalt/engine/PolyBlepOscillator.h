@@ -1,15 +1,9 @@
 #pragma once
 
+#include "bazalt/engine/BandLimited.h"
+
 namespace bazalt::engine
 {
-    enum class OscillatorWaveform
-    {
-        Sine,
-        Saw,
-        Square,
-        Triangle
-    };
-
     /** Band-limited classic waveshapes via PolyBLEP discontinuity
         correction (ARCHITECTURE.md §5). Phase accumulation is
         double-precision so long playback never drifts audibly, while
@@ -39,17 +33,20 @@ namespace bazalt::engine
                 output[i] = renderNextSample();
         }
 
+        /** Where the next sample will be read (0..1), how far it advances per
+            sample, and the completed-cycle count mod `cycleWrap` — what a
+            phase-locked preview (Node::isPhaseSource()) needs. */
+        double getPhase() const noexcept { return phase; }
+        double getPhaseIncrement() const noexcept { return phaseIncrement; }
+        int getCycleCount() const noexcept { return cycleCount; }
+        void setCycleWrap (int wrap) noexcept { cycleWrap = std::max (1, wrap); }
+
     private:
-        float renderSaw() noexcept;
-        float renderSquare() noexcept;
-        float renderTriangle() noexcept;
-
-        static double polyBlep (double t, double phaseIncrement) noexcept;
-
         double sampleRate = 44100.0;
         double phase = 0.0;
         double phaseIncrement = 0.0;
-        double triangleState = 0.0;
+        int cycleCount = 0;
+        int cycleWrap = 1;
         OscillatorWaveform waveform = OscillatorWaveform::Saw;
     };
 }

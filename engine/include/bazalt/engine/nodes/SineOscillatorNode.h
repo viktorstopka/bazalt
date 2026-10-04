@@ -1,95 +1,16 @@
 #pragma once
 
 #include "bazalt/engine/graph/Node.h"
+#include "bazalt/engine/BandLimited.h"
 #include <algorithm>
 #include <cmath>
+#include <vector>
 
 namespace bazalt::engine::nodes
 {
-    /** Band-limited single-cycle shapes, evaluated statelessly from a read
-        phase `t` in [0, 1) and the per-sample phase increment `dt`. Stateless
-        on purpose: the Phase port offsets the READ point, so anything that
-        integrated the waveform over time (PolyBlepOscillator's leaky-
-        integrated triangle) would drift whenever phase is modulated.
-
-        Saw and square correct their jumps with PolyBLEP; triangle has no
-        jumps, only corners, so it corrects them with PolyBLAMP (the
-        integrated BLEP). Same 2-sample polynomial residuals as
-        PolyBlepOscillator.cpp — the project's existing band-limiting floor.
-    */
-    namespace bandLimited
-    {
-        /** Residual for a unit step at t = 0 (PolyBlepOscillator::polyBlep). */
-        inline double blep (double t, double dt) noexcept
-        {
-            if (dt <= 0.0)
-                return 0.0;
-            if (t < dt)
-            {
-                t /= dt;
-                return t + t - t * t - 1.0;
-            }
-            if (t > 1.0 - dt)
-            {
-                t = (t - 1.0) / dt;
-                return t * t + t + t + 1.0;
-            }
-            return 0.0;
-        }
-
-        /** Residual for a slope change at t = 0 (the integral of blep);
-            `0.5 * slopeChange * dt * blamp` corrects a corner whose slope
-            changes by `slopeChange` per unit phase. */
-        inline double blamp (double t, double dt) noexcept
-        {
-            if (dt <= 0.0)
-                return 0.0;
-            if (t < dt)
-            {
-                t = t / dt - 1.0;
-                return -t * t * t / 3.0;
-            }
-            if (t > 1.0 - dt)
-            {
-                t = (t - 1.0) / dt + 1.0;
-                return t * t * t / 3.0;
-            }
-            return 0.0;
-        }
-
-        inline double wrap (double t) noexcept { return t - std::floor (t); }
-
-        inline double saw (double t, double dt) noexcept
-        {
-            return 2.0 * t - 1.0 - blep (t, dt); // rises -1 -> 1, drops by 2 at t = 0
-        }
-
-        /** High for t < width, low after; rising edge at 0, falling at width. */
-        inline double square (double t, double dt, double width) noexcept
-        {
-            const auto naive = t < width ? 1.0 : -1.0;
-            return naive + blep (t, dt) - blep (wrap (t - width), dt);
-        }
-
-        /** 1 at t = 0, -1 at t = 0.5: slope -4 then +4, so the corner at 0
-            changes slope by -8 and the one at 0.5 by +8. This blamp's
-            polynomial already carries a factor of 2, hence half of each
-            slope change (verified numerically against the Nyquist-truncated
-            Fourier series — SineOscillatorNodeTests.cpp). */
-        inline double triangle (double t, double dt) noexcept
-        {
-            const auto naive = 4.0 * std::fabs (t - 0.5) - 1.0;
-            return naive - 4.0 * dt * blamp (t, dt) + 4.0 * dt * blamp (wrap (t - 0.5), dt);
-        }
-    }
-
-    enum class BasicWaveform
-    {
-        Sine,
-        Saw,
-        Square,
-        Triangle
-    };
+    /** The four classic shapes — the same enum osc.analog's
+        PolyBlepOscillator uses, so every oscillator shares one definition. */
+    using BasicWaveform = OscillatorWaveform;
 
     /** Stable type ids: "osc.sine", "osc.saw", "osc.square", "osc.triangle"
         — one node per classic waveform, all sharing one port set and layout:
@@ -132,8 +53,50 @@ namespace bazalt::engine::nodes
         {
         }
 
-        void prepare (const NodePrepareInfo& info) override { sampleRate = info.sampleRate; }
-        void reset() override { phase = 0.0; }
+        void prepare (const NodePrepareInfo& info) override
+        {
+            sampleRate = info.sampleRate;
+            phaseTrack.assign ((size_t) std::max (1, info.maxBlockSize), 0.0f);
+        }
+
+        void reset() override
+        {
+            phase = 0.0;
+            cycleCount = 0;
+        }
+
+        // ---- Phase source (PreviewKind::PhaseLocked) ------------------------
+        bool isPhaseSource() const noexcept override { return true; }
+        const float* getPhaseTrack() const noexcept override { return phaseTrack.data(); }
+
+        void capturePhaseSnapshot (PhaseSnapshot& snapshot) const noexcept override
+        {
+            snapshot.render = &renderCycle;
+            snapshot.frequencyHz = lastFrequency;
+            snapshot.sampleRate = sampleRate;
+            snapshot.playhead = (float) ((double) cycleCount + phase);
+            snapshot.params[0] = (float) waveform;
+            snapshot.params[1] = lastAmplitude;
+            snapshot.params[2] = lastPhaseOffset;
+            snapshot.params[3] = lastPulseWidth;
+        }
+
+        /** The oscillator's output as a function of its read phase — the ONE
+            definition both processSample() and the preview use, so the
+            preview is what the node actually produces, band-limiting
+            included. */
+        static double evaluate (BasicWaveform shape, double t, double dt, double pulseWidth) noexcept
+        {
+            return bandLimited::evaluate (shape, t, dt, pulseWidth);
+        }
+
+        /** Rebuilds each block's per-sample phase track around the default
+            per-sample loop. */
+        void processBlock (const float* const* inputs, float* const* outputs, int numSamples) noexcept override
+        {
+            trackIndex = 0;
+            Node::processBlock (inputs, outputs, numSamples);
+        }
 
         int getNumInputPorts() const noexcept override { return hasPulseWidth() ? 5 : 4; } // frequency, amplitude, phase, [pulseWidth], sync
         int getNumOutputPorts() const noexcept override { return 1; }
@@ -184,10 +147,11 @@ namespace bazalt::engine::nodes
             return { PortDescriptor { .id = "out", .type = SignalType::Audio, .label = "Out", .isPrimaryOutput = true } };
         }
 
-        // Placeholder preview — rebuilt in the oscillator-preview task.
+        /** Phase-locked: its own waveform at its current parameters,
+            evaluated from capturePhaseSnapshot() (PreviewKind::PhaseLocked). */
         std::vector<PreviewDescriptor> getPreviews() const override
         {
-            return { PreviewDescriptor { .kind = PreviewKind::Waveform, .portId = "out", .timeWindowSeconds = 0.015f } };
+            return { PreviewDescriptor { .kind = PreviewKind::PhaseLocked, .portId = "out" } };
         }
 
         void setParameter (const juce::String& parameterId, float value) override
@@ -215,30 +179,48 @@ namespace bazalt::engine::nodes
             if (std::fabs (inputs[syncIndex]) > 0.0f)
                 phase = 0.0;
 
+            if (trackIndex < phaseTrack.size())
+                phaseTrack[trackIndex++] = (float) ((double) cycleCount + phase);
+
             const auto dt = sampleRate > 0.0 ? std::fabs ((double) frequency) / sampleRate : 0.0;
             const auto t = bandLimited::wrap (phase + (double) phaseOffset);
+            outputs[0] = (float) (evaluate (waveform, t, dt, pulseWidth) * (double) amplitude);
 
-            double value = 0.0;
-            switch (waveform)
-            {
-                case BasicWaveform::Sine:     value = std::sin (juce::MathConstants<double>::twoPi * t); break;
-                case BasicWaveform::Saw:      value = bandLimited::saw (t, dt); break;
-                case BasicWaveform::Square:   value = bandLimited::square (t, dt, std::clamp ((double) pulseWidth, 0.01, 0.99)); break;
-                case BasicWaveform::Triangle: value = bandLimited::triangle (t, dt); break;
-            }
-            outputs[0] = (float) (value * (double) amplitude);
+            lastFrequency = frequency;
+            lastAmplitude = amplitude;
+            lastPhaseOffset = phaseOffset;
+            lastPulseWidth = pulseWidth;
 
             if (sampleRate > 0.0)
-                phase = bandLimited::wrap (phase + (double) frequency / sampleRate);
+            {
+                phase += (double) frequency / sampleRate;
+                const auto wraps = std::floor (phase);
+                if (wraps != 0.0)
+                {
+                    phase -= wraps;
+                    cycleCount = (int) (((long long) cycleCount + (long long) wraps) % phaseLockedCycles + phaseLockedCycles) % phaseLockedCycles;
+                }
+            }
         }
 
     private:
         bool hasPulseWidth() const noexcept { return waveform == BasicWaveform::Square; }
 
+        static float renderCycle (const PhaseSnapshot& snapshot, double cyclePosition)
+        {
+            const auto dt = snapshot.sampleRate > 0.0 ? std::fabs (snapshot.frequencyHz) / snapshot.sampleRate : 0.0;
+            const auto t = bandLimited::wrap (cyclePosition + (double) snapshot.params[2]);
+            return (float) (evaluate ((BasicWaveform) (int) snapshot.params[0], t, dt, snapshot.params[3]) * (double) snapshot.params[1]);
+        }
+
         BasicWaveform waveform;
         juce::String frequencyId, amplitudeId, phaseId, pulseWidthId;
         double sampleRate = 44100.0;
         double phase = 0.0;
+        int cycleCount = 0; // completed cycles mod phaseLockedCycles — the preview's cycle index
+        std::vector<float> phaseTrack;
+        size_t trackIndex = 0;
+        float lastFrequency = defaultFrequencyHz, lastAmplitude = 1.0f, lastPhaseOffset = 0.0f, lastPulseWidth = defaultPulseWidth;
         float storedFrequency = defaultFrequencyHz;
         float storedAmplitude = 1.0f;
         float storedPhase = 0.0f;
