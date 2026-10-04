@@ -42,7 +42,7 @@ are telemetry outputs for live visualization, not ports.
 | Family | Nodes | Status |
 |---|---|---|
 | `io.*` | audioIn, output, noteIn, control, transport | ✅ all 5 |
-| `osc.*` | analog, sine, wavetable, **glottal** (Correction 1) | ✅ analog, sine — 📋 wavetable, glottal |
+| `osc.*` | analog, sine, saw, square, triangle, wavetable, **glottal** (Correction 1) | ✅ analog, sine, saw, square, triangle — 📋 wavetable, glottal |
 | `sampler.*` | player, granular | 📋 both |
 | `noise.*` | colored, dust | 📋 both |
 | `excite.*` | impulse, burst, pluck, mallet, stickSlip, breath, contact, **vocalFolds** (Correction 1) | ✅ impulse, burst, pluck, mallet — 📋 stickSlip, breath, contact, vocalFolds |
@@ -97,8 +97,20 @@ Exposes the host's transport — tempo, play state, song position, and a beat pu
 #### `osc.analog` — Analog Oscillator 🚧
 Band-limited virtual-analog oscillator. **In (spec):** `frequency [audio]`; `fine`; `pulseWidth [audio]`; `phaseMod [audio]`; `sync : Event`. **In (real today):** only `frequency`-equivalent (MIDI-note pitch) and a plain Hz frequency input — `fine`/`pulseWidth`/`phaseMod`/`sync` don't exist yet on the shipped node (tracked as a known gap, not silently assumed fixed). **Out:** `out` — `Audio`. **Structural:** `shape` (enum: sine, triangle, saw, square, pulse). **Behavior:** phase accumulator with PolyBLEP correction. **Native:** numerically delicate band-limiting.
 
-#### `osc.sine` — Sine ✅
-Cheap, alias-free sine. **In:** `frequency [audio]`; `phaseMod [audio]`; `sync : Event`. **Out:** `out` — `Audio`. **Native:** inner-loop primitive — FM stacks and modal excitation use many of these.
+#### `osc.sine`, `osc.saw`, `osc.square`, `osc.triangle` — Sine / Saw / Square / Triangle ✅ *(restructured / new 2026-10-04)*
+Four minimal per-shape oscillators sharing one class (`SineOscillatorNode.h`'s
+`BasicOscillatorNode`), one port set and one layout; they differ only in the
+waveform. **In:** `frequency` — value row, Hz, 0.01–20000 (sub-audio on
+purpose), default 440; `amplitude` — value row, 0–1, default 1.00; `phase` —
+Modulation (Bipolar) row, in cycles, default 0.00 — an ordinary modulatable
+port with its own inline value, offsetting the read point (through-zero,
+never detunes the accumulator); it replaced osc.sine's bare `phaseMod` input;
+`pulseWidth` — **Square only**, Unipolar, default 0.5 (clamped 0.01–0.99);
+`sync : Event` — resets phase. **Out:** `out` — `Audio`. **Band-limited:**
+Sine is exact; Saw and Square use PolyBLEP; Triangle uses PolyBLAMP (stateless,
+so a modulated Phase can't make it drift — unlike `osc.analog`'s leaky-
+integrated triangle). Waveform preview is a placeholder pending its rebuild.
+**Native:** inner-loop primitives — FM stacks and modal excitation use many.
 
 #### `osc.wavetable` — Wavetable Oscillator 📋
 Scans across a table of single-cycle waveform frames as it plays, using `position`

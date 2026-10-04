@@ -178,6 +178,9 @@ namespace bazalt::engine
         factory.registerType ("io.transport", [] { return std::make_unique<nodes::IoTransportNode>(); });
         // M22 (Basic synthesis), wave 1 — cheap wins needing no new DSP primitive.
         factory.registerType ("osc.sine", [] { return std::make_unique<nodes::SineOscillatorNode>(); });
+        factory.registerType ("osc.saw", [] { return std::make_unique<nodes::SawOscillatorNode>(); });
+        factory.registerType ("osc.square", [] { return std::make_unique<nodes::SquareOscillatorNode>(); });
+        factory.registerType ("osc.triangle", [] { return std::make_unique<nodes::TriangleOscillatorNode>(); });
         factory.registerType ("filter.dcBlock", [] { return std::make_unique<nodes::DcBlockNode>(); });
         factory.registerType ("env.follower", [] { return std::make_unique<nodes::EnvelopeFollowerNode>(); });
         // M22 wave 2 — the Biquad family.
