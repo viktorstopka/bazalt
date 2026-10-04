@@ -18,7 +18,7 @@ import { ToggleSwitch } from '../controls/ToggleSwitch'
 import { NodePreview } from './NodePreview'
 import { frameTypeForPreviewKind } from '../graph/previewSubscriptions'
 import { withRevealedGroupPorts } from '../graph/portGroups'
-import { MacroBody } from './MacroBody'
+import { MacroBody, ConstantBody } from './MacroBody'
 import { RippleBody } from './RippleBody'
 import { CountBody } from './CountBody'
 import { ScopeControlBody } from './ScopeControlBody'
@@ -1012,6 +1012,9 @@ export function NodeCard({ descriptor: declaredDescriptor, state = {}, instanceI
   // still reports an ordinary layoutVariant ('standard'); this is a
   // client-side-only visual replacement, no engine change needed or made.
   if (descriptor.typeId === 'util.macro') return <MacroBody descriptor={descriptor} state={state} instanceId={instanceId} />
+  // util.constant: the same design/Macro.png card without the macro-only
+  // parts (MacroBody.tsx's ConstantBody).
+  if (descriptor.typeId === 'util.constant') return <ConstantBody descriptor={descriptor} state={state} instanceId={instanceId} />
   // design/Visualization/Ripple.png: same client-side-only typeId dispatch
   // as util.macro above — view.ripple's real engine descriptor reports an
   // ordinary Glance layoutVariant; this is a visual swap only.

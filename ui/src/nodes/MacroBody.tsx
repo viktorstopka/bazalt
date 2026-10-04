@@ -24,7 +24,7 @@
 // host automation every block) — that one goes straight through the same
 // JUCE WebSliderRelay mechanism MacroKnob.tsx already uses for the top-bar
 // panel, by this node's own claimed `util.macro.slot`.
-import { useEffect, useReducer, useState } from 'react'
+import { useEffect, useReducer, useState, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { getSliderState } from '@juce-framework/webview'
 import type { NodeDescriptor } from '../graph/descriptorTypes'
@@ -129,19 +129,31 @@ function MacroTitleBar({ descriptor, state }: { descriptor: NodeDescriptor; stat
   )
 }
 
+/** Where a typed-value card's Value row reads and writes its value — the
+    only thing that differs between a Macro (its host-automation relay, a
+    0..1 slot shared with the DAW) and a Constant (its own ordinary
+    parameter, util.constant.value). Real (not normalised) values both ways. */
+interface ValueBinding {
+  get: () => number
+  commit: (value: number) => void
+  /** A slider mid-drag (value) or released (null). */
+  live?: (value: number | null) => void
+  fire?: () => void
+}
+
 /** Row 1 (design/Macro.png table) — branches on `type`/`isInteger`/
     `isEnum`. Value and Modulation (both `!isInteger`) share the exact same
     ValueSlider widget, matching design/Macro.png's own "Breath Frequency"
     (Value) and "Children Ratio" (Modulation) rows, which only differ in
-    colour/unit, never shape. `min`/`max`/`unit` come from the macro's own
+    colour/unit, never shape. `min`/`max`/`unit` come from the node's own
     OUTPUT PORT (`buildTypedOutputPort`, engine-computed), not raw stored
     parameters — that's what makes Modulation's implicit 0..1/-1..1 range
     and the quantity-derived unit correct here for free. */
-function MacroValueRow({
+function TypedValueRow({
   type,
   isInteger,
   isEnum,
-  relay,
+  binding,
   min,
   max,
   unit,
@@ -151,7 +163,7 @@ function MacroValueRow({
   type: MacroValueType
   isInteger: boolean
   isEnum: boolean
-  relay: RelayState
+  binding: ValueBinding
   min: number
   max: number
   unit: string
@@ -159,15 +171,14 @@ function MacroValueRow({
   enumLabels: readonly string[] | undefined
 }) {
   if (type === 'trigger') {
-    return <Button label="Trigger" color={color} fullWidth onClick={() => fireRelayTrigger(relay)} />
+    return <Button label="Trigger" color={color} fullWidth onClick={() => binding.fire?.()} />
   }
 
-  const raw = clamp01(relay.getNormalisedValue())
-  const displayValue = min + raw * (max - min)
+  const displayValue = binding.get()
 
   if (type === 'bool') {
     const boolValue = displayValue >= 0.5 ? 1 : 0
-    return <ToggleSwitch label="Value" value={boolValue} color={color} onCommit={(v) => commitRelayRealValue(relay, v, 0, 1)} />
+    return <ToggleSwitch label="Value" value={boolValue} color={color} onCommit={(v) => binding.commit(v)} />
   }
 
   if (isInteger && isEnum) {
@@ -175,13 +186,7 @@ function MacroValueRow({
     const labels = enumOptionLabelsFor(count, enumLabels)
     const selectedIndex = Math.min(count - 1, Math.max(0, Math.round(displayValue - min)))
     return (
-      <TriggerSelect
-        label="Value"
-        options={labels}
-        selectedIndex={selectedIndex}
-        color={color}
-        onCommit={(index) => commitRelayRealValue(relay, min + index, min, max)}
-      />
+      <TriggerSelect label="Value" options={labels} selectedIndex={selectedIndex} color={color} onCommit={(index) => binding.commit(min + index)} />
     )
   }
 
@@ -198,33 +203,46 @@ function MacroValueRow({
       isInteger={isInteger}
       unit={unit}
       color={color}
-      onCommit={(v) => commitRelayRealValue(relay, v, min, max)}
+      onCommit={(v) => binding.commit(v)}
+      onLiveChange={binding.live}
     />
   )
 }
 
-export function MacroBody({ descriptor, state, instanceId }: { descriptor: NodeDescriptor; state: NodeCardState; instanceId?: string }) {
-  const [displayOnTop, setDisplayOnTop] = useState(false)
+/** The design/Macro.png card, shared by every TypedValueNodeBase node
+    (util.macro, util.constant): title, Value row, type chip + Edit Type,
+    output. `binding` is null when there is nothing to bind to yet (the
+    gallery, or a macro without a claimed slot). `extraRows` is the Macro's
+    own "Display On Top?" — nothing else differs. */
+function TypedValueCard({
+  descriptor,
+  state,
+  instanceId,
+  binding,
+  extraRows,
+  className,
+}: {
+  descriptor: NodeDescriptor
+  state: NodeCardState
+  instanceId?: string
+  binding: ValueBinding | null
+  extraRows?: ReactNode
+  className: string
+}) {
   const [editTypeOpen, setEditTypeOpen] = useState(false)
+  const prefix = descriptor.typeId
 
-  const macroType = macroTypeFromOrdinal(paramVal(descriptor, state, 'util.macro.type'))
-  const isInteger = paramVal(descriptor, state, 'util.macro.isInteger') >= 0.5
-  const isEnum = paramVal(descriptor, state, 'util.macro.isEnum') >= 0.5
-  const rawMin = paramVal(descriptor, state, 'util.macro.min')
-  const rawMax = paramVal(descriptor, state, 'util.macro.max')
-  const quantity = quantityFromOrdinal(paramVal(descriptor, state, 'util.macro.quantity'))
-  const slot = Math.round(paramVal(descriptor, state, 'util.macro.slot'))
-  const hasValidSlot = slot >= 0 && slot < 32
-
-  // Always called (Rules of Hooks) — see useMacroRelay's own comment on why
-  // an invalid/absent slot still gets a (unused) subscription rather than a
-  // conditional hook call.
-  const relay = useMacroRelay(hasValidSlot ? slot : 0)
+  const macroType = macroTypeFromOrdinal(paramVal(descriptor, state, `${prefix}.type`))
+  const isInteger = paramVal(descriptor, state, `${prefix}.isInteger`) >= 0.5
+  const isEnum = paramVal(descriptor, state, `${prefix}.isEnum`) >= 0.5
+  const rawMin = paramVal(descriptor, state, `${prefix}.min`)
+  const rawMax = paramVal(descriptor, state, `${prefix}.max`)
+  const quantity = quantityFromOrdinal(paramVal(descriptor, state, `${prefix}.quantity`))
 
   // Live-resolved (graphStore.ts's endpointFor/getEndpoint), NOT
   // `descriptor.outputs[0]` directly — that static descriptor is a
   // one-shot default-constructed-instance snapshot (fetchNodeDescriptors.ts
-  // fetches it once, at editor load) and would otherwise show every macro
+  // fetches it once, at editor load) and would otherwise show every node
   // as Control/Dimensionless/white forever, regardless of its real
   // configured type (direct feedback, 2026-10-03: "why is the macro value
   // output not adapting to the color" — a real, now-fixed bug). Falls back
@@ -243,7 +261,7 @@ export function MacroBody({ descriptor, state, instanceId }: { descriptor: NodeD
   const effectiveMax = outputPort.maxValue ?? rawMax
   const unit = outputPort.unit
 
-  const classNames = ['node-card', 'node-card-macro', state.selected && 'node-card-selected', state.bypassed && 'node-card-bypassed', state.listening && 'node-card-listening', state.error && 'node-card-error']
+  const classNames = ['node-card', className, state.selected && 'node-card-selected', state.bypassed && 'node-card-bypassed', state.listening && 'node-card-listening', state.error && 'node-card-error']
     .filter(Boolean)
     .join(' ')
 
@@ -254,12 +272,12 @@ export function MacroBody({ descriptor, state, instanceId }: { descriptor: NodeD
       <MacroTitleBar descriptor={descriptor} state={state} />
 
       <div className="node-row">
-        {instanceId && hasValidSlot ? (
-          <MacroValueRow
+        {binding ? (
+          <TypedValueRow
             type={macroType}
             isInteger={isInteger}
             isEnum={isEnum}
-            relay={relay}
+            binding={binding}
             min={effectiveMin}
             max={effectiveMax}
             unit={unit}
@@ -267,9 +285,8 @@ export function MacroBody({ descriptor, state, instanceId }: { descriptor: NodeD
             enumLabels={state.macroEnumOptionLabels}
           />
         ) : (
-          // M9 gallery (no instanceId) or a transient unclaimed-slot state
-          // (MacroNode.h's own -1 sentinel) — no relay to bind to yet, so no
-          // interactive control, just a quiet static placeholder.
+          // Nothing to bind to yet — no interactive control, just a quiet
+          // static placeholder.
           <div className="macro-field-static" style={{ borderColor: withAlpha(color, tokens.opacity.border), color }}>
             <span>Value</span>
             <span>—</span>
@@ -281,22 +298,10 @@ export function MacroBody({ descriptor, state, instanceId }: { descriptor: NodeD
         <div className="macro-type-chip" style={{ borderColor: withAlpha(color, tokens.opacity.border), color }} title={chipText}>
           {chipText}
         </div>
-        <Button label="Edit T" onClick={() => setEditTypeOpen(true)} title="Configure this macro's type" />
+        <Button label="Edit T" onClick={() => setEditTypeOpen(true)} title="Configure this node's type" />
       </div>
 
-      <div className="node-row">
-        {/* Placeholder (direct instruction, 2026-10-03): flips local state
-            only, not persisted, drives nothing — "no macro is displayed on
-            top" for now; see App.tsx's own comment on the disabled panel
-            this will eventually control. Always `portBoolean` (blue), NOT
-            `color` (the macro's OWN configured type) — direct feedback,
-            2026-10-03: "Display on top is bool. Why is it not blue?" —
-            this row is an independent boolean setting, unrelated to
-            whatever type the macro itself is configured as; it should read
-            as a boolean control regardless, the same as any other boolean
-            toggle in the app. */}
-        <ToggleSwitch label="Display On Top?" value={displayOnTop ? 1 : 0} color={tokens.color.portBoolean} onCommit={(v) => setDisplayOnTop(v >= 0.5)} />
-      </div>
+      {extraRows}
 
       <div className="node-row node-row-port node-row-output">
         <span style={{ color }}>{outputLabel}</span>
@@ -329,4 +334,67 @@ export function MacroBody({ descriptor, state, instanceId }: { descriptor: NodeD
         )}
     </div>
   )
+}
+
+export function MacroBody({ descriptor, state, instanceId }: { descriptor: NodeDescriptor; state: NodeCardState; instanceId?: string }) {
+  const [displayOnTop, setDisplayOnTop] = useState(false)
+  const slot = Math.round(paramVal(descriptor, state, 'util.macro.slot'))
+  const hasValidSlot = slot >= 0 && slot < 32
+
+  // Always called (Rules of Hooks) — see useMacroRelay's own comment on why
+  // an invalid/absent slot still gets a (unused) subscription rather than a
+  // conditional hook call.
+  const relay = useMacroRelay(hasValidSlot ? slot : 0)
+
+  // A macro's value lives in its host-automation slot, normalised 0..1
+  // against the macro's own effective range.
+  const outputPort = (instanceId && getEndpoint(instanceId, 'out', 'output')?.port) || descriptor.outputs[0]
+  const min = outputPort.minValue ?? paramVal(descriptor, state, 'util.macro.min')
+  const max = outputPort.maxValue ?? paramVal(descriptor, state, 'util.macro.max')
+  const binding: ValueBinding | null =
+    instanceId && hasValidSlot
+      ? {
+          get: () => min + clamp01(relay.getNormalisedValue()) * (max - min),
+          commit: (value) => commitRelayRealValue(relay, value, min, max),
+          fire: () => fireRelayTrigger(relay),
+        }
+      : null
+
+  return (
+    <TypedValueCard
+      descriptor={descriptor}
+      state={state}
+      instanceId={instanceId}
+      binding={binding}
+      className="node-card-macro"
+      extraRows={
+        <div className="node-row">
+          {/* Placeholder (direct instruction, 2026-10-03): flips local state
+              only, not persisted, drives nothing — "no macro is displayed on
+              top" for now; see App.tsx's own comment on the disabled panel
+              this will eventually control. Always `portBoolean` (blue), NOT
+              the macro's own configured type colour — direct feedback,
+              2026-10-03: "Display on top is bool. Why is it not blue?" */}
+          <ToggleSwitch label="Display On Top?" value={displayOnTop ? 1 : 0} color={tokens.color.portBoolean} onCommit={(v) => setDisplayOnTop(v >= 0.5)} />
+        </div>
+      }
+    />
+  )
+}
+
+/** util.constant — the same card as a Macro (direct instruction, 2026-10-04:
+    "Modify the constant node, so it matches more a macro node, just without
+    the macro functionalities"): no host-automation slot, no "Display On
+    Top?". Its value is its own ordinary parameter, so dragging it plays live
+    like every other slider (graphStore.ts's setParameterLive), and it keeps
+    the ordinary solid node border — the dashed border is what marks a
+    Macro, the one node the host can reach. */
+export function ConstantBody({ descriptor, state, instanceId }: { descriptor: NodeDescriptor; state: NodeCardState; instanceId?: string }) {
+  const id = 'util.constant.value'
+  const binding: ValueBinding = {
+    get: () => paramVal(descriptor, state, id),
+    commit: (value) => state.onParameterCommit?.(id, value),
+    live: (value) => state.onParameterLive?.(id, value),
+  }
+  return <TypedValueCard descriptor={descriptor} state={state} instanceId={instanceId} binding={binding} className="node-card-constant" />
 }
