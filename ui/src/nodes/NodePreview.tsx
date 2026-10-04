@@ -22,10 +22,15 @@ import { registerPreviewRenderer, unregisterPreviewRenderer } from '../analysis/
 import { drawScopeFilled, drawSpectrum, drawMeter } from '../analysis/telemetryDraw'
 import { tokens } from '../theme/tokens'
 import { getCamera } from '../canvas/interactionStore'
+import type { NodeCardState } from './NodeCard'
+import { PhaseLockedPreview } from './PhaseLockedPreview'
+import { nextPlayheadMode, playheadModeFromProperty } from './playheadMode'
 
 interface NodePreviewProps {
   nodeId: string
   preview: PreviewDescriptor
+  /** Carries the per-node phase-locked playhead mode and its setter. */
+  state?: NodeCardState
 }
 
 // A generous margin so a preview subscribes just before it scrolls into
@@ -46,7 +51,27 @@ const VISIBILITY_ROOT_MARGIN = '200px'
     which this component's own "redraw whatever the latest payload says,
     every frame, no memory between frames" model doesn't fit.
 */
-export function NodePreview({ nodeId, preview }: NodePreviewProps) {
+/** Which preview a node draws is its own declaration (PreviewDescriptor.kind,
+    from the node's C++ getPreviews()) — a phase source declares
+    'phaseLocked', anything without a phase keeps a time-based kind — so this
+    dispatch never needs to know which node it is drawing. */
+export function NodePreview({ nodeId, preview, state }: NodePreviewProps) {
+  if (preview.kind === 'phaseLocked') {
+    const mode = playheadModeFromProperty(state?.previewPlayheadMode)
+    const setMode = state?.onSetPreviewPlayheadMode
+    return (
+      <PhaseLockedPreview
+        nodeId={nodeId}
+        portId={preview.portId}
+        playheadMode={mode}
+        onCyclePlayheadMode={setMode ? () => setMode(nextPlayheadMode(mode)) : undefined}
+      />
+    )
+  }
+  return <TimeDomainPreview nodeId={nodeId} preview={preview} />
+}
+
+function TimeDomainPreview({ nodeId, preview }: { nodeId: string; preview: PreviewDescriptor }) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
   const id = useId()
   // Compared against undefined, NEVER tested for truthiness: TelemetryFrameType.Oscilloscope

@@ -65,7 +65,7 @@ are telemetry outputs for live visualization, not ports.
 | `analysis.*` | onset, pitch, level, centroid | 📋 all 4 |
 | `instance.*` | allocate.voice, allocate.swarmPopulation, allocate.swarmTransient, allocate.trigger, sum | ✅ all five — Domain Extensions batch done 2026-10-01 |
 | `util.*` | constant, macro, reroute | ✅ all 3 (`macro` real as of `wiki/plans/UtilMacro.md` — ADR-0030 amends ADR-0015, doesn't reverse it) |
-| `view.*` | listen, spectrum, meter, ripple, count, scope.control, scope.modulation, gate — scope, glance deprecated | ✅ all 10 |
+| `view.*` | listen, spectrum, meter, ripple, count, scope.control, scope.modulation, gate, cycle | ✅ all 9 (scope, glance removed) |
 | `factory.*` | eq, curve, wave, sample, notes, material (Correction 2) | 📋 all 6 |
 
 ---
@@ -109,7 +109,12 @@ never detunes the accumulator); it replaced osc.sine's bare `phaseMod` input;
 `sync : Event` — resets phase. **Out:** `out` — `Audio`. **Band-limited:**
 Sine is exact; Saw and Square use PolyBLEP; Triangle uses PolyBLAMP (stateless,
 so a modulated Phase can't make it drift — unlike `osc.analog`'s leaky-
-integrated triangle). Waveform preview is a placeholder pending its rebuild.
+integrated triangle).
+**Preview:** phase-locked (`PreviewKind::PhaseLocked`) — 4 cycles aligned to
+phase zero, the node's own band-limited function evaluated at its current,
+fully modulated parameters every frame, fixed ±1 scale with headroom (clip
+marked), playhead Auto (shown below 30 Hz) / On / Off. Shared by every phase
+source (`PhaseLockedPreview.tsx`), `osc.analog` included.
 **Native:** inner-loop primitives — FM stacks and modal excitation use many.
 
 #### `osc.wavetable` — Wavetable Oscillator 📋
@@ -775,15 +780,6 @@ auto-inserted** by `connectWithAutoAdapt` — manual placement only.
 Routes whatever's plugged into it straight to the monitored output, so you can
 audition one point in the graph in isolation without rewiring anything. **In:** `in` — `Audio`. **Behavior:** auditions this point in the graph, replacing normal output while active. **Taps:** `in`.
 
-#### `view.scope` — Scope ⚠️ *deprecated (2026-10-04)*
-**Deprecated:** hidden from the Add menu (`Node::isDeprecated()`); an existing
-patch that uses it still loads and runs unchanged. Superseded by the
-scrolling-history viewers below. Note it was, with Glance, the only viewer that
-drew an *Audio* waveform — the history viewers are Control/Boolean only.
-
-A live oscilloscope trace of whatever's wired into it, over a window of time —
-the standard "watch the waveform" view. **In:** `in` — `Audio` or `Control`. **Structural:** `timeWindow`, `triggerMode`.
-
 #### `view.spectrum` — Spectrum
 A live FFT display of a signal's frequency content — the standard "watch the
 spectrum" view, for seeing what a filter, distortion, or synthesis stage is
@@ -793,12 +789,18 @@ actually doing to the harmonic content. **In:** `in` — `Audio`. **Structural:*
 A live level readout of whatever's wired into it — peak, RMS, true peak, or a
 histogram, for watching loudness rather than shape. **In:** `in` — `Audio` or `Control`. **Structural:** `mode` (enum: peak, RMS, true peak, histogram).
 
-#### `view.glance` — Glance ⚠️ *deprecated (2026-10-04) — was Milestone 0.6, wiki/NODES_Gaps.md's `single-type-preview-coverage`*
-**Deprecated:** hidden from the Add menu, still loads and runs in an existing
-patch. Its Waveform preview is capped at the tap ring's ~0.2s; the per-type
-viewers below replace it.
-
-**In:** `in` — `Audio`, `Control`, `Boolean` or `Event` (polymorphic — adopts whatever's wired, same mechanism `util.reroute`/`view.scope`/`view.meter` use). **Out:** `out` — same type/quantity as `in`, unchanged value. **Behavior:** splices into any existing cable like `util.reroute` does, and shows a live trace of whatever passes through — unlike the three viewers above, it has a real output and doesn't need a separate branch off the wire. `NodeLayoutVariant::Glance`: no title, no parameter list — just an input glyph, a compact live preview, an output glyph. Doesn't support `Note` or `Data`, same scope `view.scope`/`view.meter` already have.
+#### `view.cycle` — Cycle ✅ *(2026-10-04 — replaces `view.scope` and `view.glance`, both removed)*
+The placeable **phase-locked** viewer. A polymorphic pass-through (Audio or
+Control — the same node watches an audio path or an LFO) whose horizontal axis
+is the phase of the nearest phase source upstream, over a fixed 4 cycles: a saw
+through a filter reads as the filtered saw, standing still, at any rate. No
+trigger, no time window — the engine already knows the phase
+(`ExecutionPlan::resolvePhaseSources`, "phase follows the cable"); the cable's
+real samples are folded into phase bins (equivalent-time sampling for fast
+signals, drawn in behind the playhead for slow ones). Fixed ±1 scale with
+headroom; Auto/On/Off playhead. Empty when nothing upstream has a phase.
+Patches with the old nodes load with scopes dropped and glances spliced out of
+their cables (`PatchSerializer` v8 → v9).
 
 ### Per-type viewers — pass-through, one per signal type
 

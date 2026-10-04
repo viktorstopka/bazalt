@@ -32,6 +32,10 @@ export const TelemetryFrameType = {
   // instead of being capped at the tap ring's own raw-sample depth (see
   // AnalysisThread::publishRollingHistory's own comment).
   RollingHistory: 4,
+  // PreviewKind 'phaseLocked': [playhead (0..PHASE_LOCKED_CYCLES), frequencyHz,
+  // then PHASE_LOCKED_POINTS values over that many cycles from phase zero] —
+  // see TelemetryFrame.h / PhaseSnapshot.h.
+  PhaseLocked: 5,
 } as const
 export type TelemetryFrameType = (typeof TelemetryFrameType)[keyof typeof TelemetryFrameType]
 

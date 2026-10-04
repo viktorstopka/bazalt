@@ -42,6 +42,7 @@ const FRAME_TYPE_PATH: Record<TelemetryFrameType, string> = {
   [TelemetryFrameType.Meter]: 'meter',
   [TelemetryFrameType.EventImpulse]: 'eventImpulse',
   [TelemetryFrameType.RollingHistory]: 'history', // PluginEditor.cpp's own frameTypeFromPathSegment()
+  [TelemetryFrameType.PhaseLocked]: 'phaseLocked',
 }
 
 interface TapState {
@@ -226,6 +227,13 @@ export interface InterpolatedTap {
 */
 export function getLatestTapFrame(tap: TapName, frameType: TelemetryFrameType): TelemetryFrame | null {
   return store.get(tapKey(tap, frameType))?.latest ?? null
+}
+
+/** performance.now() at which the latest frame arrived (0 if none yet) —
+    for a renderer that extrapolates between frames (the phase-locked
+    preview's playhead advances by frequency × elapsed time). */
+export function getLatestTapFrameReceivedAtMs(tap: TapName, frameType: TelemetryFrameType): number {
+  return store.get(tapKey(tap, frameType))?.latestReceivedAtMs ?? 0
 }
 
 /** Reads the current best estimate for a tap's payload, linearly

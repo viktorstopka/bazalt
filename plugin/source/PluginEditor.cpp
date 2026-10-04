@@ -152,6 +152,8 @@ namespace bazalt
                 return bazalt::engine::TelemetryFrameType::EventImpulse;
             if (segment == "history")
                 return bazalt::engine::TelemetryFrameType::RollingHistory;
+            if (segment == "phaseLocked")
+                return bazalt::engine::TelemetryFrameType::PhaseLocked;
             return std::nullopt;
         }
 

@@ -32,6 +32,7 @@ import {
   setViewerRangeMin,
   setViewerRangeMax,
   setViewerCenter,
+  setPreviewPlayheadMode,
   resolveNodeDescriptor,
   type GraphNode,
   type GraphWire,
@@ -90,6 +91,8 @@ function NodeWrapper({ node, descriptor, selected, selection, connectedPortIds, 
     onSetViewerRangeMax: (value) => setViewerRangeMax(node.id, value),
     viewerCenterOverride: node.viewerCenterOverride,
     onSetViewerCenter: (value) => setViewerCenter(node.id, value),
+    previewPlayheadMode: node.previewPlayheadMode,
+    onSetPreviewPlayheadMode: (mode) => setPreviewPlayheadMode(node.id, mode),
     overlayTarget,
   }
 

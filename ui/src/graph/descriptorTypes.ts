@@ -187,6 +187,10 @@ export type PreviewKind =
   | 'eventImpulse'
   | 'spectrogram'
   | 'goniometer'
+  /** Horizontal axis is phase, not time (PreviewDescriptor.h): a generator's
+      own waveform, or (foldSamples) a cable's samples folded by the upstream
+      phase. Drawn by PhaseLockedPreview.tsx. */
+  | 'phaseLocked'
 
 export type ScopeTriggerMode = 'free' | 'risingEdge' | 'perNote'
 export type MeterMode = 'peak' | 'rms' | 'truePeak' | 'histogram'
@@ -200,6 +204,9 @@ export interface PreviewDescriptor {
   tiltDbPerOctave: number
   averaging: number
   meterMode: MeterMode
+  /** 'phaseLocked' only: fold real samples (view.cycle) rather than draw the
+      phase source's own waveform. */
+  foldSamples?: boolean
 }
 
 export interface NodeDescriptor {

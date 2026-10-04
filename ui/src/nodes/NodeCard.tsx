@@ -25,6 +25,7 @@ import { ScopeControlBody } from './ScopeControlBody'
 import { ScopeModulationBody } from './ScopeModulationBody'
 import { GateBody } from './GateBody'
 import { MapDiagram } from './MapDiagram'
+import { CycleBody } from './CycleBody'
 import './NodeCard.css'
 
 /** PortDescriptor.h's own contract: "falls back to id in the UI if empty" —
@@ -127,6 +128,9 @@ export interface NodeCardState {
       graphStore.ts's GraphNode.viewerCenterOverride. */
   viewerCenterOverride?: number
   onSetViewerCenter?: (value: number) => void
+  /** Phase-locked preview playhead mode: 0 Auto (default), 1 On, 2 Off. */
+  previewPlayheadMode?: number
+  onSetPreviewPlayheadMode?: (mode: number) => void
   /** MacroEditTypeModal's own portal target (GraphSurface.tsx's
       `overlayTarget`, the screen-space `.infinite-canvas-overlay` div) —
       see MacroBody.tsx's own comment on why this can't just render inline:
@@ -767,7 +771,7 @@ function StandardBody({ descriptor, state, instanceId }: { descriptor: NodeDescr
         />
       ))}
       {instanceId && descriptor.previews?.map((preview) => (
-        <NodePreview key={preview.portId} nodeId={instanceId} preview={preview} />
+        <NodePreview key={preview.portId} nodeId={instanceId} preview={preview} state={state} />
       ))}
     </>
   )
@@ -1015,6 +1019,8 @@ export function NodeCard({ descriptor: declaredDescriptor, state = {}, instanceI
   // of the same scrolling-history panel (ScopeHistoryBody.tsx).
   if (descriptor.typeId === 'view.scope.modulation') return <ScopeModulationBody descriptor={descriptor} state={state} instanceId={instanceId} />
   if (descriptor.typeId === 'view.gate') return <GateBody descriptor={descriptor} state={state} instanceId={instanceId} />
+  // The placeable phase-locked viewer (replaces view.scope/view.glance).
+  if (descriptor.typeId === 'view.cycle') return <CycleBody descriptor={descriptor} state={state} instanceId={instanceId} />
   if (descriptor.layoutVariant === 'decoration') return <DecorationBody descriptor={descriptor} />
   if (descriptor.layoutVariant === 'singleton') return <SingletonBody descriptor={descriptor} state={state} instanceId={instanceId} />
   if (descriptor.layoutVariant === 'glance') return <GlanceBody descriptor={descriptor} state={state} instanceId={instanceId} />

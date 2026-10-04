@@ -135,6 +135,10 @@ export interface GraphNode {
       pair above; ScopeHistoryBody.tsx supplies the default (the middle
       of the range: 0 for bipolar, 0.5 for unipolar) before that. */
   viewerCenterOverride?: number
+  /** A phase-locked preview's playhead mode (properties["preview.playhead"]:
+      0 Auto, 1 On, 2 Off) — undefined means Auto. Display-only, so a
+      property, not a parameter. */
+  previewPlayheadMode?: number
 }
 
 /** TypedValueNodeBase.h's `TypedValueType` enum, mirrored — rewritten per
@@ -321,6 +325,7 @@ function patchJsonToLocalState(json: string): { nodes: Map<string, GraphNode>; w
     const viewerRangeMin = properties['viewer.rangeMin']
     const viewerRangeMax = properties['viewer.rangeMax']
     const viewerCenter = properties['viewer.center']
+    const previewPlayhead = properties['preview.playhead']
     nodes.set(n.id, {
       id: n.id,
       typeId: n.type,
@@ -335,6 +340,7 @@ function patchJsonToLocalState(json: string): { nodes: Map<string, GraphNode>; w
       viewerRangeMinOverride: typeof viewerRangeMin === 'number' ? viewerRangeMin : undefined,
       viewerRangeMaxOverride: typeof viewerRangeMax === 'number' ? viewerRangeMax : undefined,
       viewerCenterOverride: typeof viewerCenter === 'number' ? viewerCenter : undefined,
+      previewPlayheadMode: typeof previewPlayhead === 'number' ? previewPlayhead : undefined,
     })
   }
   const wires = new Map<string, GraphWire>()
@@ -1009,6 +1015,17 @@ export function setViewerCenter(id: string, value: number): void {
     () => {
       const node = nodes.get(id)
       if (node) nodes.set(id, { ...node, viewerCenterOverride: value })
+    },
+  )
+}
+
+/** A phase-locked preview's playhead override: 0 Auto, 1 On, 2 Off. */
+export function setPreviewPlayheadMode(id: string, mode: number): void {
+  void withHistory(
+    () => fireCommand(() => graphSetProperty(id, 'preview.playhead', mode)).then(() => undefined),
+    () => {
+      const node = nodes.get(id)
+      if (node) nodes.set(id, { ...node, previewPlayheadMode: mode })
     },
   )
 }
