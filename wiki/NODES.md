@@ -94,8 +94,8 @@ Exposes the host's transport — tempo, play state, song position, and a beat pu
 
 ## osc — oscillators
 
-#### `osc.analog` — Analog Oscillator 🚧
-Band-limited virtual-analog oscillator. **In (spec):** `frequency [audio]`; `fine`; `pulseWidth [audio]`; `phaseMod [audio]`; `sync : Event`. **In (real today):** only `frequency`-equivalent (MIDI-note pitch) and a plain Hz frequency input — `fine`/`pulseWidth`/`phaseMod`/`sync` don't exist yet on the shipped node (tracked as a known gap, not silently assumed fixed). **Out:** `out` — `Audio`. **Structural:** `shape` (enum: sine, triangle, saw, square, pulse). **Behavior:** phase accumulator with PolyBLEP correction. **Native:** numerically delicate band-limiting.
+#### `osc.analog` — Analog Oscillator ✅
+One switchable band-limited oscillator (sine/saw/square/triangle), voice-ready. **In:** `pitch` (semitones, wins when wired); `frequency` (Hz); `fine` (cents ±100); `pulseWidth` (Square); `phase` (through-zero phase modulation in cycles — offsets the read point, never the accumulator); `sync : Event` (restarts the cycle). **Out:** `out` — `Audio`. **Structural:** `shape`. **Behavior:** every shape from `bandLimited::evaluate` (PolyBLEP/PolyBLAMP), the same definition its phase-locked preview draws — a real phase source now (the preview was declared but never drew before). Completed 2026-10-04 (`wiki/plans/SoundPalette.md` Batch 2).
 
 #### `osc.sine`, `osc.saw`, `osc.square`, `osc.triangle` — Sine / Saw / Square / Triangle ✅ *(restructured / new 2026-10-04)*
 Four minimal per-shape oscillators sharing one class (`SineOscillatorNode.h`'s
@@ -137,12 +137,11 @@ plain playhead can't produce. **In:** `sample` — `Data(sample)`, required; `po
 
 ## noise — stochastic sources
 
-#### `noise.colored` — Noise 📋
-A continuous noise source with a selectable spectral colour (white through violet)
-plus a fine tilt — the raw material behind hiss, air, and shaped textures. **In:** `tilt : float·Bipolar·−1–1·linear·0`. **Out:** `out` — `Audio`. **Structural:** `color` (enum: white, pink, brown, blue, violet).
+#### `noise.colored` — Noise ✅
+White, pink, brown, blue or violet noise (0, −3, −6, +3, +6 dB/oct, measured ±0.1 dB/oct), each at about the same loudness so switching colour changes tone, not level. **In:** `level`. **Out:** `out` — `Audio` (Stereo when `stereo` is on). **Parameters:** `colour`; `stereo` (structural — a second, decorrelated generator: a source declares its own width); `seed` (structural). **Behavior:** xorshift white; Kellet pink; leaky-integrated brown (5 Hz corner from the sample rate); blue/violet = first difference of pink/white. Seeded, so reproducible.
 
-#### `noise.dust` — Dust 📋
-Sparse random impulses — the primitive behind crackle, rain, footsteps, a population of tiny events. **In:** `density [audio]`; `jitter`. **Out:** `pulse` — `Event`; `out` — `Audio`. **Structural:** `seed`. **Native:** sample-accurate event timing an LFO-and-threshold group can't reproduce without aliasing.
+#### `noise.dust` — Dust ✅
+Sparse single-sample impulses at random moments — rain, crackle, clicks, a swarm trigger. **In:** `density` (impulses/s, 0.1–10000, log); `randomness` (0 fixed height … 1 fully random). **Out:** `out` — `Audio`; `trigger` — `Event` (every impulse). **Parameters:** `polarity` (unipolar/bipolar); `seed` (structural). **Behavior:** a per-sample Poisson process (probability density/sampleRate), sample-accurate and block-size independent.
 
 ## excite — physical excitation
 
@@ -155,10 +154,8 @@ path).
 The simplest possible excitation — a single sharp transient (or a short pulse once
 widened) to knock a resonator into motion. **In:** `trigger : Event`; `amplitude`; `width` (0 = a true single-sample delta). **Out:** `out` — `Audio`. **Shape, a real design call the catalog named but didn't define:** `width == 0` fires an exact one-sample delta at `amplitude`; `width > 0` widens into a raised-cosine (Hann) bump over that span instead of a hard rectangular pulse, so widening stays click-free. Capped at 50ms (`maxWidthMs`) — longer than that is `excite.burst`/`excite.pluck`'s job.
 
-#### `excite.burst` — Noise Burst 🚧 *(partially fixed — wiki/NODES_Gaps.md's `hardcoded-trigger`)*
-A timed burst of white noise with a linear decay — the standard broadband
-excitation for plucks, hits, and anything else that needs a transient kick rather
-than a tonal source. **In (spec):** `trigger : Event`; `duration`; `tone`; `shape`. **In (real today):** `trigger : Event` and `duration [audio]·0.1–2000ms·log·30ms` — a clock, a threshold detector, or anything else that produces Events can now start it; the direct C++ `trigger(int durationSamples)` poke still exists too (tests/tools), calling the same internal logic. `tone`/`shape` aren't built yet — still 🚧, not full catalog compliance. **Out:** `out` — `Audio` (white-noise burst, linear decay envelope over the triggered duration).
+#### `excite.burst` — Noise Burst ✅
+A timed burst of noise — the standard broadband excitation for plucks, hits and anything needing a transient kick. **In:** `trigger : Event`; `duration [audio]·0.1–2000ms·log·30ms`; `tone` (−1 dark … 0 white … +1 bright: blends toward an 800 Hz low-passed, level-matched noise or its high-passed remainder); `shape` (−1 fast drop, ramp⁴ … 0 linear … +1 held body, ramp^¼). **Out:** `out` — `Audio`. The direct C++ `trigger(int)` poke still exists (tests/tools). Seeded generator (it used juce::Random's time seed before). Completed 2026-10-04.
 
 #### `excite.pluck` — Pluck ✅ *(PM Core batch 3)*
 A pre-shaped plucked-string excitation, pickup position and hardness baked in —
@@ -215,10 +212,8 @@ A multi-section waveguide whose cross-section profile is read from a curve, so f
 
 ## filter
 
-#### `filter.svf` — State-Variable Filter 🚧
-A state-variable filter offering lowpass/bandpass/highpass/notch/peak modes from
-one topology, self-resonant near the top of its range — the general-purpose swept
-filter. **In:** `in` — `Audio`; `cutoff [audio]`; `resonance [audio]`; `drive`; `keyTrack`; `keyPitch`. **Out (spec):** simultaneous `lowpass`/`bandpass`/`highpass`/`notch`/`peak` port group. **Out (real today):** one mode-switched `out` (host-only `setType()`, no port) — the 5-simultaneous-output redesign is a known, documented gap, not fixed silently. **Structural:** `slope` (enum: 12, 24 dB/oct). **Native:** TPT zero-delay-feedback, numerically delicate.
+#### `filter.svf` — State-Variable Filter ✅
+A state-variable filter with all five responses out at once instead of a mode switch. **In:** `in` — `Audio` (per channel); `cutoff`; `resonance` (Q, 0.707 = Butterworth). **Out:** `out` (lowpass, primary — the id it always had, so patches are unchanged), `bandpass` (peaks at Q at the cutoff), `highpass`, `notch`, `peak`. **Behavior:** Zavalishin TPT in Simper's form, stable under audio-rate modulation, coefficients recomputed only when cutoff/resonance change. Completed 2026-10-04 (was one mode-switched `out`).
 
 #### `filter.ladder` — Ladder Filter ✅
 The classic four-stage transistor-ladder lowpass — warm, self-oscillating at high
@@ -247,24 +242,20 @@ without a physical tract model. **In:** `in`; `vowel [audio]`; `formants` — `D
 
 ## shape — nonlinearities
 
-#### `shape.waveshaper` — Waveshaper 📋
-Passes a signal through a fixed or user-drawn transfer curve for distortion and
-saturation — the general-purpose nonlinearity node. **In:** `in` — `Audio`; `drive [audio]`; `bias`; `mix`; `curve` — `Data(curve)` (optional). **Out:** `out` — `Audio`. **Structural:** `shape` (enum: tanh, arctan, sine fold, asymmetric, hard, custom), `oversampling`. **Native:** oversampling, delicate.
+#### `shape.waveshaper` — Waveshaper ✅
+Drive into a transfer curve. **In:** `in` (per channel); `drive` (0–36 dB); `bias` (asymmetry; its static DC is removed); `output` (dB); `mix`. **Out:** `out`. **Parameters:** `curve` (tanh, cubic, hard, algebraic, asymmetric "tube-ish", sine). **Behavior:** first-order antiderivative antialiasing (ADAA) — each curve ships with its closed-form antiderivative; per sample, no latency, block-size safe, works in feedback loops and per lane (measured ~6 dB less aliasing than the bare curve at 3.5 kHz). Custom curves arrive with `factory.curve`.
 
 #### `shape.clip` — Clip / Safety ✅ *(direct feedback: real, wireable, mid-chain safety)*
 **In:** `in`; `ceiling`; `knee`. **Out:** `out`; `clipping` — `bool`. **Structural:** `mode` (enum: hard, soft, limiter). **Behavior:** the node you put in a feedback loop so a slider can't destroy a speaker. `hard` is an exact clamp to `±ceiling` with a real quadratic soft-knee region (`knee`, 0–1, scaled by `ceiling`) smoothing the approach; `soft` is a `tanh` saturation that asymptotically approaches `ceiling` and never hard-clips at all; `limiter` reuses the same attack(~1ms)/release(~100ms) smoothed gain-reduction envelope the plugin's own always-on master-output `OutputLimiter` uses, plus the same hard-clamp backstop underneath it for a single isolated spike the envelope can't react to in time. `clipping` is live, not static — true only while this sample is actually being altered. A real, wireable complement to the plugin-level safety net (`PluginProcessor.cpp`'s `OutputLimiter`), which protects the final mix unconditionally but can't be inserted mid-chain.
 
-#### `shape.fold` — Wavefolder 📋
-Folds a signal back on itself past a threshold instead of clipping it, producing
-the harmonically rich, reflective character of a wavefolder. **In:** `in`; `drive [audio]`; `offset`; `folds`. **Out:** `out`. **Structural:** `oversampling`.
+#### `shape.fold` — Wavefolder ✅
+Past ±1 the signal folds back instead of clipping — more `fold`, more partials. **In:** `in` (per channel); `fold` (1–20); `bias`; `mix`. **Out:** `out`. **Parameters:** `shape` (triangle / sine folding). **Behavior:** ADAA with the folds' closed-form antiderivatives (periodic, piecewise-quadratic for the triangle).
 
-#### `shape.rectify` — Rectify 📋
-Removes or flips the negative half of a signal — half- or full-wave rectification,
-useful for octave-up effects and envelope-like shaping. **In:** `in`; `amount`. **Out:** `out`. **Structural:** `mode` (enum: half, full).
+#### `shape.rectify` — Rectify ✅
+Half- or full-wave rectification, per channel, ADAA-antialiased — octave-up/buzz tones. **In:** `in`. **Out:** `out`. **Parameters:** `mode` (half, full). Adds DC by nature — follow with `util.dcBlock` when it matters.
 
-#### `shape.crush` — Bitcrush / Downsample 📋
-Reduces bit depth and/or effective sample rate on purpose — the lo-fi/bitcrush
-degradation node. **In:** `in`; `bits [audio]`; `rate [audio]`; `mix`. **Out:** `out`.
+#### `shape.crush` — Bitcrush / Downsample ✅
+Bit depth and sample-rate reduction — deliberately not antialiased. **In:** `in` (per channel); `bits` (1–24, continuous: fractional bits sweep smoothly); `rate` (held sample rate, Hz, phase-accumulator from prepare — block-size independent). **Out:** `out`.
 
 ## delay
 
@@ -320,6 +311,19 @@ at one extreme to an even blend at the mid-point. **In:** `a`, `b` — `Audio`; 
 Collapses a stereo signal down to mono by a chosen rule (sum, one side, mid, or
 side) — the explicit stereo-to-mono adapter `canConnect` reaches for automatically. **In:** `in` — `Audio` (`Channels::Stereo`). **Out:** `out` — `Audio` (mono). **Structural:** `mode` (enum: sum, left, right, mid, side). Genuine 1-in-1-out shape now (`NODES.System.md` §9.2) — `connectWithAutoAdapt` auto-inserts it for a stereo source into a mono-only port, the same way `adapt.map`/`adapt.normalise`/`adapt.threshold` already do.
 
+## dyn — dynamics ✅ *(new family, wiki/plans/SoundPalette.md Batch 3)*
+
+#### `dyn.compress` — Compressor ✅
+Stereo-linked feed-forward compressor with a soft knee (Giannoulis/Massberg/Reiss). **In:** `in` — `Audio` (Stereo); `sidechain` — `Audio` (Stereo, optional — when wired it decides the gain: ducking); `threshold`; `ratio`; `knee`; `attack`; `release`; `makeup`; `mix`. **Out:** `out` (Stereo); `gain` — `Control` (the linear multiplier being applied); `reduction` — `Control` (dB). **Behavior:** peak detector → static curve → gain smoothed in dB. The gain is an output, so the same envelope can duck anything else in the patch by wiring.
+
+#### `dyn.gate` — Gate ✅
+Stereo-linked gate / expander. **In:** `in` (Stereo); `sidechain` (Stereo, optional); `threshold`; `range` (dB down when closed — 80 hard gate, 10 gentle expander); `attack`; `hold`; `release`. **Out:** `out` (Stereo); `gain` — `Control`; `open` — `Boolean`. 3 dB hysteresis so it doesn't chatter.
+
+## fx — other effects
+
+#### `fx.freqShift` — Frequency Shift ✅
+Moves every partial by the same number of Hz (harmonic → inharmonic, bell-like; a few Hz = barber-pole phasing). **In:** `in` (per channel); `shift` (±5000 Hz); `mix`. **Out:** `out` (shifted up by `shift`); `mirror` (shifted down). **Behavior:** Hilbert transformer (Niemitalo's two 4-section allpass chains) + quadrature oscillator, single sideband; measured 49 dB rejection of the other sideband. Chorus/flanger/phaser ship as stock groups once `stock.*` loading exists (SoundPalette.md Batch 4).
+
 ## env — envelopes
 
 #### `env.adsr` — Envelope ✅
@@ -337,10 +341,8 @@ slow-moving loudness contour. **In:** `in` — `Audio`; `attack`; `release`. **O
 
 ## lfo
 
-#### `lfo.shape` — LFO 📋
-A low-frequency modulation source with a selectable or user-drawn waveform,
-sync, and morph between two shapes — the general-purpose wobble/vibrato/tremolo
-driver. **In:** `rate [audio]`; `shape`/`shapeB` — `Data(curve)` (optional); `shapeMorph [audio]`; `phase`; `sync : Event`; `depth`; `smooth`; `fade`. **Out:** `out` — `float·Bipolar [audio]`; `phaseOut`; `cycle` — `Event`. **Structural:** `waveform` (enum: sine, triangle, saw, ramp, square, random step, random smooth, custom), `rateMode`, `retrigger`. **M24.**
+#### `lfo.shape` — LFO ✅ *(v1 — the `Data(curve)` input joins with `factory.curve`)*
+A Control-rate modulation source. **In:** `rate` (Hz, when free); `phase` (offset, cycles); `reset : Event`. **Out:** `out` — `Control` (bipolar or unipolar). **Parameters:** `shape` (sine, triangle, saw, ramp, square, S&H, smooth random); `polarity` (structural); `sync`; `division` (8 bars … 1/32). **Behavior:** synced and with the host playing, the cycle position IS the host position (lands on the same point at the same bar every play); a phase source with the oscillators' phase-locked preview (random shapes show their recent values); seeded randomness.
 
 ## random — controlled unpredictability
 
@@ -651,9 +653,8 @@ audio-to-trigger primitive behind hit detection and audio-driven sequencing. **I
 Continuously estimates the fundamental pitch of an incoming signal — turns a
 sung or played note into a Control-rate pitch value with a confidence score. **In:** `in`; `lowestPitch`; `smoothing`. **Out:** `pitch [audio]`; `confidence`; `voiced` — `bool`. **Structural:** `method` (enum: autocorrelation, YIN), `windowSize`.
 
-#### `analysis.level` — Level
-Tracks a signal's loudness with selectable detection (peak, RMS, true peak) —
-the general-purpose metering/level-driven-modulation source. **In:** `in`; `attack`, `release`. **Out:** `level [audio]`; `peak`; `clipped` — `bool`. **Structural:** `detection` (enum: peak, RMS, true peak).
+#### `analysis.level` — Level ✅
+How loud a signal is. **In:** `in` — `Audio` (Stereo; mono broadcasts, both channels measured together — no downmix needed); `attack`; `release`. **Out:** `level` — `Control` (linear); `db` — `Control` (dB). **Parameters:** `mode` (RMS over a 50 ms window, then the ballistics; or peak). A full-scale sine reads 0.707 / −3 dB RMS.
 
 #### `analysis.centroid` — Brightness
 **In:** `in`; `smoothing`. **Out:** `centroid`; `normalised`. **Behavior:** spectral centroid — how bright a signal is, for driving models from incoming sound.

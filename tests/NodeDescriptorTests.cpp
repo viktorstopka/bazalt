@@ -25,7 +25,7 @@ TEST_CASE ("NodeFactory::describeAll() returns a descriptor for every registered
     CHECK (osc->title == "Oscillator");
     CHECK (osc->category == "Generators");
     CHECK (osc->layoutVariant == NodeLayoutVariant::Standard);
-    REQUIRE (osc->inputs.size() == 2); // "pitch" (M18, ADR-0024), "osc.analog.frequency" (M20)
+    REQUIRE (osc->inputs.size() == 6); // "pitch" (M18, ADR-0024), "osc.analog.frequency" (M20), fine, pulseWidth, phase, sync (SoundPalette.md Batch 2)
     CHECK (osc->inputs[0].id == "pitch");
     CHECK (osc->inputs[0].type == SignalType::Control);
     CHECK (osc->inputs[1].id == "osc.analog.frequency");

@@ -369,7 +369,8 @@ TEST_CASE ("Every Sound Palette node is block-size invariant", "[engine][palette
 {
     auto factory = buildDefaultNodeFactory();
     for (const auto* type : { "noise.colored", "noise.dust", "shape.rectify", "shape.crush", "shape.waveshaper", "shape.fold",
-                              "lfo.shape", "analysis.level", "dyn.compress", "dyn.gate", "fx.freqShift" })
+                              "lfo.shape", "analysis.level", "dyn.compress", "dyn.gate", "fx.freqShift",
+                              "filter.svf", "osc.analog", "excite.burst" })
     {
         const auto render = [&] (int blockSize)
         {
@@ -384,4 +385,73 @@ TEST_CASE ("Every Sound Palette node is block-size invariant", "[engine][palette
         CHECK (a == b);
         CHECK (a == c);
     }
+}
+
+//==============================================================================
+// Batch 2: the three MVPs closed.
+#include "bazalt/engine/nodes/NoiseBurstNode.h"
+#include "bazalt/engine/nodes/OscillatorNode.h"
+#include "bazalt/engine/nodes/SvfFilterNode.h"
+
+TEST_CASE ("filter.svf gives all five responses at once", "[engine][palette][svf]")
+{
+    const auto respond = [] (double hz)
+    {
+        auto node = make<SvfFilterNode> ({ { "filter.svf.cutoff", 1000.0f }, { "filter.svf.resonance", 0.7071f } });
+        const auto out = run (*node, { sine (hz, 0.5) }, (int) (0.5 * fs));
+        std::array<double, 5> amplitudes {};
+        for (size_t o = 0; o < 5; ++o)
+            amplitudes[o] = amplitudeAt (out[o], hz);
+        return amplitudes;
+    };
+    const auto low = respond (100.0), at = respond (1000.0), high = respond (10000.0);
+    // lowpass, bandpass, highpass, notch, peak
+    CHECK (low[0] == Catch::Approx (1.0).margin (0.02));
+    CHECK (high[0] < 0.02);
+    CHECK (high[2] == Catch::Approx (1.0).margin (0.02));
+    CHECK (low[2] < 0.02);
+    CHECK (at[0] == Catch::Approx (0.7071).margin (0.02)); // -3 dB at cutoff, Q = 0.707
+    CHECK (at[1] == Catch::Approx (0.7071).margin (0.02)); // this form's bandpass peaks at Q (constant-skirt)
+    CHECK (at[3] < 0.02);                                          // notch nulls the cutoff
+    CHECK (low[3] == Catch::Approx (1.0).margin (0.02));
+}
+
+TEST_CASE ("osc.analog: fine tune, pulse width and sync", "[engine][palette][osc]")
+{
+    auto tuned = make<OscillatorNode> ({ { "osc.analog.shape", 0.0f }, { "osc.analog.frequency", 1000.0f }, { "osc.analog.fine", 100.0f } });
+    const auto out = run (*tuned, {}, (int) fs)[0];
+    CHECK (amplitudeAt (out, 1000.0 * std::exp2 (100.0 / 1200.0)) == Catch::Approx (1.0).margin (0.02)); // +100 cents = a semitone up
+
+    auto pulse = make<OscillatorNode> ({ { "osc.analog.shape", 2.0f }, { "osc.analog.frequency", 100.0f }, { "osc.analog.pulseWidth", 0.25f } });
+    const auto square = run (*pulse, {}, (int) fs)[0];
+    const auto high = std::count_if (square.begin(), square.end(), [] (float v) { return v > 0.0f; });
+    CHECK ((double) high / (double) square.size() == Catch::Approx (0.25).margin (0.01));
+
+    auto synced = make<OscillatorNode> ({ { "osc.analog.shape", 1.0f }, { "osc.analog.frequency", 100.0f } });
+    Signal sync ((size_t) 1000, 0.0f);
+    sync[500] = 1.0f;
+    const auto saw = run (*synced, { {}, {}, {}, {}, {}, sync }, 1000)[0];
+    auto fresh = make<OscillatorNode> ({ { "osc.analog.shape", 1.0f }, { "osc.analog.frequency", 100.0f } });
+    const auto start = run (*fresh, {}, 1)[0];
+    CHECK (saw[500] == start[0]); // sync restarts the cycle
+}
+
+TEST_CASE ("excite.burst: tone tilts the spectrum, shape bends the decay", "[engine][palette][burst]")
+{
+    const auto burst = [] (float tone, float shape)
+    {
+        NoiseBurstNode node;
+        node.prepare ({ fs, 512 });
+        node.setParameter ("excite.burst.tone", tone);
+        node.setParameter ("excite.burst.shape", shape);
+        node.setParameter ("excite.burst.duration", 200.0f);
+        Signal trigger ((size_t) (0.3 * fs), 0.0f);
+        trigger[0] = 1.0f;
+        return run (node, { trigger }, (int) trigger.size())[0];
+    };
+    const auto dark = burst (-1.0f, 0.0f), bright = burst (1.0f, 0.0f);
+    CHECK (octaveBandDb (dark, 250.0) - octaveBandDb (dark, 8000.0) > octaveBandDb (bright, 250.0) - octaveBandDb (bright, 8000.0) + 20.0);
+
+    const auto fast = burst (0.0f, -1.0f), held = burst (0.0f, 1.0f);
+    CHECK (rms (fast) < rms (held) * 0.6);
 }

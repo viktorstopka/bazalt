@@ -1,6 +1,12 @@
 # Sound Palette — the everyday nodes still missing
 
-**Status:** Proposed, 2026-10-04. No code yet. Step 3 of the agreed sequence:
+**Status:** Built, 2026-10-04 — Batches 1-3 complete, Batch 4's `fx.freqShift` built;
+chorus/flanger/phaser stay planned as stock groups until `stock.*` loading exists.
+Tests: `tests/SoundPaletteTests.cpp`. Deviations: shapers use first-order ADAA
+(antiderivative antialiasing) instead of oversampling — per sample, no latency,
+block-size safe, so they also work inside feedback loops and channel lanes;
+`analysis.level` takes stereo (both channels measured together); `filter.svf` keeps
+`out` as its lowpass id so no patch migration was needed. Step 3 of the agreed sequence:
 1. `StereoChannels.md` → 2. `Reverb.md` → **3. this** → then `Factories.md`.
 
 Brief by design: each node's spec already lives in `wiki/NODES.md`; this file only
