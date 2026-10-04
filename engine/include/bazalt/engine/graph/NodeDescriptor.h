@@ -32,6 +32,9 @@ namespace bazalt::engine
             Control cable the engine accepts.
         */
         bool hasPolymorphicPorts = false;
+
+        /** Node::isDeprecated(): still loadable, no longer placeable. */
+        bool deprecated = false;
     };
 
     /** Builds a NodeDescriptor from a live Node instance's metadata calls
@@ -52,6 +55,7 @@ namespace bazalt::engine
         descriptor.parameters = node.getParameters();
         descriptor.previews = node.getPreviews();
         descriptor.hasPolymorphicPorts = node.hasPolymorphicPorts();
+        descriptor.deprecated = node.isDeprecated();
         return descriptor;
     }
 }

@@ -2,10 +2,12 @@
 // scrolling-history viewer — "Scope for Control values, Scope for
 // Modulation, and Gate... variants of one panel with different vertical
 // scales and different trace styles, so build the shared pieces here and
-// reuse them for the other two." ScopeControlBody.tsx is the thin
-// typeId-specific wrapper that currently uses this (trace colour + which
-// parameter id carries the time window); a future view.scope.modulation
-// reuses this file unchanged, passing its own colour/parameter id.
+// reuse them for the other two." Each typeId has a thin wrapper supplying
+// only what differs: ScopeControlBody.tsx (white line), ScopeModulationBody.tsx
+// (orange, filled to an editable centre line, range seeded from the source's
+// polarity) and GateBody.tsx (blue, binary TRUE/FALSE scale, square-edged
+// trace that never drops a brief true state). The `variant` prop selects the
+// vertical scale + trace style; everything else here is shared by all three.
 //
 // Driven entirely by real engine telemetry (PreviewKind::RollingHistory,
 // AnalysisThread::publishRollingHistory via view.scope.control's own
@@ -17,8 +19,9 @@
 // discrete values/events, which is exactly the opposite of what a
 // continuous scrolling trace wants.
 import { useEffect, useRef, useState } from 'react'
-import type { NodeDescriptor } from '../graph/descriptorTypes'
+import type { NodeDescriptor, PortDescriptor } from '../graph/descriptorTypes'
 import { type NodeCardState, PortGlyph } from './NodeCard'
+import type { PortUiStyle } from '../graph/portUiKind'
 import { subscribeNodePreview, unsubscribeNodePreview, tapNameForPreview } from '../graph/previewSubscriptions'
 import { getInterpolatedTap, getLatestTapFrame } from '../telemetry/telemetryClient'
 import { TelemetryFrameType } from '../telemetry/parseTelemetryFrame'
@@ -48,6 +51,17 @@ const VISIBILITY_ROOT_MARGIN = '200px'
 // reason.
 const PANEL_WIDTH = 190
 const PANEL_HEIGHT = 130
+
+// Gate.png: the TRUE and FALSE levels sit inset from the panel's own edges
+// (the reference draws FALSE as a line well above the bottom border, TRUE
+// just under the top one), so a held-false baseline is never hidden under
+// the hairline border. Measured off the reference: ~11% and ~16% of height.
+const BINARY_TRUE_INSET = 14
+const BINARY_FALSE_INSET = 20
+// ScopeMod.png/Gate.png: "dim" fill under a brighter trace — one shared
+// opacity so the two filled variants read as the same visual language.
+const FILL_OPACITY = 0.28
+const CENTRE_LINE_OPACITY = 0.55
 
 // design/Visualization/Scope1.png: "On connection they autofill... derives
 // a range... and then stops adjusting" + "[the time window's] default
@@ -107,22 +121,44 @@ function estimatePeriodSeconds(payload: Float32Array, columnDurationSeconds: num
   return (observedSeconds * 2) / crossings // each crossing is one half-period
 }
 
+/** Which vertical scale + trace style the shared panel draws — the only
+    thing that genuinely differs between the three history viewers.
+    - 'line' (view.scope.control, Scope1.png): an editable min/max range and
+      a thin min/max-decimated line.
+    - 'centred' (view.scope.modulation, ScopeMod.png): the same editable
+      range plus an editable centre line; the area between the trace and the
+      centre is filled dim, with the line drawn bright on top — above and
+      below read with the same weight, a signed value rather than a level.
+    - 'binary' (view.gate, Gate.png): fixed TRUE/FALSE levels, nothing to
+      zoom into; a square-edged filled region wherever the value was true.
+*/
+export type ScopeHistoryVariant = 'line' | 'centred' | 'binary'
+
 export interface ScopeHistoryBodyProps {
   descriptor: NodeDescriptor
   state: NodeCardState
   instanceId?: string
-  /** The port colour (fixed, not live-resolved — these nodes have a fixed
-      SignalType per variant, same reasoning CountBody/RippleBody give for
-      their own fixed glyph colour) and the trace stroke colour. Always the
-      same value today (the panel's whole visual language is "this type's
-      colour"), kept as one prop since nothing has ever needed them to
-      differ.
-  */
+  variant: ScopeHistoryVariant
+  /** The trace stroke colour — and the fill's colour too, at reduced
+      opacity, for the variants that fill. */
   traceColor: string
+  /** Fixes the port glyphs to one type's style (ScopeMod.png: "Everything is
+      orange") instead of the live-resolved one. Omitted, the glyphs follow
+      the ports' own resolved type exactly like every other node. */
+  portStyle?: PortUiStyle
+  /** The range labels' colour; omitted, the muted secondary text colour
+      every other viewer uses. */
+  labelColor?: string
+  /** "The range autofills from the source port's polarity" (ScopeMod.png):
+      a variant-specific seed read off the live-resolved upstream port. When
+      it returns a range, that range is used exactly the way a declared one
+      is (no observation phase for range); undefined falls back to the
+      source's declared min/max, then to observing the signal. */
+  seedRangeFromSource?: (sourcePort: PortDescriptor) => { min: number; max: number } | undefined
   /** The node's own ParameterDescriptor id for its time window — committed
       through the ordinary state.onParameterCommit path (real engine
       parameter, not a cosmetic property: it changes what AnalysisThread
-      computes, ViewScopeControlNode.h's own doc comment has the full
+      computes, ViewHistoryWindow.h's own doc comment has the full
       reasoning), both for manual edits and for this component's own
       auto-window default.
   */
@@ -132,17 +168,45 @@ export interface ScopeHistoryBodyProps {
   defaultTimeWindowSeconds: number
 }
 
+/** A whole number reads as one ("1", "0", "-1", "127" — every reference
+    image labels its range that way); anything else keeps two decimals. */
+function labelDecimals(value: number): number {
+  return Number.isInteger(value) ? 0 : 2
+}
+
+/** ScopeMod.png: the centre line defaults to the middle of the range —
+    exactly 0 for a bipolar -1…1 signal ("for a bipolar signal it sits at
+    zero"), 0.5 for a unipolar 0…1 one. It is a signed view ("above and below
+    the centre read with the same weight"), so the default splits the panel
+    evenly; "a unipolar signal can be given a centre of 0.5, or of 0, as the
+    user prefers" — 0 is one edit away (viewer.center). */
+function defaultCentre(min: number, max: number): number {
+  return (min + max) / 2
+}
+
+// The centre label is nudged inward this far from either edge so it never
+// sits on top of the max/min labels when the centre is edited to a range end.
+const CENTRE_LABEL_EDGE_CLEARANCE = 0.12
+
+const clamp = (v: number, lo: number, hi: number) => Math.min(Math.max(v, lo), hi)
+
 export function ScopeHistoryBody({
   descriptor,
   state,
   instanceId,
+  variant,
   traceColor,
+  portStyle,
+  labelColor,
+  seedRangeFromSource,
   timeWindowParameterId,
   minTimeWindowSeconds,
   maxTimeWindowSeconds,
   defaultTimeWindowSeconds,
 }: ScopeHistoryBodyProps) {
   const pathRef = useRef<SVGPathElement | null>(null)
+  const fillRef = useRef<SVGPathElement | null>(null)
+  const svgRef = useRef<SVGSVGElement | null>(null)
   const rootRef = useRef<HTMLDivElement | null>(null)
   const [visible, setVisible] = useState(false)
   const id = `${descriptor.typeId}:${instanceId ?? 'gallery'}`
@@ -156,11 +220,15 @@ export function ScopeHistoryBody({
 
   // "Seeded from the connected port's declared range" — the live-resolved
   // UPSTREAM port, same lookup CountBody.tsx already established for its
-  // own Min/Max.
+  // own Min/Max. A variant-specific seed (polarity, for Modulation) wins
+  // over the declared bounds; the binary scale has a fixed range and never
+  // observes at all.
   const wire = instanceId ? findWireAtInput(instanceId, inputPort.id) : undefined
   const sourceEndpoint = wire ? getEndpoint(wire.fromNodeId, wire.fromPortId, 'output') : undefined
-  const declaredMin = sourceEndpoint?.port.minValue
-  const declaredMax = sourceEndpoint?.port.maxValue
+  const variantSeed =
+    variant === 'binary' ? { min: 0, max: 1 } : sourceEndpoint ? seedRangeFromSource?.(sourceEndpoint.port) : undefined
+  const declaredMin = variantSeed?.min ?? sourceEndpoint?.port.minValue ?? undefined
+  const declaredMax = variantSeed?.max ?? sourceEndpoint?.port.maxValue ?? undefined
   const hasDeclaredRange = declaredMin != null && declaredMax != null
   const sourceKey = wire ? `${wire.fromNodeId}:${wire.fromPortId}` : null
 
@@ -199,6 +267,7 @@ export function ScopeHistoryBody({
   // long-lived callback fresh values without resubscribing it.
   const latestRef = useRef({
     state,
+    variant,
     declaredMin,
     declaredMax,
     hasDeclaredRange,
@@ -218,6 +287,7 @@ export function ScopeHistoryBody({
   useEffect(() => {
     latestRef.current = {
       state,
+      variant,
       declaredMin,
       declaredMax,
       hasDeclaredRange,
@@ -260,15 +330,13 @@ export function ScopeHistoryBody({
         updateObservedRange(null)
       }
 
-      const interpolated = getInterpolatedTap(tap, TelemetryFrameType.RollingHistory)
-
       // design/Visualization/Scope1.png's own observation phase: derive a
       // range/window default from what the signal actually does, then
       // stop. Uses the RAW latest frame (not the smoothed interpolated
-      // accessor above) — probing wants the real decimated columns, not a
+      // accessor below) — probing wants the real decimated columns, not a
       // blend between two polls of them.
+      const raw = getLatestTapFrame(tap, TelemetryFrameType.RollingHistory)
       if (sourceKey && observationStartMsRef.current !== null && (!rangeFrozenRef.current || !windowCommittedRef.current)) {
-        const raw = getLatestTapFrame(tap, TelemetryFrameType.RollingHistory)
         if (raw) {
           const numColumns = raw.payload.length / 2
           let min = Infinity
@@ -304,11 +372,30 @@ export function ScopeHistoryBody({
         }
       }
 
+      const path = pathRef.current
+      if (!path) return
+
+      if (latest.variant === 'binary') {
+        // Gate.png: "A brief true state must never be dropped." Read the RAW
+        // latest frame, never the interpolated one: blending two scrolled
+        // frames column-by-column smears a one-column pulse into two
+        // half-strength ghosts, exactly the averaging this node exists to
+        // refuse (the same reason CountBody/RippleBody read raw frames for
+        // their discrete values). The engine already folds every sample into
+        // its column's (lo, hi), so hi = 1 means "true at some point in this
+        // column" even for a single-sample pulse.
+        if (!raw) return
+        const svg = svgRef.current
+        const screenWidth = svg?.getBoundingClientRect().width ?? PANEL_WIDTH
+        drawBinary(raw.payload, path, fillRef.current, screenWidth > 0 ? PANEL_WIDTH / screenWidth : 1)
+        return
+      }
+
+      const interpolated = getInterpolatedTap(tap, TelemetryFrameType.RollingHistory)
+      if (!interpolated) return
+
       const effectiveMin = latest.state.viewerRangeMinOverride ?? latest.declaredMin ?? observedRangeRef.current?.min ?? 0
       const effectiveMax = latest.state.viewerRangeMaxOverride ?? latest.declaredMax ?? observedRangeRef.current?.max ?? 1
-
-      const path = pathRef.current
-      if (!path || !interpolated) return
       const payload = interpolated.payload
       const numColumns = payload.length / 2
       const span = effectiveMax - effectiveMin || 1
@@ -339,6 +426,37 @@ export function ScopeHistoryBody({
       // stroke colour is set once in JSX below (a fixed prop for this
       // node variant, never changes live) — only `d` needs touching here.
       path.setAttribute('d', d)
+
+      const fill = fillRef.current
+      if (latest.variant === 'centred' && fill) {
+        // ScopeMod.png: "the area between the line and the centre line is
+        // painted". Per column that's the union of [centre, hi] and
+        // [lo, centre] — i.e. from min(lo, centre) up to max(hi, centre) —
+        // so one closed polygon per contiguous run of real columns: forward
+        // along the upper edge, back along the lower one.
+        const centre = latest.state.viewerCenterOverride ?? defaultCentre(effectiveMin, effectiveMax)
+        const yCentre = clamp(yOf(centre), 0, PANEL_HEIGHT)
+        let f = ''
+        let runStart = -1
+        const closeRun = (end: number) => {
+          if (runStart < 0) return
+          let upper = ''
+          let lower = ''
+          for (let c = runStart; c < end; c++) {
+            const x = (c / numColumns) * PANEL_WIDTH
+            upper += `${c === runStart ? 'M' : 'L'} ${x} ${Math.min(yOf(payload[c * 2 + 1]), yCentre)} `
+            lower = `L ${x} ${Math.max(yOf(payload[c * 2]), yCentre)} ` + lower
+          }
+          f += upper + lower + 'Z '
+          runStart = -1
+        }
+        for (let c = 0; c < numColumns; c++) {
+          if (Number.isNaN(payload[c * 2])) closeRun(c)
+          else if (runStart < 0) runStart = c
+        }
+        closeRun(numColumns)
+        fill.setAttribute('d', f)
+      }
     }
 
     registerPreviewRenderer(id, render)
@@ -354,6 +472,12 @@ export function ScopeHistoryBody({
   const commitRangeMax = state.onSetViewerRangeMax
   const effectiveMinForDisplay = state.viewerRangeMinOverride ?? declaredMin ?? observedRange?.min ?? 0
   const effectiveMaxForDisplay = state.viewerRangeMaxOverride ?? declaredMax ?? observedRange?.max ?? 1
+  const centreForDisplay = state.viewerCenterOverride ?? defaultCentre(effectiveMinForDisplay, effectiveMaxForDisplay)
+  const displaySpan = effectiveMaxForDisplay - effectiveMinForDisplay || 1
+  // The centre line's height as a 0..1 fraction from the panel's top —
+  // shared by the SVG line itself and its label outside the panel, so the
+  // two can never disagree.
+  const centreFraction = clamp((effectiveMaxForDisplay - centreForDisplay) / displaySpan, 0, 1)
 
   const classNames = [
     'node-card',
@@ -366,24 +490,122 @@ export function ScopeHistoryBody({
     .filter(Boolean)
     .join(' ')
 
+  const labelStyle = labelColor ? { color: labelColor } : undefined
+
   return (
     <div className={classNames} ref={rootRef}>
       <div className="scope-history-port scope-history-port-left">
-        <PortGlyph port={inputPort} side="left" instanceId={instanceId} connected={inputConnected} isPoly={false} />
+        <PortGlyph port={inputPort} side="left" instanceId={instanceId} connected={inputConnected} isPoly={false} styleOverride={portStyle} />
       </div>
       <div className="scope-history-port scope-history-port-right">
-        <PortGlyph port={outputPort} side="right" instanceId={instanceId} connected={outputConnected} isPoly={false} />
+        <PortGlyph port={outputPort} side="right" instanceId={instanceId} connected={outputConnected} isPoly={false} styleOverride={portStyle} />
       </div>
-      <svg className="scope-history-visual" viewBox={`0 0 ${PANEL_WIDTH} ${PANEL_HEIGHT}`}>
-        <path ref={pathRef} fill="none" stroke={traceColor} strokeWidth={1} strokeLinejoin="round" />
+      <svg className="scope-history-visual" ref={svgRef} viewBox={`0 0 ${PANEL_WIDTH} ${PANEL_HEIGHT}`}>
+        {variant === 'centred' && (
+          <line
+            x1={0}
+            x2={PANEL_WIDTH}
+            y1={centreFraction * PANEL_HEIGHT}
+            y2={centreFraction * PANEL_HEIGHT}
+            stroke={traceColor}
+            strokeOpacity={CENTRE_LINE_OPACITY}
+            strokeWidth={1}
+          />
+        )}
+        {variant !== 'line' && <path ref={fillRef} fill={traceColor} fillOpacity={FILL_OPACITY} stroke="none" />}
+        <path ref={pathRef} fill="none" stroke={traceColor} strokeWidth={1} strokeLinejoin={variant === 'binary' ? 'miter' : 'round'} />
       </svg>
-      <div className="scope-history-range">
-        <EditableStat label="" value={effectiveMaxForDisplay} decimals={2} onCommit={commitRangeMax} />
-        <EditableStat label="" value={effectiveMinForDisplay} decimals={2} onCommit={commitRangeMin} />
-      </div>
+      {variant === 'binary' ? (
+        // Gate.png: TRUE/FALSE "in the same small muted face the other
+        // viewers use for their range. Neither is editable — there is
+        // nothing to zoom into." Positioned at the exact levels the trace
+        // uses (BINARY_TRUE_INSET/BINARY_FALSE_INSET), not the panel's own edges.
+        <div className="scope-history-range scope-history-range-levels" style={labelStyle}>
+          <span style={{ top: `${(BINARY_TRUE_INSET / PANEL_HEIGHT) * 100}%` }}>TRUE</span>
+          <span style={{ top: `${(1 - BINARY_FALSE_INSET / PANEL_HEIGHT) * 100}%` }}>FALSE</span>
+        </div>
+      ) : (
+        <div className="scope-history-range" style={labelStyle}>
+          <EditableStat label="" value={effectiveMaxForDisplay} decimals={labelDecimals(effectiveMaxForDisplay)} onCommit={commitRangeMax} />
+          <EditableStat label="" value={effectiveMinForDisplay} decimals={labelDecimals(effectiveMinForDisplay)} onCommit={commitRangeMin} />
+        </div>
+      )}
+      {variant === 'centred' && (
+        <div className="scope-history-range scope-history-range-levels" style={labelStyle}>
+          <span style={{ top: `${clamp(centreFraction, CENTRE_LABEL_EDGE_CLEARANCE, 1 - CENTRE_LABEL_EDGE_CLEARANCE) * 100}%` }}>
+            <EditableStat label="" value={centreForDisplay} decimals={labelDecimals(centreForDisplay)} onCommit={state.onSetViewerCenter} />
+          </span>
+        </div>
+      )}
       <div className="scope-history-window">
         <EditableStat label="" value={currentTimeWindow} decimals={2} unit="s" onCommit={(v) => state.onParameterCommit?.(timeWindowParameterId, v)} />
       </div>
     </div>
   )
+}
+
+/** Gate.png's trace: "a square-edged region: filled from the FALSE line up
+    to the TRUE line wherever the value is true, empty wherever it is false.
+    Dim blue fill, brighter blue along the edges."
+
+    Drawn on the real SCREEN-pixel grid, not the 256 data columns: "if
+    several transitions fall inside one pixel column, that column is drawn
+    as filled rather than being point-sampled and missed". Each pixel column
+    is filled iff any data column belonging to it was true at any instant
+    (hi = 1 — the engine folds every sample into its column, so a single-
+    sample pulse counts). That is exactly the guarantee and no more: a pulse
+    always lights at least one whole pixel at every zoom level, while a
+    false stretch spanning a whole pixel still reads as empty, so a dense
+    pulse train never smears into one solid block. `unitsPerScreenPixel` is
+    measured live, so the grid follows the canvas zoom. NaN (never-written)
+    columns draw nothing at all, not a FALSE baseline.
+*/
+function drawBinary(payload: Float32Array, outline: SVGPathElement, fill: SVGPathElement | null, unitsPerScreenPixel: number): void {
+  const numColumns = payload.length / 2
+  const columnWidth = PANEL_WIDTH / numColumns
+  const pixelCount = Math.max(1, Math.round(PANEL_WIDTH / Math.max(unitsPerScreenPixel, 1e-3)))
+  const pixelWidth = PANEL_WIDTH / pixelCount
+  const yTrue = BINARY_TRUE_INSET
+  const yFalse = PANEL_HEIGHT - BINARY_FALSE_INSET
+
+  // Per pixel column: 0 = no data yet, 1 = data, all false, 2 = true somewhere.
+  const state = new Uint8Array(pixelCount)
+  const EPSILON = 1e-6 // a column ending exactly on a pixel boundary must not spill into the next pixel
+  for (let c = 0; c < numColumns; c++) {
+    if (Number.isNaN(payload[c * 2])) continue
+    // A column narrower than a pixel belongs to the one pixel holding its
+    // centre (so a pulse lights exactly one pixel, never two neighbours it
+    // merely grazes); a wider one (zoomed in) fills every pixel it spans.
+    const narrow = columnWidth < pixelWidth
+    const first = narrow ? Math.floor(((c + 0.5) * columnWidth) / pixelWidth) : Math.floor((c * columnWidth) / pixelWidth + EPSILON)
+    const last = narrow ? first : Math.min(pixelCount - 1, Math.ceil(((c + 1) * columnWidth) / pixelWidth - EPSILON) - 1)
+    const value = payload[c * 2 + 1] >= 0.5 ? 2 : 1
+    for (let px = first; px <= last; px++) state[px] = Math.max(state[px], value)
+  }
+
+  let edges = ''
+  let rects = ''
+  let px = 0
+  while (px < pixelCount) {
+    if (state[px] === 0) {
+      px++
+      continue
+    }
+    // One contiguous stretch of real data: its own FALSE baseline with the
+    // true regions raised out of it.
+    const segmentX0 = px * pixelWidth
+    edges += `M ${segmentX0} ${yFalse} `
+    while (px < pixelCount && state[px] !== 0) {
+      if (state[px] === 2) {
+        const x0 = px * pixelWidth
+        while (px < pixelCount && state[px] === 2) px++
+        const x1 = px * pixelWidth
+        edges += `L ${x0} ${yFalse} L ${x0} ${yTrue} L ${x1} ${yTrue} L ${x1} ${yFalse} `
+        rects += `M ${x0} ${yFalse} L ${x0} ${yTrue} L ${x1} ${yTrue} L ${x1} ${yFalse} Z `
+      } else px++
+    }
+    edges += `L ${px * pixelWidth} ${yFalse} `
+  }
+  outline.setAttribute('d', edges)
+  fill?.setAttribute('d', rects)
 }

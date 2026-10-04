@@ -1,7 +1,6 @@
 // design/Visualization/Scope1.png: the thin, type-specific wrapper around
-// ScopeHistoryBody.tsx — "Build this one only" (the other two variants,
-// Scope for Modulation and Gate, come as separate tasks reusing that same
-// shared body with their own colour/bounds). Everything this node needs
+// ScopeHistoryBody.tsx — the 'line' variant; its siblings
+// ScopeModulationBody.tsx and GateBody.tsx are the other two. Everything this node needs
 // that isn't plain-Control-specific lives there; this file only supplies
 // what's different: the trace colour and ViewScopeControlNode.h's own
 // parameter id/bounds.
@@ -27,6 +26,7 @@ export function ScopeControlBody({ descriptor, state, instanceId }: { descriptor
       descriptor={descriptor}
       state={state}
       instanceId={instanceId}
+      variant="line"
       traceColor={tokens.color.portValue} // plain Control — white, same colour classifyPortUiKind gives this port
       timeWindowParameterId="view.scope.control.timeWindow"
       minTimeWindowSeconds={MIN_TIME_WINDOW_SECONDS}

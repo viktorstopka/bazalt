@@ -748,7 +748,12 @@ auto-inserted** by `connectWithAutoAdapt` — manual placement only.
 Routes whatever's plugged into it straight to the monitored output, so you can
 audition one point in the graph in isolation without rewiring anything. **In:** `in` — `Audio`. **Behavior:** auditions this point in the graph, replacing normal output while active. **Taps:** `in`.
 
-#### `view.scope` — Scope
+#### `view.scope` — Scope ⚠️ *deprecated (2026-10-04)*
+**Deprecated:** hidden from the Add menu (`Node::isDeprecated()`); an existing
+patch that uses it still loads and runs unchanged. Superseded by the
+scrolling-history viewers below. Note it was, with Glance, the only viewer that
+drew an *Audio* waveform — the history viewers are Control/Boolean only.
+
 A live oscilloscope trace of whatever's wired into it, over a window of time —
 the standard "watch the waveform" view. **In:** `in` — `Audio` or `Control`. **Structural:** `timeWindow`, `triggerMode`.
 
@@ -761,8 +766,56 @@ actually doing to the harmonic content. **In:** `in` — `Audio`. **Structural:*
 A live level readout of whatever's wired into it — peak, RMS, true peak, or a
 histogram, for watching loudness rather than shape. **In:** `in` — `Audio` or `Control`. **Structural:** `mode` (enum: peak, RMS, true peak, histogram).
 
-#### `view.glance` — Glance ✅ *(new, Milestone 0.6 — wiki/NODES_Gaps.md's `single-type-preview-coverage`)*
+#### `view.glance` — Glance ⚠️ *deprecated (2026-10-04) — was Milestone 0.6, wiki/NODES_Gaps.md's `single-type-preview-coverage`*
+**Deprecated:** hidden from the Add menu, still loads and runs in an existing
+patch. Its Waveform preview is capped at the tap ring's ~0.2s; the per-type
+viewers below replace it.
+
 **In:** `in` — `Audio`, `Control`, `Boolean` or `Event` (polymorphic — adopts whatever's wired, same mechanism `util.reroute`/`view.scope`/`view.meter` use). **Out:** `out` — same type/quantity as `in`, unchanged value. **Behavior:** splices into any existing cable like `util.reroute` does, and shows a live trace of whatever passes through — unlike the three viewers above, it has a real output and doesn't need a separate branch off the wire. `NodeLayoutVariant::Glance`: no title, no parameter list — just an input glyph, a compact live preview, an output glyph. Doesn't support `Note` or `Data`, same scope `view.scope`/`view.meter` already have.
+
+### Per-type viewers — pass-through, one per signal type
+
+Each splices into a cable (real `in` → `out`, value unchanged), has no title,
+and is the **Ctrl/Cmd-click default viewer** for its port type — one table,
+`graphStore.ts`'s `DEFAULT_VIEWER_BY_PORT_KIND`, keyed by the same
+classification that colours the port.
+
+#### `view.ripple` — Ripple ✅ *(design/Visualization/Ripple.png)*
+**In/Out:** `Event`. Expanding rings, one per event.
+
+#### `view.count` — Count ✅ *(design/Visualization/Count.png)*
+**In/Out:** integer `Control`. The current value as a number, editable Min/Max footer.
+
+#### The three scrolling-history viewers
+One shared panel (`ScopeHistoryBody.tsx`) and one shared engine setting
+(`ViewHistoryWindow.h`: a structural `timeWindow`, 0.01–30 s, auto-chosen on
+connection from the signal's observed period, `PreviewKind::RollingHistory`
+min/max-decimated columns that never drop a peak). They differ only in vertical
+scale and trace style:
+
+#### `view.scope.control` — Scope ✅ *(design/Visualization/Scope1.png)*
+**In/Out:** plain (real-quantity) `Control`. White line; editable Min/Max
+range seeded from the source's declared bounds, else observed then frozen.
+**Structural:** `view.scope.control.timeWindow`.
+
+#### `view.scope.modulation` — Scope (Modulation) ✅ *(design/Visualization/ScopeMod.png)*
+**In/Out:** `Control`, adopting the source's *quantity* (polymorphic, so a
+Unipolar source splices in without an adapter; Bipolar when unconnected).
+Everything orange. The range autofills from the source's polarity (bipolar
+−1…1, unipolar 0…1), still editable. A horizontal **centre line**
+(`properties["viewer.center"]`, editable; defaults to the middle of the range —
+0 for bipolar, 0.5 for unipolar) and the area between trace and centre filled
+dim orange under a brighter line: a signed value, not a level.
+**Structural:** `view.scope.modulation.timeWindow`.
+
+#### `view.gate` — Gate ✅ *(design/Visualization/Gate.png)*
+**In/Out:** `Boolean`. Everything blue, `?` glyphs. Fixed, non-editable
+TRUE/FALSE scale; a square-edged region filled from FALSE up to TRUE wherever
+the value was true. **A brief true state is never dropped:** the engine folds
+every sample into its column's (lo, hi), and the UI draws on the real
+screen-pixel grid — any pixel column holding a true sample is filled, at every
+canvas zoom — so a single-sample pulse is always a visible sliver.
+**Structural:** `view.gate.timeWindow`.
 
 ## factory — content-owning nodes 📋 (all — Correction 2, none built)
 

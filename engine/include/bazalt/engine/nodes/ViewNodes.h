@@ -44,6 +44,15 @@ namespace bazalt::engine::nodes
         capacity. `trigger` is `Free` (always the newest window) or `Rising
         edge` (start on the latest rising crossing of the signal's mid-level,
         which holds a periodic waveform still).
+
+        DEPRECATED (2026-10-04, direct instruction: "there are currently 2
+        scope nodes, one should be deprecated and deactivated - the older
+        one"): superseded by the scrolling-history viewers view.scope.control,
+        view.scope.modulation and view.gate. Hidden from the Add menu; an
+        existing patch that uses it still loads and runs unchanged. Note it is
+        still the only placeable-until-now viewer that drew an AUDIO waveform
+        (with Glance, also deprecated) — the history viewers are Control/
+        Boolean only.
     */
     class ViewScopeNode : public InheritingPortsNode
     {
@@ -56,6 +65,7 @@ namespace bazalt::engine::nodes
         juce::String getTitle() const override { return "Scope"; }
         juce::String getCategory() const override { return "View"; }
         NodeLayoutVariant getLayoutVariant() const override { return NodeLayoutVariant::Horizontal; }
+        bool isDeprecated() const noexcept override { return true; }
 
         void resolveIncomingPort (const juce::String& toPortId, const PortDescriptor& source) noexcept override
         {

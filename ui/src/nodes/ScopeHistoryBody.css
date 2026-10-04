@@ -15,12 +15,14 @@
   overflow: visible; /* the range labels below deliberately sit OUTSIDE this box */
 }
 
-/* Zero-size anchors near the panel's own top corners — same convention
-   CountBody.css's own .view-count-port already established (top-inset,
-   not vertically centred the way RippleBody.css's ports are). */
+/* Zero-size anchors on the panel's own side edges, a quarter of the way
+   down — where Scope1.png, ScopeMod.png and Gate.png all put them (~25% of
+   the panel height). Not at the very top: the range labels outside the
+   right edge ("1"/"127" at the top, Gate's "TRUE") would sit under the
+   output glyph there. */
 .scope-history-port {
   position: absolute;
-  top: 14px;
+  top: 32px;
   width: 0;
   height: 0;
 }
@@ -82,4 +84,18 @@
   font-size: 11px;
   color: var(--color-textSecondary);
   white-space: nowrap;
+}
+
+/* Labels pinned to a specific level rather than the panel's top/bottom
+   edges — Gate.png's TRUE/FALSE (at the trace's own inset levels) and
+   ScopeMod.png's centre value (at the centre line). Each child is centred
+   vertically on its `top` so the text sits ON the level it names. */
+.scope-history-range-levels {
+  display: block;
+}
+
+.scope-history-range-levels > * {
+  position: absolute;
+  left: 0;
+  transform: translateY(-50%);
 }

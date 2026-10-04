@@ -79,6 +79,16 @@ namespace bazalt::engine
         */
         virtual bool hasPolymorphicPorts() const noexcept { return false; }
 
+        /** True for a node type that has been superseded and is no longer
+            offered for placement (the Add menu hides it), but still loads,
+            compiles and runs exactly as before wherever an existing patch
+            already uses it — so retiring a node never breaks a saved graph.
+            Deprecation is a catalog fact, not a runtime one: nothing on the
+            audio path reads it. The node's own doc comment says what
+            replaced it.
+        */
+        virtual bool isDeprecated() const noexcept { return false; }
+
         /** Growable port groups (SIGNAL_TYPES.md §6; PortGroups.h has the
             whole mechanism). -1 (the default) means this node has no
             growable group. Otherwise: how many members of the group the

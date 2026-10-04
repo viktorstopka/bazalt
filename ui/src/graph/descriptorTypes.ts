@@ -223,6 +223,10 @@ export interface NodeDescriptor {
       graphStore.getEndpoint() for how the UI resolves them.
   */
   hasPolymorphicPorts?: boolean
+  /** Node::isDeprecated(): superseded, hidden from the Add menu, but still
+      loads and runs wherever an existing patch already uses it. Absent on
+      mock descriptors. */
+  deprecated?: boolean
   /** UI-only flag, not part of the C++ schema (NODE_EDITOR.md §3's "mock
       (UI-only) descriptors... marked as mocks") — true for every entry in
       mockDescriptors.ts, absent/false for anything NodeFactory::describeAll()

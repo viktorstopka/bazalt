@@ -60,6 +60,7 @@ import type { NodeDescriptor, PortDescriptor, Quantity, ValueKind } from './desc
 import { fetchNodeDescriptors } from './fetchNodeDescriptors'
 import { canConnectPorts, findPort, type ConnectionEndpoint } from './canConnect'
 import { quantityUnit } from '../format/valueFormat'
+import { classifyPortUiKind, type PortUiKind } from './portUiKind'
 import {
   graphAddNode,
   graphConnectWithAutoAdapt,
@@ -122,12 +123,18 @@ export interface GraphNode {
       countMaxOverride above (properties["viewer.rangeMin"]/["viewer.rangeMax"],
       same plain-number-via-graphSetProperty storage), shared by every
       auto-ranging viewer (ScopeHistoryBody.tsx, every view.scope.* variant
-      and a future view.gate) rather than one bespoke property-key pair per
+      and view.gate) rather than one bespoke property-key pair per
       node type. Undefined until the user has edited it — ScopeHistoryBody.tsx's
       own auto-range/auto-freeze logic is what supplies a value before that.
   */
   viewerRangeMinOverride?: number
   viewerRangeMaxOverride?: number
+  /** design/Visualization/ScopeMod.png's editable centre line
+      (properties["viewer.center"]) — the value the filled trace is painted
+      from. Same storage and same "undefined until edited" rule as the range
+      pair above; ScopeHistoryBody.tsx supplies the default (the middle
+      of the range: 0 for bipolar, 0.5 for unipolar) before that. */
+  viewerCenterOverride?: number
 }
 
 /** TypedValueNodeBase.h's `TypedValueType` enum, mirrored — rewritten per
@@ -313,6 +320,7 @@ function patchJsonToLocalState(json: string): { nodes: Map<string, GraphNode>; w
     const countMax = properties['view.count.max']
     const viewerRangeMin = properties['viewer.rangeMin']
     const viewerRangeMax = properties['viewer.rangeMax']
+    const viewerCenter = properties['viewer.center']
     nodes.set(n.id, {
       id: n.id,
       typeId: n.type,
@@ -326,6 +334,7 @@ function patchJsonToLocalState(json: string): { nodes: Map<string, GraphNode>; w
       countMaxOverride: typeof countMax === 'number' ? countMax : undefined,
       viewerRangeMinOverride: typeof viewerRangeMin === 'number' ? viewerRangeMin : undefined,
       viewerRangeMaxOverride: typeof viewerRangeMax === 'number' ? viewerRangeMax : undefined,
+      viewerCenterOverride: typeof viewerCenter === 'number' ? viewerCenter : undefined,
     })
   }
   const wires = new Map<string, GraphWire>()
@@ -990,6 +999,20 @@ export function setViewerRangeMax(id: string, value: number): void {
   )
 }
 
+/** design/Visualization/ScopeMod.png: "The centre line's position is
+    editable, so a unipolar signal can be given a centre of 0.5, or of 0" —
+    the same generic, type-id-agnostic property storage as the range pair
+    above. */
+export function setViewerCenter(id: string, value: number): void {
+  void withHistory(
+    () => fireCommand(() => graphSetProperty(id, 'viewer.center', value)).then(() => undefined),
+    () => {
+      const node = nodes.get(id)
+      if (node) nodes.set(id, { ...node, viewerCenterOverride: value })
+    },
+  )
+}
+
 export function toggleBypass(id: string): void {
   const node = nodes.get(id)
   if (!node) return
@@ -1469,141 +1492,65 @@ export function createMacroFromPort(nodeId: string, portId: string, x: number, y
   return macroId
 }
 
-/** The authoritative check `createRippleFromPort` uses right before
-    committing — same "check canConnectPorts against the real candidate
-    descriptor before sending any command" discipline isMacroConnectable()
-    above follows, rather than trusting the coarse Event-type check in
-    createRippleFromPort/InfiniteCanvas.tsx's own gating to be the only
-    guard.
-*/
-function isRippleConnectable(port: PortDescriptor): boolean {
-  const rippleDescriptor = getDescriptor('view.ripple')
-  const rippleInput = rippleDescriptor && findPort(rippleDescriptor, 'in', 'input')
-  if (!rippleInput) return false
-  return canConnectPorts(port, rippleInput).outcome !== 'reject'
+/** "Ctrl/Cmd-clicking an output port spawns the viewer matching that
+    port's type, already connected" (design/Visualization/Scope1.png; the
+    same rule Ripple.png, Count.png, ScopeMod.png and Gate.png each state for
+    their own type). One table, keyed by the same port classification that
+    colours the port (classifyPortUiKind), so "which viewer" can never drift
+    from "which colour": a port that looks orange opens the orange viewer.
+    Undefined for a type with no viewer of its own (Audio, Note, Data). */
+const DEFAULT_VIEWER_BY_PORT_KIND: Partial<Record<PortUiKind, string>> = {
+  trigger: 'view.ripple', // Ripple.png — the Event viewer
+  integer: 'view.count', // Count.png
+  value: 'view.scope.control', // Scope1.png — plain real-quantity Control
+  modulation: 'view.scope.modulation', // ScopeMod.png — Unipolar/Bipolar Control
+  boolean: 'view.gate', // Gate.png
 }
 
-/** design/Visualization/Ripple.png: "Ctrl/Cmd-clicking an Event output
-    port spawns this node already connected to that port. It is the
-    default viewer for the Event type." Creates a new view.ripple node at
-    (x, y) and wires the clicked output port straight into its own 'in'
-    port — one undo step (addNode -> connect), the same composite-command
-    shape createMacroFromPort above uses, just simpler: view.ripple has no
-    parameters at all, so there's no seed/slot-claim step in between.
+export function defaultViewerTypeForPort(port: PortDescriptor): string | undefined {
+  // classifyPortUiKind falls back to 'value' for a type it has no colour for
+  // (Spectral) — only a genuine Control port gets the Control scope.
+  const kind = classifyPortUiKind(port)
+  if (kind === 'value' && port.type !== 'control') return undefined
+  return DEFAULT_VIEWER_BY_PORT_KIND[kind]
+}
+
+/** Spawns `defaultViewerTypeForPort`'s viewer at (x, y) and wires the
+    clicked output port straight into its own 'in' port — one undo step
+    (addNode -> connect), the same composite-command shape createMacroFromPort
+    above uses, just simpler: no viewer needs a seed/slot-claim step in
+    between.
 
     No-op (returns undefined, no command sent) if the port doesn't exist,
-    isn't Event-typed, or isRippleConnectable() says the real engine would
-    reject the resulting wire anyway — InfiniteCanvas.tsx's Ctrl/Cmd+click
-    handling is expected to have already checked the port's resolved type
-    before calling this, but this function re-checks both itself too, the
-    same "check first, commit only if it would work" discipline
-    createMacroFromPort's own doc comment explains in full (and for the
-    same reason: never commit the addNode step and then fail the connect
-    step, leaving an orphaned view.ripple behind).
+    has no viewer, or canConnectPorts() against the real viewer descriptor
+    says the engine would reject the wire anyway — the same "check first,
+    commit only if it would work" discipline createMacroFromPort's own doc
+    comment explains in full (never commit the addNode step and then fail
+    the connect step, leaving an orphaned viewer behind).
 */
-export function createRippleFromPort(nodeId: string, portId: string, x: number, y: number): string | undefined {
+export function createViewerFromPort(nodeId: string, portId: string, x: number, y: number): string | undefined {
   const endpoint = getEndpoint(nodeId, portId, 'output')
-  if (!endpoint || endpoint.port.type !== 'event' || !isRippleConnectable(endpoint.port)) return undefined
+  const typeId = endpoint && defaultViewerTypeForPort(endpoint.port)
+  if (!endpoint || !typeId) return undefined
 
-  const rippleId = makeId('node')
+  const viewerDescriptor = getDescriptor(typeId)
+  const viewerInput = viewerDescriptor && findPort(viewerDescriptor, 'in', 'input')
+  if (!viewerInput || canConnectPorts(endpoint.port, viewerInput).outcome === 'reject') return undefined
+
+  const viewerId = makeId('node')
 
   void withHistory(
     async () => {
-      if (!(await fireCommand(() => graphAddNode('view.ripple', rippleId, x, y)))) return
-      await fireCommand(() => graphConnectWithAutoAdapt(nodeId, portId, rippleId, 'in'))
+      if (!(await fireCommand(() => graphAddNode(typeId, viewerId, x, y)))) return
+      await fireCommand(() => graphConnectWithAutoAdapt(nodeId, portId, viewerId, 'in'))
     },
     () => {
-      nodes.set(rippleId, { id: rippleId, typeId: 'view.ripple', x, y, bypassed: false })
-      const newWireId = wireId(rippleId, 'in')
-      wires.set(newWireId, { id: newWireId, fromNodeId: nodeId, fromPortId: portId, toNodeId: rippleId, toPortId: 'in' })
-      selection = new Set([rippleId])
+      nodes.set(viewerId, { id: viewerId, typeId, x, y, bypassed: false })
+      const newWireId = wireId(viewerId, 'in')
+      wires.set(newWireId, { id: newWireId, fromNodeId: nodeId, fromPortId: portId, toNodeId: viewerId, toPortId: 'in' })
+      selection = new Set([viewerId])
     },
   )
 
-  return rippleId
-}
-
-/** Same authoritative-recheck discipline isRippleConnectable() above
-    follows, for view.count's own "in" port. */
-function isCountConnectable(port: PortDescriptor): boolean {
-  const countDescriptor = getDescriptor('view.count')
-  const countInput = countDescriptor && findPort(countDescriptor, 'in', 'input')
-  if (!countInput) return false
-  return canConnectPorts(port, countInput).outcome !== 'reject'
-}
-
-/** design/Visualization/Count.png: "Ctrl/Cmd-clicking an integer output
-    port spawns this node already connected to that port. It is the
-    default viewer for the integer type." Same shape as
-    createRippleFromPort above, one undo step (addNode -> connect) — see
-    that function's own doc comment for the full reasoning, which applies
-    here unchanged (view.count also has no parameters at all, so no seed/
-    slot-claim step in between).
-
-    No-op (returns undefined, no command sent) if the port doesn't exist,
-    isn't an integer Control port, or isCountConnectable() says the real
-    engine would reject the resulting wire anyway.
-*/
-export function createCountFromPort(nodeId: string, portId: string, x: number, y: number): string | undefined {
-  const endpoint = getEndpoint(nodeId, portId, 'output')
-  if (!endpoint || endpoint.port.type !== 'control' || !endpoint.port.isInteger || !isCountConnectable(endpoint.port)) return undefined
-
-  const countId = makeId('node')
-
-  void withHistory(
-    async () => {
-      if (!(await fireCommand(() => graphAddNode('view.count', countId, x, y)))) return
-      await fireCommand(() => graphConnectWithAutoAdapt(nodeId, portId, countId, 'in'))
-    },
-    () => {
-      nodes.set(countId, { id: countId, typeId: 'view.count', x, y, bypassed: false })
-      const newWireId = wireId(countId, 'in')
-      wires.set(newWireId, { id: newWireId, fromNodeId: nodeId, fromPortId: portId, toNodeId: countId, toPortId: 'in' })
-      selection = new Set([countId])
-    },
-  )
-
-  return countId
-}
-
-/** Same authoritative-recheck discipline isRippleConnectable()/
-    isCountConnectable() above follow, for view.scope.control's own "in"
-    port. */
-function isScopeControlConnectable(port: PortDescriptor): boolean {
-  const scopeDescriptor = getDescriptor('view.scope.control')
-  const scopeInput = scopeDescriptor && findPort(scopeDescriptor, 'in', 'input')
-  if (!scopeInput) return false
-  return canConnectPorts(port, scopeInput).outcome !== 'reject'
-}
-
-/** design/Visualization/Scope1.png: "Ctrl/Cmd-clicking an output port
-    spawns the viewer matching that port's type, already connected." For a
-    plain (non-integer, non-Modulation-quantity) Control port specifically
-    — view.count/createCountFromPort already owns the integer case, and a
-    unipolar/bipolar Modulation port has no viewer of its own yet (the
-    task that added this explicitly scoped Modulation/Gate as separate,
-    later work). Same shape as createCountFromPort above, one undo step.
-*/
-export function createScopeControlFromPort(nodeId: string, portId: string, x: number, y: number): string | undefined {
-  const endpoint = getEndpoint(nodeId, portId, 'output')
-  if (!endpoint || endpoint.port.type !== 'control' || endpoint.port.isInteger) return undefined
-  if (endpoint.port.quantity === 'unipolar' || endpoint.port.quantity === 'bipolar') return undefined
-  if (!isScopeControlConnectable(endpoint.port)) return undefined
-
-  const scopeId = makeId('node')
-
-  void withHistory(
-    async () => {
-      if (!(await fireCommand(() => graphAddNode('view.scope.control', scopeId, x, y)))) return
-      await fireCommand(() => graphConnectWithAutoAdapt(nodeId, portId, scopeId, 'in'))
-    },
-    () => {
-      nodes.set(scopeId, { id: scopeId, typeId: 'view.scope.control', x, y, bypassed: false })
-      const newWireId = wireId(scopeId, 'in')
-      wires.set(newWireId, { id: newWireId, fromNodeId: nodeId, fromPortId: portId, toNodeId: scopeId, toPortId: 'in' })
-      selection = new Set([scopeId])
-    },
-  )
-
-  return scopeId
+  return viewerId
 }

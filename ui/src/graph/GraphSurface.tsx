@@ -31,6 +31,7 @@ import {
   setCountMax,
   setViewerRangeMin,
   setViewerRangeMax,
+  setViewerCenter,
   resolveNodeDescriptor,
   type GraphNode,
   type GraphWire,
@@ -87,6 +88,8 @@ function NodeWrapper({ node, descriptor, selected, selection, connectedPortIds, 
     viewerRangeMaxOverride: node.viewerRangeMaxOverride,
     onSetViewerRangeMin: (value) => setViewerRangeMin(node.id, value),
     onSetViewerRangeMax: (value) => setViewerRangeMax(node.id, value),
+    viewerCenterOverride: node.viewerCenterOverride,
+    onSetViewerCenter: (value) => setViewerCenter(node.id, value),
     overlayTarget,
   }
 

@@ -320,10 +320,14 @@ edit. Every later `data.*`/`osc.wavetable`/`sampler.*` node rides on this for fr
 | `util.unipolarToBipolar` | Implemented | | | `wiki/plans/PropsAndMacroRedesign.md` Batch D — new, replacing `random.stepped`/`seq.steps`/`data.lookup`'s old per-node Unipolar/Bipolar selectors. Manual placement only, never auto-inserted. |
 | `util.bipolarToUnipolar` | Implemented | | | Same batch, the inverse direction. |
 
-### `view.*` — 5/5 Implemented
+### `view.*` — 10/10 Implemented (2 deprecated)
 
-`view.listen`, `view.scope`, `view.spectrum`, `view.meter`, `view.glance` — all
-Implemented.
+`view.listen`, `view.spectrum`, `view.meter`, `view.ripple`, `view.count`,
+`view.scope.control`, `view.scope.modulation`, `view.gate` — all Implemented.
+`view.scope` and `view.glance` are Implemented but **deprecated** (2026-10-04):
+hidden from the Add menu via `Node::isDeprecated()`, still load and run in
+existing patches. With them hidden, no placeable viewer draws an *Audio*
+waveform any more — the history viewers are Control/Boolean only.
 
 ### `factory.*` — content-owning nodes — 6 to build (none started)
 

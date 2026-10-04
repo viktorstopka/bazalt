@@ -7,7 +7,7 @@
 // source of truth.
 import { useMemo } from 'react'
 import type { NodeDescriptor, ParameterDescriptor, PortDescriptor, Quantity } from '../graph/descriptorTypes'
-import { classifyPortUiKind, portUiStyle, portUiStyleForEndpoint, parameterUiColor, resolvePortIsPoly } from '../graph/portUiKind'
+import { classifyPortUiKind, portUiStyle, portUiStyleForEndpoint, parameterUiColor, resolvePortIsPoly, type PortUiStyle } from '../graph/portUiKind'
 import { getEndpoint } from '../graph/graphStore'
 import type { NodeMultiplicityBadge, PortMultiplicityInfo } from '../graph/graphCommands'
 import { tokens } from '../theme/tokens'
@@ -22,6 +22,8 @@ import { MacroBody } from './MacroBody'
 import { RippleBody } from './RippleBody'
 import { CountBody } from './CountBody'
 import { ScopeControlBody } from './ScopeControlBody'
+import { ScopeModulationBody } from './ScopeModulationBody'
+import { GateBody } from './GateBody'
 import './NodeCard.css'
 
 /** PortDescriptor.h's own contract: "falls back to id in the UI if empty" —
@@ -110,7 +112,7 @@ export interface NodeCardState {
   /** design/Visualization/Scope1.png's editable vertical-range footer —
       the generic equivalent of countMinOverride/onSetCountMin above, for
       ANY viewer with an auto-ranging display scale (ScopeHistoryBody.tsx,
-      shared across every view.scope.* variant and a future view.gate).
+      shared across every view.scope.* variant and view.gate).
       A single, type-id-agnostic property key pair rather than one bespoke
       pair per viewer type — see graphStore.ts's setViewerRangeMin/Max.
       Undefined for every other node type, and for a viewer whose range has
@@ -120,6 +122,10 @@ export interface NodeCardState {
   viewerRangeMaxOverride?: number
   onSetViewerRangeMin?: (value: number) => void
   onSetViewerRangeMax?: (value: number) => void
+  /** design/Visualization/ScopeMod.png's editable centre line — see
+      graphStore.ts's GraphNode.viewerCenterOverride. */
+  viewerCenterOverride?: number
+  onSetViewerCenter?: (value: number) => void
   /** MacroEditTypeModal's own portal target (GraphSurface.tsx's
       `overlayTarget`, the screen-space `.infinite-canvas-overlay` div) —
       see MacroBody.tsx's own comment on why this can't just render inline:
@@ -303,17 +309,23 @@ export function PortGlyph({
   instanceId,
   connected,
   isPoly,
+  styleOverride,
 }: {
   port: PortDescriptor
   side: 'left' | 'right'
   instanceId?: string
   connected: boolean
   isPoly?: boolean
+  /** A viewer body whose whole panel is drawn in one type's colour
+      (design/Visualization/ScopeMod.png: "Everything is orange") fixes its
+      glyph to that style instead of the live-resolved one — a quantity-
+      polymorphic port would otherwise read white while nothing is wired. */
+  styleOverride?: PortUiStyle
 }) {
   // "side" is a 1:1 proxy for direction at every call site in this file
   // (input always renders left, output always right).
   const direction = side === 'left' ? 'input' : 'output'
-  const style = resolvedPortStyle(port, instanceId, direction, isPoly)
+  const style = styleOverride ?? resolvedPortStyle(port, instanceId, direction, isPoly)
   const color = style.color
   const showDot = direction === 'input' && !connected && isEditableInNode(port)
   // Every port glyph is the SAME size everywhere, full stop — no per-row
@@ -964,6 +976,10 @@ export function NodeCard({ descriptor: declaredDescriptor, state = {}, instanceI
   // design/Visualization/Scope1.png: same client-side-only typeId dispatch
   // as view.ripple/view.count just above.
   if (descriptor.typeId === 'view.scope.control') return <ScopeControlBody descriptor={descriptor} state={state} instanceId={instanceId} />
+  // design/Visualization/ScopeMod.png and Gate.png: the other two variants
+  // of the same scrolling-history panel (ScopeHistoryBody.tsx).
+  if (descriptor.typeId === 'view.scope.modulation') return <ScopeModulationBody descriptor={descriptor} state={state} instanceId={instanceId} />
+  if (descriptor.typeId === 'view.gate') return <GateBody descriptor={descriptor} state={state} instanceId={instanceId} />
   if (descriptor.layoutVariant === 'decoration') return <DecorationBody descriptor={descriptor} />
   if (descriptor.layoutVariant === 'singleton') return <SingletonBody descriptor={descriptor} state={state} instanceId={instanceId} />
   if (descriptor.layoutVariant === 'glance') return <GlanceBody descriptor={descriptor} state={state} instanceId={instanceId} />

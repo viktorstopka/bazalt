@@ -25,6 +25,14 @@ namespace bazalt::engine::nodes
         `util.reroute` does; add that if a real patch ever needs to glance
         at a note stream, not speculatively here) or `Data` (never converts
         implicitly, `canConnect` rejects it the same as everywhere else).
+
+        DEPRECATED (2026-10-04, direct instruction): its Waveform preview is
+        capped at the tap ring's ~0.2s, which view.scope.control's own doc
+        comment already called out as the reason that node replaced Glance's
+        role for slow signals; the per-type history viewers (view.scope.control,
+        view.scope.modulation, view.gate, view.count, view.ripple) now cover
+        what it was placed for. Hidden from the Add menu; existing patches
+        still load and run unchanged.
     */
     class ViewGlanceNode : public InheritingPortsNode
     {
@@ -35,6 +43,7 @@ namespace bazalt::engine::nodes
         int getNumOutputPorts() const noexcept override { return 1; }
 
         juce::String getTitle() const override { return "Glance"; }
+        bool isDeprecated() const noexcept override { return true; }
         juce::String getCategory() const override { return "View"; }
         NodeLayoutVariant getLayoutVariant() const override { return NodeLayoutVariant::Glance; }
 

@@ -92,6 +92,7 @@ function CatalogEntry({ descriptor }: { descriptor: NodeDescriptor }) {
       <div className="gallery-catalog-caption">
         <span>{descriptor.typeId}</span>
         {descriptor.isMock && <span className="gallery-mock-tag">mock</span>}
+        {descriptor.deprecated && <span className="gallery-mock-tag">deprecated</span>}
       </div>
     </div>
   )

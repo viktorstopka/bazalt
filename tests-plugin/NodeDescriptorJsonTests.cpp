@@ -144,6 +144,15 @@ TEST_CASE ("nodeDescriptorToVar reports the Glance layout variant and its declar
     CHECK ((*previews)[0]["portId"].toString() == "out");
 }
 
+TEST_CASE ("nodeDescriptorToVar reports whether a node type is deprecated",
+           "[plugin][NodeDescriptorJson][deprecated]")
+{
+    // The UI's Add menu hides deprecated types (they still load in an
+    // existing patch) — the flag has to actually reach the JSON for that.
+    CHECK (nodeDescriptorToVar (describeNode ("view.glance", nodes::ViewGlanceNode {}))["deprecated"] == juce::var (true));
+    CHECK (nodeDescriptorToVar (describeNode ("util.reroute", nodes::RerouteNode {}))["deprecated"] == juce::var (false));
+}
+
 TEST_CASE ("nodeDescriptorToVar serializes InstanceMixNode's port metadata intact",
            "[plugin][NodeDescriptorJson][M17]")
 {

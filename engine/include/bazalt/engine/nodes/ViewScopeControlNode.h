@@ -1,15 +1,15 @@
 #pragma once
 
-#include "bazalt/engine/graph/Node.h"
-#include <algorithm>
+#include "bazalt/engine/nodes/ViewHistoryWindow.h"
 
 namespace bazalt::engine::nodes
 {
     /** Stable type id: "view.scope.control" (design/Visualization/Scope1.png)
         — the default long-window scrolling-history viewer for plain Control
         signals (not integer, not Modulation-quantity — those get their own
-        variants, view.count and a future view.scope.modulation/view.gate;
-        "Build this one only" per the task that added it).
+        variants: view.count, view.scope.modulation and view.gate — the
+        latter two share this node's whole time-window mechanism through
+        ViewHistoryWindow.h).
 
         Replaces view.glance's own role as "the thing you'd reach for to
         watch a slow Control signal": Glance's Waveform preview inherits the
@@ -57,11 +57,9 @@ namespace bazalt::engine::nodes
     public:
         static constexpr int numInputs = 1;
         static constexpr int numOutputs = 1;
-        static constexpr float minTimeWindowSeconds = 0.01f;
-        static constexpr float maxTimeWindowSeconds = 30.0f;
-        static constexpr float defaultTimeWindowSeconds = 2.0f; // a reasonable starting guess; ScopeControlBody.tsx's
-                                                                  // own auto-window heuristic usually overwrites this
-                                                                  // within ~1s of a real connection
+        static constexpr float minTimeWindowSeconds = ViewHistoryWindow::minSeconds;
+        static constexpr float maxTimeWindowSeconds = ViewHistoryWindow::maxSeconds;
+        static constexpr float defaultTimeWindowSeconds = ViewHistoryWindow::defaultSeconds;
 
         int getNumInputPorts() const noexcept override { return numInputs; }
         int getNumOutputPorts() const noexcept override { return numOutputs; }
@@ -83,34 +81,13 @@ namespace bazalt::engine::nodes
             return { PortDescriptor { .id = "out", .type = SignalType::Control, .label = "Out", .isPrimaryOutput = true } };
         }
 
-        std::vector<ParameterDescriptor> getParameters() const override
-        {
-            return { ParameterDescriptor { .id = "view.scope.control.timeWindow",
-                                            .minValue = minTimeWindowSeconds,
-                                            .maxValue = maxTimeWindowSeconds,
-                                            .defaultValue = defaultTimeWindowSeconds,
-                                            .skew = 0.3f,
-                                            .unit = "s",
-                                            .displayName = "Time Window",
-                                            .quantity = Quantity::Time,
-                                            .curve = Curve::Logarithmic,
-                                            .isStructural = true } };
-        }
-
-        void setParameter (const juce::String& parameterId, float value) override
-        {
-            if (parameterId == "view.scope.control.timeWindow")
-                timeWindowSeconds = std::clamp (value, minTimeWindowSeconds, maxTimeWindowSeconds);
-        }
-
-        std::vector<PreviewDescriptor> getPreviews() const override
-        {
-            return { PreviewDescriptor { .kind = PreviewKind::RollingHistory, .portId = "out", .timeWindowSeconds = timeWindowSeconds } };
-        }
+        std::vector<ParameterDescriptor> getParameters() const override { return { window.getParameter() }; }
+        void setParameter (const juce::String& parameterId, float value) override { window.setParameter (parameterId, value); }
+        std::vector<PreviewDescriptor> getPreviews() const override { return { window.getPreview ("out") }; }
 
         void processSample (const float* inputs, float* outputs) noexcept override { outputs[0] = inputs[0]; }
 
     private:
-        float timeWindowSeconds = defaultTimeWindowSeconds;
+        ViewHistoryWindow window { "view.scope.control.timeWindow" };
     };
 }

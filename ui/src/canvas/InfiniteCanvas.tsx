@@ -13,10 +13,9 @@ import {
   canSplice,
   commitNodeMoves,
   commitWireDrag,
-  createCountFromPort,
   createMacroFromPort,
-  createRippleFromPort,
-  createScopeControlFromPort,
+  createViewerFromPort,
+  defaultViewerTypeForPort,
   deleteNodes,
   ensureInitialized,
   findWireAtInput,
@@ -963,57 +962,22 @@ export const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, InfiniteCanvasPro
       if (port) {
         e.preventDefault()
         if (port.direction === 'output') {
-          // design/Visualization/Ripple.png: "Ctrl/Cmd-clicking an Event
-          // output port spawns this node already connected to that port.
-          // It is the default viewer for the Event type." A plain click
-          // still starts the ordinary wireDrag gesture below — this only
-          // intercepts the modifier-held case, and only for a port whose
-          // live-resolved type is actually Event (getEndpoint, not the
-          // port's own static descriptor, same reasoning NodeCard.tsx's
-          // resolvedPortStyle already follows for polymorphic/config-driven
-          // ports).
+          // "Ctrl/Cmd-clicking an output port spawns the viewer matching
+          // that port's type, already connected" (design/Visualization/*.png
+          // — Ripple, Count, Scope, Scope (Modulation), Gate). A plain click
+          // still starts the ordinary wireDrag gesture below; this only
+          // intercepts the modifier-held case, and only when the port's
+          // live-resolved type (getEndpoint, not its static descriptor —
+          // same reasoning NodeCard.tsx's resolvedPortStyle follows) has a
+          // viewer at all. graphStore.ts's DEFAULT_VIEWER_BY_PORT_KIND is the
+          // one table that decides which.
           if (e.ctrlKey || e.metaKey) {
             const endpoint = getEndpoint(port.nodeId, port.portId, 'output')
-            if (endpoint && endpoint.port.type === 'event') {
+            if (endpoint && defaultViewerTypeForPort(endpoint.port)) {
               const worldPos = canvasToWorld(lastMouseCanvasX, lastMouseCanvasY)
               const x = snapValue(worldPos.x + 40, snapSettingsRef.current)
               const y = snapValue(worldPos.y + 40, snapSettingsRef.current)
-              createRippleFromPort(port.nodeId, port.portId, x, y)
-              requestFrame()
-              return
-            }
-            // design/Visualization/Count.png: "Ctrl/Cmd-clicking an integer
-            // output port spawns this node already connected to that port.
-            // It is the default viewer for the integer type." Same shape as
-            // the Event/Ripple branch just above, for an integer Control
-            // port instead.
-            if (endpoint && endpoint.port.type === 'control' && endpoint.port.isInteger) {
-              const worldPos = canvasToWorld(lastMouseCanvasX, lastMouseCanvasY)
-              const x = snapValue(worldPos.x + 40, snapSettingsRef.current)
-              const y = snapValue(worldPos.y + 40, snapSettingsRef.current)
-              createCountFromPort(port.nodeId, port.portId, x, y)
-              requestFrame()
-              return
-            }
-            // design/Visualization/Scope1.png: "Ctrl/Cmd-clicking an output
-            // port spawns the viewer matching that port's type" — a plain
-            // (non-integer, non-Modulation-quantity) Control port's own
-            // viewer. Checked after the integer branch above since an
-            // integer Control port would otherwise also match "control"
-            // here; Modulation (unipolar/bipolar) has no viewer of its own
-            // yet, so it deliberately falls through to the ordinary
-            // wireDrag gesture below instead of matching this branch.
-            if (
-              endpoint &&
-              endpoint.port.type === 'control' &&
-              !endpoint.port.isInteger &&
-              endpoint.port.quantity !== 'unipolar' &&
-              endpoint.port.quantity !== 'bipolar'
-            ) {
-              const worldPos = canvasToWorld(lastMouseCanvasX, lastMouseCanvasY)
-              const x = snapValue(worldPos.x + 40, snapSettingsRef.current)
-              const y = snapValue(worldPos.y + 40, snapSettingsRef.current)
-              createScopeControlFromPort(port.nodeId, port.portId, x, y)
+              createViewerFromPort(port.nodeId, port.portId, x, y)
               requestFrame()
               return
             }
