@@ -68,6 +68,7 @@
 import { useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, type WheelEvent as ReactWheelEvent } from 'react'
 import './ValueSlider.css'
 import { fromNormalizedPosition, toNormalizedPosition } from './sliderCurve'
+import { tokens, withAlpha } from '../theme/tokens'
 
 export interface ValueSliderProps {
   label: string
@@ -390,7 +391,7 @@ export function ValueSlider({ label, value, min, max, hardMin, hardMax, defaultV
     <div
       ref={rootRef}
       className="value-slider"
-      style={{ borderColor: color, color }}
+      style={{ borderColor: withAlpha(color, tokens.opacity.border), color }}
       onMouseDown={onMouseDown}
       onWheel={onWheel}
       onClick={(e) => e.stopPropagation()}

@@ -13,14 +13,19 @@
 /* Same background as the canvas itself (not transparent) — direct
    feedback: blend with the main view, but a fully transparent bar would
    let panned-under nodes/cables bleed through the title/icons whenever
-   they scroll underneath it. No border (removed). */
+   they scroll underneath it. design/TopBar.png, direct instruction,
+   2026-10-03: "a thin separator along its bottom edge" — the border this
+   comment used to say was removed is back, deliberately this time (a
+   literal design requirement, not the M5-era default this file's own
+   history already reverted once). */
 .top-bar {
   display: flex;
   align-items: center;
   gap: var(--space-sm);
   padding: var(--space-sm) var(--space-md);
   background: var(--color-background);
-  font-family: var(--font-mono);
+  border-bottom: var(--stroke-thin) solid var(--color-panelBorder);
+  font-family: var(--font-primary);
   color: var(--color-textPrimary);
 }
 
@@ -39,9 +44,13 @@
   overflow-x: auto;
 }
 
+/* design/TopBar.png: "uppercase, bold, white" — was weight 600 at 0.8
+   opacity (a quieter, de-emphasised title); this reference wants it to
+   read as the loudest thing in the bar. */
 .top-bar-title {
-  font-weight: 600;
-  opacity: 0.8;
+  font-weight: 700;
+  text-transform: uppercase;
+  color: var(--color-textPrimary);
 }
 
 .top-bar-error {

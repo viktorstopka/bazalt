@@ -1,0 +1,121 @@
+/* design/Macro.png: title is italic, neutral colour (no override needed —
+   `.node-title` already inherits `--color-textPrimary`, the neutral
+   default every other node's title uses too). */
+.macro-node-title {
+  font-style: italic;
+}
+
+/* Row 2's read-only type-summary chip — same pill shell as .ui-button
+   (Button.css) but a plain, non-interactive <div>, and `flex: 1` so it
+   fills the row beside the fixed-width "Edit T" button next to it. */
+.macro-type-chip {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  align-items: center;
+  justify-content: center;
+  height: 20px;
+  padding: 0 10px;
+  /* --canvas-hairline: see NodeCard.css's own .node-card comment — this
+     row lives inside the same scaled canvas layer. */
+  border: var(--canvas-hairline, var(--stroke-thin)) solid;
+  border-radius: var(--radius-sm);
+  font-family: var(--font-secondary); /* a value/data readout, not a name */
+  font-size: 12px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: default;
+}
+
+/* Row 1's fallback when there's no live relay to bind to yet (the M9
+   gallery's static entry, or a macro that hasn't claimed a slot) — same
+   shell as .value-slider/.trigger-select, just inert. */
+.macro-field-static {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  justify-content: space-between;
+  height: 20px;
+  padding: 0 8px;
+  border: var(--canvas-hairline, var(--stroke-thin)) solid;
+  border-radius: var(--radius-sm);
+  font-family: var(--font-secondary);
+  font-size: 12px;
+  opacity: 0.6;
+}
+
+/* ---- Edit Type modal -------------------------------------------------- */
+
+.macro-edit-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.5);
+}
+
+.macro-edit-modal {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+  width: 280px;
+  max-height: 80vh;
+  overflow-y: auto;
+  padding: var(--space-md);
+  background: var(--color-background);
+  border: var(--stroke-thin) solid var(--color-panelBorder);
+  border-radius: var(--radius-sm);
+  font-family: var(--font-primary);
+  font-size: 12px;
+  color: var(--color-textPrimary);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+}
+
+.macro-edit-modal-title {
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.macro-edit-field {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-sm);
+}
+
+.macro-edit-field-column {
+  flex-direction: column;
+  align-items: stretch;
+}
+
+.macro-edit-field select,
+.macro-edit-field input,
+.macro-edit-field textarea {
+  font-family: var(--font-secondary);
+  font-size: 12px;
+  color: var(--color-textPrimary);
+  background: var(--color-panel);
+  border: var(--stroke-thin) solid var(--color-panelBorder);
+  border-radius: var(--radius-sm);
+  padding: 4px 6px;
+}
+
+.macro-edit-field input[type='number'] {
+  width: 90px;
+  text-align: right;
+}
+
+.macro-edit-field textarea {
+  resize: vertical;
+  font-family: var(--font-secondary);
+}
+
+.macro-edit-modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-sm);
+  margin-top: var(--space-xs);
+}

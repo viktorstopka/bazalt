@@ -56,9 +56,10 @@
 // prediction before a command is even sent — that a brief flash-then-
 // revert there is an acceptable, honest "that didn't work" signal rather
 // than the previous glitch-on-every-gesture cost).
-import type { NodeDescriptor, PortDescriptor, Quantity } from './descriptorTypes'
+import type { NodeDescriptor, PortDescriptor, Quantity, ValueKind } from './descriptorTypes'
 import { fetchNodeDescriptors } from './fetchNodeDescriptors'
 import { canConnectPorts, findPort, type ConnectionEndpoint } from './canConnect'
+import { quantityUnit } from '../format/valueFormat'
 import {
   graphAddNode,
   graphConnectWithAutoAdapt,
@@ -90,13 +91,114 @@ export interface GraphNode {
       mirrors the engine's own NodeInstance.parameters for this node.
   */
   parameterValues?: Record<string, number>
-  /** wiki/plans/UtilMacro.md: cosmetic-only display unit for a util.macro
-      node, mirrored from NodeInstance.properties["util.macro.unit"] —
-      MacroKnob.tsx reads this for its own display, same as titleOverride
-      above reads properties["title"]. Undefined for every other node type,
-      and for a macro created from a port with no unit of its own.
+  /** wiki/plans/PropsAndMacroRedesign.md Batch E / design/Macro.png: an
+      Enum-typed macro's own option labels — a cosmetic property, not a
+      real engine parameter (properties["util.macro.enumOptions"], a JSON
+      string array), since
+      TypedValueNodeBase.h's `buildTypedOutputPort`/`buildTypedValueParameter`
+      don't populate PortDescriptor/ParameterDescriptor's own `enumOptions`
+      for a Macro/Constant's Enum type (no per-instance storage for it
+      engine-side yet — a confirmed, real gap, left alone per this task's own
+      "engine behaviour stays as it is"). Undefined for every other node
+      type, and for a macro that's never had its enum options set — see
+      MacroBody.tsx's own `enumOptionLabelsFor()` for the synthesized
+      "Option N" fallback used in that case.
   */
-  macroUnit?: string
+  macroEnumOptionLabels?: string[]
+  /** design/Visualization/Count.png: "Either way they are editable by the
+      user" — a view.count instance's own Min/Max footer, once the user has
+      typed one in (properties["view.count.min"]/["view.count.max"], plain
+      numbers via graphSetProperty, same storage shape `title`'s own string
+      and `bypassed`'s own boolean already use for cosmetic per-instance
+      state). Undefined for every other node type, and for a view.count
+      instance whose footer has never been edited — CountBody.tsx's own
+      effectiveRange() is what falls back to the connected source's
+      declared range, or observed min/max, in that case.
+  */
+  countMinOverride?: number
+  countMaxOverride?: number
+}
+
+/** TypedValueNodeBase.h's `TypedValueType` enum, mirrored — rewritten per
+    direct correction, 2026-10-03: "controls (with subtypes), int (can be
+    toggled to be enum), mod (uni/bi), trigger, bool. That is the system."
+    THREE top-level kinds, not five — `Control` covers Value/Modulation/Int
+    as subtypes of the SAME existing `quantity`/`isInteger` axes every
+    other Control port in this codebase already uses (see
+    `classifyMacroControlSubtype` below), rather than being separate
+    parallel type values. `isEnum` (a new, separately-stored flag — see
+    `ParameterValues`/MacroBody.tsx) is literally "Int toggled to be Enum".
+    See `macroTypeOrdinal`/`macroTypeFromOrdinal` below for the ordinal
+    round-trip — same hand-kept-in-sync convention `QUANTITY_ORDER` already
+    established for `util.macro.quantity`. */
+export type MacroValueType = 'control' | 'bool' | 'trigger'
+
+/** Order MUST match TypedValueNodeBase.h's `commonParameters()` own
+    `typeOptions` vector exactly (control, bool, then trigger when
+    `includeTrigger` — util.macro always includes it, util.constant never
+    does). Trigger stays LAST deliberately (same reasoning
+    TypedValueNodeBase.h's own header comment gives). Same silent-mismatch
+    risk `QUANTITY_ORDER`'s own comment already flags for quantity. */
+export const MACRO_TYPE_ORDER: readonly MacroValueType[] = ['control', 'bool', 'trigger']
+export function macroTypeOrdinal(type: MacroValueType): number {
+  const index = MACRO_TYPE_ORDER.indexOf(type)
+  return index >= 0 ? index : 0
+}
+export function macroTypeFromOrdinal(value: number): MacroValueType {
+  const index = Math.round(value)
+  return MACRO_TYPE_ORDER[index] ?? 'control'
+}
+
+/** A Control macro/constant's own "subtype" (direct instruction's own
+    word) — a pure UI-level grouping over `isInteger`/`quantity`, not a
+    separately stored field (TypedValueNodeBase.h stores no such thing
+    either): Value is a real-quantity float, Modulation is quantity
+    Unipolar/Bipolar, Int is `isInteger`. Mirrors exactly what
+    `classifyPortUiKind` (portUiKind.ts) already derives for every ordinary
+    Control port's colour — this just names the same three-way split for
+    the macro type system specifically. */
+export type MacroControlSubtype = 'value' | 'modulation' | 'int'
+export function classifyMacroControlSubtype(isInteger: boolean, quantity: Quantity): MacroControlSubtype {
+  if (isInteger) return 'int'
+  if (quantity === 'unipolar' || quantity === 'bipolar') return 'modulation'
+  return 'value'
+}
+
+function isTypedValueNodeType(typeId: string): boolean {
+  return typeId === 'util.macro' || typeId === 'util.constant'
+}
+
+/** `endpointFor`'s own live-resolution for a util.macro/util.constant
+    output — a TypeScript mirror of TypedValueNodeBase.h's
+    `buildTypedOutputPort` (outputSignalTypeFor/outputValueKindFor/
+    portIsIntegerFor/effectiveMinMax/unitForQuantity), hand-kept in sync
+    with that C++ the same way QUANTITY_ORDER/MACRO_TYPE_ORDER above
+    already are. Reads `node.parameterValues` directly (both node types
+    share the same `<prefix>.type`/`.isInteger`/`.isEnum`/`.min`/`.max`/
+    `.quantity` ids, `node.typeId` itself IS that prefix) rather than
+    trusting `staticPort` (the one-shot default-instance descriptor
+    `findPort` above just returned), which is what was frozen/wrong.
+    Everything else about the port (id, label, isPrimaryOutput, hidden, ...)
+    is copied from `staticPort` unchanged — only the value-contract fields
+    actually depend on live parameters.
+*/
+function resolveTypedValueOutputPort(node: GraphNode, staticPort: PortDescriptor): PortDescriptor {
+  const prefix = node.typeId
+  const pv = node.parameterValues ?? {}
+  const type = macroTypeFromOrdinal(pv[`${prefix}.type`] ?? 0)
+  const isInteger = (pv[`${prefix}.isInteger`] ?? 0) >= 0.5
+  const isEnum = (pv[`${prefix}.isEnum`] ?? 0) >= 0.5
+  const quantity = quantityFromOrdinal(pv[`${prefix}.quantity`] ?? 0)
+  const rawMin = pv[`${prefix}.min`] ?? 0
+  const rawMax = pv[`${prefix}.max`] ?? 1
+
+  if (type === 'bool') return { ...staticPort, type: 'boolean', kind: 'bool', isInteger: false, quantity, minValue: null, maxValue: null, unit: '' }
+  if (type === 'trigger') return { ...staticPort, type: 'event', kind: 'int', isInteger: true, quantity, minValue: null, maxValue: null, unit: '' }
+
+  // Control.
+  const kind: ValueKind = isEnum ? 'enum' : isInteger ? 'int' : 'float'
+  const [min, max] = quantity === 'unipolar' ? [0, 1] : quantity === 'bipolar' ? [-1, 1] : [rawMin, rawMax]
+  return { ...staticPort, type: 'control', kind, isInteger, quantity, minValue: min, maxValue: max, unit: quantityUnit(quantity) }
 }
 
 export interface GraphWire {
@@ -172,13 +274,32 @@ function wireId(toNodeId: string, toPortId: string): string {
   return `${toNodeId}:${toPortId}`
 }
 
+/** Parses `properties["util.macro.enumOptions"]` (a JSON string array,
+    written by `setMacroEnumOptionLabels` below) back into `string[]` —
+    tolerant of anything else (absent, malformed JSON, wrong shape), since
+    this is UI-only cosmetic data a corrupt/hand-edited patch file could
+    still contain; MacroBody.tsx's own synthesized-fallback path covers the
+    `undefined` result the same way it covers "never set". */
+function parseMacroEnumOptionLabels(raw: unknown): string[] | undefined {
+  if (typeof raw !== 'string' || raw.length === 0) return undefined
+  try {
+    const parsed: unknown = JSON.parse(raw)
+    if (Array.isArray(parsed) && parsed.every((v) => typeof v === 'string')) return parsed as string[]
+  } catch {
+    // Malformed JSON — fall through to undefined, same as "never set".
+  }
+  return undefined
+}
+
 function patchJsonToLocalState(json: string): { nodes: Map<string, GraphNode>; wires: Map<string, GraphWire> } {
   const doc = JSON.parse(json) as PatchDocumentJson
   const nodes = new Map<string, GraphNode>()
   for (const n of doc.nodes ?? []) {
     const properties = n.properties ?? {}
     const title = properties.title
-    const macroUnit = properties['util.macro.unit']
+    const macroEnumOptionLabels = parseMacroEnumOptionLabels(properties['util.macro.enumOptions'])
+    const countMin = properties['view.count.min']
+    const countMax = properties['view.count.max']
     nodes.set(n.id, {
       id: n.id,
       typeId: n.type,
@@ -187,7 +308,9 @@ function patchJsonToLocalState(json: string): { nodes: Map<string, GraphNode>; w
       titleOverride: typeof title === 'string' && title.length > 0 ? title : undefined,
       bypassed: properties.bypassed === true,
       parameterValues: n.parameters && Object.keys(n.parameters).length > 0 ? { ...n.parameters } : undefined,
-      macroUnit: typeof macroUnit === 'string' && macroUnit.length > 0 ? macroUnit : undefined,
+      macroEnumOptionLabels,
+      countMinOverride: typeof countMin === 'number' ? countMin : undefined,
+      countMaxOverride: typeof countMax === 'number' ? countMax : undefined,
     })
   }
   const wires = new Map<string, GraphWire>()
@@ -485,6 +608,25 @@ function endpointFor(nodeId: string, portId: string, direction: 'input' | 'outpu
   const port = findPort(descriptor, portId, direction)
   if (!port) return undefined
 
+  // util.macro/util.constant's own output: a SEPARATE kind of "not really
+  // static" from the polymorphism case just below — that one follows what's
+  // WIRED to a node; this one follows the node's OWN structural parameters
+  // (TypedValueNodeBase.h's type/isInteger/isEnum/min/max/quantity), set via
+  // the Edit T modal (MacroBody.tsx), never by wiring. `descriptor.outputs[0]`
+  // (what `port` already is, from `findPort` above) is NodeFactory::
+  // describeAll()'s one-shot default-constructed-instance snapshot,
+  // fetched once at editor load (fetchNodeDescriptors.ts's own header
+  // comment) — frozen at a fresh node's own defaults (Control/Dimensionless/
+  // white) forever, regardless of what any PLACED instance is actually
+  // configured as. Confirmed, real bug (direct feedback, 2026-10-03: "why
+  // is the macro value output not adapting to the color") — this is the
+  // fix, at the one place both cable colouring (InfiniteCanvas.tsx's
+  // endpointColorRgb) and node-body port-glyph colouring (NodeCard.tsx's
+  // resolvedPortStyle) already funnel every port lookup through.
+  if (direction === 'output' && isTypedValueNodeType(node.typeId)) {
+    return { nodeId, portId, direction, port: resolveTypedValueOutputPort(node, port) }
+  }
+
   const polymorphism = port.polymorphism ?? 'none'
   if (!descriptor.hasPolymorphicPorts || polymorphism === 'none') return { nodeId, portId, direction, port }
 
@@ -578,6 +720,28 @@ export function redo(): void {
     multiplicity = await fetchMultiplicity()
     notify()
   })()
+}
+
+/** Top bar's premade-patch menu (ui/src/PatchMenu.tsx) — loads a whole
+    replacement graph. An ordinary graphRestoreSnapshot call wrapped in the
+    same withHistory gesture every other mutating action here uses, so
+    loading a patch is itself one undoable step, same as any other graph
+    edit (Ctrl+Z after loading "Sine" goes back to whatever was open
+    before). No optimistic local guess (unlike a hot-path drag gesture, a
+    brief round trip before the canvas updates is fine for a deliberate,
+    infrequent click) — withHistory's own post-gesture resync from the
+    engine's confirmed snapshot is what actually updates `nodes`/`wires`.
+*/
+export function loadPatch(json: string): Promise<void> {
+  // Returns the gesture's own promise (unlike undo/redo/toggleBypass/etc.
+  // above, which are fire-and-forget) specifically so App.tsx's PatchMenu
+  // handler can fit-view once the new graph is actually in local state —
+  // loading an unrelated patch is a wholesale graph REPLACEMENT, not an
+  // incremental edit, so (unlike every other action here) it genuinely
+  // needs to pull the camera to wherever the new nodes actually are.
+  return withHistory(async () => {
+    await fireCommand(() => graphRestoreSnapshot(json))
+  })
 }
 
 // ---- Command plumbing -----------------------------------------------------
@@ -738,6 +902,50 @@ export function renameNode(id: string, title: string | undefined): void {
     () => {
       const node = nodes.get(id)
       if (node) nodes.set(id, { ...node, titleOverride: trimmed.length > 0 ? trimmed : undefined })
+    },
+  )
+}
+
+/** design/Macro.png's "Edit T" modal, Enum type only — see GraphNode's own
+    `macroEnumOptionLabels` doc comment for why this is a cosmetic property
+    rather than a real engine-modeled `enumOptions` list. Empty labels are
+    dropped (a blank line in the modal's textarea shouldn't become a real,
+    selectable "" option). */
+export function setMacroEnumOptionLabels(id: string, labels: readonly string[]): void {
+  const cleaned = labels.map((l) => l.trim()).filter((l) => l.length > 0)
+  void withHistory(
+    () => fireCommand(() => graphSetProperty(id, 'util.macro.enumOptions', JSON.stringify(cleaned))).then(() => undefined),
+    () => {
+      const node = nodes.get(id)
+      if (node) nodes.set(id, { ...node, macroEnumOptionLabels: cleaned.length > 0 ? cleaned : undefined })
+    },
+  )
+}
+
+/** design/Visualization/Count.png's editable Min/Max footer — one undo step
+    per field, same granularity renameNode's own single-property commit
+    already uses, so editing Min doesn't also disturb Max in the undo
+    stack. Rounded before it's sent: the footer is an integer viewer's own
+    range, never a fractional one, same "whole numbers only" contract its
+    ports themselves declare (isInteger/kind=Int). */
+export function setCountMin(id: string, value: number): void {
+  const rounded = Math.round(value)
+  void withHistory(
+    () => fireCommand(() => graphSetProperty(id, 'view.count.min', rounded)).then(() => undefined),
+    () => {
+      const node = nodes.get(id)
+      if (node) nodes.set(id, { ...node, countMinOverride: rounded })
+    },
+  )
+}
+
+export function setCountMax(id: string, value: number): void {
+  const rounded = Math.round(value)
+  void withHistory(
+    () => fireCommand(() => graphSetProperty(id, 'view.count.max', rounded)).then(() => undefined),
+    () => {
+      const node = nodes.get(id)
+      if (node) nodes.set(id, { ...node, countMaxOverride: rounded })
     },
   )
 }
@@ -982,7 +1190,7 @@ export const QUANTITY_ORDER: readonly Quantity[] = [
   'count',
   'phase',
 ]
-function quantityOrdinal(quantity: Quantity): number {
+export function quantityOrdinal(quantity: Quantity): number {
   const index = QUANTITY_ORDER.indexOf(quantity)
   return index >= 0 ? index : 0
 }
@@ -1004,7 +1212,6 @@ interface MacroSeed {
   max: number
   isInteger: boolean
   quantity: Quantity
-  unit: string
   /** The macro's own raw 0..1 storage value (util.macro.value) that
       reproduces `currentValue` under this seed's min/max — purely
       cosmetic, see createMacroFromPort's own comment on why it's seeded
@@ -1013,19 +1220,24 @@ interface MacroSeed {
   defaultRaw: number
 }
 
-/** Derives a new macro's own min/max/isInteger/quantity/unit contract from
-    the port it's being dragged out of, matching the retired M10
+/** Derives a new macro's own min/max/isInteger/quantity contract from the
+    port it's being dragged out of, matching the retired M10
     macroConfigForPort()'s rules, upgraded to real fields:
       - a real `kind: 'enum'` port (with enumOptions) -> an integer
         0..(N-1) range over those same options (no real engine port
         exercises this today — a deliberate, explicitly-flagged v1
-        simplification, forward-looking/test-fixture-only for now).
+        simplification, forward-looking/test-fixture-only for now; also
+        doesn't seed `isEnum` — `graphCreateMacro`'s own native command has
+        no such argument yet, a separate, smaller gap than this comment's
+        own already-flagged one).
       - Boolean, or Event with no options -> a small integer 0..1 range.
       - Event WITH options (mock-only field, see descriptorTypes.ts) -> an
         integer range over that list, same shape as the enum case above.
       - Control with clear bounds (minValue/maxValue both set) -> copied
-        verbatim (unit/isInteger/quantity too), so e.g. a filter cutoff
-        macro is still Hz-ranged, not a generic 0..1.
+        verbatim (isInteger/quantity too), so e.g. a filter cutoff macro is
+        still Frequency-quantitied, not a generic 0..1. Unit is NOT copied
+        — it's derived from quantity now, never a separately seeded field
+        (direct instruction, 2026-10-03: "Unit should not be a field").
       - Control with NO clear bounds (math.add's growable "a"/"b" inputs,
         never given a real min/max) -> a generic Dimensionless 0..1 range.
     `currentValue` (the port's live fallback value, from GraphNode.
@@ -1039,27 +1251,27 @@ function macroConfigForPort(port: PortDescriptor, currentValue: number): MacroSe
 
   if (port.kind === 'enum' && port.enumOptions.length > 0) {
     const maxIndex = port.enumOptions.length - 1
-    return { min: 0, max: maxIndex, isInteger: true, quantity: 'dimensionless', unit: '', defaultRaw: rawOf(Math.round(currentValue), 0, maxIndex) }
+    return { min: 0, max: maxIndex, isInteger: true, quantity: 'dimensionless', defaultRaw: rawOf(Math.round(currentValue), 0, maxIndex) }
   }
   if (port.type === 'event' && port.options && port.options.length > 0) {
     const maxIndex = port.options.length - 1
-    return { min: 0, max: maxIndex, isInteger: true, quantity: 'dimensionless', unit: '', defaultRaw: rawOf(Math.round(currentValue), 0, maxIndex) }
+    return { min: 0, max: maxIndex, isInteger: true, quantity: 'dimensionless', defaultRaw: rawOf(Math.round(currentValue), 0, maxIndex) }
   }
   if (port.type === 'event' || port.type === 'boolean') {
-    return { min: 0, max: 1, isInteger: true, quantity: 'dimensionless', unit: '', defaultRaw: rawOf(Math.round(currentValue), 0, 1) }
+    return { min: 0, max: 1, isInteger: true, quantity: 'dimensionless', defaultRaw: rawOf(Math.round(currentValue), 0, 1) }
   }
 
   const hasClearBounds = port.minValue !== null && port.maxValue !== null
   if (hasClearBounds) {
     const min = port.minValue as number
     const max = port.maxValue as number
-    return { min, max, isInteger: port.isInteger, quantity: port.quantity, unit: port.unit, defaultRaw: rawOf(currentValue, min, max) }
+    return { min, max, isInteger: port.isInteger, quantity: port.quantity, defaultRaw: rawOf(currentValue, min, max) }
   }
 
   // Unclear metatype (e.g. math.add's "a"/"b" — no real bound ever set):
   // a generic Dimensionless 0..1 range, the same fallback the retired M10
   // gesture used for exactly this case.
-  return { min: 0, max: 1, isInteger: false, quantity: 'dimensionless', unit: '', defaultRaw: clamp(currentValue, 0, 1) }
+  return { min: 0, max: 1, isInteger: false, quantity: 'dimensionless', defaultRaw: clamp(currentValue, 0, 1) }
 }
 
 /** Whether `port` could sensibly become a Macro's value at all. Control and
@@ -1173,18 +1385,19 @@ export function createMacroFromPort(nodeId: string, portId: string, x: number, y
   void withHistory(
     async () => {
       // One atomic call creates the node AND sets every structural
-      // parameter (slot/min/max/isInteger/quantity/value, plus the cosmetic
-      // unit property) in a single recompile — see graphCommands.ts's own
-      // comment on graphCreateMacro. Previously this was addNode + 5x
-      // setParameterValue + setProperty, 6 separate recompiles with a real
-      // transient-slot-collision race between them (wiki/plans/UtilMacro.md
-      // Finding B's own "-1 unclaimed sentinel" workaround existed only to
-      // paper over that race); now a slot collision is rejected as one
-      // atomic no-op, nothing added at all.
+      // parameter (slot/min/max/isInteger/quantity/value) in a single
+      // recompile — see graphCommands.ts's own comment on graphCreateMacro.
+      // Previously this was addNode + 5x setParameterValue + setProperty, 6
+      // separate recompiles with a real transient-slot-collision race
+      // between them (wiki/plans/UtilMacro.md Finding B's own "-1
+      // unclaimed sentinel" workaround existed only to paper over that
+      // race); now a slot collision is rejected as one atomic no-op,
+      // nothing added at all. The native command's own `unit` positional
+      // argument is passed empty — "Unit should not be a field" (direct
+      // instruction, 2026-10-03): a macro's unit is derived from quantity
+      // now (TypedValueNodeBase.h's unitForQuantity), never seeded.
       if (
-        !(await fireCommand(() =>
-          graphCreateMacro(macroId, x, y, slot, seed.min, seed.max, seed.isInteger, quantityValue, seed.unit, seed.defaultRaw),
-        ))
+        !(await fireCommand(() => graphCreateMacro(macroId, x, y, slot, seed.min, seed.max, seed.isInteger, quantityValue, '', seed.defaultRaw)))
       )
         return
       if (await fireCommand(() => graphConnectWithAutoAdapt(macroId, 'out', nodeId, portId))) {
@@ -1206,7 +1419,6 @@ export function createMacroFromPort(nodeId: string, portId: string, x: number, y
           'util.macro.quantity': quantityValue,
           'util.macro.value': seed.defaultRaw,
         },
-        macroUnit: seed.unit || undefined,
       })
       const newWireId = wireId(nodeId, portId)
       wires.set(newWireId, { id: newWireId, fromNodeId: macroId, fromPortId: 'out', toNodeId: nodeId, toPortId: portId })
@@ -1215,4 +1427,101 @@ export function createMacroFromPort(nodeId: string, portId: string, x: number, y
   )
 
   return macroId
+}
+
+/** The authoritative check `createRippleFromPort` uses right before
+    committing — same "check canConnectPorts against the real candidate
+    descriptor before sending any command" discipline isMacroConnectable()
+    above follows, rather than trusting the coarse Event-type check in
+    createRippleFromPort/InfiniteCanvas.tsx's own gating to be the only
+    guard.
+*/
+function isRippleConnectable(port: PortDescriptor): boolean {
+  const rippleDescriptor = getDescriptor('view.ripple')
+  const rippleInput = rippleDescriptor && findPort(rippleDescriptor, 'in', 'input')
+  if (!rippleInput) return false
+  return canConnectPorts(port, rippleInput).outcome !== 'reject'
+}
+
+/** design/Visualization/Ripple.png: "Ctrl/Cmd-clicking an Event output
+    port spawns this node already connected to that port. It is the
+    default viewer for the Event type." Creates a new view.ripple node at
+    (x, y) and wires the clicked output port straight into its own 'in'
+    port — one undo step (addNode -> connect), the same composite-command
+    shape createMacroFromPort above uses, just simpler: view.ripple has no
+    parameters at all, so there's no seed/slot-claim step in between.
+
+    No-op (returns undefined, no command sent) if the port doesn't exist,
+    isn't Event-typed, or isRippleConnectable() says the real engine would
+    reject the resulting wire anyway — InfiniteCanvas.tsx's Ctrl/Cmd+click
+    handling is expected to have already checked the port's resolved type
+    before calling this, but this function re-checks both itself too, the
+    same "check first, commit only if it would work" discipline
+    createMacroFromPort's own doc comment explains in full (and for the
+    same reason: never commit the addNode step and then fail the connect
+    step, leaving an orphaned view.ripple behind).
+*/
+export function createRippleFromPort(nodeId: string, portId: string, x: number, y: number): string | undefined {
+  const endpoint = getEndpoint(nodeId, portId, 'output')
+  if (!endpoint || endpoint.port.type !== 'event' || !isRippleConnectable(endpoint.port)) return undefined
+
+  const rippleId = makeId('node')
+
+  void withHistory(
+    async () => {
+      if (!(await fireCommand(() => graphAddNode('view.ripple', rippleId, x, y)))) return
+      await fireCommand(() => graphConnectWithAutoAdapt(nodeId, portId, rippleId, 'in'))
+    },
+    () => {
+      nodes.set(rippleId, { id: rippleId, typeId: 'view.ripple', x, y, bypassed: false })
+      const newWireId = wireId(rippleId, 'in')
+      wires.set(newWireId, { id: newWireId, fromNodeId: nodeId, fromPortId: portId, toNodeId: rippleId, toPortId: 'in' })
+      selection = new Set([rippleId])
+    },
+  )
+
+  return rippleId
+}
+
+/** Same authoritative-recheck discipline isRippleConnectable() above
+    follows, for view.count's own "in" port. */
+function isCountConnectable(port: PortDescriptor): boolean {
+  const countDescriptor = getDescriptor('view.count')
+  const countInput = countDescriptor && findPort(countDescriptor, 'in', 'input')
+  if (!countInput) return false
+  return canConnectPorts(port, countInput).outcome !== 'reject'
+}
+
+/** design/Visualization/Count.png: "Ctrl/Cmd-clicking an integer output
+    port spawns this node already connected to that port. It is the
+    default viewer for the integer type." Same shape as
+    createRippleFromPort above, one undo step (addNode -> connect) — see
+    that function's own doc comment for the full reasoning, which applies
+    here unchanged (view.count also has no parameters at all, so no seed/
+    slot-claim step in between).
+
+    No-op (returns undefined, no command sent) if the port doesn't exist,
+    isn't an integer Control port, or isCountConnectable() says the real
+    engine would reject the resulting wire anyway.
+*/
+export function createCountFromPort(nodeId: string, portId: string, x: number, y: number): string | undefined {
+  const endpoint = getEndpoint(nodeId, portId, 'output')
+  if (!endpoint || endpoint.port.type !== 'control' || !endpoint.port.isInteger || !isCountConnectable(endpoint.port)) return undefined
+
+  const countId = makeId('node')
+
+  void withHistory(
+    async () => {
+      if (!(await fireCommand(() => graphAddNode('view.count', countId, x, y)))) return
+      await fireCommand(() => graphConnectWithAutoAdapt(nodeId, portId, countId, 'in'))
+    },
+    () => {
+      nodes.set(countId, { id: countId, typeId: 'view.count', x, y, bypassed: false })
+      const newWireId = wireId(countId, 'in')
+      wires.set(newWireId, { id: newWireId, fromNodeId: nodeId, fromPortId: portId, toNodeId: countId, toPortId: 'in' })
+      selection = new Set([countId])
+    },
+  )
+
+  return countId
 }

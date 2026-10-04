@@ -3,9 +3,29 @@
   flex-direction: column;
   min-width: 190px;
   background: var(--color-nodeFill);
-  border: var(--stroke-thin) solid var(--color-nodeBorder);
-  border-radius: 0;
-  font-family: var(--font-mono);
+  /* `--canvas-hairline` (InfiniteCanvas.tsx, set every frame on the scaled
+     `.infinite-canvas-world` layer this card lives inside) compensates for
+     that ancestor's own `scale(camera.zoom)` so every border in this file
+     renders at a constant on-screen 1px regardless of zoom — direct
+     feedback, repeatedly: "borders are completely randomly disappearing
+     and appearing [during] zoom... when releasing... stops on some of
+     them being gone". A scaled 1px border is sub-pixel-wide at almost any
+     real zoom level, which a browser antialiases (effectively fading it
+     toward transparent) rather than snapping to a clean line; since every
+     node sits at a different fractional screen offset from the same
+     transform, each one crosses that rounding threshold differently.
+     Falls back to the plain unscaled `--stroke-thin` wherever nothing
+     sets the custom property (the M9 gallery, which has no scaled
+     ancestor at all) — every other bordered element in this file (and in
+     ValueSlider.css/TriggerSelect.css/ToggleSwitch.css/Button.css/
+     MacroBody.css/GraphSurface.css's own node-internal borders) uses the
+     same `var(--canvas-hairline, var(--stroke-thin))` pattern for the
+     same reason; this is the one comment explaining it. */
+  border: var(--canvas-hairline, var(--stroke-thin)) solid var(--color-nodeBorder);
+  /* Very slight round, direct instruction 2026-10-03 — was 0 (deliberately
+     sharp, per the comment below) until now. */
+  border-radius: var(--radius-sm);
+  font-family: var(--font-primary);
   font-size: 13px;
   color: var(--color-textPrimary);
   user-select: none;
@@ -36,20 +56,59 @@
 
 /* `dotted` (the previous value) renders small circles, not a dashed line —
    that's the literal cause of "looks like a bunch of dots" (direct
-   feedback). `dashed` renders actual rectangular segments; bumping the
-   border width makes each segment (and the gap between them) longer too —
-   Chromium scales dash length roughly with border-width, there's no
-   separate CSS property for it directly. */
+   feedback). A real CSS `border-style: dashed` ties dash length to
+   border-width (there's no separate property for it) — bumping the width
+   was this rule's first attempt at "longer dashes", reverted by direct
+   correction ("too thick... should be the same thickness as the rest").
+   Both instructions together (thin AND long) need dash length decoupled
+   from thickness entirely, which a real `border` can't do — so this isn't
+   a `border` anymore: `::before` below paints a thin (`var(--stroke-thin)`)
+   dashed FRAME out of four repeating-linear-gradient backgrounds, one per
+   edge, each independently as long as `--macro-dash-length`/
+   `--macro-dash-gap` say regardless of thickness. `--macro-dash-color`
+   (default `--color-nodeBorder`) is what the selected/listening/error
+   overrides below switch, in place of `border-color`. */
 .node-card-macro {
-  border-style: dashed;
-  border-width: 2px;
+  border: none;
+  --macro-dash-length: 14px;
+  --macro-dash-gap: 8px;
+}
+
+.node-card-macro::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  --macro-dash-color: var(--color-nodeBorder);
+  --macro-dash-repeat: calc(var(--macro-dash-length) + var(--macro-dash-gap));
+  background-repeat: no-repeat;
+  background-image: repeating-linear-gradient(to right, var(--macro-dash-color) 0 var(--macro-dash-length), transparent var(--macro-dash-length) var(--macro-dash-repeat)),
+    repeating-linear-gradient(to right, var(--macro-dash-color) 0 var(--macro-dash-length), transparent var(--macro-dash-length) var(--macro-dash-repeat)),
+    repeating-linear-gradient(to bottom, var(--macro-dash-color) 0 var(--macro-dash-length), transparent var(--macro-dash-length) var(--macro-dash-repeat)),
+    repeating-linear-gradient(to bottom, var(--macro-dash-color) 0 var(--macro-dash-length), transparent var(--macro-dash-length) var(--macro-dash-repeat));
+  background-position: top left, bottom left, top left, top right;
+  background-size: 100% var(--canvas-hairline, var(--stroke-thin)), 100% var(--canvas-hairline, var(--stroke-thin)), var(--canvas-hairline, var(--stroke-thin)) 100%,
+    var(--canvas-hairline, var(--stroke-thin)) 100%;
+}
+
+.node-card-macro.node-card-selected::before {
+  --macro-dash-color: var(--color-accent);
+}
+.node-card-macro.node-card-listening::before {
+  --macro-dash-color: var(--color-nodeListening);
+}
+.node-card-macro.node-card-error::before {
+  --macro-dash-color: var(--color-error);
 }
 
 .node-title-bar {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: var(--space-sm) var(--space-sm);
+  /* Bumped from var(--space-sm) both axes (8px) — direct instruction,
+     2026-10-03: a taller, more prominent header. */
+  padding: var(--space-md) var(--space-sm);
   gap: var(--space-xs);
 }
 
@@ -61,6 +120,10 @@
 }
 
 .node-title {
+  /* Bumped from the inherited 13px (.node-card's own body size) — same
+     16px .node-header-label (the Header decoration node) already uses for
+     its own big label, direct instruction, 2026-10-03. */
+  font-size: 16px;
   font-weight: 500;
   white-space: nowrap;
   overflow: hidden;
@@ -83,6 +146,7 @@
   top: -16px;
   right: 0;
   color: var(--color-textFaint);
+  font-family: var(--font-secondary);
   font-size: 10px;
   line-height: 1;
   z-index: 2;
@@ -114,7 +178,7 @@
   width: 18px;
   height: 18px;
   border-radius: 50%;
-  border: 1px solid var(--color-textSecondary);
+  border: var(--canvas-hairline, 1px) solid var(--color-textSecondary);
   position: relative;
   opacity: 0.6;
 }
@@ -139,14 +203,18 @@
   background: var(--color-error);
 }
 
+/* Direct instruction, 2026-10-03: deactivated temporarily for every node
+   (it's an unwired placeholder — M12's own "assist menu" milestone is
+   still open, no onClick exists yet) — `display: none` rather than
+   removing TitleBar's own markup, so it's a one-line flip to bring back. */
 .node-assist-icon {
-  display: inline-flex;
+  display: none;
   align-items: center;
   justify-content: center;
   width: 18px;
   height: 18px;
   border-radius: 50%;
-  border: 1px solid var(--color-textSecondary);
+  border: var(--canvas-hairline, 1px) solid var(--color-textSecondary);
   color: var(--color-textSecondary);
   font-size: 13px;
   line-height: 1;
@@ -262,6 +330,7 @@
 }
 
 .node-port-live-value {
+  font-family: var(--font-secondary);
   color: var(--color-textSecondary);
 }
 
@@ -400,9 +469,9 @@
   gap: 8px;
   padding: 8px 14px;
   background: var(--color-nodeFill);
-  border: var(--stroke-thin) solid var(--color-nodeBorder);
-  border-radius: 0;
-  font-family: var(--font-mono);
+  border: var(--canvas-hairline, var(--stroke-thin)) solid var(--color-nodeBorder);
+  border-radius: var(--radius-sm);
+  font-family: var(--font-primary);
   font-size: 13px;
   color: var(--color-textPrimary);
   white-space: nowrap;
@@ -432,8 +501,8 @@
   gap: 6px;
   padding: 6px 10px;
   background: var(--color-nodeFill);
-  border: var(--stroke-thin) solid var(--color-nodeBorder);
-  border-radius: 0;
+  border: var(--canvas-hairline, var(--stroke-thin)) solid var(--color-nodeBorder);
+  border-radius: var(--radius-sm);
 }
 
 .node-glance-preview {
@@ -457,7 +526,7 @@
   width: 14px;
   height: 14px;
   border-radius: 50%;
-  border: var(--stroke-thin) solid var(--color-textSecondary);
+  border: var(--canvas-hairline, var(--stroke-thin)) solid var(--color-textSecondary);
   background: var(--color-nodeFill);
 }
 
@@ -467,20 +536,20 @@
   min-height: 160px;
   background: var(--color-frameFill);
   border: none;
-  border-radius: 0;
+  border-radius: var(--radius-sm);
 }
 
 .node-frame-label {
   position: absolute;
   top: -22px;
   left: 0;
-  font-family: var(--font-mono);
+  font-family: var(--font-primary);
   font-size: 13px;
   color: var(--color-textPrimary);
 }
 
 .node-header-label {
-  font-family: var(--font-mono);
+  font-family: var(--font-primary);
   font-size: 16px;
   color: var(--color-textPrimary);
 }
@@ -491,8 +560,9 @@
   justify-content: center;
   width: 140px;
   height: 100px;
-  border: 1px dashed var(--color-nodeBorder);
+  border: var(--canvas-hairline, 1px) dashed var(--color-nodeBorder);
+  border-radius: var(--radius-sm);
   color: var(--color-textSecondary);
-  font-family: var(--font-mono);
+  font-family: var(--font-primary);
   font-size: 12px;
 }

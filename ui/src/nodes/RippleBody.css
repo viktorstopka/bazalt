@@ -1,0 +1,64 @@
+/* design/Visualization/Ripple.png: "A square panel... No title, no labels
+   — the panel is purely the visual." Overrides .node-card's own
+   inline-flex/column/padding (built for a title bar + stacked rows, none
+   of which this has) down to a plain fixed-size square; `position:
+   relative` and the border/radius/fill/hairline-compensation all still
+   come from .node-card itself (NodeCard.css), unchanged.
+
+   190px, not some smaller number picked in isolation: NodeCard.css's base
+   `.node-card` rule sets `min-width: 190px` for every node in the system
+   (title-bar/property-row nodes need the room). That rule still applies
+   here — a direct, reproducible bug this used to hit at 120px: the
+   declared width got clamped up to 190 while height stayed 120, silently
+   rendering a 190x120 RECTANGLE no matter what this file said ("the frame
+   should be much more square, than a rectangle" — exactly that shape).
+   Matching the existing 190px floor instead of fighting it both fixes the
+   shape (equal width/height, actually square) and the "too small compared
+   to the reference" report in one number, with no new magic value and no
+   min-width override needed. */
+.view-ripple-card {
+  display: block;
+  width: 190px;
+  height: 190px;
+  padding: 0;
+}
+
+/* Zero-size anchors at the panel's own left/right edges, vertically
+   centred — "input and output ports... should be in the center on side
+   edges" (direct correction; this used to sit at `top: 0`, the literal
+   top edge, a real bug). `top: 50%` on this zero-HEIGHT wrapper places
+   its own single point exactly at the card's vertical centre; the actual
+   port glyph is `position: absolute; top: 50%` relative to ITS OWN
+   nearest positioned ancestor (NodeCard.css's `.node-port-glyph`, built
+   for a row's vertical centre) — resolving to 0 extra offset against a
+   zero-height parent, so the glyph's own `translate(-50%, -50%)` centring
+   lands it precisely on this wrapper's point. `left: 0`/`right: 0` (true
+   edge, not inset) matches `.node-port-glyph-left`/`-right`'s own
+   border-piercing convention elsewhere in NodeCard.css exactly — the same
+   "notch cut into the outline" look every other port glyph already has. */
+.view-ripple-port {
+  position: absolute;
+  top: 50%;
+  width: 0;
+  height: 0;
+}
+
+.view-ripple-port-left {
+  left: 0;
+}
+
+.view-ripple-port-right {
+  right: 0;
+}
+
+/* The <svg viewBox="0 0 190 190"> itself — no separate wrapper div needed
+   (unlike the old <canvas> version): SVG has no backing-store-resolution
+   concept to protect from measuring its own box, so there's no feedback
+   loop to guard against by keeping the measured element and the sized
+   element separate. inset:0 + the viewBox handles 100% of the scaling;
+   see RippleBody.tsx's own top-of-file comment for the full history. */
+.view-ripple-visual {
+  display: block;
+  position: absolute;
+  inset: 0;
+}

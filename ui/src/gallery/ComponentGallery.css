@@ -5,7 +5,7 @@
   height: 100%;
   background: var(--color-background);
   color: var(--color-textPrimary);
-  font-family: var(--font-mono);
+  font-family: var(--font-primary);
 }
 
 .gallery-topbar {
@@ -33,7 +33,7 @@
   border: var(--stroke-thin) solid var(--color-panelBorder);
   border-radius: var(--radius-sm);
   padding: 6px 12px;
-  font-family: var(--font-mono);
+  font-family: var(--font-primary);
   font-size: 11px;
   cursor: pointer;
 }
@@ -93,7 +93,8 @@
   padding: 8px 14px;
   background: var(--color-nodeFill);
   border: var(--stroke-thin) solid var(--color-nodeBorder);
-  font-family: var(--font-mono);
+  border-radius: var(--radius-sm);
+  font-family: var(--font-primary);
   font-size: 13px;
   font-weight: 500;
   color: var(--color-textPrimary);

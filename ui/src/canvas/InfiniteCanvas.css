@@ -94,7 +94,7 @@
   border: var(--stroke-thin) solid var(--color-panelBorder);
   border-radius: var(--radius-sm);
   padding: 3px 8px;
-  font-family: var(--font-mono);
+  font-family: var(--font-primary);
   font-size: 11px;
   color: var(--color-textSecondary);
   pointer-events: none;

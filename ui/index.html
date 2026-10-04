@@ -6,14 +6,23 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Bazalt</title>
     <!-- Node editor typography (NODE_EDITOR.md / design reference feedback, M9):
-         the whole node canvas uses this face as its monospace token
-         (ui/src/theme/tokens.ts's font.mono) — loaded here rather than
-         self-hosted since the design reference specifies this exact
-         Google Fonts family/weight set. -->
+         the whole node canvas uses this face as its secondary/value token
+         (ui/src/theme/tokens.ts's font.secondary, was font.mono) — loaded
+         here rather than self-hosted since the design reference specifies
+         this exact Google Fonts family/weight set. -->
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
       href="https://fonts.googleapis.com/css2?family=Iosevka+Charon:ital,wght@0,300;0,400;0,500;0,700;1,300;1,400;1,500;1,700&display=swap"
+      rel="stylesheet"
+    />
+    <!-- Primary/naming token (ui/src/theme/tokens.ts's font.primary, direct
+         instruction 2026-10-03): everything that names a thing rather than
+         holding a value — node titles, port/parameter labels, menu/panel
+         chrome. 400/500/600/700 cover every weight currently used
+         (.node-title's 500 up through .add-menu-item-category's 600). -->
+    <link
+      href="https://fonts.googleapis.com/css2?family=Schibsted+Grotesk:wght@400;500;600;700&display=swap"
       rel="stylesheet"
     />
   </head>

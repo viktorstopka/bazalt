@@ -81,6 +81,37 @@ TEST_CASE ("Filling the pool then subscribing one more evicts the least-recently
         CHECK (hub.getFrameBuffer ("tap" + juce::String ((int) i), TelemetryFrameType::Meter) != nullptr);
 }
 
+TEST_CASE ("Re-calling prepare() preserves an already-active subscription instead of silently dropping it",
+           "[engine][telemetry][TelemetryHub][NODE_EDITOR]")
+{
+    // Direct, reproducible feedback: "when i switched the output in
+    // settings, the ripple stopped responding" — switching the Standalone
+    // app's audio output device re-runs prepareToPlay(), which re-prepares
+    // the real TelemetryHub exactly like this test's second prepare() call
+    // does. A dynamically-subscribed per-node preview tap (any
+    // NodePreview.tsx/RippleBody.tsx subscription) must still resolve by
+    // name afterwards, with no re-subscribe round trip — this hub has no
+    // way to tell its client anything happened.
+    TelemetryHub hub;
+    hub.prepare (64, 4096);
+
+    auto* before = hub.subscribeTap ("node:ripple1:in");
+    REQUIRE (before != nullptr);
+    REQUIRE (hub.getNumActiveTaps() == 1);
+
+    hub.prepare (64, 4096); // the exact call PluginProcessor::prepareToPlay() makes again
+
+    CHECK (hub.getNumActiveTaps() == 1);
+    auto* after = hub.subscribeTap ("node:ripple1:in"); // still resolves by name, not a fresh/evicted slot
+    CHECK (after == before); // same stable Tap* — nothing had to re-subscribe to get it back
+    CHECK (hub.getFrameBuffer ("node:ripple1:in", TelemetryFrameType::EventImpulse) != nullptr);
+
+    // A never-subscribed slot is still reset to the same clean state as
+    // before this fix — this isn't "stop resetting slots", just "don't
+    // reset the ones something is actually using".
+    CHECK (hub.getFrameBuffer ("never-subscribed", TelemetryFrameType::Meter) == nullptr);
+}
+
 TEST_CASE ("A reused (evicted-and-resubscribed) slot's Tap pointer is reset, not carrying over stale data",
            "[engine][telemetry][TelemetryHub][NODE_EDITOR]")
 {

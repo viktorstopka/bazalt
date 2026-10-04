@@ -34,6 +34,8 @@ export function frameTypeForPreviewKind(kind: PreviewKind): TelemetryFrameType |
       return TelemetryFrameType.Spectrum
     case 'meter':
       return TelemetryFrameType.Meter
+    case 'eventImpulse':
+      return TelemetryFrameType.EventImpulse
     default:
       return undefined
   }

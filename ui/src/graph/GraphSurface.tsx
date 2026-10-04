@@ -18,7 +18,22 @@ import { useMemo, useRef, useState, type RefObject } from 'react'
 import { createPortal } from 'react-dom'
 import { NodeCard, type NodeCardState } from '../nodes/NodeCard'
 import { NodeContextMenu } from './NodeContextMenu'
-import { renameNode, toggleBypass, toggleBypassMany, setAsOutput, deleteNodes, setSelection, setParameterValue, resolveNodeDescriptor, type GraphNode, type GraphWire, type NodeMultiplicity } from './graphStore'
+import {
+  renameNode,
+  toggleBypass,
+  toggleBypassMany,
+  setAsOutput,
+  deleteNodes,
+  setSelection,
+  setParameterValue,
+  setMacroEnumOptionLabels,
+  setCountMin,
+  setCountMax,
+  resolveNodeDescriptor,
+  type GraphNode,
+  type GraphWire,
+  type NodeMultiplicity,
+} from './graphStore'
 import type { NodeDescriptor } from './descriptorTypes'
 import type { GhostPlacement } from '../canvas/interactionStore'
 import { getTitleGeometry } from './titleGeometry'
@@ -60,6 +75,13 @@ function NodeWrapper({ node, descriptor, selected, selection, connectedPortIds, 
     onParameterCommit: (id, value) => setParameterValue(node.id, id, value),
     portMultiplicity: multiplicity?.ports,
     instanceCountBadge: multiplicity?.badge,
+    macroEnumOptionLabels: node.macroEnumOptionLabels,
+    onSetMacroEnumOptionLabels: (labels) => setMacroEnumOptionLabels(node.id, labels),
+    countMinOverride: node.countMinOverride,
+    countMaxOverride: node.countMaxOverride,
+    onSetCountMin: (value) => setCountMin(node.id, value),
+    onSetCountMax: (value) => setCountMax(node.id, value),
+    overlayTarget,
   }
 
   const startEditing = () => {

@@ -21,6 +21,8 @@
 #include "bazalt/engine/nodes/ListenNode.h"
 #include "bazalt/engine/nodes/ViewNodes.h"
 #include "bazalt/engine/nodes/ViewGlanceNode.h"
+#include "bazalt/engine/nodes/ViewRippleNode.h"
+#include "bazalt/engine/nodes/ViewCountNode.h"
 #include "bazalt/engine/nodes/OutputNode.h"
 #include "bazalt/engine/nodes/NormaliseNode.h"
 #include "bazalt/engine/nodes/ThresholdNode.h"
@@ -125,6 +127,8 @@ namespace bazalt::engine
         factory.registerType ("view.spectrum", [] { return std::make_unique<nodes::ViewSpectrumNode>(); });
         factory.registerType ("view.meter", [] { return std::make_unique<nodes::ViewMeterNode>(); });
         factory.registerType ("view.glance", [] { return std::make_unique<nodes::ViewGlanceNode>(); });
+        factory.registerType ("view.ripple", [] { return std::make_unique<nodes::ViewRippleNode>(); });
+        factory.registerType ("view.count", [] { return std::make_unique<nodes::ViewCountNode>(); }); // design/Visualization/Count.png
         factory.registerType ("io.output", [] { return std::make_unique<nodes::OutputNode>(); });
         factory.registerType ("adapt.normalise", [] { return std::make_unique<nodes::NormaliseNode>(); });
         factory.registerType ("adapt.threshold", [] { return std::make_unique<nodes::ThresholdNode>(); });

@@ -62,6 +62,7 @@ namespace bazalt::engine
         bool oscilloscope = true;
         bool spectrum = true;
         bool meter = true;
+        bool eventImpulse = true;
     };
 
     class TelemetryHub
@@ -69,10 +70,35 @@ namespace bazalt::engine
     public:
         static constexpr size_t maxTaps = 64;
 
+        /** Direct, reproducible feedback: "when i switched the output in
+            settings, the ripple stopped responding." Root cause: switching
+            the Standalone app's audio output device re-runs
+            BazaltAudioProcessor::prepareToPlay() (a new sample rate/block
+            size, or just a fresh device) — which re-prepares this hub, and
+            this function used to unconditionally wipe EVERY slot, silently
+            dropping every subscription, including every dynamically-
+            subscribed per-node preview tap (NodePreview.tsx/RippleBody.tsx's
+            own subscribeNodePreview uses this exact mechanism — not Ripple-
+            specific at all, every visible node preview was equally broken
+            by this). PluginProcessor::prepareToPlay() re-subscribes its own
+            5 baseline main/aux taps right after calling this, which is
+            exactly why only the DYNAMIC taps looked broken and the M5
+            analysis panel didn't — nothing re-subscribes those. The client
+            that asked for a dynamic tap has no signal at all that it needs
+            to ask again (no "the engine just reset" event reaches it), so
+            the fix is here: an already-active slot's SUBSCRIPTION (name/
+            settings/frameTypesMask/synthetic) survives a re-prepare
+            untouched — only its PHYSICAL buffers are rebuilt fresh below
+            (their pre-reprepare contents are stale/meaningless either way,
+            same as any other reprepare). A never-subscribed slot is still
+            reset to the same clean "nothing here" state as before.
+        */
         void prepare (size_t tapCapacitySamples, size_t maxFrameBytes)
         {
             for (auto& slot : slots)
             {
+                const auto wasActive = slot.active.load (std::memory_order_relaxed);
+
                 slot.tap = std::make_unique<Tap>();
                 slot.tap->prepare (tapCapacitySamples);
 
@@ -82,13 +108,25 @@ namespace bazalt::engine
                     buffer->prepare (maxFrameBytes);
                 }
 
-                slot.active.store (false, std::memory_order_relaxed);
-                slot.synthetic.store (false, std::memory_order_relaxed);
-                slot.name.clear();
-                slot.lastUsedSequence = 0;
+                if (! wasActive)
+                {
+                    slot.active.store (false, std::memory_order_relaxed);
+                    slot.synthetic.store (false, std::memory_order_relaxed);
+                    slot.name.clear();
+                    slot.lastUsedSequence = 0;
+                }
+                // else: name/active/synthetic/frameTypesMask/settings/
+                // lastUsedSequence are all left exactly as they were - still
+                // correct for a subscriber who was never told anything changed.
             }
 
-            sequenceCounter = 0;
+            // Deliberately NOT reset: a preserved active slot keeps its own
+            // (possibly large) lastUsedSequence, and resetting this counter
+            // to 0 here would make every freshly-subscribed tap AFTER this
+            // call look older than an untouched one to findLruVictim() below
+            // - backwards. Monotonic for this TelemetryHub's whole lifetime;
+            // a uint64_t never realistically overflows from subscription
+            // churn alone.
         }
 
         /** Message-thread only. Returns a stable Tap* for `name` — if
@@ -236,9 +274,10 @@ namespace bazalt::engine
         static uint32_t frameTypesToMask (TelemetryFrameTypesNeeded needed) noexcept
         {
             uint32_t mask = 0;
-            if (needed.oscilloscope) mask |= (1u << (uint32_t) TelemetryFrameType::Oscilloscope);
-            if (needed.spectrum)     mask |= (1u << (uint32_t) TelemetryFrameType::Spectrum);
-            if (needed.meter)        mask |= (1u << (uint32_t) TelemetryFrameType::Meter);
+            if (needed.oscilloscope)  mask |= (1u << (uint32_t) TelemetryFrameType::Oscilloscope);
+            if (needed.spectrum)      mask |= (1u << (uint32_t) TelemetryFrameType::Spectrum);
+            if (needed.meter)         mask |= (1u << (uint32_t) TelemetryFrameType::Meter);
+            if (needed.eventImpulse)  mask |= (1u << (uint32_t) TelemetryFrameType::EventImpulse);
             return mask;
         }
 
@@ -247,7 +286,7 @@ namespace bazalt::engine
             juce::String name; // message-thread-owned only
             std::atomic<bool> active { false };
             std::atomic<bool> synthetic { false }; // see subscribeTap()'s "demo." note
-            std::atomic<uint32_t> frameTypesMask { 0b111 }; // M20 — see isFrameTypeNeeded()'s own comment; defaults to all 3
+            std::atomic<uint32_t> frameTypesMask { 0b1111 }; // M20 — see isFrameTypeNeeded()'s own comment; defaults to all 4
 
             // ADR-0029 - see TapSettings. Individually atomic; a snapshot is
             // getTapSettingsBySlot().
@@ -259,7 +298,7 @@ namespace bazalt::engine
             std::atomic<int> meterMode { (int) MeterMode::Peak };
             uint64_t lastUsedSequence = 0; // message-thread-owned only
             std::unique_ptr<Tap> tap;
-            std::array<std::unique_ptr<TelemetryFrameBuffer>, 3> frameBuffers;
+            std::array<std::unique_ptr<TelemetryFrameBuffer>, 4> frameBuffers;
         };
 
         Slot* findSlotByName (const juce::String& name) noexcept

@@ -5,7 +5,7 @@
   padding: var(--space-sm);
   background: var(--color-panel);
   border-top: var(--stroke-thin) solid var(--color-panelBorder);
-  font-family: var(--font-mono);
+  font-family: var(--font-primary);
   font-size: 11px;
   color: var(--color-textSecondary);
 }

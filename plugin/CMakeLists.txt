@@ -3,6 +3,22 @@
 # engine itself must never link back against this target or against
 # juce_audio_processors/juce_gui_basics — see engine/CMakeLists.txt.
 
+# BazaltLookAndFeel's own title-bar font — the Standalone window's custom-
+# drawn title bar (StandaloneApp.cpp) wants ui/'s own primary font
+# (tokens.ts's "'Schibsted Grotesk', ...", loaded there as a live Google
+# Fonts web font) so the native window chrome visually matches the WebView
+# content it frames. A web font has no reach into native juce::Graphics
+# drawing at all — completely separate rendering stack — so the actual
+# font FILE is vendored here and compiled in as BinaryData (SIL Open Font
+# License; fine to embed) rather than assumed to be installed on the host
+# system, which a plain `juce::Font("Schibsted Grotesk", ...)` by name
+# would silently and unreliably fall back away from. Bold only: a title
+# bar has exactly one text style, no need to ship every weight ui/ loads.
+juce_add_binary_data(BazaltPluginFonts
+    SOURCES
+        resources/fonts/SchibstedGrotesk-Bold.ttf
+)
+
 juce_add_plugin(BazaltPlugin
     VERSION                    0.1.0
     COMPANY_NAME                "Bazalt"
@@ -33,6 +49,7 @@ target_sources(BazaltPlugin
         source/GraphEditController.cpp
         source/NodeDescriptorJson.cpp
         source/StandaloneApp.cpp
+        source/BazaltWindowLookAndFeel.cpp
 )
 
 target_compile_definitions(BazaltPlugin
@@ -67,6 +84,7 @@ target_link_libraries(BazaltPlugin
         bazalt::engine
         juce::juce_audio_utils
         juce::juce_gui_extra
+        BazaltPluginFonts
     PUBLIC
         juce::juce_recommended_config_flags
         juce::juce_recommended_warning_flags

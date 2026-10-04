@@ -122,6 +122,17 @@ export function AddMenu({ x, y, descriptors, onChoose, onClose }: AddMenuProps) 
     return index >= 0 ? index : 0
   }, [activeRows, focusedKey])
 
+  // The row Enter would actually choose — NOT `focusedKey` directly: that's
+  // explicitly null right after the search text changes (onChange below)
+  // and on first mount, in which case `focusedIndex` above already falls
+  // back to 0 but `focusedKey` itself stays null and matches no row's own
+  // key. Rendering `isFocused` off `focusedKey` directly used to miss this,
+  // so the very first result had no highlight at all right after typing a
+  // query, even though pressing Enter immediately would still choose it
+  // (direct feedback, 2026-10-03: "make sure the focused result ... is
+  // highlighted"). This is what `renderRow` below actually compares against.
+  const focusedRowKey = activeRows[focusedIndex]?.key ?? null
+
   useEffect(() => inputRef.current?.focus(), [])
 
   useEffect(() => {
@@ -209,7 +220,7 @@ export function AddMenu({ x, y, descriptors, onChoose, onClose }: AddMenuProps) 
   }
 
   const renderRow = (row: CategoryRow, containerDepth: number): ReactElement => {
-    const isFocused = row.key === focusedKey
+    const isFocused = row.key === focusedRowKey
     if (row.kind === 'item') {
       return (
         <button

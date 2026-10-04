@@ -1,12 +1,13 @@
 import { useRef, useState } from 'react'
 import { InfiniteCanvas, type InfiniteCanvasHandle, type SnapSettings } from './canvas/InfiniteCanvas'
 import { AnalysisPanel } from './analysis/AnalysisPanel'
-import { redo, undo, quantityFromOrdinal, type GraphNode } from './graph/graphStore'
+import { redo, undo, loadPatch, quantityFromOrdinal, type GraphNode } from './graph/graphStore'
 import { graphExportSnapshot } from './graph/graphCommands'
 import { useGraphSnapshot } from './graph/useGraphSnapshot'
 import { MacroKnob } from './controls/MacroKnob'
 import { classifyPortUiKind, PORT_UI_STYLE } from './graph/portUiKind'
 import type { Quantity } from './graph/descriptorTypes'
+import { PatchMenu, PREMADE_PATCHES, type PatchOption } from './PatchMenu'
 import './App.css'
 
 /** A plain curved-arrow pair, not an icon font/library — small enough not
@@ -57,7 +58,6 @@ interface MacroEntry {
   min: number
   max: number
   isInteger: boolean
-  unit: string
   quantity: Quantity
   color: string
 }
@@ -82,7 +82,6 @@ function macroEntriesFrom(nodes: readonly GraphNode[]): MacroEntry[] {
     const min = node.parameterValues?.[MACRO_MIN_PARAM] ?? 0
     const max = node.parameterValues?.[MACRO_MAX_PARAM] ?? 1
     const isInteger = (node.parameterValues?.[MACRO_IS_INTEGER_PARAM] ?? 0) >= 0.5
-    const unit = node.macroUnit ?? ''
     const quantity = quantityFromOrdinal(node.parameterValues?.[MACRO_QUANTITY_PARAM] ?? 0)
     const kind = classifyPortUiKind({ type: 'control', isInteger, quantity })
 
@@ -92,7 +91,6 @@ function macroEntriesFrom(nodes: readonly GraphNode[]): MacroEntry[] {
       min,
       max,
       isInteger,
-      unit,
       quantity,
       color: PORT_UI_STYLE[kind].color,
     })
@@ -107,8 +105,21 @@ function macroEntriesFrom(nodes: readonly GraphNode[]): MacroEntry[] {
     established "cheap to leave dormant" default (e.g. snap-to-grid's own
     App.tsx header comment below).
 */
+// design/Macro.png / wiki/plans/PropsAndMacroRedesign.md Batch E, direct
+// instruction, 2026-10-03: "the existing on-top macro knob panel is
+// disabled for now" — Row 3's own "Display On Top?" toggle (MacroBody.tsx)
+// is a placeholder this pass (flips local state, drives nothing), so
+// nothing would ever populate this panel correctly anyway. (The engine
+// type-model rewrite this same day also made macroEntriesFrom() below
+// correct again — "util.macro.isInteger" is a real, recognised parameter
+// once more — but that doesn't change this panel's own disabled status,
+// still gated on Row 3 alone.) A plain `false` here (not deleting the
+// panel) keeps every symbol below genuinely referenced rather than unused
+// dead code. Re-enable once Row 3 is real.
+const MACRO_PANEL_ENABLED = false
+
 function MacroPanel({ nodes }: { nodes: readonly GraphNode[] }) {
-  const entries = macroEntriesFrom(nodes)
+  const entries = MACRO_PANEL_ENABLED ? macroEntriesFrom(nodes) : []
   if (entries.length === 0) return null
   return (
     <div className="macro-panel">
@@ -120,7 +131,7 @@ function MacroPanel({ nodes }: { nodes: readonly GraphNode[] }) {
           min={entry.min}
           max={entry.max}
           isInteger={entry.isInteger}
-          unit={entry.unit}
+          quantity={entry.quantity}
           color={entry.color}
         />
       ))}
@@ -180,6 +191,35 @@ function App() {
     })
   }
 
+  // design/TopBar.png's patch menu (direct instruction) — "Empty" matches
+  // what a fresh plugin instance actually opens on (ProofGraphs.h's own
+  // buildMasterOutOnlyGraph(), CLAUDE.md's documented default), so it's the
+  // right initial label without needing to ask the engine what's loaded.
+  // Purely local UI state, same reasoning exportStatus above already
+  // follows — not part of graphStore.ts's mirrored state, since nothing
+  // tracks "which premade patch (if any) the live graph still matches"
+  // once the user starts editing it.
+  const [currentPatchName, setCurrentPatchName] = useState(PREMADE_PATCHES[0].name)
+  const handleChoosePatch = (patch: PatchOption) => {
+    setCurrentPatchName(patch.name)
+    // Direct feedback: "When i pick a patch, no node appears." — loading a
+    // patch wholesale-REPLACES the graph, and unlike an incremental edit,
+    // the new nodes' positions (hardcoded in PatchMenu.tsx, matching
+    // ProofGraphs.h's own buildMasterOutOnlyGraph()) have no relation to
+    // wherever the camera already happened to be panned/zoomed to — they
+    // were loading successfully the whole time, just off-screen.
+    // InfiniteCanvas's own auto-recentre effect only fires on the graph's
+    // node count crossing 0 -> non-zero (first load), never on a
+    // same-nonzero-count wholesale replacement like this, so it's silent
+    // here. `fitView` is already built and exposed on the handle for
+    // exactly this kind of case — it just had no caller yet. Awaits the
+    // load (loadPatch now returns its own promise for this reason) and
+    // waits one more frame (same defensive pattern InfiniteCanvas.tsx's
+    // own auto-recentre effect already uses) so the DOM has actually
+    // re-rendered the new nodes before fitView measures their bounds.
+    void loadPatch(patch.json).then(() => requestAnimationFrame(() => canvasHandleRef.current?.fitView()))
+  }
+
   return (
     <div id="app-root">
       <InfiniteCanvas ref={canvasHandleRef} snapSettings={snapSettings}>
@@ -191,9 +231,11 @@ function App() {
           {lastError && <span className="top-bar-error">{lastError}</span>}
           {exportStatus && <span className="top-bar-status">{exportStatus}</span>}
           <div className="top-bar-spacer" />
+          <PatchMenu patches={PREMADE_PATCHES} value={currentPatchName} onChoose={handleChoosePatch} />
           <button className="top-bar-icon-button" onClick={handleExport} title="Export patch to exported-patch.json" aria-label="Export patch">
             <ExportIcon />
           </button>
+          <div className="top-bar-spacer" />
           <button className="top-bar-icon-button" onClick={() => undo()} disabled={!canUndo} title="Undo (Ctrl+Z)" aria-label="Undo">
             <UndoIcon />
           </button>

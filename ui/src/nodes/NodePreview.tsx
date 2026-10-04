@@ -36,9 +36,15 @@ const VISIBILITY_ROOT_MARGIN = '200px'
 /** One node's one declared preview — a node with more than one previews[]
     entry mounts one of these per entry (NodeCard.tsx decides where). Renders
     nothing for a kind with no real producer yet (frameTypeForPreviewKind
-    returns undefined for ShapeWithPlayhead/RollingHistory/EventImpulse/
-    Spectrogram/Goniometer — Part A's "documented for later" list) rather
-    than drawing a misleading blank canvas.
+    returns undefined for ShapeWithPlayhead/RollingHistory/Spectrogram/
+    Goniometer — Part A's "documented for later" list) rather than drawing
+    a misleading blank canvas. EventImpulse DOES have a real producer now
+    (AnalysisThread::publishEventImpulse, design/Visualization/Ripple.png)
+    but still isn't drawn through this generic per-kind dispatch below —
+    view.ripple is a bespoke node body (RippleBody.tsx, NodeCard.tsx's own
+    typeId dispatch) with its own persistent ring-list animation state,
+    which this component's own "redraw whatever the latest payload says,
+    every frame, no memory between frames" model doesn't fit.
 */
 export function NodePreview({ nodeId, preview }: NodePreviewProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null)

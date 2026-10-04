@@ -18,7 +18,7 @@
 //    underlying juce::AudioParameterFloat's range is always a plain
 //    0..1 identity — MacroParameters::addParametersTo), never the macro's
 //    real semantic range. This component is handed that real range (min/
-//    max/isInteger/unit) from the GRAPH MIRROR (the util.macro node's own
+//    max/isInteger/quantity) from the GRAPH MIRROR (the util.macro node's own
 //    structural parameters, read reactively via graphStore.ts/
 //    useGraphSnapshot — see App.tsx's MacroPanel), and does the
 //    raw<->display conversion itself, same "min + raw * (max - min)"
@@ -47,6 +47,8 @@
 // contract.
 import { useEffect, useReducer, useRef, type MouseEvent as ReactMouseEvent } from 'react'
 import { getSliderState } from '@juce-framework/webview'
+import type { Quantity } from '../graph/descriptorTypes'
+import { quantityUnit } from '../format/valueFormat'
 import './MacroKnob.css'
 
 export interface MacroKnobProps {
@@ -59,7 +61,11 @@ export interface MacroKnobProps {
   min: number
   max: number
   isInteger: boolean
-  unit: string
+  /** Replaces a separately-seeded `unit` prop (direct instruction,
+      2026-10-03: "Unit should not be a field") — the displayed unit is
+      derived from this via valueFormat.ts's own `quantityUnit`, mirroring
+      TypedValueNodeBase.h's `unitForQuantity` engine-side. */
+  quantity: Quantity
   color: string
 }
 
@@ -76,7 +82,7 @@ function clamp01(value: number): number {
   return Math.min(1, Math.max(0, value))
 }
 
-export function MacroKnob({ slot, label, min, max, isInteger, unit, color }: MacroKnobProps) {
+export function MacroKnob({ slot, label, min, max, isInteger, quantity, color }: MacroKnobProps) {
   const relayName = `macro${slot + 1}`
   // getSliderState() is idempotent (cached by name on the JS side, same as
   // MacroSlider.tsx already relied on) — safe to call every render.
@@ -149,7 +155,7 @@ export function MacroKnob({ slot, label, min, max, isInteger, unit, color }: Mac
       <span className="macro-knob-label">{label}</span>
       <span className="macro-knob-value">
         {displayValue.toFixed(decimals)}
-        {unit}
+        {quantityUnit(quantity)}
       </span>
     </div>
   )

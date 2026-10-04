@@ -6,7 +6,7 @@
 // deferred; see ADR-0008's Amendment (M10) for why DOM stays the layout
 // source of truth.
 import { useMemo } from 'react'
-import type { NodeDescriptor, ParameterDescriptor, PortDescriptor } from '../graph/descriptorTypes'
+import type { NodeDescriptor, ParameterDescriptor, PortDescriptor, Quantity } from '../graph/descriptorTypes'
 import { classifyPortUiKind, portUiStyle, portUiStyleForEndpoint, parameterUiColor, resolvePortIsPoly } from '../graph/portUiKind'
 import { getEndpoint } from '../graph/graphStore'
 import type { NodeMultiplicityBadge, PortMultiplicityInfo } from '../graph/graphCommands'
@@ -18,6 +18,9 @@ import { ToggleSwitch } from '../controls/ToggleSwitch'
 import { NodePreview } from './NodePreview'
 import { frameTypeForPreviewKind } from '../graph/previewSubscriptions'
 import { withRevealedGroupPorts } from '../graph/portGroups'
+import { MacroBody } from './MacroBody'
+import { RippleBody } from './RippleBody'
+import { CountBody } from './CountBody'
 import './NodeCard.css'
 
 /** PortDescriptor.h's own contract: "falls back to id in the UI if empty" —
@@ -87,6 +90,32 @@ export interface NodeCardState {
       node type, and for the M9 gallery.
   */
   instanceCountBadge?: NodeMultiplicityBadge
+  /** design/Macro.png / wiki/plans/PropsAndMacroRedesign.md Batch E —
+      MacroBody.tsx's own Row 2/Edit-T enum-option-label field. Undefined
+      for every node except a live util.macro instance; the M9 gallery's
+      static util.macro entry has no instanceId at all, so MacroBody.tsx
+      guards this behind `instanceId` rather than assuming it's present. */
+  macroEnumOptionLabels?: readonly string[]
+  onSetMacroEnumOptionLabels?: (labels: readonly string[]) => void
+  /** design/Visualization/Count.png's editable Min/Max footer — undefined
+      until the user has typed one in (GraphNode.countMinOverride/
+      countMaxOverride's own doc comment has the full reasoning); undefined
+      for every node except a live view.count instance, same guard shape
+      macroEnumOptionLabels above already uses. */
+  countMinOverride?: number
+  countMaxOverride?: number
+  onSetCountMin?: (value: number) => void
+  onSetCountMax?: (value: number) => void
+  /** MacroEditTypeModal's own portal target (GraphSurface.tsx's
+      `overlayTarget`, the screen-space `.infinite-canvas-overlay` div) —
+      see MacroBody.tsx's own comment on why this can't just render inline:
+      a plain `position: fixed` child of a transformed ancestor (the
+      pan/zoom `.infinite-canvas-world` every node lives in) is positioned
+      relative to THAT ancestor, not the viewport, same reason
+      NodeContextMenu already portals through this exact prop. Undefined in
+      the M9 gallery (no live canvas at all).
+  */
+  overlayTarget?: HTMLElement | null
 }
 
 interface NodeCardProps {
@@ -209,12 +238,29 @@ function hasNumericFallback(port: PortDescriptor): boolean {
     InfiniteCanvas.tsx's cables already use (graphStore.ts's getEndpoint())
     is needed here too, closing a real asymmetry: a wired Glance's cable
     recoloured live while its own node-body dot stayed frozen at the stale
-    default. No-ops (falls back to the plain static style) for a
-    non-polymorphic port, or with no `instanceId` (the M9 gallery's static
-    call sites, which have no live graph to resolve against).
+    default. No-ops (falls back to the plain static style) with no
+    `instanceId` (the M9 gallery's static call sites, which have no live
+    graph to resolve against).
+
+    Unconditional on `port.polymorphism` now (direct feedback, 2026-10-03:
+    "why is the macro value output not adapting to the color") — a
+    util.macro/util.constant output's live type is a SEPARATE kind of
+    "not really static" from wire-driven polymorphism (it follows the
+    node's OWN structural parameters instead, TypedValueNodeBase.h), and
+    was falling straight through to the frozen static descriptor here
+    because its own `polymorphism` field is (correctly) 'none' — this
+    node's shape was never wire-driven, so it never opted into THIS gate,
+    even though it needed the exact same live lookup for a different
+    reason. graphStore.ts's own endpointFor() is now the single place that
+    decides "static / wire-resolved / config-resolved" for ANY port, so
+    this function no longer needs to guess which case applies before
+    asking it — every ordinary node's own endpointFor() call is an
+    unchanged no-op lookup (same `port` object back), so this costs
+    nothing for the overwhelming majority of ports it's now also called
+    for.
 */
 function resolvedPortStyle(port: PortDescriptor, instanceId: string | undefined, direction: 'input' | 'output', isPoly?: boolean) {
-  if (instanceId && port.polymorphism && port.polymorphism !== 'none') {
+  if (instanceId) {
     const endpoint = getEndpoint(instanceId, port.id, direction)
     if (endpoint) return portUiStyleForEndpoint(endpoint, isPoly)
   }
@@ -230,7 +276,14 @@ function resolvedPortStyle(port: PortDescriptor, instanceId: string | undefined,
     descriptor-driven — nothing here reads a node's typeId, so every
     current and future node gets this for free.
 */
-function PortGlyph({
+/** Exported for MacroBody.tsx's own Row 4 (design/Macro.png): the output
+    port row needs the exact same border-piercing glyph, with the exact same
+    data-node-id/data-port-id/data-direction/data-port-anchor attributes
+    portAnchors.ts reads to find a cable's real screen anchor — duplicating
+    that positioning/attribute logic in a second file would be a real
+    correctness risk (a drifted copy could silently break cable anchoring
+    for every util.macro node), not just a style inconsistency. */
+export function PortGlyph({
   port,
   side,
   instanceId,
@@ -442,6 +495,7 @@ function ParameterRow({
   defaultValue,
   isInteger,
   unit,
+  quantity,
   skew,
   isBool,
   options,
@@ -457,18 +511,27 @@ function ParameterRow({
   defaultValue?: number
   isInteger: boolean
   unit: string
+  /** Colour input alongside isInteger/isBool below (classifyParameterUiKind,
+      portUiKind.ts) — Modulation (orange) vs. Value (white) for an
+      otherwise-plain numeric parameter, same Unipolar/Bipolar check a
+      port's own colour already uses. */
+  quantity: Quantity
   skew?: number
   /** `kind === 'bool'` (wiki/plans/PropsAndMacroRedesign.md Batch B) —
       renders a ToggleSwitch instead of a numeric ValueSlider. Closes the
       same gap PortRow's own boolean branch closes, for a structural
       ParameterDescriptor rather than a port (e.g. util.macro.isInteger
       already declares `kind: ValueKind::Bool` engine-side and used to
-      render as a plain 0/1 slider for lack of this branch). */
+      render as a plain 0/1 slider for lack of this branch). Also this
+      row's own colour input now (classifyParameterUiKind) — Boolean-blue
+      takes priority over isInteger/quantity, same as a port's own Boolean
+      SignalType always wins classifyPortUiKind's branch order.
+  */
   isBool?: boolean
   options?: string[]
   onCommit?: (value: number) => void
 }) {
-  const color = parameterUiColor(unit)
+  const color = parameterUiColor({ isBool: isBool ?? false, isInteger, quantity })
   return (
     <div className="node-row node-row-parameter" key={id}>
       {options && options.length > 0 ? (
@@ -624,6 +687,7 @@ function StandardBody({ descriptor, state, instanceId }: { descriptor: NodeDescr
           defaultValue={p.defaultValue}
           isInteger={p.isInteger}
           unit={p.unit}
+          quantity={p.quantity}
           skew={resolveSkew(p.curve, p.quantity, p.skew)}
           isBool={p.kind === 'bool'}
           options={parameterOptions(p)}
@@ -712,6 +776,7 @@ function HorizontalBody({ descriptor, state, instanceId }: { descriptor: NodeDes
             defaultValue={p.defaultValue}
             isInteger={p.isInteger}
             unit={p.unit}
+            quantity={p.quantity}
             skew={resolveSkew(p.curve, p.quantity, p.skew)}
             isBool={p.kind === 'bool'}
             options={parameterOptions(p)}
@@ -867,6 +932,21 @@ export function NodeCard({ descriptor: declaredDescriptor, state = {}, instanceI
   const descriptor = instanceId ? withRevealedGroupPorts(declaredDescriptor, state.connectedPortIds) : declaredDescriptor
 
   if (descriptor.icon === 'ear') return <EarIcon title={descriptor.title} />
+  // design/Macro.png / wiki/plans/PropsAndMacroRedesign.md Batch E: a
+  // bespoke body, keyed by typeId exactly like DecorationBody's own
+  // util.reroute special-case below — util.macro's REAL engine descriptor
+  // still reports an ordinary layoutVariant ('standard'); this is a
+  // client-side-only visual replacement, no engine change needed or made.
+  if (descriptor.typeId === 'util.macro') return <MacroBody descriptor={descriptor} state={state} instanceId={instanceId} />
+  // design/Visualization/Ripple.png: same client-side-only typeId dispatch
+  // as util.macro above — view.ripple's real engine descriptor reports an
+  // ordinary Glance layoutVariant; this is a visual swap only.
+  if (descriptor.typeId === 'view.ripple') return <RippleBody descriptor={descriptor} state={state} instanceId={instanceId} />
+  // design/Visualization/Count.png: same client-side-only typeId dispatch
+  // as view.ripple just above — view.count's real engine descriptor
+  // reports an ordinary Glance layoutVariant too; this is a visual swap
+  // only.
+  if (descriptor.typeId === 'view.count') return <CountBody descriptor={descriptor} state={state} instanceId={instanceId} />
   if (descriptor.layoutVariant === 'decoration') return <DecorationBody descriptor={descriptor} />
   if (descriptor.layoutVariant === 'singleton') return <SingletonBody descriptor={descriptor} state={state} instanceId={instanceId} />
   if (descriptor.layoutVariant === 'glance') return <GlanceBody descriptor={descriptor} state={state} instanceId={instanceId} />

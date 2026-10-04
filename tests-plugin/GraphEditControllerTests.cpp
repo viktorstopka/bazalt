@@ -746,6 +746,59 @@ TEST_CASE ("Placing a util.macro node, claiming a slot, and wiring it into a rea
     CHECK (rmsHighCutoff > rmsLowCutoff * 1.5f);
 }
 
+TEST_CASE ("A Trigger-type util.macro connects directly into a real Event-typed input with no adapter "
+           "silently inserted, and a Bool-type util.macro connects directly into a real Boolean-typed "
+           "input instead of being rejected",
+           "[plugin][GraphEditController][macro]")
+{
+    // Direct, reproducible feedback: "trigger macro cannot be plugged into
+    // trigger. same for bool." Root cause: GraphEditController::
+    // connectWithAutoAdapt's own pre-check (findOutputPort/findInputPort)
+    // used to read a freshly-constructed, bare-default node's ports
+    // instead of the REAL placed instance's — util.macro/util.constant's
+    // own output type is config-driven (TypedValueNodeBase.h's
+    // buildTypedOutputPort), always defaulting to Control, so a Trigger-
+    // or Bool-configured macro was pre-checked as if it were still an
+    // ordinary Control macro: a Control->Event mismatch silently spliced
+    // in an adapt.threshold adapter instead of a direct wire, and a
+    // Control->Boolean mismatch had no adapter at all (CanConnect.cpp only
+    // has one for the REVERSE, Boolean->Control) and was flatly rejected.
+    // GraphCompiler's own later, authoritative canConnect pass already
+    // read post-setParameter ports correctly — only this earlier,
+    // pre-GraphCompiler gate was guessing.
+    BazaltAudioProcessor processor;
+    processor.prepareToPlay (44100.0, 512);
+
+    auto& controller = processor.getGraphEditController();
+    REQUIRE (controller.setGraph (bazalt::engine::buildVoiceProofGraph()).success);
+
+    REQUIRE (controller.addNode ("util.macro", "triggerMacro", 0.0f, 0.0f).success);
+    REQUIRE (controller.setParameterValue ("triggerMacro", "util.macro.slot", 10.0f).success);
+    // commonParameters's own typeOptions order: control=0, bool=1, trigger=2.
+    REQUIRE (controller.setParameterValue ("triggerMacro", "util.macro.type", 2.0f).success);
+    REQUIRE (controller.addNode ("view.ripple", "ripple1", 200.0f, 0.0f).success);
+
+    REQUIRE (controller.connectWithAutoAdapt ("triggerMacro", "out", "ripple1", "in").success);
+
+    const auto& graphAfterTrigger = controller.getGraph();
+    const auto hasThresholdAdapter = std::any_of (graphAfterTrigger.getNodes().begin(), graphAfterTrigger.getNodes().end(),
+                                                   [] (const auto& n) { return n.type == "adapt.threshold"; });
+    CHECK_FALSE (hasThresholdAdapter);
+
+    const auto& connectionsAfterTrigger = graphAfterTrigger.getConnections();
+    const auto hasDirectTriggerWire = std::any_of (
+        connectionsAfterTrigger.begin(), connectionsAfterTrigger.end(),
+        [] (const auto& c) { return c.fromNodeId == "triggerMacro" && c.fromPortId == "out" && c.toNodeId == "ripple1" && c.toPortId == "in"; });
+    CHECK (hasDirectTriggerWire);
+
+    REQUIRE (controller.addNode ("util.macro", "boolMacro", 0.0f, 100.0f).success);
+    REQUIRE (controller.setParameterValue ("boolMacro", "util.macro.slot", 11.0f).success);
+    REQUIRE (controller.setParameterValue ("boolMacro", "util.macro.type", 1.0f).success);
+    REQUIRE (controller.addNode ("env.adsr", "env1", 200.0f, 100.0f).success);
+
+    REQUIRE (controller.connectWithAutoAdapt ("boolMacro", "out", "env1", "gate").success);
+}
+
 TEST_CASE ("Two util.macro nodes claiming the same slot are rejected with both node ids named, "
            "and the graph is left exactly as it was",
            "[plugin][GraphEditController][macro]")

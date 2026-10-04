@@ -22,6 +22,9 @@ namespace bazalt::engine
         scratchSamples.assign (maxSamplesPerDrain, 0.0f);
         oscilloscopePayload.assign ((size_t) oscilloscopeBuckets * 2, 0.0f);
         fftData.assign ((size_t) maxFftSize * 2, 0.0f);
+        eventImpulsePayload.assign ((size_t) maxEventsPerPublish, 0.0f);
+        eventWasHighBySlot.fill (false);
+        eventLastScannedTotalBySlot.fill (0);
 
         // Built once, here: a tap's fftSize setting selects among these and
         // never allocates. (Left alone on a second prepare() - they don't
@@ -133,6 +136,8 @@ namespace bazalt::engine
             publishSpectrum (slotIndex, scratchSamples.data(), numRead, settings);
         if (hub.isFrameTypeNeeded (slotIndex, TelemetryFrameType::Meter))
             publishMeter (slotIndex, scratchSamples.data(), numRead, elapsedSeconds, settings);
+        if (hub.isFrameTypeNeeded (slotIndex, TelemetryFrameType::EventImpulse))
+            publishEventImpulse (slotIndex, scratchSamples.data(), numRead, tap->getTotalPushed());
     }
 
     void AnalysisThread::publishOscilloscope (size_t slotIndex, const float* samples, int numSamples, const TapSettings& settings)
@@ -375,6 +380,79 @@ namespace bazalt::engine
         serializeTelemetryFrame (header, payload.data(), (uint32_t) payload.size(), frameScratch);
 
         if (auto* buffer = hub.getFrameBufferBySlot (slotIndex, TelemetryFrameType::Meter))
+            buffer->publish (frameScratch.data(), frameScratch.size());
+    }
+
+    void AnalysisThread::publishEventImpulse (size_t slotIndex, const float* samples, int numSamples, uint64_t totalPushed)
+    {
+        // Tap::readLatest() returns "the most recent window currently in
+        // the ring", not a delta since the last call — re-including
+        // already-scanned history whenever less than a full window's worth
+        // of new data has arrived since the previous drain (the ordinary
+        // case). Rescanning that old portion from `samples[0]` every time
+        // would re-detect its edges again on every subsequent drain, using
+        // a `wasHigh` carried from the END of the PREVIOUS scan but applied
+        // at the START of a window that reaches further back than that —
+        // a real bug this exact scenario caught live (a test driving two
+        // separate pushes/drains through a synchronous Rig). Scanning only
+        // the genuinely new tail — the last `min(totalPushed -
+        // eventLastScannedTotalBySlot[slotIndex], numSamples)` samples —
+        // is what makes `wasHigh` actually line up with "the sample
+        // immediately before the first NEW one this call examines".
+        const auto alreadyScanned = eventLastScannedTotalBySlot[slotIndex];
+        const auto newSinceLastScan = totalPushed > alreadyScanned
+                                           ? (int) std::min<uint64_t> (totalPushed - alreadyScanned, (uint64_t) numSamples)
+                                           : 0;
+        eventLastScannedTotalBySlot[slotIndex] = totalPushed;
+        const auto scanStart = numSamples - newSinceLastScan;
+
+        // "non-zero this sample = fired" (SineOscillatorNode.h's own "sync"
+        // convention) refined to a RISING edge crossing 0.5 (MacroNode.h's
+        // own Trigger detection: `storedValue >= 0.5f`) — a held-high Event
+        // signal (a gate, not a one-sample pulse) reports exactly one ring
+        // at the moment it opens, not one per sample for as long as it
+        // stays high. eventWasHighBySlot carries the level across drains so
+        // an edge exactly on a drain boundary is never double-counted or
+        // missed.
+        auto wasHigh = eventWasHighBySlot[slotIndex];
+        int numEvents = 0;
+
+        for (int i = scanStart; i < numSamples; ++i)
+        {
+            const auto isHigh = samples[i] >= 0.5f;
+            if (isHigh && ! wasHigh && numEvents < maxEventsPerPublish)
+            {
+                // Age in seconds: how long ago (relative to the END of this
+                // read, i.e. "now") this specific sample fired — the UI
+                // spawns each ring already partway through its life rather
+                // than always starting fresh, so a dense burst within one
+                // drain still shows each event at its own true relative age,
+                // not all bunched at age zero.
+                eventImpulsePayload[(size_t) numEvents] = (float) (numSamples - 1 - i) / (float) sampleRate;
+                ++numEvents;
+            }
+            wasHigh = isHigh;
+        }
+
+        eventWasHighBySlot[slotIndex] = wasHigh;
+
+        // Nothing NEW this drain — leave whatever was last published alone
+        // rather than publishing an empty frame every ~10ms. The UI side
+        // only ever spawns rings off a sequenceNumber it hasn't already
+        // seen, so a drain with nothing to add simply produces no visible
+        // effect, the same as if this call never ran.
+        if (numEvents == 0)
+            return;
+
+        TelemetryFrameHeader header;
+        header.tapId = (uint32_t) slotIndex;
+        header.frameType = TelemetryFrameType::EventImpulse;
+        header.sampleRate = (float) sampleRate;
+        header.sequenceNumber = sequenceNumber;
+
+        serializeTelemetryFrame (header, eventImpulsePayload.data(), (uint32_t) numEvents, frameScratch);
+
+        if (auto* buffer = hub.getFrameBufferBySlot (slotIndex, TelemetryFrameType::EventImpulse))
             buffer->publish (frameScratch.data(), frameScratch.size());
     }
 }

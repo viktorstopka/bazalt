@@ -148,6 +148,8 @@ namespace bazalt
                 return bazalt::engine::TelemetryFrameType::Spectrum;
             if (segment == "meter")
                 return bazalt::engine::TelemetryFrameType::Meter;
+            if (segment == "eventImpulse")
+                return bazalt::engine::TelemetryFrameType::EventImpulse;
             return std::nullopt;
         }
 
@@ -155,7 +157,7 @@ namespace bazalt
         // conceptual shape; JUCE's resource provider is one callback per
         // WebBrowserComponent differentiated by PATH within a single
         // virtual origin, not a literal custom URL scheme — so taps are
-        // served at /tap/<name>/<scope|spectrum|meter> instead.
+        // served at /tap/<name>/<scope|spectrum|meter|eventImpulse> instead.
         std::optional<juce::WebBrowserComponent::Resource> serveTap (BazaltAudioProcessor& processor, const juce::String& url)
         {
             const auto remainder = url.fromFirstOccurrenceOf ("/tap/", false, false);
@@ -534,7 +536,29 @@ namespace bazalt
         auto options = Options {}
                             .withBackend (Options::Backend::webview2)
                             .withWinWebView2Options (
-                                Options::WinWebView2 {}.withUserDataFolder (webView2UserDataFolder))
+                                Options::WinWebView2 {}
+                                    .withUserDataFolder (webView2UserDataFolder)
+                                    // Direct feedback: "a weird thick white line separating
+                                    // the new top header with the in app". Root cause: this
+                                    // option was never set, so WebView2's own
+                                    // DefaultBackgroundColor stayed at its default — fully
+                                    // TRANSPARENT (a default-constructed juce::Colour, alpha
+                                    // 0) — "underneath all web content" per this option's own
+                                    // doc comment. WebView2 is a genuinely separate native
+                                    // child HWND, composited by Windows, not painted through
+                                    // JUCE's own Graphics/LookAndFeel at all — setting the
+                                    // window's own ResizableWindow::backgroundColourId
+                                    // (StandaloneApp.cpp) could never reach this seam, because
+                                    // transparent, non-layered child-HWND compositing isn't
+                                    // pixel-perfect at every DPI-scaled edge, and whatever
+                                    // shows through at that seam is NOT guaranteed to be this
+                                    // window's own background. Matches tokens.color.background
+                                    // exactly and must be fully opaque (see this option's own
+                                    // assertion) — ui/'s own CSS (index.css's `body { background:
+                                    // var(--color-background) }`) covers the rest once the page
+                                    // itself has painted; this is what's visible in the moments
+                                    // and edges that page content doesn't.
+                                    .withBackgroundColour (juce::Colour (0xff0f0f0f)))
                             .withNativeIntegrationEnabled();
 
         for (auto& relay : macroRelays)

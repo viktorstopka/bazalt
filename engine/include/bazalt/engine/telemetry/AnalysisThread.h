@@ -62,10 +62,20 @@ namespace bazalt::engine
         static constexpr int maxSamplesPerDrain = 8192;
         static constexpr double defaultMaxProcessingMsPerCycle = 5.0; // budget, at ~100Hz drain: <=50% duty cycle
 
+        // design/Visualization/Ripple.png: the most events one publish ever
+        // reports — a sane ceiling against a degenerate input (nothing
+        // type-enforces that an Event-typed signal stays sparse; a
+        // user could still wire audio-rate content into one), not a
+        // realistic count for an actual trigger/gate stream. Keeps the
+        // payload well inside maxTelemetryFrameBytes (shared with the
+        // 4096-bin spectrum ceiling) with enormous headroom to spare.
+        static constexpr int maxEventsPerPublish = 256;
+
         void processTap (size_t slotIndex, double elapsedSeconds);
         void publishOscilloscope (size_t slotIndex, const float* samples, int numSamples, const TapSettings& settings);
         void publishSpectrum (size_t slotIndex, const float* samples, int numSamples, const TapSettings& settings);
         void publishMeter (size_t slotIndex, const float* samples, int numSamples, double elapsedSeconds, const TapSettings& settings);
+        void publishEventImpulse (size_t slotIndex, const float* samples, int numSamples, uint64_t totalPushed);
 
         TelemetryHub& hub;
         double sampleRate = 44100.0;
@@ -78,6 +88,7 @@ namespace bazalt::engine
         std::vector<float> scratchSamples;
         std::vector<float> oscilloscopePayload;
         std::vector<float> fftData;
+        std::vector<float> eventImpulsePayload; // reused across publishEventImpulse() calls, sized to maxEventsPerPublish in prepare()
         std::vector<std::byte> frameScratch;
         // ADR-0029: one FFT and Hann window per supported size, built once in
         // prepare(), so a tap's fftSize setting is an index, never an allocation.
@@ -93,6 +104,29 @@ namespace bazalt::engine
 
         std::array<MeterBallistics, TelemetryHub::maxTaps> meterBallisticsBySlot;
         std::array<double, TelemetryHub::maxTaps> syntheticPhase {}; // per-slot phase for "demo." taps
+
+        // Per-slot rising-edge memory for publishEventImpulse() — the same
+        // "was the level already high as of the very last sample we saw"
+        // state MacroNode's own previousTriggerLevelHigh keeps, just one
+        // per tap slot instead of one per node instance, so an edge
+        // spanning two consecutive drains (the common case: a drain almost
+        // never lands exactly on an event boundary) is still only ever
+        // reported once, not re-detected as a second edge at the start of
+        // the next read.
+        std::array<bool, TelemetryHub::maxTaps> eventWasHighBySlot {};
+
+        // How many of this slot's own Tap::getTotalPushed() have already
+        // been scanned for edges. Tap::readLatest() returns "the most
+        // recent window currently in the ring" based on the CUMULATIVE
+        // push count, not a delta since the last read — re-reading the
+        // same already-scanned history whenever less than a full window's
+        // worth of new data has arrived since the previous drain (the
+        // ordinary case, at this thread's ~100Hz cadence against a typical
+        // audio block size). Naively rescanning the whole window every
+        // time would re-detect every old edge still inside it on every
+        // subsequent drain; this is what lets publishEventImpulse scan
+        // only the genuinely NEW tail instead.
+        std::array<uint64_t, TelemetryHub::maxTaps> eventLastScannedTotalBySlot {};
 
         JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (AnalysisThread)
     };

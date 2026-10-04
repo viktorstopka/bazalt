@@ -11,9 +11,16 @@
   justify-content: space-between;
   gap: 6px;
   padding: 0 8px;
-  border: var(--stroke-thin) solid;
+  /* --canvas-hairline: see NodeCard.css's own .node-card comment — this
+     control lives inside the same scaled canvas layer. */
+  border: var(--canvas-hairline, var(--stroke-thin)) solid;
   border-radius: var(--radius-sm);
-  background: var(--color-panel);
+  /* Direct instruction, 2026-10-03: no fill at all, explicitly pinned to
+     the same literal value as `--color-background` (not `transparent` —
+     direct follow-up correction) so it reads as flush with the node body
+     (itself `--color-nodeFill`, already that same value) under every
+     compositing path. */
+  background: var(--color-background);
   overflow: hidden;
   /* Direct feedback: hovering should read as "you can type here" first,
      the same I-beam a plain HTML text input shows at rest — a click with
@@ -40,7 +47,12 @@
 /* Value-position fill — behind the text (z-index below), a translucent
    wash in the port/parameter's own colour rather than a full block, so the
    label/value stay legible at any fill level. */
+/* Direct instruction, 2026-10-03: the value-position fill is deactivated
+   temporarily — `display: none` rather than deleting the rule/the
+   width+colour logic in ValueSlider.tsx, so it's a one-line flip to bring
+   back, not a re-implementation. */
 .value-slider-fill {
+  display: none;
   position: absolute;
   left: 0;
   top: 0;
@@ -63,6 +75,7 @@
 }
 
 .value-slider-value {
+  font-family: var(--font-secondary);
   flex-shrink: 0;
 }
 
@@ -77,7 +90,7 @@
   border: none;
   outline: none;
   color: inherit;
-  font-family: var(--font-mono);
+  font-family: var(--font-secondary);
   font-size: inherit;
   text-align: right;
   cursor: text;

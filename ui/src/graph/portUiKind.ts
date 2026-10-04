@@ -1,7 +1,7 @@
 // NODE_EDITOR.md §5 / blueprint §4's 6-colour port palette, derived from
 // the engine's SignalType plus PortDescriptor's numeric metadata rather
 // than being a separate type system the engine and UI could drift apart on.
-import type { PortDescriptor, SignalType } from './descriptorTypes'
+import type { PortDescriptor, Quantity, SignalType } from './descriptorTypes'
 import type { PortMultiplicityInfo } from './graphCommands'
 import type { ConnectionEndpoint } from './canConnect'
 import { tokens } from '../theme/tokens'
@@ -138,13 +138,36 @@ export function resolvePortIsPoly(port: Pick<PortDescriptor, 'id' | 'isPolyPlace
 }
 
 /** Parameters (ParameterDescriptor) aren't graph-connectable ports and
-    carry no SignalType (CLAUDE.md's interim-simplifications note), but the
-    design reference (docs/Slice 1 (1).png) still colours them by the same
-    Modulation/Value split §5 uses for ports: a ratio-like quantity (no
-    unit, or a "%" unit) renders Modulation-orange; a real-world unit (Hz,
-    ms, s, st, ...) renders Value-white. Best-effort — there's no min/max-
-    derived signal here the way there is for ports, just the unit string.
+    carry no SignalType (CLAUDE.md's interim-simplifications note) — but
+    they DO carry the same `kind`/`isInteger`/`quantity` value-contract
+    fields every port does (M14), via `isBool`/`isInteger`/`quantity`
+    (ParameterRow's own already-derived locals; NodeCard.tsx threads them
+    through rather than re-deriving `isBool` from a raw `kind` string
+    here). This used to ignore all three and guess from `unit` alone ("no
+    unit, or '%' -> orange, else white") — direct feedback, 2026-10-03:
+    "Distribution in Random should be enum/int, mode in Clip as well...
+    there are SO MANY mistypes regarding color". Checked directly:
+    `random.stepped.distribution` and `shape.clip.mode` both ALREADY
+    declare `.isInteger = true, .kind = ValueKind::Enum` engine-side — the
+    data was always right, this just never looked at it, so EVERY
+    enum/int/bool structural parameter in the whole catalog rendered
+    Modulation-orange (none of them carry a unit) regardless of how
+    correctly it was tagged, and a genuinely unitless plain float rendered
+    the same wrong orange too. Mirrors `classifyPortUiKind`'s own
+    Control-branch priority exactly (isInteger checked before quantity) —
+    an Enum parameter colours the same Integer-yellow a real Enum PORT
+    does (no separate "enum" hue exists anywhere in this palette); every
+    enum parameter in this codebase that sets `kind: Enum` also sets
+    `isInteger: true` alongside it, so checking `isInteger` alone already
+    covers it, same as the port side.
 */
-export function parameterUiColor(unit: string): string {
-  return unit === '' || unit === '%' ? tokens.color.portModulation : tokens.color.portValue
+export function classifyParameterUiKind(p: { isBool: boolean; isInteger: boolean; quantity: Quantity }): PortUiKind {
+  if (p.isBool) return 'boolean'
+  if (p.isInteger) return 'integer'
+  if (p.quantity === 'unipolar' || p.quantity === 'bipolar') return 'modulation'
+  return 'value'
+}
+
+export function parameterUiColor(p: { isBool: boolean; isInteger: boolean; quantity: Quantity }): string {
+  return PORT_UI_STYLE[classifyParameterUiKind(p)].color
 }

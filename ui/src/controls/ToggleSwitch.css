@@ -10,9 +10,12 @@
   justify-content: space-between;
   gap: 6px;
   padding: 0 8px;
-  border: var(--stroke-thin) solid;
+  border: var(--canvas-hairline, var(--stroke-thin)) solid;
   border-radius: var(--radius-sm);
-  background: var(--color-panel);
+  /* Direct instruction, 2026-10-03: no fill — see ValueSlider.css's own
+     comment on the same change (pinned to the literal background colour,
+     not `transparent`). */
+  background: var(--color-background);
   cursor: pointer;
   user-select: none;
 }
@@ -32,7 +35,7 @@
   flex-shrink: 0;
   width: 24px;
   height: 12px;
-  border: var(--stroke-thin) solid;
+  border: var(--canvas-hairline, var(--stroke-thin)) solid;
   border-radius: 999px;
   background: transparent;
   transition: background 0.1s ease;

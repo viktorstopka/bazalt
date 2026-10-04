@@ -17,7 +17,19 @@ namespace bazalt::engine
     {
         Oscilloscope = 0,
         Spectrum = 1,
-        Meter = 2
+        Meter = 2,
+        // view.ripple (design/Visualization/Ripple.png): a list of event
+        // ages, not a fixed-shape buffer like the three above — each
+        // payload float is "how many seconds ago this event fired",
+        // oldest-dropped-first if a drain finds more than
+        // AnalysisThread::maxEventsPerPublish of them. Variable length
+        // between publishes is already handled by the existing frame
+        // machinery (telemetryClient.ts's getInterpolatedTap falls back to
+        // "just the latest payload, no interpolation" whenever two
+        // consecutive frames' lengths differ, which they almost always
+        // will here) — nothing about the header/payload framing itself
+        // needed to change for this.
+        EventImpulse = 3
     };
 
     struct TelemetryFrameHeader

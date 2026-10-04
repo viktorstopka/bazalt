@@ -8,7 +8,7 @@
   border: var(--stroke-thin) solid var(--color-panelBorder);
   border-radius: var(--radius-sm);
   padding: 4px;
-  font-family: var(--font-mono);
+  font-family: var(--font-primary);
   font-size: 12px;
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
 }

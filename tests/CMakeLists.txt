@@ -63,6 +63,8 @@ add_executable(EngineTests
     TelemetryHubTests.cpp
     UtilityNodeTests.cpp
     ValueContractTests.cpp
+    ViewCountNodeTests.cpp
+    ViewRippleNodeTests.cpp
     VoiceManagerTests.cpp
 )
 

@@ -14,6 +14,7 @@
 // plain Record<string, number>).
 import { useEffect, useRef, useState } from 'react'
 import './TriggerSelect.css'
+import { tokens, withAlpha } from '../theme/tokens'
 
 export interface TriggerSelectProps {
   label: string
@@ -60,7 +61,7 @@ export function TriggerSelect({ label, options, selectedIndex, color, onCommit }
     <div
       ref={rootRef}
       className="trigger-select"
-      style={{ borderColor: color, color }}
+      style={{ borderColor: withAlpha(color, tokens.opacity.border), color }}
       onClick={(e) => {
         e.stopPropagation()
         setOpen((v) => !v)

@@ -1,0 +1,99 @@
+/* design/Visualization/Count.png: "A small rectangular panel, near-black
+   fill, thin hairline border. No title." Overrides .node-card's own
+   inline-flex/column/padding (built for a title bar + stacked rows, none
+   of which this has) down to a plain fixed-size rectangle; `position:
+   relative` and the border/radius/fill/hairline-compensation all still
+   come from .node-card itself (NodeCard.css), unchanged — same split
+   RippleBody.css's own top comment explains for view.ripple.
+
+   190px width, not a smaller number picked in isolation: NodeCard.css's
+   base `.node-card` rule floors every node at `min-width: 190px` — see
+   RippleBody.css's own comment on the exact clamping bug that floor
+   caused before view.ripple matched it explicitly instead of fighting it.
+   Height stays its own, smaller number on purpose: unlike view.ripple
+   ("should be much more square, than a rectangle" — a direct correction
+   for THAT node), Count's own reference image already shows a rectangle,
+   not a square. */
+.view-count-card {
+  display: flex;
+  flex-direction: column;
+  width: 190px;
+  height: 150px;
+  padding: 0;
+}
+
+/* Zero-size anchors near the panel's own top corners — design/Visualization/
+   Count.png: "Input port at the top-left corner, output port at the
+   top-right", unlike view.ripple's own vertically-centred side ports
+   (RippleBody.css's own .view-ripple-port comment has that distinction's
+   reasoning: `top: 50%` there, a fixed inset here instead). Same
+   "true edge, not inset" left:0/right:0 convention as .view-ripple-port-*,
+   and the same zero-size-point-plus-the-glyph's-own-translate(-50%,-50%)
+   centring trick.
+*/
+.view-count-port {
+  position: absolute;
+  top: 18px;
+  width: 0;
+  height: 0;
+}
+
+.view-count-port-left {
+  left: 0;
+}
+
+.view-count-port-right {
+  right: 0;
+}
+
+/* "The current value fills the upper area" — flex-grow so it claims
+   whatever room the footer/divider below don't need, regardless of exact
+   panel height. Extra top padding clears the port row above it. */
+.view-count-value-area {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding-top: 14px;
+}
+
+.view-count-value {
+  font-family: var(--font-secondary);
+  font-size: 40px;
+  font-weight: 600;
+  line-height: 1;
+  user-select: none;
+}
+
+/* "A thin divider separates it from a footer strip along the bottom." */
+.view-count-divider {
+  height: var(--canvas-hairline, var(--stroke-thin));
+  background: var(--color-nodeBorder);
+  margin: 0 var(--space-sm);
+}
+
+.view-count-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: var(--space-xs) var(--space-sm);
+  font-family: var(--font-secondary);
+  font-size: 11px;
+  color: var(--color-textSecondary);
+}
+
+.view-count-stat-editable {
+  cursor: text;
+}
+
+.view-count-stat-input {
+  width: 48px;
+  background: transparent;
+  border: none;
+  border-bottom: var(--canvas-hairline, var(--stroke-thin)) solid var(--color-textSecondary);
+  color: var(--color-textPrimary);
+  font-family: var(--font-secondary);
+  font-size: 11px;
+  outline: none;
+  padding: 0;
+}

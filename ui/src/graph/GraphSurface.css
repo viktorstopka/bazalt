@@ -36,8 +36,8 @@
   padding: 0 var(--space-sm);
   background: var(--color-panel);
   color: var(--color-textPrimary);
-  border: var(--stroke-thin) solid var(--color-accent);
-  font-family: var(--font-mono);
+  border: var(--canvas-hairline, var(--stroke-thin)) solid var(--color-accent);
+  font-family: var(--font-primary);
   font-size: 13px;
   font-weight: 500;
   cursor: text;

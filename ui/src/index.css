@@ -9,7 +9,7 @@ body {
   margin: 0;
   background: var(--color-background);
   color: var(--color-textPrimary);
-  font-family: var(--font-mono);
+  font-family: var(--font-primary);
   overflow: hidden;
 }
 

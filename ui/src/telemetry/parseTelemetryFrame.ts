@@ -21,6 +21,11 @@ export const TelemetryFrameType = {
   Oscilloscope: 0,
   Spectrum: 1,
   Meter: 2,
+  // design/Visualization/Ripple.png: each payload float is "how many
+  // seconds ago this event fired" — a variable-length list, not a
+  // fixed-shape buffer like the three above (see TelemetryFrame.h's own
+  // header comment on this value).
+  EventImpulse: 3,
 } as const
 export type TelemetryFrameType = (typeof TelemetryFrameType)[keyof typeof TelemetryFrameType]
 

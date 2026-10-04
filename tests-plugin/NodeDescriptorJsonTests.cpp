@@ -7,6 +7,7 @@
 #include "bazalt/engine/nodes/RerouteNode.h"
 #include "bazalt/engine/nodes/InstanceMixNode.h"
 #include "bazalt/engine/nodes/ViewGlanceNode.h"
+#include "bazalt/engine/nodes/RemapNode.h"
 
 using namespace bazalt;
 using namespace bazalt::engine;
@@ -45,6 +46,40 @@ namespace
 TEST_CASE ("nodeDescriptorToVar serializes a node with an unbounded numeric output port",
            "[plugin][NodeDescriptorJson][NODE_EDITOR]")
 {
+    // adapt.remap's own "out" port is still genuinely unbounded today
+    // (RemapNode.h declares no minValue/maxValue at all) — util.constant
+    // used to be this test's example too, but wiki/plans/
+    // PropsAndMacroRedesign.md Batch E gave it a real, configurable range
+    // contract, so its own output port is bounded by default now (see the
+    // dedicated util.constant descriptor test below).
+    const auto descriptor = describeNode ("adapt.remap", nodes::RemapNode {});
+    const auto var = nodeDescriptorToVar (descriptor);
+
+    REQUIRE (var.isObject());
+    CHECK (var["typeId"].toString() == "adapt.remap");
+
+    const auto* outputs = var["outputs"].getArray();
+    REQUIRE (outputs != nullptr);
+    REQUIRE (outputs->size() == 1);
+    const auto& out = (*outputs)[0];
+    CHECK (out["id"].toString() == "out");
+    CHECK (out["type"].toString() == "control");
+    CHECK ((bool) out["isPrimaryOutput"]);
+    // Unset optional<float> must serialize to a JS-visible null (isVoid),
+    // never 0 — 0 is a legitimate bound, absence isn't the same fact.
+    CHECK (out["minValue"].isVoid());
+    CHECK (out["maxValue"].isVoid());
+}
+
+TEST_CASE ("nodeDescriptorToVar serializes util.constant's new type-aware descriptor shape",
+           "[plugin][NodeDescriptorJson][props-edit]")
+{
+    // wiki/plans/PropsAndMacroRedesign.md Batch E: util.constant now shares
+    // util.macro's type/isInteger/isEnum/min/max/quantity contract
+    // (TypedValueNodeBase.h) -
+    // a fresh node's own output port is bounded by its own default
+    // (generous but real) ±100000 range, not unbounded the way the old
+    // hardcoded descriptor was.
     const auto descriptor = describeNode ("util.constant", nodes::ConstantNode {});
     const auto var = nodeDescriptorToVar (descriptor);
 
@@ -61,16 +96,31 @@ TEST_CASE ("nodeDescriptorToVar serializes a node with an unbounded numeric outp
     CHECK (out["id"].toString() == "out");
     CHECK (out["type"].toString() == "control");
     CHECK ((bool) out["isPrimaryOutput"]);
-    // Unset optional<float> must serialize to a JS-visible null (isVoid),
-    // never 0 — 0 is a legitimate bound, absence isn't the same fact.
-    CHECK (out["minValue"].isVoid());
-    CHECK (out["maxValue"].isVoid());
+    CHECK ((float) out["minValue"] == -100000.0f);
+    CHECK ((float) out["maxValue"] == 100000.0f);
 
     const auto* parameters = var["parameters"].getArray();
     REQUIRE (parameters != nullptr);
-    REQUIRE (parameters->size() == 1);
-    CHECK ((*parameters)[0]["id"].toString() == "util.constant.value");
-    CHECK ((float) (*parameters)[0]["minValue"] == -100000.0f);
+    REQUIRE (parameters->size() == 7); // type, isInteger, isEnum, min, max, quantity, value
+
+    auto findParam = [&] (const juce::String& id) -> const juce::var*
+    {
+        for (const auto& p : *parameters)
+            if (p["id"].toString() == id)
+                return &p;
+        return nullptr;
+    };
+
+    const auto* typeParam = findParam ("util.constant.type");
+    REQUIRE (typeParam != nullptr);
+    CHECK ((*typeParam)["kind"].toString() == "enum");
+
+    const auto* valueParam = findParam ("util.constant.value");
+    REQUIRE (valueParam != nullptr);
+    CHECK ((float) (*valueParam)["minValue"] == -100000.0f);
+    CHECK ((float) (*valueParam)["maxValue"] == 100000.0f);
+    CHECK ((float) (*valueParam)["softMin"] == -10.0f);
+    CHECK ((float) (*valueParam)["softMax"] == 10.0f);
 }
 
 TEST_CASE ("nodeDescriptorToVar reports the Decoration layout variant",

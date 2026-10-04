@@ -18,14 +18,43 @@ namespace bazalt
         // Message-thread-only, metadata-only lookup (mirrors
         // NodeFactory::describeAll()'s own "construct one throwaway
         // instance purely to read its metadata" pattern) — never touched
-        // by the audio thread.
+        // by the audio thread. Applies the REAL node instance's own
+        // parameters to that throwaway before reading its ports, exactly
+        // like GraphCompiler::compile()'s own node-construction loop
+        // already does (setParameter() for every entry in
+        // instance.parameters, before ever calling getOutputPorts()/
+        // getInputPorts()) — this used to skip that step entirely, reading
+        // a config-driven node's (util.macro/util.constant) ports at their
+        // bare-default construction state (always Control-typed,
+        // TypedValueNodeBase.h's own storedType default) no matter what
+        // the actually-placed instance's own "type" parameter said. Direct,
+        // reproducible feedback: "trigger macro cannot be plugged into
+        // trigger. same for bool." — this function's own stale Control
+        // guess is exactly why: Control->Event silently misfired the
+        // Threshold auto-adapter instead of a direct wire, and
+        // Control->Boolean has no adapter at all (CanConnect.cpp has one
+        // for the reverse, Boolean->Control, not this direction), so that
+        // one hit a flat, confusing reject. GraphCompiler's own later,
+        // authoritative canConnect pass (GraphCompiler.cpp) already reads
+        // post-setParameter ports correctly and was never the problem —
+        // this earlier, pre-GraphCompiler gate (the one that decides
+        // whether to auto-insert an adapter chain at all) was the one
+        // still guessing.
+        void applyInstanceParameters (bazalt::engine::Node& node, const bazalt::engine::NodeInstance& instance)
+        {
+            for (const auto& [paramId, value] : instance.parameters)
+                node.setParameter (paramId, value);
+        }
+
         const bazalt::engine::PortDescriptor* findOutputPort (const bazalt::engine::NodeFactory& factory,
-                                                                const juce::String& typeId, const juce::String& portId,
+                                                                const bazalt::engine::NodeInstance& instance, const juce::String& portId,
                                                                 std::vector<bazalt::engine::PortDescriptor>& storage)
         {
-            auto node = factory.create (typeId);
+            auto node = factory.create (instance.type);
             if (node == nullptr)
                 return nullptr;
+
+            applyInstanceParameters (*node, instance);
 
             storage = node->getOutputPorts();
             for (const auto& port : storage)
@@ -143,12 +172,14 @@ namespace bazalt
         }
 
         const bazalt::engine::PortDescriptor* findInputPort (const bazalt::engine::NodeFactory& factory,
-                                                               const juce::String& typeId, const juce::String& portId,
+                                                               const bazalt::engine::NodeInstance& instance, const juce::String& portId,
                                                                std::vector<bazalt::engine::PortDescriptor>& storage)
         {
-            auto node = factory.create (typeId);
+            auto node = factory.create (instance.type);
             if (node == nullptr)
                 return nullptr;
+
+            applyInstanceParameters (*node, instance);
 
             storage = node->getInputPorts();
 
@@ -416,11 +447,11 @@ namespace bazalt
 
         auto& factory = processor.getNodeFactory();
         std::vector<bazalt::engine::PortDescriptor> fromStorage, toStorage;
-        const auto* fromPort = findOutputPort (factory, fromNode->type, fromPortId, fromStorage);
+        const auto* fromPort = findOutputPort (factory, *fromNode, fromPortId, fromStorage);
         if (fromPort == nullptr)
             return { false, "Node '" + fromNodeId + "' has no output port '" + fromPortId + "'" };
 
-        const auto* toPort = findInputPort (factory, toNode->type, toPortId, toStorage);
+        const auto* toPort = findInputPort (factory, *toNode, toPortId, toStorage);
         if (toPort == nullptr)
             return { false, "Node '" + toNodeId + "' has no input port '" + toPortId + "'" };
 

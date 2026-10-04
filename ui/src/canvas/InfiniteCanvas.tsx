@@ -13,7 +13,9 @@ import {
   canSplice,
   commitNodeMoves,
   commitWireDrag,
+  createCountFromPort,
   createMacroFromPort,
+  createRippleFromPort,
   deleteNodes,
   ensureInitialized,
   findWireAtInput,
@@ -531,6 +533,26 @@ export const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, InfiniteCanvasPro
       // relaunches with identical code before this fix.
       const camera = getCamera()
       world.style.transform = `translate(${camera.panX}px, ${camera.panY}px) scale(${camera.zoom})`
+      // Direct feedback, repeatedly: "borders are completely randomly
+      // disappearing and appearing [during] zoom... when releasing...
+      // stops on some of them being gone." Root cause: every node's own
+      // `border: 1px solid` (NodeCard.css etc.) lives INSIDE this scaled
+      // layer, so its on-screen width is `1px * camera.zoom` — a
+      // continuous float, sub-pixel at almost every real zoom level. A
+      // browser rasterizes a sub-pixel-wide line via antialiasing
+      // (effectively reducing its own opacity to its fractional pixel
+      // coverage), and since every node sits at a different fractional
+      // screen offset from this same transform, each one crosses that
+      // rounding threshold differently — "random" per node, frozen at
+      // whatever it lands on once zooming stops. `--canvas-hairline`
+      // (read by every node-internal border via `var(--canvas-hairline,
+      // var(--stroke-thin))` — the fallback keeps the M9 gallery, which
+      // has no scaled ancestor to inherit this from, at the plain
+      // unscaled token) is the inverse of this frame's own zoom, so the
+      // border's LOGICAL (pre-scale) width divides out to exactly 1 real
+      // screen pixel after this transform applies, same as every other
+      // hairline border in the app that isn't inside a scaled layer.
+      world.style.setProperty('--canvas-hairline', `${1 / camera.zoom}px`)
 
       const graphNow = getGraphSnapshot()
       const hasUnmeasuredNodes = syncNodeOffsetCache(graphNow.nodes)
@@ -940,6 +962,39 @@ export const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, InfiniteCanvasPro
       if (port) {
         e.preventDefault()
         if (port.direction === 'output') {
+          // design/Visualization/Ripple.png: "Ctrl/Cmd-clicking an Event
+          // output port spawns this node already connected to that port.
+          // It is the default viewer for the Event type." A plain click
+          // still starts the ordinary wireDrag gesture below — this only
+          // intercepts the modifier-held case, and only for a port whose
+          // live-resolved type is actually Event (getEndpoint, not the
+          // port's own static descriptor, same reasoning NodeCard.tsx's
+          // resolvedPortStyle already follows for polymorphic/config-driven
+          // ports).
+          if (e.ctrlKey || e.metaKey) {
+            const endpoint = getEndpoint(port.nodeId, port.portId, 'output')
+            if (endpoint && endpoint.port.type === 'event') {
+              const worldPos = canvasToWorld(lastMouseCanvasX, lastMouseCanvasY)
+              const x = snapValue(worldPos.x + 40, snapSettingsRef.current)
+              const y = snapValue(worldPos.y + 40, snapSettingsRef.current)
+              createRippleFromPort(port.nodeId, port.portId, x, y)
+              requestFrame()
+              return
+            }
+            // design/Visualization/Count.png: "Ctrl/Cmd-clicking an integer
+            // output port spawns this node already connected to that port.
+            // It is the default viewer for the integer type." Same shape as
+            // the Event/Ripple branch just above, for an integer Control
+            // port instead.
+            if (endpoint && endpoint.port.type === 'control' && endpoint.port.isInteger) {
+              const worldPos = canvasToWorld(lastMouseCanvasX, lastMouseCanvasY)
+              const x = snapValue(worldPos.x + 40, snapSettingsRef.current)
+              const y = snapValue(worldPos.y + 40, snapSettingsRef.current)
+              createCountFromPort(port.nodeId, port.portId, x, y)
+              requestFrame()
+              return
+            }
+          }
           setGesture({ kind: 'wireDrag', fromNodeId: port.nodeId, fromPortId: port.portId })
         } else {
           const existing = findWireAtInput(port.nodeId, port.portId)

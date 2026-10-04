@@ -1,0 +1,73 @@
+/* design/TopBar.png: "a wide dropdown ... dark fill, hairline border,
+   rounded corners". Width is a fixed, generous value rather than flex:1 —
+   it should read as one deliberately-sized control centred in the bar
+   (App.css's two .top-bar-spacer flex children either side of it do the
+   actual centring), not stretch to fill whatever space is left. */
+.patch-menu {
+  position: relative;
+  width: 360px;
+}
+
+.patch-menu-button {
+  all: unset;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  height: 28px;
+  padding: 0 var(--space-sm);
+  /* Matches the main background (not --color-panel, a visibly lighter
+     shade) — direct feedback. */
+  background: var(--color-background);
+  border: var(--stroke-thin) solid var(--color-panelBorder);
+  border-radius: var(--radius-sm);
+  /* The shown name is a selected VALUE (same reasoning TriggerSelect's own
+     .trigger-select-value carries), not a UI label — secondary/value face. */
+  font-family: var(--font-secondary);
+  font-size: 13px;
+  color: var(--color-textPrimary);
+  cursor: pointer;
+}
+
+.patch-menu-caret {
+  color: var(--color-textSecondary);
+  font-size: 10px;
+  flex-shrink: 0;
+  margin-left: var(--space-sm);
+}
+
+.patch-menu-list {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  z-index: 100;
+  display: flex;
+  flex-direction: column;
+  max-height: 320px;
+  overflow-y: auto;
+  /* Same reasoning as .patch-menu-button above — the opened list matches
+     the main background too, not --color-panel. */
+  background: var(--color-background);
+  border: var(--stroke-thin) solid var(--color-panelBorder);
+  border-radius: var(--radius-sm);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+}
+
+.patch-menu-item {
+  all: unset;
+  box-sizing: border-box;
+  display: block;
+  width: 100%;
+  padding: 8px var(--space-sm);
+  font-family: var(--font-secondary);
+  font-size: 13px;
+  color: var(--color-textPrimary);
+  cursor: pointer;
+}
+
+.patch-menu-item:hover,
+.patch-menu-item-active {
+  background: var(--color-panelBorder);
+}

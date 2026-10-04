@@ -46,6 +46,8 @@
 #include <juce_audio_utils/juce_audio_utils.h>
 #include <juce_audio_plugin_client/Standalone/juce_StandaloneFilterWindow.h>
 
+#include "BazaltWindowLookAndFeel.h"
+
 namespace bazalt
 {
 
@@ -88,10 +90,38 @@ public:
             return nullptr;
         }
 
-        return new juce::StandaloneFilterWindow (getApplicationName(),
-                                                   juce::LookAndFeel::getDefaultLookAndFeel()
-                                                       .findColour (juce::ResizableWindow::backgroundColourId),
-                                                   createPluginHolder());
+        auto* window = new juce::StandaloneFilterWindow (getApplicationName(),
+                                                           juce::LookAndFeel::getDefaultLookAndFeel()
+                                                               .findColour (juce::ResizableWindow::backgroundColourId),
+                                                           createPluginHolder());
+
+        // Direct instruction: stylize the window frame itself (bg, font) to
+        // match ui/'s own theme. Windows' native title bar can't be themed
+        // with a custom background colour or font at all (DWM owns that
+        // chrome) — the only way to get either is to have JUCE draw the
+        // title bar itself. Applied directly to this window instance, not
+        // via LookAndFeel::setDefaultLookAndFeel(), so every other native
+        // JUCE surface (the audio/MIDI settings dialog, file choosers, …)
+        // keeps its stock appearance — see BazaltWindowLookAndFeel's own
+        // header comment for the full reasoning. Standalone-app-only: a
+        // VST3 instance hosted in a DAW uses the host's own window chrome.
+        window->setUsingNativeTitleBar (false);
+        window->setLookAndFeel (&windowLookAndFeel);
+        // Fixes a real, reported bug, not a style nicety: once the native
+        // title bar is off, ResizableWindow reserves a ~4px resize-border
+        // margin around the WHOLE window (getBorderThickness(),
+        // juce_ResizableWindow.cpp) that neither drawDocumentWindowTitleBar
+        // above nor the content component ever paints over — it's filled
+        // separately, by ResizableWindow::paint() itself, straight from
+        // this colour. Left at JUCE's stock default (unrelated to
+        // windowLookAndFeel entirely — it's a per-window property, not a
+        // LookAndFeel one), it showed through as an unthemed strip right at
+        // the window's true edges — "a weird thick white line separating
+        // the new top header with the in app".
+        window->setColour (juce::ResizableWindow::backgroundColourId,
+                            juce::Colour (BazaltWindowLookAndFeel::backgroundColourArgb));
+
+        return window;
     }
 
     std::unique_ptr<juce::StandalonePluginHolder> createPluginHolder()
@@ -167,6 +197,10 @@ public:
 
 private:
     juce::ApplicationProperties appProperties;
+    // Declared before mainWindow so it outlives it (members are destroyed
+    // in reverse declaration order) — mainWindow holds a raw, non-owning
+    // pointer to this via Component::setLookAndFeel() in createWindow().
+    BazaltWindowLookAndFeel windowLookAndFeel;
     std::unique_ptr<juce::StandaloneFilterWindow> mainWindow;
     std::unique_ptr<juce::StandalonePluginHolder> pluginHolder;
 };

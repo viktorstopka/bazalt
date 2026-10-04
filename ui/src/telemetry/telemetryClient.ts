@@ -22,6 +22,14 @@ import { parseTelemetryFrame, TelemetryFrameType, type TelemetryFrame } from './
 export type TapName = string
 
 const BASELINE_TAP_NAMES: readonly TapName[] = ['main', 'aux1', 'aux2', 'aux3', 'aux4']
+// The M5 baseline panel's own 3 (main + 4 aux buses, Oscilloscope/Spectrum/
+// Meter only — see seedBaselineTaps()'s own doc comment) — deliberately
+// NOT all 4 frame types that exist: EventImpulse has nothing to do with
+// the analysis panel, and subscribing these 5 plain audio buses to it would
+// just poll/publish edge-detection noise nobody displays (M20's own "only
+// do the work a subscriber actually asked for" principle). Ripple's own
+// EventImpulse polling goes through subscribeNodePreview/pollTap
+// independently of this array entirely (ui/src/graph/previewSubscriptions.ts).
 const ALL_FRAME_TYPES: readonly TelemetryFrameType[] = [
   TelemetryFrameType.Oscilloscope,
   TelemetryFrameType.Spectrum,
@@ -32,6 +40,7 @@ const FRAME_TYPE_PATH: Record<TelemetryFrameType, string> = {
   [TelemetryFrameType.Oscilloscope]: 'scope',
   [TelemetryFrameType.Spectrum]: 'spectrum',
   [TelemetryFrameType.Meter]: 'meter',
+  [TelemetryFrameType.EventImpulse]: 'eventImpulse',
 }
 
 interface TapState {
@@ -201,6 +210,21 @@ export function unseedBaselineTaps(): void {
 export interface InterpolatedTap {
   payload: Float32Array
   sampleRate: number
+}
+
+/** The raw latest frame for a tap, with no interpolation at all — design/
+    Visualization/Ripple.png's own RippleBody.tsx is the one real caller:
+    EventImpulse's payload is a variable-length list of discrete event
+    ages, not a continuous signal, so blending two of them the way
+    getInterpolatedTap does for a waveform/spectrum/meter makes no sense.
+    RippleBody tracks `sequenceNumber` itself to tell "a genuinely new
+    frame just arrived" apart from "still the same latest frame as last
+    render" — `getInterpolatedTap`'s own return shape doesn't expose that
+    field at all, by design, since nothing before this needed it. Returns
+    null until at least one frame has arrived, same as getInterpolatedTap.
+*/
+export function getLatestTapFrame(tap: TapName, frameType: TelemetryFrameType): TelemetryFrame | null {
+  return store.get(tapKey(tap, frameType))?.latest ?? null
 }
 
 /** Reads the current best estimate for a tap's payload, linearly

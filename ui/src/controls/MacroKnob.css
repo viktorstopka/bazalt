@@ -4,7 +4,7 @@
   align-items: center;
   gap: 2px;
   width: 56px;
-  font-family: var(--font-mono);
+  font-family: var(--font-primary);
   color: var(--color-textPrimary);
   cursor: default;
   user-select: none;
@@ -46,6 +46,7 @@
 }
 
 .macro-knob-value {
+  font-family: var(--font-secondary);
   font-size: 10px;
   color: var(--color-textPrimary);
   white-space: nowrap;

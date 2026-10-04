@@ -1,0 +1,35 @@
+.ui-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 20px;
+  padding: 0 10px;
+  /* --canvas-hairline: see NodeCard.css's own .node-card comment. A Button
+     used inside a node row (MacroBody.tsx) lives inside the scaled canvas
+     layer; one used inside a portaled modal (MacroEditTypeModal.tsx) does
+     not — the fallback covers that case correctly either way, since
+     nothing sets the custom property outside the scaled subtree. */
+  border: var(--canvas-hairline, var(--stroke-thin)) solid var(--color-textSecondary);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--color-textSecondary);
+  font-family: var(--font-primary);
+  font-size: 12px;
+  white-space: nowrap;
+  cursor: pointer;
+  user-select: none;
+}
+
+.ui-button:hover:not(:disabled) {
+  background: var(--color-panel);
+}
+
+.ui-button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.ui-button-full {
+  width: 100%;
+  height: 24px;
+}

@@ -21,6 +21,7 @@
 // value bag with no new shape needed anywhere upstream.
 import { useState } from 'react'
 import './ToggleSwitch.css'
+import { tokens, withAlpha } from '../theme/tokens'
 
 export interface ToggleSwitchProps {
   label: string
@@ -37,11 +38,12 @@ export function ToggleSwitch({ label, value, color, onCommit }: ToggleSwitchProp
   const committedValue = onCommit ? value : uncontrolledValue
   const commitOut = onCommit ?? setUncontrolledValue
   const on = committedValue >= 0.5
+  const resolvedBorderColor = withAlpha(color, tokens.opacity.border)
 
   return (
     <div
       className="toggle-switch"
-      style={{ borderColor: color, color }}
+      style={{ borderColor: resolvedBorderColor, color }}
       onClick={(e) => {
         e.stopPropagation()
         commitOut(on ? 0 : 1)
@@ -50,7 +52,10 @@ export function ToggleSwitch({ label, value, color, onCommit }: ToggleSwitchProp
       onContextMenu={(e) => e.stopPropagation()}
     >
       <span className="toggle-switch-label">{label}</span>
-      <span className={`toggle-switch-track${on ? ' toggle-switch-track-on' : ''}`} style={on ? { borderColor: color, background: color } : { borderColor: color }}>
+      <span
+        className={`toggle-switch-track${on ? ' toggle-switch-track-on' : ''}`}
+        style={on ? { borderColor: resolvedBorderColor, background: color } : { borderColor: resolvedBorderColor }}
+      >
         <span className="toggle-switch-thumb" />
       </span>
     </div>
