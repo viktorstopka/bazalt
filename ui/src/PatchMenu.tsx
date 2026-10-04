@@ -14,6 +14,7 @@
 // instance's own default graph) and "Sine" (adds one osc.sine straight
 // into the same Master Out).
 import { useEffect, useRef, useState } from 'react'
+import catPurringJson from './patches/CatPurr.json?raw'
 import './PatchMenu.css'
 
 export interface PatchOption {
@@ -44,13 +45,22 @@ function sinePatchJson(): string {
   })
 }
 
-/** Exactly the two placeholders direct instruction asked for — "MIDI Saw,
-    Karplus-Strong, Arp, Swarm and many others" are explicitly future work,
-    not stubbed here even as empty entries. Add a real demo patch by
-    appending another `{ name, json }` — nothing else needs to change. */
+/** The first real demo patch (direct instruction, 2026-10-05) — "MIDI Saw,
+    Karplus-Strong, Arp, Swarm and many others" are still future work, not
+    stubbed here even as empty entries, but this one is real: a physically-
+    modelled cat purr (breath oscillator -> glottal fold -> nasal/body
+    modal resonators), hand-built in the live editor and exported via
+    graphGetSnapshot (patches/CatPurr.json — a verbatim copy; the original
+    the user dropped next to the Standalone executable is left untouched,
+    per their own instruction). Imported as a raw string (`?raw`, Vite's
+    own text-asset import), not JSON.parse'd and re-stringified: `json`
+    only ever needs to BE a JSON string for loadPatch to parse on its own
+    end, and re-serializing here would risk silently reformatting/losing
+    precision on values this patch's own author actually tuned by ear. */
 export const PREMADE_PATCHES: readonly PatchOption[] = [
   { name: 'Empty', json: emptyPatchJson() },
   { name: 'Sine', json: sinePatchJson() },
+  { name: 'Cat Purring', json: catPurringJson },
 ]
 
 export function PatchMenu({ patches, value, onChoose }: { patches: readonly PatchOption[]; value: string; onChoose: (patch: PatchOption) => void }) {

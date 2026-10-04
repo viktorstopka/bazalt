@@ -1,0 +1,1125 @@
+{
+  "schemaVersion": 7,
+  "nodes": [
+    {
+      "id": "node29",
+      "type": "io.noteIn",
+      "position": {
+        "x": -558.7060546875,
+        "y": 78.191566467285156
+      },
+      "parameters": {
+      },
+      "properties": {
+      }
+    },
+    {
+      "id": "node30",
+      "type": "instance.allocate.voice",
+      "position": {
+        "x": -289.572265625,
+        "y": 85.082679748535156
+      },
+      "parameters": {
+      },
+      "properties": {
+      }
+    },
+    {
+      "id": "node33",
+      "type": "util.macro",
+      "position": {
+        "x": -1375.69921875,
+        "y": -409.182464599609375
+      },
+      "parameters": {
+        "util.macro.type": 0.0,
+        "util.macro.max": 0.5,
+        "util.macro.slot": 0.0,
+        "util.macro.min": 0.200000002980232,
+        "util.macro.isInteger": 0.0,
+        "util.macro.quantity": 1.0,
+        "util.macro.isEnum": 0.0,
+        "util.macro.value": 0.019901990890503
+      },
+      "properties": {
+        "title": "Breath Rate"
+      }
+    },
+    {
+      "id": "node34",
+      "type": "osc.sine",
+      "position": {
+        "x": -1025.69873046875,
+        "y": -362.0096435546875
+      },
+      "parameters": {
+      },
+      "properties": {
+        "title": "Breath"
+      }
+    },
+    {
+      "id": "node35",
+      "type": "shape.clip",
+      "position": {
+        "x": -553.57159423828125,
+        "y": -347.866607666015625
+      },
+      "parameters": {
+        "shape.clip.mode": 1.0,
+        "shape.clip.knee": 0.600000023841858
+      },
+      "properties": {
+      }
+    },
+    {
+      "id": "node36",
+      "type": "view.scope.control",
+      "position": {
+        "x": 1340.2049560546875,
+        "y": -415.454803466796875
+      },
+      "parameters": {
+        "view.scope.control.timeWindow": 10.028572082519531
+      },
+      "properties": {
+        "viewer.rangeMin": -1,
+        "viewer.rangeMax": 1
+      }
+    },
+    {
+      "id": "node35_node36_adapter",
+      "type": "adapt.audioToControl",
+      "position": {
+        "x": -315.80853271484375,
+        "y": -339.845489501953125
+      },
+      "parameters": {
+      },
+      "properties": {
+      }
+    },
+    {
+      "id": "node37",
+      "type": "mix.gain",
+      "position": {
+        "x": -793.49066162109375,
+        "y": -343.57135009765625
+      },
+      "parameters": {
+        "gain": 3.0
+      },
+      "properties": {
+      }
+    },
+    {
+      "id": "node38",
+      "type": "logic.compare",
+      "position": {
+        "x": 316.621826171875,
+        "y": -293.925018310546875
+      },
+      "parameters": {
+        "logic.compare.tolerance": 0.0
+      },
+      "properties": {
+      }
+    },
+    {
+      "id": "node39",
+      "type": "util.constant",
+      "position": {
+        "x": -74.917121887207031,
+        "y": -680.59405517578125
+      },
+      "parameters": {
+        "util.constant.min": 0.0,
+        "util.constant.max": 0.0,
+        "util.constant.value": 0.0
+      },
+      "properties": {
+      }
+    },
+    {
+      "id": "node40",
+      "type": "adapt.boolToControl",
+      "position": {
+        "x": 574.387451171875,
+        "y": -237.998046875
+      },
+      "parameters": {
+        "adapt.boolToControl.whenFalse": 0.899999976158142
+      },
+      "properties": {
+      }
+    },
+    {
+      "id": "node41",
+      "type": "math.multiply",
+      "position": {
+        "x": 819.9189453125,
+        "y": -455.468780517578125
+      },
+      "parameters": {
+      },
+      "properties": {
+        "title": "Pressure"
+      }
+    },
+    {
+      "id": "node42",
+      "type": "math.abs",
+      "position": {
+        "x": 1091.61767578125,
+        "y": -386.553253173828125
+      },
+      "parameters": {
+      },
+      "properties": {
+      }
+    },
+    {
+      "id": "node45",
+      "type": "excite.impulse",
+      "position": {
+        "x": 1538.836669921875,
+        "y": -154.201980590820312
+      },
+      "parameters": {
+        "excite.impulse.width": 4.0
+      },
+      "properties": {
+      }
+    },
+    {
+      "id": "node50",
+      "type": "filter.ladder",
+      "position": {
+        "x": 1908.921875,
+        "y": 66.758529663085938
+      },
+      "parameters": {
+        "filter.ladder.poles": 1.0,
+        "filter.ladder.cutoff": 400.0,
+        "filter.ladder.mode": 1.0,
+        "filter.ladder.resonance": 0.0,
+        "filter.ladder.keyTrack": 0.0,
+        "filter.ladder.drive": 1.0
+      },
+      "properties": {
+        "title": "Diff"
+      }
+    },
+    {
+      "id": "node58",
+      "type": "excite.burst",
+      "position": {
+        "x": 1188.45361328125,
+        "y": 438.82366943359375
+      },
+      "parameters": {
+        "excite.burst.duration": 4.0
+      },
+      "properties": {
+      }
+    },
+    {
+      "id": "node59",
+      "type": "filter.svf",
+      "position": {
+        "x": 1477.046875,
+        "y": 496.3773193359375
+      },
+      "parameters": {
+        "filter.svf.cutoff": 3000.0,
+        "filter.svf.resonance": 0.009999999776483
+      },
+      "properties": {
+      }
+    },
+    {
+      "id": "node60",
+      "type": "mix.gain",
+      "position": {
+        "x": 1784.055908203125,
+        "y": 500.701385498046875
+      },
+      "parameters": {
+        "gain": 0.150000005960464
+      },
+      "properties": {
+      }
+    },
+    {
+      "id": "node61",
+      "type": "util.macro",
+      "position": {
+        "x": 1475.60546875,
+        "y": 249.905242919921875
+      },
+      "parameters": {
+        "util.macro.slot": 1.0,
+        "util.macro.max": 1.0,
+        "util.macro.type": 0.0,
+        "util.macro.min": 0.150000005960464,
+        "util.macro.isInteger": 0.0,
+        "util.macro.quantity": 4.0,
+        "util.macro.value": 0.037500001490116,
+        "util.macro.isEnum": 0.0
+      },
+      "properties": {
+        "title": "Air Level"
+      }
+    },
+    {
+      "id": "node62",
+      "type": "math.add",
+      "position": {
+        "x": 2458.2099609375,
+        "y": 143.301773071289062
+      },
+      "parameters": {
+      },
+      "properties": {
+        "title": "Source"
+      }
+    },
+    {
+      "id": "node64",
+      "type": "io.output",
+      "position": {
+        "x": 5410.71533203125,
+        "y": 43.471397399902344
+      },
+      "parameters": {
+      },
+      "properties": {
+      }
+    },
+    {
+      "id": "node65",
+      "type": "resonator.comb",
+      "position": {
+        "x": 2781.435302734375,
+        "y": 103.128158569335938
+      },
+      "parameters": {
+        "resonator.comb.frequency": 800.0,
+        "resonator.comb.type": 0.0,
+        "resonator.comb.feedback": 0.600000023841858,
+        "resonator.comb.damping": 0.5
+      },
+      "properties": {
+        "title": "Nasal Antiresonance"
+      }
+    },
+    {
+      "id": "node66",
+      "type": "data.material",
+      "position": {
+        "x": 2732.33837890625,
+        "y": -347.101287841796875
+      },
+      "parameters": {
+        "data.material.geometry": 2.0,
+        "data.material.damping": 0.954819977283478,
+        "data.material.modeCount": 4.0,
+        "data.material.density": 0.300000011920929,
+        "data.material.preset": 0.0,
+        "data.material.seed": 1.0
+      },
+      "properties": {
+        "title": "Nose Material"
+      }
+    },
+    {
+      "id": "node67",
+      "type": "resonator.modal",
+      "position": {
+        "x": 3041.828369140625,
+        "y": -263.35870361328125
+      },
+      "parameters": {
+        "pitch": 60.0,
+        "resonator.modal.inharmonicity": 0.0,
+        "resonator.modal.decay": 0.014999999664724,
+        "resonator.modal.position": 0.300000011920929,
+        "resonator.modal.spread": 0.0,
+        "resonator.modal.brightness": 1.0
+      },
+      "properties": {
+        "title": "Nasal Tract"
+      }
+    },
+    {
+      "id": "node68",
+      "type": "adapt.frequencyToPitch",
+      "position": {
+        "x": 2434.624267578125,
+        "y": -202.96185302734375
+      },
+      "parameters": {
+        "frequency": 784.0
+      },
+      "properties": {
+      }
+    },
+    {
+      "id": "node69",
+      "type": "mix.gain",
+      "position": {
+        "x": 3451.6640625,
+        "y": -106.974014282226562
+      },
+      "parameters": {
+        "gain": 0.100000001490116
+      },
+      "properties": {
+      }
+    },
+    {
+      "id": "node67_node69_adapter",
+      "type": "mix.downmix",
+      "position": {
+        "x": 3224.63671875,
+        "y": -328.069610595703125
+      },
+      "parameters": {
+      },
+      "properties": {
+      }
+    },
+    {
+      "id": "node70",
+      "type": "mix.crossfade",
+      "position": {
+        "x": 3736.041748046875,
+        "y": -13.840802192687988
+      },
+      "parameters": {
+        "mix.crossfade.position": 0.475389152765274
+      },
+      "properties": {
+        "title": "Nasal Dry/Wet"
+      }
+    },
+    {
+      "id": "node71",
+      "type": "mix.gain",
+      "position": {
+        "x": 3985.774169921875,
+        "y": 0.554641544818878
+      },
+      "parameters": {
+        "gain": 0.600000023841858
+      },
+      "properties": {
+      }
+    },
+    {
+      "id": "node72",
+      "type": "util.macro",
+      "position": {
+        "x": 3225.158447265625,
+        "y": -518.74462890625
+      },
+      "parameters": {
+        "util.macro.type": 0.0,
+        "util.macro.max": 1.0,
+        "util.macro.slot": 2.0,
+        "util.macro.min": 0.0,
+        "util.macro.isInteger": 0.0,
+        "util.macro.quantity": 6.0,
+        "util.macro.isEnum": 0.0,
+        "util.macro.value": 0.475389152765274
+      },
+      "properties": {
+        "title": "Nasal Resonance"
+      }
+    },
+    {
+      "id": "node73",
+      "type": "adapt.remap",
+      "position": {
+        "x": 3482.94775390625,
+        "y": -412.5755615234375
+      },
+      "parameters": {
+        "adapt.remap.outMin": 1.0,
+        "adapt.remap.outMax": 0.0
+      },
+      "properties": {
+      }
+    },
+    {
+      "id": "node74",
+      "type": "data.material",
+      "position": {
+        "x": 2635.697998046875,
+        "y": 727.266357421875
+      },
+      "parameters": {
+        "data.material.preset": 5.0,
+        "data.material.modeCount": 8.0,
+        "data.material.geometry": 5.0,
+        "data.material.damping": 0.934535801410675,
+        "data.material.stiffness": 0.300000011920929
+      },
+      "properties": {
+        "title": "Body Material"
+      }
+    },
+    {
+      "id": "node75",
+      "type": "resonator.modal",
+      "position": {
+        "x": 3033.196044921875,
+        "y": 481.141265869140625
+      },
+      "parameters": {
+        "pitch": 45.0,
+        "resonator.modal.decay": 0.029999999329448,
+        "resonator.modal.position": 0.300000011920929
+      },
+      "properties": {
+        "title": "Body"
+      }
+    },
+    {
+      "id": "node76",
+      "type": "adapt.frequencyToPitch",
+      "position": {
+        "x": 2451.589111328125,
+        "y": 532.9432373046875
+      },
+      "parameters": {
+        "frequency": 110.0
+      },
+      "properties": {
+      }
+    },
+    {
+      "id": "node77",
+      "type": "filter.ladder",
+      "position": {
+        "x": 3757.658935546875,
+        "y": 268.9998779296875
+      },
+      "parameters": {
+        "filter.ladder.poles": 2.0,
+        "filter.ladder.cutoff": 150.0,
+        "filter.ladder.resonance": 0.0,
+        "filter.ladder.drive": 1.0
+      },
+      "properties": {
+        "title": "Tissue Filter"
+      }
+    },
+    {
+      "id": "node75_node77_adapter",
+      "type": "mix.downmix",
+      "position": {
+        "x": 3253.009521484375,
+        "y": 315.731689453125
+      },
+      "parameters": {
+      },
+      "properties": {
+      }
+    },
+    {
+      "id": "node78",
+      "type": "mix.gain",
+      "position": {
+        "x": 3490.552490234375,
+        "y": 432.35223388671875
+      },
+      "parameters": {
+        "gain": 0.019999999552965
+      },
+      "properties": {
+      }
+    },
+    {
+      "id": "node79",
+      "type": "mix.crossfade",
+      "position": {
+        "x": 4440.49951171875,
+        "y": -82.402870178222656
+      },
+      "parameters": {
+        "mix.crossfade.law": 1.0
+      },
+      "properties": {
+      }
+    },
+    {
+      "id": "node80",
+      "type": "util.macro",
+      "position": {
+        "x": 3917.212646484375,
+        "y": -279.1611328125
+      },
+      "parameters": {
+        "util.macro.max": 1.0,
+        "util.macro.slot": 3.0,
+        "util.macro.min": 0.0,
+        "util.macro.isInteger": 0.0,
+        "util.macro.quantity": 6.0,
+        "util.macro.value": 0.5
+      },
+      "properties": {
+        "title": "Mic"
+      }
+    },
+    {
+      "id": "node81",
+      "type": "mix.gain",
+      "position": {
+        "x": 4005.324951171875,
+        "y": 217.841537475585938
+      },
+      "parameters": {
+        "gain": 0.300000011920929
+      },
+      "properties": {
+      }
+    },
+    {
+      "id": "node82",
+      "type": "shape.clip",
+      "position": {
+        "x": 4718.970703125,
+        "y": 36.807895660400391
+      },
+      "parameters": {
+        "shape.clip.knee": 0.648821830749512,
+        "shape.clip.ceiling": 0.899999976158142,
+        "shape.clip.mode": 1.0
+      },
+      "properties": {
+      }
+    },
+    {
+      "id": "node83",
+      "type": "space.pan",
+      "position": {
+        "x": 4988.36767578125,
+        "y": 43.433189392089844
+      },
+      "parameters": {
+      },
+      "properties": {
+      }
+    },
+    {
+      "id": "node88",
+      "type": "logic.select",
+      "position": {
+        "x": 373.95599365234375,
+        "y": 343.43536376953125
+      },
+      "parameters": {
+      },
+      "properties": {
+        "title": "Valve"
+      }
+    },
+    {
+      "id": "node89",
+      "type": "util.constant",
+      "position": {
+        "x": 3.425349950790405,
+        "y": 152.271041870117188
+      },
+      "parameters": {
+        "util.constant.min": 0.0,
+        "util.constant.max": 0.0
+      },
+      "properties": {
+      }
+    },
+    {
+      "id": "node91",
+      "type": "math.slew",
+      "position": {
+        "x": 662.23089599609375,
+        "y": 93.646224975585938
+      },
+      "parameters": {
+        "math.slew.rise": 0.200000002980232,
+        "math.slew.fall": 0.0
+      },
+      "properties": {
+        "title": "Psub"
+      }
+    },
+    {
+      "id": "node92",
+      "type": "adapt.threshold",
+      "position": {
+        "x": 942.20037841796875,
+        "y": 175.146530151367188
+      },
+      "parameters": {
+        "threshold": 0.150000005960464
+      },
+      "properties": {
+        "title": "Fold"
+      }
+    },
+    {
+      "id": "node93",
+      "type": "adapt.gateLength",
+      "position": {
+        "x": 1188.9979248046875,
+        "y": 197.710861206054688
+      },
+      "parameters": {
+        "length": 0.00400000018999
+      },
+      "properties": {
+      }
+    },
+    {
+      "id": "node96",
+      "type": "osc.sine",
+      "position": {
+        "x": -336.710784912109375,
+        "y": 592.04864501953125
+      },
+      "parameters": {
+        "osc.sine.frequency": 26.0
+      },
+      "properties": {
+      }
+    },
+    {
+      "id": "node97",
+      "type": "adapt.audioToControl",
+      "position": {
+        "x": -50.075241088867188,
+        "y": 648.68231201171875
+      },
+      "parameters": {
+        "depth": 0.050000000745058
+      },
+      "properties": {
+      }
+    },
+    {
+      "id": "node98",
+      "type": "random.drift",
+      "position": {
+        "x": -44.418350219726562,
+        "y": 818.7706298828125
+      },
+      "parameters": {
+        "random.drift.amount": 0.019999999552965
+      },
+      "properties": {
+      }
+    },
+    {
+      "id": "node99",
+      "type": "math.add",
+      "position": {
+        "x": 402.408935546875,
+        "y": 820.08624267578125
+      },
+      "parameters": {
+        "in.1": -0.063404083251953,
+        "in.2": 0.0,
+        "in.0": 0.150000005960464
+      },
+      "properties": {
+      }
+    },
+    {
+      "id": "node102",
+      "type": "view.scope.control",
+      "position": {
+        "x": 247.045562744140625,
+        "y": 628.84942626953125
+      },
+      "parameters": {
+        "view.scope.control.timeWindow": 0.400000005960464
+      },
+      "properties": {
+        "viewer.rangeMin": 0,
+        "viewer.rangeMax": 0.1
+      }
+    },
+    {
+      "id": "node103",
+      "type": "math.add",
+      "position": {
+        "x": 706.9478759765625,
+        "y": 669.80633544921875
+      },
+      "parameters": {
+      },
+      "properties": {
+      }
+    }
+  ],
+  "connections": [
+    {
+      "fromNodeId": "node29",
+      "fromPortId": "notes",
+      "toNodeId": "node30",
+      "toPortId": "spawn"
+    },
+    {
+      "fromNodeId": "node33",
+      "fromPortId": "out",
+      "toNodeId": "node34",
+      "toPortId": "osc.sine.frequency"
+    },
+    {
+      "fromNodeId": "node35",
+      "fromPortId": "out",
+      "toNodeId": "node35_node36_adapter",
+      "toPortId": "in"
+    },
+    {
+      "fromNodeId": "node34",
+      "fromPortId": "out",
+      "toNodeId": "node37",
+      "toPortId": "audio"
+    },
+    {
+      "fromNodeId": "node37",
+      "fromPortId": "out",
+      "toNodeId": "node35",
+      "toPortId": "in"
+    },
+    {
+      "fromNodeId": "node39",
+      "fromPortId": "out",
+      "toNodeId": "node38",
+      "toPortId": "b"
+    },
+    {
+      "fromNodeId": "node38",
+      "fromPortId": "out",
+      "toNodeId": "node40",
+      "toPortId": "in"
+    },
+    {
+      "fromNodeId": "node40",
+      "fromPortId": "out",
+      "toNodeId": "node41",
+      "toPortId": "in.1"
+    },
+    {
+      "fromNodeId": "node35_node36_adapter",
+      "fromPortId": "out",
+      "toNodeId": "node38",
+      "toPortId": "a"
+    },
+    {
+      "fromNodeId": "node35_node36_adapter",
+      "fromPortId": "out",
+      "toNodeId": "node41",
+      "toPortId": "in.0"
+    },
+    {
+      "fromNodeId": "node41",
+      "fromPortId": "out",
+      "toNodeId": "node42",
+      "toPortId": "in"
+    },
+    {
+      "fromNodeId": "node42",
+      "fromPortId": "out",
+      "toNodeId": "node36",
+      "toPortId": "in"
+    },
+    {
+      "fromNodeId": "node45",
+      "fromPortId": "out",
+      "toNodeId": "node50",
+      "toPortId": "in"
+    },
+    {
+      "fromNodeId": "node36",
+      "fromPortId": "out",
+      "toNodeId": "node45",
+      "toPortId": "excite.impulse.amplitude"
+    },
+    {
+      "fromNodeId": "node58",
+      "fromPortId": "out",
+      "toNodeId": "node59",
+      "toPortId": "in"
+    },
+    {
+      "fromNodeId": "node59",
+      "fromPortId": "out",
+      "toNodeId": "node60",
+      "toPortId": "audio"
+    },
+    {
+      "fromNodeId": "node61",
+      "fromPortId": "out",
+      "toNodeId": "node60",
+      "toPortId": "gain"
+    },
+    {
+      "fromNodeId": "node50",
+      "fromPortId": "out",
+      "toNodeId": "node62",
+      "toPortId": "in.0"
+    },
+    {
+      "fromNodeId": "node60",
+      "fromPortId": "out",
+      "toNodeId": "node62",
+      "toPortId": "in.1"
+    },
+    {
+      "fromNodeId": "node62",
+      "fromPortId": "out",
+      "toNodeId": "node65",
+      "toPortId": "in"
+    },
+    {
+      "fromNodeId": "node66",
+      "fromPortId": "data",
+      "toNodeId": "node67",
+      "toPortId": "modes"
+    },
+    {
+      "fromNodeId": "node68",
+      "fromPortId": "pitch",
+      "toNodeId": "node67",
+      "toPortId": "pitch"
+    },
+    {
+      "fromNodeId": "node65",
+      "fromPortId": "out",
+      "toNodeId": "node67",
+      "toPortId": "excite"
+    },
+    {
+      "fromNodeId": "node67",
+      "fromPortId": "out",
+      "toNodeId": "node67_node69_adapter",
+      "toPortId": "in"
+    },
+    {
+      "fromNodeId": "node67_node69_adapter",
+      "fromPortId": "out",
+      "toNodeId": "node69",
+      "toPortId": "audio"
+    },
+    {
+      "fromNodeId": "node69",
+      "fromPortId": "out",
+      "toNodeId": "node70",
+      "toPortId": "a"
+    },
+    {
+      "fromNodeId": "node65",
+      "fromPortId": "out",
+      "toNodeId": "node70",
+      "toPortId": "b"
+    },
+    {
+      "fromNodeId": "node70",
+      "fromPortId": "out",
+      "toNodeId": "node71",
+      "toPortId": "audio"
+    },
+    {
+      "fromNodeId": "node72",
+      "fromPortId": "out",
+      "toNodeId": "node73",
+      "toPortId": "in"
+    },
+    {
+      "fromNodeId": "node73",
+      "fromPortId": "out",
+      "toNodeId": "node70",
+      "toPortId": "mix.crossfade.position"
+    },
+    {
+      "fromNodeId": "node76",
+      "fromPortId": "pitch",
+      "toNodeId": "node75",
+      "toPortId": "pitch"
+    },
+    {
+      "fromNodeId": "node62",
+      "fromPortId": "out",
+      "toNodeId": "node75",
+      "toPortId": "excite"
+    },
+    {
+      "fromNodeId": "node74",
+      "fromPortId": "data",
+      "toNodeId": "node75",
+      "toPortId": "modes"
+    },
+    {
+      "fromNodeId": "node75",
+      "fromPortId": "out",
+      "toNodeId": "node75_node77_adapter",
+      "toPortId": "in"
+    },
+    {
+      "fromNodeId": "node80",
+      "fromPortId": "out",
+      "toNodeId": "node79",
+      "toPortId": "mix.crossfade.position"
+    },
+    {
+      "fromNodeId": "node71",
+      "fromPortId": "out",
+      "toNodeId": "node79",
+      "toPortId": "a"
+    },
+    {
+      "fromNodeId": "node75_node77_adapter",
+      "fromPortId": "out",
+      "toNodeId": "node78",
+      "toPortId": "audio"
+    },
+    {
+      "fromNodeId": "node78",
+      "fromPortId": "out",
+      "toNodeId": "node77",
+      "toPortId": "in"
+    },
+    {
+      "fromNodeId": "node77",
+      "fromPortId": "out",
+      "toNodeId": "node81",
+      "toPortId": "audio"
+    },
+    {
+      "fromNodeId": "node81",
+      "fromPortId": "out",
+      "toNodeId": "node79",
+      "toPortId": "b"
+    },
+    {
+      "fromNodeId": "node79",
+      "fromPortId": "out",
+      "toNodeId": "node82",
+      "toPortId": "in"
+    },
+    {
+      "fromNodeId": "node82",
+      "fromPortId": "out",
+      "toNodeId": "node83",
+      "toPortId": "in"
+    },
+    {
+      "fromNodeId": "node83",
+      "fromPortId": "out",
+      "toNodeId": "node64",
+      "toPortId": "in"
+    },
+    {
+      "fromNodeId": "node89",
+      "fromPortId": "out",
+      "toNodeId": "node88",
+      "toPortId": "whenTrue"
+    },
+    {
+      "fromNodeId": "node42",
+      "fromPortId": "out",
+      "toNodeId": "node88",
+      "toPortId": "whenFalse"
+    },
+    {
+      "fromNodeId": "node88",
+      "fromPortId": "out",
+      "toNodeId": "node91",
+      "toPortId": "in"
+    },
+    {
+      "fromNodeId": "node91",
+      "fromPortId": "out",
+      "toNodeId": "node92",
+      "toPortId": "by"
+    },
+    {
+      "fromNodeId": "node93",
+      "fromPortId": "gate",
+      "toNodeId": "node88",
+      "toPortId": "condition"
+    },
+    {
+      "fromNodeId": "node92",
+      "fromPortId": "onThreshold",
+      "toNodeId": "node45",
+      "toPortId": "trigger"
+    },
+    {
+      "fromNodeId": "node92",
+      "fromPortId": "onThreshold",
+      "toNodeId": "node93",
+      "toPortId": "trigger"
+    },
+    {
+      "fromNodeId": "node92",
+      "fromPortId": "onThreshold",
+      "toNodeId": "node58",
+      "toPortId": "trigger"
+    },
+    {
+      "fromNodeId": "node96",
+      "fromPortId": "out",
+      "toNodeId": "node97",
+      "toPortId": "in"
+    },
+    {
+      "fromNodeId": "node98",
+      "fromPortId": "out",
+      "toNodeId": "node99",
+      "toPortId": "in.1"
+    },
+    {
+      "fromNodeId": "node97",
+      "fromPortId": "out",
+      "toNodeId": "node102",
+      "toPortId": "in"
+    },
+    {
+      "fromNodeId": "node99",
+      "fromPortId": "out",
+      "toNodeId": "node103",
+      "toPortId": "in.0"
+    },
+    {
+      "fromNodeId": "node102",
+      "fromPortId": "out",
+      "toNodeId": "node103",
+      "toPortId": "in.1"
+    },
+    {
+      "fromNodeId": "node103",
+      "fromPortId": "out",
+      "toNodeId": "node92",
+      "toPortId": "threshold"
+    }
+  ],
+  "outputNodeId": "node64",
+  "outputPortId": "out",
+  "macroValues": [],
+  "view": {
+    "panX": 0.0,
+    "panY": 0.0,
+    "zoom": 1.0
+  },
+  "meta": {
+    "name": "",
+    "author": "",
+    "createdAtMs": 0.0,
+    "modifiedAtMs": 0.0
+  }
+}
