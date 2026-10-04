@@ -44,9 +44,9 @@ it.
   absorption (a gentle distance-dependent low-pass); direction → panning; motion →
   Doppler via a fractional delay line whose length follows distance smoothly
   (per-sample interpolation, so moving sources never zipper).
-- **`space.room`** — the rewritten `space.reverb` with physical parameters (room
-  dimensions, surface absorption) mapped onto its FDN: delay lengths from room
-  dimensions, decay from Sabine's RT60 estimate, damping from absorption.
+- **`space.reverb`** (designed in `Reverb.md`) with physical parameters — the scene
+  maps room dimensions onto its `size` and derives its per-band `decay` from
+  Sabine's RT60 estimate and the surfaces' absorption.
 - Musically useful immediately, and every later stage reuses these two.
 
 ### Stage 2: the scene factory
@@ -54,7 +54,7 @@ it.
   computes nothing audible — CLAUDE.md rule 1) for placing sources, the listener,
   a room box and its materials. Each source in the scene corresponds to an input
   port of the factory; the factory renders all of them into one stereo output.
-- **Unwrap** → one `space.position` per source + a `space.room`, wired to a sum —
+- **Unwrap** → one `space.position` per source + a `space.reverb`, wired to a sum —
   the factory is never more capable than the primitives (`NODES.System.md` §8).
 - Positions stay ports, so the scene is an editor of *defaults*; modulation moves
   things live, and the editor shows them moving (telemetry, like every preview).
@@ -70,13 +70,13 @@ it.
   vase or a stairwell can be "played into".
 
 ### Stage 4: output formats
-- **Binaural** (HRTF) for headphones, as a `space.room`/`factory.scene` output mode.
+- **Binaural** (HRTF) for headphones, as a `space.reverb`/`factory.scene` output mode.
 - Ambisonics / multichannel only if real demand appears; the plugin's buses are
   stereo today.
 
 ## 4. Order
 
-1. `space.diffuser` → `space.reverb` (as `space.room`, physically parameterised).
+1. `space.diffuser` → `space.reverb` (`Reverb.md`).
 2. `space.position` (distance, direction, Doppler, air absorption).
 3. `factory.scene` after `Factories.md` proves the docked editor; share the 3D view
    with `BakedPhysics.md` Stage 2.
