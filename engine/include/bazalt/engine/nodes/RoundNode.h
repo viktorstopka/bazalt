@@ -39,7 +39,19 @@ namespace bazalt::engine::nodes
 
         std::vector<PortDescriptor> getOutputPorts() const override
         {
-            return { PortDescriptor { .id = "out", .type = SignalType::Control, .isPrimaryOutput = true } };
+            // isInteger/kind=Int unconditionally, not just "usually": with
+            // the default step (1), `quantized * step` is always a whole
+            // number, regardless of what quantity is wired into `in` — a
+            // rounded Frequency is still an integer count of Hz. A
+            // fractional step (0.5, a scale-step size, ...) makes this a
+            // LITTLE optimistic (quantized*0.5 isn't always a true integer),
+            // but step is this node's own deliberate choice, not an
+            // incidental fact about what's upstream — same "the declared
+            // default describes the common case" reasoning ValueTypes.h's
+            // own factories already apply elsewhere, direct feedback
+            // 2026-10-04: "I want it to be int by default."
+            return { PortDescriptor { .id = "out", .type = SignalType::Control, .isPrimaryOutput = true,
+                                       .isInteger = true, .kind = ValueKind::Int } };
         }
 
         std::vector<ParameterDescriptor> getParameters() const override

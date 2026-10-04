@@ -303,6 +303,16 @@ TEST_CASE ("RoundNode's step port live-modulates and falls back to setParameter 
     CHECK (out == 8.0f); // 7.4 quantized to the nearest multiple of 2
 }
 
+TEST_CASE ("RoundNode's output declares isInteger/kind=Int unconditionally, matching its default (step=1) behaviour",
+           "[engine][nodes][util][M20]")
+{
+    RoundNode node;
+    const auto outputs = node.getOutputPorts();
+    REQUIRE (outputs.size() == 1);
+    CHECK (outputs[0].isInteger);
+    CHECK (outputs[0].kind == ValueKind::Int);
+}
+
 TEST_CASE ("ClampNode clamps to its low/high ports, swapped if low > high", "[engine][nodes][util][M20]")
 {
     ClampNode node;
