@@ -36,6 +36,8 @@ export function frameTypeForPreviewKind(kind: PreviewKind): TelemetryFrameType |
       return TelemetryFrameType.Meter
     case 'eventImpulse':
       return TelemetryFrameType.EventImpulse
+    case 'rollingHistory':
+      return TelemetryFrameType.RollingHistory
     default:
       return undefined
   }

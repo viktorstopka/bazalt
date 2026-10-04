@@ -1,0 +1,21 @@
+/* Extracted from CountBody.css alongside EditableStat.tsx itself — see that
+   file's own header comment. Font/size/colour are NOT set here: this is a
+   layout-only primitive, and every one of its real call sites (CountBody's
+   footer, ScopeControlBody's own range/window labels) sits inside a parent
+   that already sets font-family/font-size/colour for its whole stat row, so
+   this file only needs the bits actually specific to the input/span swap
+   itself. */
+.editable-stat-editable {
+  cursor: text;
+}
+
+.editable-stat-input {
+  width: 48px;
+  background: transparent;
+  border: none;
+  border-bottom: var(--canvas-hairline, var(--stroke-thin)) solid var(--color-textSecondary);
+  color: var(--color-textPrimary);
+  font: inherit;
+  outline: none;
+  padding: 0;
+}

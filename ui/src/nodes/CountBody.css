@@ -72,6 +72,10 @@
   margin: 0 var(--space-sm);
 }
 
+/* .editable-stat/.editable-stat-input's own font/colour come from THIS
+   row (EditableStat.css is deliberately layout-only, see its own header
+   comment) — the footer's children inherit font-family/font-size/color
+   from here rather than redeclaring them. */
 .view-count-footer {
   display: flex;
   justify-content: space-between;
@@ -80,20 +84,4 @@
   font-family: var(--font-secondary);
   font-size: 11px;
   color: var(--color-textSecondary);
-}
-
-.view-count-stat-editable {
-  cursor: text;
-}
-
-.view-count-stat-input {
-  width: 48px;
-  background: transparent;
-  border: none;
-  border-bottom: var(--canvas-hairline, var(--stroke-thin)) solid var(--color-textSecondary);
-  color: var(--color-textPrimary);
-  font-family: var(--font-secondary);
-  font-size: 11px;
-  outline: none;
-  padding: 0;
 }

@@ -150,6 +150,8 @@ namespace bazalt
                 return bazalt::engine::TelemetryFrameType::Meter;
             if (segment == "eventImpulse")
                 return bazalt::engine::TelemetryFrameType::EventImpulse;
+            if (segment == "history")
+                return bazalt::engine::TelemetryFrameType::RollingHistory;
             return std::nullopt;
         }
 
@@ -157,7 +159,8 @@ namespace bazalt
         // conceptual shape; JUCE's resource provider is one callback per
         // WebBrowserComponent differentiated by PATH within a single
         // virtual origin, not a literal custom URL scheme — so taps are
-        // served at /tap/<name>/<scope|spectrum|meter|eventImpulse> instead.
+        // served at /tap/<name>/<scope|spectrum|meter|eventImpulse|history>
+        // instead.
         std::optional<juce::WebBrowserComponent::Resource> serveTap (BazaltAudioProcessor& processor, const juce::String& url)
         {
             const auto remainder = url.fromFirstOccurrenceOf ("/tap/", false, false);

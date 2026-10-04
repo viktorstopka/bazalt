@@ -65,6 +65,7 @@ add_executable(EngineTests
     ValueContractTests.cpp
     ViewCountNodeTests.cpp
     ViewRippleNodeTests.cpp
+    ViewScopeControlNodeTests.cpp
     VoiceManagerTests.cpp
 )
 

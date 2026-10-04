@@ -71,11 +71,25 @@ namespace bazalt::engine
         // 4096-bin spectrum ceiling) with enormous headroom to spare.
         static constexpr int maxEventsPerPublish = 256;
 
+        // design/Visualization/Scope1.png: "from a few milliseconds to tens
+        // of seconds" — the shared clamp both this class and TapSettings.h's
+        // own historyWindowSeconds doc comment refer to. 256 columns is a
+        // deliberate, fixed display resolution (independent of how long the
+        // window is): plenty for any panel this node will realistically be
+        // drawn at, and small enough that the per-tap state below (256 * 2
+        // floats * maxTaps) costs under 128KB total, not "tens of seconds
+        // worth of raw samples" (hundreds of thousands per tap) the way a
+        // naive approach would.
+        static constexpr int maxHistoryColumns = 256;
+        static constexpr float minHistoryWindowSeconds = 0.01f;
+        static constexpr float maxHistoryWindowSeconds = 30.0f;
+
         void processTap (size_t slotIndex, double elapsedSeconds);
         void publishOscilloscope (size_t slotIndex, const float* samples, int numSamples, const TapSettings& settings);
         void publishSpectrum (size_t slotIndex, const float* samples, int numSamples, const TapSettings& settings);
         void publishMeter (size_t slotIndex, const float* samples, int numSamples, double elapsedSeconds, const TapSettings& settings);
         void publishEventImpulse (size_t slotIndex, const float* samples, int numSamples, uint64_t totalPushed);
+        void publishRollingHistory (size_t slotIndex, const float* samples, int numSamples, uint64_t totalPushed, const TapSettings& settings);
 
         TelemetryHub& hub;
         double sampleRate = 44100.0;
@@ -113,6 +127,38 @@ namespace bazalt::engine
         // never lands exactly on an event boundary) is still only ever
         // reported once, not re-detected as a second edge at the start of
         // the next read.
+        // design/Visualization/Scope1.png: publishRollingHistory's own
+        // persistent per-tap state — a ring of maxHistoryColumns (lo, hi)
+        // pairs (flat, slot*maxHistoryColumns + column, same layout
+        // spectrumAverage above already uses for its own per-slot block),
+        // the index of the CURRENT (newest, still-filling) column, how much
+        // real time has accumulated into it so far, and the window length
+        // the ring is currently built for (0 = "never configured yet, needs
+        // a reset on first use"). A ring, not a shift-on-seal array: sealing
+        // a column is just "advance the head and overwrite what's now the
+        // oldest slot", O(1) regardless of maxHistoryColumns, so even a
+        // pathologically short window (many seals per drain) stays cheap -
+        // see publishRollingHistory's own comment for why a shift-based
+        // design would not have been.
+        std::vector<float> historyColumnLo;
+        std::vector<float> historyColumnHi;
+        std::array<int, TelemetryHub::maxTaps> historyHeadBySlot {};
+        std::array<double, TelemetryHub::maxTaps> historyElapsedInColumnBySlot {};
+        std::array<float, TelemetryHub::maxTaps> historyConfiguredWindowBySlot {};
+        std::vector<float> historyPayload; // reused across publishRollingHistory() calls, sized to maxHistoryColumns*2 in prepare()
+
+        // How many of this slot's own Tap::getTotalPushed() have already
+        // been folded into the column ring — same reasoning
+        // eventLastScannedTotalBySlot already gives in full: Tap::
+        // readLatest() returns "whatever's currently in the ring", not a
+        // delta since the last read, so re-scanning the same
+        // already-folded tail on every drain would double-count real time
+        // (advancing `elapsed`/sealing columns for samples this function
+        // already saw), corrupting the column timeline. Reset to 0
+        // alongside the rest of this state on prepare()/window-change —
+        // publishRollingHistory's own comment has the reset case.
+        std::array<uint64_t, TelemetryHub::maxTaps> historyLastScannedTotalBySlot {};
+
         std::array<bool, TelemetryHub::maxTaps> eventWasHighBySlot {};
 
         // How many of this slot's own Tap::getTotalPushed() have already

@@ -4,6 +4,7 @@
 #include <cmath>
 #include <cstdint>
 #include <cstring>
+#include <limits>
 
 namespace bazalt::engine
 {
@@ -25,6 +26,23 @@ namespace bazalt::engine
         eventImpulsePayload.assign ((size_t) maxEventsPerPublish, 0.0f);
         eventWasHighBySlot.fill (false);
         eventLastScannedTotalBySlot.fill (0);
+
+        // NaN: "this column has never been written" (publishRollingHistory's
+        // own no-data sentinel, same NaN-means-absent idiom
+        // GraphCompiler::applyHostInputs already established for an
+        // unconnected port) - reset unconditionally on every prepare(), same
+        // as every other per-tap accumulator above: a sample-rate change
+        // invalidates the accumulated column timing anyway, so there is
+        // nothing worth preserving across a re-prepare here (unlike
+        // TelemetryHub's own SLOT metadata, which is a different class with
+        // a real, documented reason to survive one).
+        historyColumnLo.assign (TelemetryHub::maxTaps * (size_t) maxHistoryColumns, std::numeric_limits<float>::quiet_NaN());
+        historyColumnHi.assign (TelemetryHub::maxTaps * (size_t) maxHistoryColumns, std::numeric_limits<float>::quiet_NaN());
+        historyHeadBySlot.fill (0);
+        historyElapsedInColumnBySlot.fill (0.0);
+        historyConfiguredWindowBySlot.fill (0.0f);
+        historyPayload.assign ((size_t) maxHistoryColumns * 2, 0.0f);
+        historyLastScannedTotalBySlot.fill (0);
 
         // Built once, here: a tap's fftSize setting selects among these and
         // never allocates. (Left alone on a second prepare() - they don't
@@ -138,6 +156,8 @@ namespace bazalt::engine
             publishMeter (slotIndex, scratchSamples.data(), numRead, elapsedSeconds, settings);
         if (hub.isFrameTypeNeeded (slotIndex, TelemetryFrameType::EventImpulse))
             publishEventImpulse (slotIndex, scratchSamples.data(), numRead, tap->getTotalPushed());
+        if (hub.isFrameTypeNeeded (slotIndex, TelemetryFrameType::RollingHistory))
+            publishRollingHistory (slotIndex, scratchSamples.data(), numRead, tap->getTotalPushed(), settings);
     }
 
     void AnalysisThread::publishOscilloscope (size_t slotIndex, const float* samples, int numSamples, const TapSettings& settings)
@@ -453,6 +473,119 @@ namespace bazalt::engine
         serializeTelemetryFrame (header, eventImpulsePayload.data(), (uint32_t) numEvents, frameScratch);
 
         if (auto* buffer = hub.getFrameBufferBySlot (slotIndex, TelemetryFrameType::EventImpulse))
+            buffer->publish (frameScratch.data(), frameScratch.size());
+    }
+
+    void AnalysisThread::publishRollingHistory (size_t slotIndex, const float* samples, int numSamples, uint64_t totalPushed, const TapSettings& settings)
+    {
+        // design/Visualization/Scope1.png: "from a few milliseconds to tens
+        // of seconds" - clamped here, not trusted from the UI, since this is
+        // what actually sizes columnDuration below; a 0 or negative request
+        // (nothing has ever set it, or a bad value slipped through) would
+        // divide by zero or seal every column instantly otherwise.
+        const auto window = std::clamp (settings.historyWindowSeconds, minHistoryWindowSeconds, maxHistoryWindowSeconds);
+        const auto columnDuration = (double) window / (double) maxHistoryColumns;
+
+        const auto base = slotIndex * (size_t) maxHistoryColumns;
+        auto* lo = historyColumnLo.data() + base;
+        auto* hi = historyColumnHi.data() + base;
+        auto& head = historyHeadBySlot[slotIndex];
+        auto& elapsed = historyElapsedInColumnBySlot[slotIndex];
+
+        // The window changed (including "never configured yet", 0 !=
+        // anything real) - start over cleanly rather than publish a ring
+        // whose older columns were sealed under a different columnDuration,
+        // which would read as a nonsensical mixed time-scale. "Changed"
+        // compares the CLAMPED value, so a sub-minHistoryWindowSeconds
+        // request that gets clamped to the same floor twice in a row is not
+        // treated as a change.
+        const auto windowJustChanged = historyConfiguredWindowBySlot[slotIndex] != window;
+        if (windowJustChanged)
+        {
+            historyConfiguredWindowBySlot[slotIndex] = window;
+            std::fill (lo, lo + maxHistoryColumns, std::numeric_limits<float>::quiet_NaN());
+            std::fill (hi, hi + maxHistoryColumns, std::numeric_limits<float>::quiet_NaN());
+            head = 0;
+            elapsed = 0.0;
+        }
+
+        // Tap::readLatest() returns "the most recent window currently in
+        // the ring", not a delta since the last call — scanning only the
+        // genuinely NEW tail (the same `totalPushed`-vs-last-seen technique
+        // publishEventImpulse already established, for the identical
+        // reason: re-folding already-processed samples would double-count
+        // real time and seal columns too fast).
+        const auto alreadyScanned = historyLastScannedTotalBySlot[slotIndex];
+        const auto newSinceLastScan = totalPushed > alreadyScanned
+                                           ? (int) std::min<uint64_t> (totalPushed - alreadyScanned, (uint64_t) numSamples)
+                                           : 0;
+        historyLastScannedTotalBySlot[slotIndex] = totalPushed;
+        const auto scanStart = numSamples - newSinceLastScan;
+
+        // Nothing NEW this drain, and the ring wasn't just reset — leave
+        // whatever was last published alone rather than republish an
+        // identical frame under a new sequenceNumber (publishEventImpulse's
+        // own "nothing to add" economy). A just-reset ring DOES still
+        // publish once even with zero new samples, so a window-length edit
+        // clears the displayed trace immediately instead of leaving the
+        // previous (now stale) one on screen until real data arrives.
+        if (newSinceLastScan == 0 && ! windowJustChanged)
+            return;
+
+        const auto dt = 1.0 / sampleRate;
+
+        for (int i = scanStart; i < numSamples; ++i)
+        {
+            const auto s = samples[i];
+
+            if (std::isnan (lo[head])) // first sample ever folded into this column
+                lo[head] = hi[head] = s;
+            else
+            {
+                lo[head] = std::min (lo[head], s);
+                hi[head] = std::max (hi[head], s);
+            }
+
+            elapsed += dt;
+
+            // A `while`, not an `if`: a short window (columnDuration below
+            // one sample period, the "a few milliseconds" end of the
+            // range) can seal more than one column per sample. Each newly
+            // opened column is seeded with THIS sample's value (not left at
+            // NaN) so a column boundary never reads as a gap - the same
+            // "carry the value across the seam" choice publishOscilloscope
+            // doesn't need (it recomputes its whole window every drain) but
+            // an incrementally-built ring does.
+            while (elapsed >= columnDuration)
+            {
+                elapsed -= columnDuration;
+                head = (head + 1) % maxHistoryColumns;
+                lo[head] = hi[head] = s;
+            }
+        }
+
+        // Linearize the ring into oldest-first order for the wire, same
+        // (lo, hi) interleaving publishOscilloscope's own payload already
+        // uses - the UI's existing Oscilloscope-shaped reader needs no
+        // changes to draw this. `head` is the NEWEST column (still
+        // in-progress); the oldest is the very next slot after it.
+        const auto oldestIndex = (head + 1) % maxHistoryColumns;
+        for (int column = 0; column < maxHistoryColumns; ++column)
+        {
+            const auto ringIndex = (oldestIndex + column) % maxHistoryColumns;
+            historyPayload[(size_t) column * 2] = lo[ringIndex];
+            historyPayload[(size_t) column * 2 + 1] = hi[ringIndex];
+        }
+
+        TelemetryFrameHeader header;
+        header.tapId = (uint32_t) slotIndex;
+        header.frameType = TelemetryFrameType::RollingHistory;
+        header.sampleRate = (float) sampleRate;
+        header.sequenceNumber = sequenceNumber;
+
+        serializeTelemetryFrame (header, historyPayload.data(), (uint32_t) historyPayload.size(), frameScratch);
+
+        if (auto* buffer = hub.getFrameBufferBySlot (slotIndex, TelemetryFrameType::RollingHistory))
             buffer->publish (frameScratch.data(), frameScratch.size());
     }
 }

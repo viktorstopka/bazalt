@@ -117,6 +117,17 @@ export interface GraphNode {
   */
   countMinOverride?: number
   countMaxOverride?: number
+  /** design/Visualization/Scope1.png's editable vertical-range footer — the
+      generic, type-id-agnostic equivalent of countMinOverride/
+      countMaxOverride above (properties["viewer.rangeMin"]/["viewer.rangeMax"],
+      same plain-number-via-graphSetProperty storage), shared by every
+      auto-ranging viewer (ScopeHistoryBody.tsx, every view.scope.* variant
+      and a future view.gate) rather than one bespoke property-key pair per
+      node type. Undefined until the user has edited it — ScopeHistoryBody.tsx's
+      own auto-range/auto-freeze logic is what supplies a value before that.
+  */
+  viewerRangeMinOverride?: number
+  viewerRangeMaxOverride?: number
 }
 
 /** TypedValueNodeBase.h's `TypedValueType` enum, mirrored — rewritten per
@@ -300,6 +311,8 @@ function patchJsonToLocalState(json: string): { nodes: Map<string, GraphNode>; w
     const macroEnumOptionLabels = parseMacroEnumOptionLabels(properties['util.macro.enumOptions'])
     const countMin = properties['view.count.min']
     const countMax = properties['view.count.max']
+    const viewerRangeMin = properties['viewer.rangeMin']
+    const viewerRangeMax = properties['viewer.rangeMax']
     nodes.set(n.id, {
       id: n.id,
       typeId: n.type,
@@ -311,6 +324,8 @@ function patchJsonToLocalState(json: string): { nodes: Map<string, GraphNode>; w
       macroEnumOptionLabels,
       countMinOverride: typeof countMin === 'number' ? countMin : undefined,
       countMaxOverride: typeof countMax === 'number' ? countMax : undefined,
+      viewerRangeMinOverride: typeof viewerRangeMin === 'number' ? viewerRangeMin : undefined,
+      viewerRangeMaxOverride: typeof viewerRangeMax === 'number' ? viewerRangeMax : undefined,
     })
   }
   const wires = new Map<string, GraphWire>()
@@ -950,6 +965,31 @@ export function setCountMax(id: string, value: number): void {
   )
 }
 
+/** design/Visualization/Scope1.png's editable vertical-range footer — the
+    generic sibling of setCountMin/setCountMax above, usable by any
+    auto-ranging viewer (ScopeHistoryBody.tsx) regardless of its own typeId.
+    Unlike Count's Min/Max, these are never rounded to a whole number: a
+    Scope's own range is a continuous display scale, not an integer's. */
+export function setViewerRangeMin(id: string, value: number): void {
+  void withHistory(
+    () => fireCommand(() => graphSetProperty(id, 'viewer.rangeMin', value)).then(() => undefined),
+    () => {
+      const node = nodes.get(id)
+      if (node) nodes.set(id, { ...node, viewerRangeMinOverride: value })
+    },
+  )
+}
+
+export function setViewerRangeMax(id: string, value: number): void {
+  void withHistory(
+    () => fireCommand(() => graphSetProperty(id, 'viewer.rangeMax', value)).then(() => undefined),
+    () => {
+      const node = nodes.get(id)
+      if (node) nodes.set(id, { ...node, viewerRangeMaxOverride: value })
+    },
+  )
+}
+
 export function toggleBypass(id: string): void {
   const node = nodes.get(id)
   if (!node) return
@@ -1524,4 +1564,46 @@ export function createCountFromPort(nodeId: string, portId: string, x: number, y
   )
 
   return countId
+}
+
+/** Same authoritative-recheck discipline isRippleConnectable()/
+    isCountConnectable() above follow, for view.scope.control's own "in"
+    port. */
+function isScopeControlConnectable(port: PortDescriptor): boolean {
+  const scopeDescriptor = getDescriptor('view.scope.control')
+  const scopeInput = scopeDescriptor && findPort(scopeDescriptor, 'in', 'input')
+  if (!scopeInput) return false
+  return canConnectPorts(port, scopeInput).outcome !== 'reject'
+}
+
+/** design/Visualization/Scope1.png: "Ctrl/Cmd-clicking an output port
+    spawns the viewer matching that port's type, already connected." For a
+    plain (non-integer, non-Modulation-quantity) Control port specifically
+    — view.count/createCountFromPort already owns the integer case, and a
+    unipolar/bipolar Modulation port has no viewer of its own yet (the
+    task that added this explicitly scoped Modulation/Gate as separate,
+    later work). Same shape as createCountFromPort above, one undo step.
+*/
+export function createScopeControlFromPort(nodeId: string, portId: string, x: number, y: number): string | undefined {
+  const endpoint = getEndpoint(nodeId, portId, 'output')
+  if (!endpoint || endpoint.port.type !== 'control' || endpoint.port.isInteger) return undefined
+  if (endpoint.port.quantity === 'unipolar' || endpoint.port.quantity === 'bipolar') return undefined
+  if (!isScopeControlConnectable(endpoint.port)) return undefined
+
+  const scopeId = makeId('node')
+
+  void withHistory(
+    async () => {
+      if (!(await fireCommand(() => graphAddNode('view.scope.control', scopeId, x, y)))) return
+      await fireCommand(() => graphConnectWithAutoAdapt(nodeId, portId, scopeId, 'in'))
+    },
+    () => {
+      nodes.set(scopeId, { id: scopeId, typeId: 'view.scope.control', x, y, bypassed: false })
+      const newWireId = wireId(scopeId, 'in')
+      wires.set(newWireId, { id: newWireId, fromNodeId: nodeId, fromPortId: portId, toNodeId: scopeId, toPortId: 'in' })
+      selection = new Set([scopeId])
+    },
+  )
+
+  return scopeId
 }

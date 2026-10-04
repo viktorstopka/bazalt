@@ -99,7 +99,7 @@ TEST_CASE ("A \"demo.\"-prefixed tap gets synthetic telemetry with no external p
     CHECK (std::isfinite (payload[0]));
 }
 
-TEST_CASE ("AnalysisThread publishes all four frame types for every tap", "[engine][telemetry][AnalysisThread]")
+TEST_CASE ("AnalysisThread publishes all five frame types for every tap", "[engine][telemetry][AnalysisThread]")
 {
     TelemetryHub hub;
     hub.prepare (8192, 16384);
@@ -130,7 +130,8 @@ TEST_CASE ("AnalysisThread publishes all four frame types for every tap", "[engi
 
     for (const auto& tapName : { juce::String ("main"), juce::String ("aux1") })
     {
-        for (auto type : { TelemetryFrameType::Oscilloscope, TelemetryFrameType::Spectrum, TelemetryFrameType::Meter, TelemetryFrameType::EventImpulse })
+        for (auto type : { TelemetryFrameType::Oscilloscope, TelemetryFrameType::Spectrum, TelemetryFrameType::Meter,
+                            TelemetryFrameType::EventImpulse, TelemetryFrameType::RollingHistory })
         {
             auto* buffer = hub.getFrameBuffer (tapName, type);
             REQUIRE (buffer != nullptr);
@@ -162,14 +163,14 @@ TEST_CASE ("A Waveform-only tap subscription never triggers Spectrum, Meter or E
     // Waveform previews only ever read Oscilloscope frames
     // (PluginProcessor.cpp's frameTypesNeededFor()) — subscribe with
     // exactly that scope, matching what subscribeVisualizationTap() does
-    // for a real Waveform-kind preview. Explicitly 4-argument (not the
-    // 3-argument `{ true, false, false }` this used to be): with
-    // EventImpulse added as TelemetryFrameTypesNeeded's 4th field, that
-    // shorter form would silently leave eventImpulse at the struct's own
-    // default (true) — still "Oscilloscope only" by accident today only
-    // because nothing checked the 4th frame type below, not by what the
-    // call site actually said.
-    auto* tap = hub.subscribeTap ("node:test:out", { true, false, false, false });
+    // for a real Waveform-kind preview. Explicitly 5-argument (not a
+    // shorter form): TelemetryFrameTypesNeeded's unlisted fields default to
+    // true, so a short aggregate-init here would silently leave e.g.
+    // rollingHistory at the struct's own default (true) — still
+    // "Oscilloscope only" by accident today only because nothing checked
+    // that 5th frame type below, not by what the call site actually said
+    // (the exact mistake eventImpulse's own addition already caught once).
+    auto* tap = hub.subscribeTap ("node:test:out", { true, false, false, false, false });
     REQUIRE (tap != nullptr);
 
     std::vector<float> block (2048);
@@ -207,6 +208,12 @@ TEST_CASE ("A Waveform-only tap subscription never triggers Spectrum, Meter or E
     auto* eventImpulseBuffer = hub.getFrameBuffer ("node:test:out", TelemetryFrameType::EventImpulse);
     REQUIRE (eventImpulseBuffer != nullptr);
     CHECK (eventImpulseBuffer->readLatest (dest.data(), dest.size()) == 0);
+
+    // Never published either — same "the work itself was skipped, not just
+    // the publish" guarantee as the other excluded frame types above.
+    auto* rollingHistoryBuffer = hub.getFrameBuffer ("node:test:out", TelemetryFrameType::RollingHistory);
+    REQUIRE (rollingHistoryBuffer != nullptr);
+    CHECK (rollingHistoryBuffer->readLatest (dest.data(), dest.size()) == 0);
 }
 
 // ---- design/Visualization/Ripple.png: AnalysisThread::publishEventImpulse ----
@@ -360,4 +367,181 @@ TEST_CASE ("publishEventImpulse publishes nothing when a drain has no new edge a
     rig.drain();
 
     CHECK (rig.ages().empty());
+}
+
+// ---- design/Visualization/Scope1.png: AnalysisThread::publishRollingHistory ----
+// Same synchronous, deterministic shape as EventImpulseRig above.
+
+namespace
+{
+    struct RollingHistoryRig
+    {
+        TelemetryHub hub;
+        AnalysisThread analysis { hub };
+        Tap* tap = nullptr;
+        static constexpr size_t slot = 0;
+        static constexpr double sampleRate = 44100.0;
+        static constexpr const char* tapName = "h";
+
+        explicit RollingHistoryRig (float windowSeconds)
+        {
+            hub.prepare (8192, maxTelemetryFrameBytes);
+            analysis.prepare (sampleRate);
+            tap = hub.subscribeTap (tapName);
+            setWindow (windowSeconds);
+        }
+
+        void setWindow (float windowSeconds)
+        {
+            TapSettings settings;
+            settings.historyWindowSeconds = windowSeconds;
+            hub.setTapSettings (tapName, settings);
+        }
+
+        void push (const std::vector<float>& samples) { tap->push (samples.data(), (int) samples.size()); }
+        void drain() { analysis.processSlotForTesting (slot, 0.01); }
+
+        // (sequenceNumber, (lo, hi) pairs oldest-first) — the sequence
+        // number is what lets a test tell "a fresh publish just happened"
+        // apart from "readLatest() is handing back the same frame as
+        // before" (same reasoning EventImpulseRig::latestFrame() already
+        // gives in full).
+        std::pair<uint64_t, std::vector<float>> latestFrame() const
+        {
+            std::vector<std::byte> bytes (maxTelemetryFrameBytes);
+            const auto size = hub.getFrameBufferBySlot (slot, TelemetryFrameType::RollingHistory)->readLatest (bytes.data(), bytes.size());
+            if (size == 0)
+                return { 0, {} };
+
+            TelemetryFrameHeader header;
+            const float* payload = nullptr;
+            REQUIRE (parseTelemetryFrame (bytes.data(), size, header, payload));
+            CHECK (header.frameType == TelemetryFrameType::RollingHistory);
+            return { header.sequenceNumber, std::vector<float> (payload, payload + header.payloadNumFloats) };
+        }
+    };
+}
+
+TEST_CASE ("publishRollingHistory publishes (lo, hi) pairs, oldest first, all finite once the ring has wrapped",
+           "[engine][telemetry][AnalysisThread][scope]")
+{
+    // The minimum window (clamped) keeps columnDuration tiny, so a few
+    // thousand samples of a moving signal is enough to wrap the whole ring
+    // several times over and leave no column at its initial NaN.
+    RollingHistoryRig rig (0.0f); // clamped up to AnalysisThread::minHistoryWindowSeconds
+
+    std::vector<float> block (4096);
+    for (size_t i = 0; i < block.size(); ++i)
+        block[i] = std::sin (0.05f * (float) i);
+    rig.push (block);
+    rig.drain();
+
+    const auto [sequence, payload] = rig.latestFrame();
+    CHECK (sequence > 0);
+    REQUIRE (! payload.empty());
+    REQUIRE (payload.size() % 2 == 0);
+
+    for (size_t column = 0; column < payload.size() / 2; ++column)
+    {
+        const auto lo = payload[column * 2];
+        const auto hi = payload[column * 2 + 1];
+        CHECK (std::isfinite (lo));
+        CHECK (std::isfinite (hi));
+        CHECK (lo <= hi);
+    }
+}
+
+TEST_CASE ("publishRollingHistory's columns read exactly (value, value) for a perfectly constant input",
+           "[engine][telemetry][AnalysisThread][scope]")
+{
+    RollingHistoryRig rig (0.0f);
+
+    rig.push (std::vector<float> (4096, 0.5f));
+    rig.drain();
+
+    const auto [sequence, payload] = rig.latestFrame();
+    CHECK (sequence > 0);
+    REQUIRE (! payload.empty());
+
+    for (size_t column = 0; column < payload.size() / 2; ++column)
+    {
+        // A still-NaN column (the ring hadn't fully wrapped yet) is skipped
+        // rather than failed — this test is about every REAL column being
+        // exactly flat, not about forcing a full wrap the way the test
+        // above already covers.
+        if (std::isnan (payload[column * 2]))
+            continue;
+        CHECK (payload[column * 2] == 0.5f);
+        CHECK (payload[column * 2 + 1] == 0.5f);
+    }
+}
+
+TEST_CASE ("publishRollingHistory's newest (rightmost) column reflects the most recently pushed value",
+           "[engine][telemetry][AnalysisThread][scope]")
+{
+    RollingHistoryRig rig (0.0f);
+
+    rig.push (std::vector<float> (4096, 0.3f));
+    rig.drain();
+    rig.push (std::vector<float> (16, 0.9f)); // a short, recent burst — not enough to fill the whole ring on its own
+    rig.drain();
+
+    const auto payload = rig.latestFrame().second;
+    REQUIRE (! payload.empty());
+    const auto lastHi = payload[payload.size() - 1];
+    CHECK (lastHi == 0.9f);
+}
+
+TEST_CASE ("changing the time window resets the ring to NaN immediately, even with no new samples pushed",
+           "[engine][telemetry][AnalysisThread][scope]")
+{
+    RollingHistoryRig rig (0.05f);
+
+    rig.push (std::vector<float> (4096, 0.5f));
+    rig.drain();
+    const auto [firstSequence, firstPayload] = rig.latestFrame();
+    REQUIRE (firstSequence > 0);
+    CHECK (! std::isnan (firstPayload.back())); // the newest column is real, at least
+
+    rig.setWindow (0.2f); // a genuinely different window, no new push before the next drain
+    rig.drain();
+
+    const auto [secondSequence, secondPayload] = rig.latestFrame();
+    CHECK (secondSequence > firstSequence); // a real new publish happened, not a stale re-read
+    for (const auto value : secondPayload)
+        CHECK (std::isnan (value)); // every column cleared by the reset
+
+    // And real data flows again once something new is actually pushed.
+    rig.push (std::vector<float> (4096, 0.7f));
+    rig.drain();
+    const auto thirdPayload = rig.latestFrame().second;
+    CHECK (! std::isnan (thirdPayload.back()));
+}
+
+TEST_CASE ("publishRollingHistory publishes nothing new on a drain with no new samples since the last one",
+           "[engine][telemetry][AnalysisThread][scope]")
+{
+    // Regression test: Tap::readLatest() returns whatever is CURRENTLY in
+    // the ring, not a delta since the last read, so re-scanning the same
+    // already-folded samples on a drain with nothing genuinely new would
+    // double-count real time (sealing columns too fast) if the
+    // totalPushed-based "only scan the new tail" guard (same mechanism
+    // publishEventImpulse already uses) were ever lost in a refactor.
+    RollingHistoryRig rig (0.05f);
+
+    // Enough to fully wrap the ring (no column left at its initial NaN) —
+    // deliberate: NaN != NaN in IEEE 754, so a vector still holding any
+    // NaN columns could never compare equal to itself below even on a
+    // correct implementation, which would make that assertion meaningless
+    // rather than failing for the right reason.
+    rig.push (std::vector<float> (4096, 0.4f));
+    rig.drain();
+    const auto [firstSequence, firstPayload] = rig.latestFrame();
+    REQUIRE (firstSequence > 0);
+    REQUIRE (! std::isnan (firstPayload.front()));
+
+    rig.drain(); // nothing new pushed in between
+    const auto [secondSequence, secondPayload] = rig.latestFrame();
+    CHECK (secondSequence == firstSequence); // no fresh publish happened
+    CHECK (secondPayload == firstPayload);
 }

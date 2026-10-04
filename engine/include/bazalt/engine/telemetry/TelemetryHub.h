@@ -63,6 +63,7 @@ namespace bazalt::engine
         bool spectrum = true;
         bool meter = true;
         bool eventImpulse = true;
+        bool rollingHistory = true;
     };
 
     class TelemetryHub
@@ -200,6 +201,7 @@ namespace bazalt::engine
             TapSettings settings;
             settings.scopeWindowSeconds = slot.scopeWindowSeconds.load (std::memory_order_relaxed);
             settings.scopeTrigger = (ScopeTriggerMode) slot.scopeTrigger.load (std::memory_order_relaxed);
+            settings.historyWindowSeconds = slot.historyWindowSeconds.load (std::memory_order_relaxed);
             settings.fftOrder = slot.fftOrder.load (std::memory_order_relaxed);
             settings.spectrumTiltDbPerOctave = slot.spectrumTilt.load (std::memory_order_relaxed);
             settings.spectrumAveraging = slot.spectrumAveraging.load (std::memory_order_relaxed);
@@ -265,6 +267,7 @@ namespace bazalt::engine
         {
             slot.scopeWindowSeconds.store (settings.scopeWindowSeconds, std::memory_order_relaxed);
             slot.scopeTrigger.store ((int) settings.scopeTrigger, std::memory_order_relaxed);
+            slot.historyWindowSeconds.store (settings.historyWindowSeconds, std::memory_order_relaxed);
             slot.fftOrder.store (std::clamp (settings.fftOrder, TapSettings::minFftOrder, TapSettings::maxFftOrder), std::memory_order_relaxed);
             slot.spectrumTilt.store (settings.spectrumTiltDbPerOctave, std::memory_order_relaxed);
             slot.spectrumAveraging.store (settings.spectrumAveraging, std::memory_order_relaxed);
@@ -278,6 +281,7 @@ namespace bazalt::engine
             if (needed.spectrum)      mask |= (1u << (uint32_t) TelemetryFrameType::Spectrum);
             if (needed.meter)         mask |= (1u << (uint32_t) TelemetryFrameType::Meter);
             if (needed.eventImpulse)  mask |= (1u << (uint32_t) TelemetryFrameType::EventImpulse);
+            if (needed.rollingHistory) mask |= (1u << (uint32_t) TelemetryFrameType::RollingHistory);
             return mask;
         }
 
@@ -286,19 +290,20 @@ namespace bazalt::engine
             juce::String name; // message-thread-owned only
             std::atomic<bool> active { false };
             std::atomic<bool> synthetic { false }; // see subscribeTap()'s "demo." note
-            std::atomic<uint32_t> frameTypesMask { 0b1111 }; // M20 — see isFrameTypeNeeded()'s own comment; defaults to all 4
+            std::atomic<uint32_t> frameTypesMask { 0b11111 }; // M20 — see isFrameTypeNeeded()'s own comment; defaults to all 5
 
             // ADR-0029 - see TapSettings. Individually atomic; a snapshot is
             // getTapSettingsBySlot().
             std::atomic<float> scopeWindowSeconds { 0.0f };
             std::atomic<int> scopeTrigger { (int) ScopeTriggerMode::Free };
+            std::atomic<float> historyWindowSeconds { 0.0f };
             std::atomic<int> fftOrder { TapSettings::defaultFftOrder };
             std::atomic<float> spectrumTilt { 0.0f };
             std::atomic<float> spectrumAveraging { 0.0f };
             std::atomic<int> meterMode { (int) MeterMode::Peak };
             uint64_t lastUsedSequence = 0; // message-thread-owned only
             std::unique_ptr<Tap> tap;
-            std::array<std::unique_ptr<TelemetryFrameBuffer>, 4> frameBuffers;
+            std::array<std::unique_ptr<TelemetryFrameBuffer>, 5> frameBuffers;
         };
 
         Slot* findSlotByName (const juce::String& name) noexcept

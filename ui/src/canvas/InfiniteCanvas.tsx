@@ -16,6 +16,7 @@ import {
   createCountFromPort,
   createMacroFromPort,
   createRippleFromPort,
+  createScopeControlFromPort,
   deleteNodes,
   ensureInitialized,
   findWireAtInput,
@@ -991,6 +992,28 @@ export const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, InfiniteCanvasPro
               const x = snapValue(worldPos.x + 40, snapSettingsRef.current)
               const y = snapValue(worldPos.y + 40, snapSettingsRef.current)
               createCountFromPort(port.nodeId, port.portId, x, y)
+              requestFrame()
+              return
+            }
+            // design/Visualization/Scope1.png: "Ctrl/Cmd-clicking an output
+            // port spawns the viewer matching that port's type" — a plain
+            // (non-integer, non-Modulation-quantity) Control port's own
+            // viewer. Checked after the integer branch above since an
+            // integer Control port would otherwise also match "control"
+            // here; Modulation (unipolar/bipolar) has no viewer of its own
+            // yet, so it deliberately falls through to the ordinary
+            // wireDrag gesture below instead of matching this branch.
+            if (
+              endpoint &&
+              endpoint.port.type === 'control' &&
+              !endpoint.port.isInteger &&
+              endpoint.port.quantity !== 'unipolar' &&
+              endpoint.port.quantity !== 'bipolar'
+            ) {
+              const worldPos = canvasToWorld(lastMouseCanvasX, lastMouseCanvasY)
+              const x = snapValue(worldPos.x + 40, snapSettingsRef.current)
+              const y = snapValue(worldPos.y + 40, snapSettingsRef.current)
+              createScopeControlFromPort(port.nodeId, port.portId, x, y)
               requestFrame()
               return
             }

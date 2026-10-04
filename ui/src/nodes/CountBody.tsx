@@ -33,6 +33,7 @@ import { TelemetryFrameType } from '../telemetry/parseTelemetryFrame'
 import { registerPreviewRenderer, unregisterPreviewRenderer } from '../analysis/previewRenderLoop'
 import { findWireAtInput, getEndpoint } from '../graph/graphStore'
 import { tokens } from '../theme/tokens'
+import { EditableStat } from './EditableStat'
 import './CountBody.css'
 
 const VISIBILITY_ROOT_MARGIN = '200px'
@@ -53,66 +54,9 @@ function readLatestValue(payload: Float32Array): number | null {
   return Math.round((lo + hi) / 2)
 }
 
-/** The footer's own "Min: <n>" / "Max: <n>" field — click to edit, same
-    Enter-commits/Escape-cancels/blur-commits convention ValueSlider's own
-    edit mode already established. Deliberately NOT a ValueSlider itself:
-    there's nothing to drag or scroll here (this isn't a modulatable port
-    value, just an editable display range), so a plain click-to-type span
-    is the whole interaction, no fill bar. `onCommit` undefined (the M9
-    gallery's static entry, which has no live node instance to persist a
-    property on) makes this read-only — clicking it does nothing, same
-    "no live graph, no persistence" shape RippleBody.tsx's own gallery path
-    already accepts implicitly by never subscribing without an instanceId.
-*/
-function EditableStat({ label, value, onCommit }: { label: string; value: number; onCommit?: (next: number) => void }) {
-  const [editing, setEditing] = useState(false)
-  const resolvedRef = useRef(false)
-
-  const commit = (raw: string): void => {
-    if (resolvedRef.current) return
-    resolvedRef.current = true
-    const parsed = parseFloat(raw)
-    if (!Number.isNaN(parsed)) onCommit?.(parsed)
-    setEditing(false)
-  }
-  const cancel = (): void => {
-    resolvedRef.current = true
-    setEditing(false)
-  }
-
-  if (editing) {
-    return (
-      <input
-        className="view-count-stat-input"
-        autoFocus
-        defaultValue={String(Math.round(value))}
-        onFocus={(e) => e.currentTarget.select()}
-        onMouseDown={(e) => e.stopPropagation()}
-        onClick={(e) => e.stopPropagation()}
-        onBlur={(e) => commit(e.currentTarget.value)}
-        onKeyDown={(e) => {
-          if (e.key === 'Enter') commit(e.currentTarget.value)
-          else if (e.key === 'Escape') cancel()
-        }}
-      />
-    )
-  }
-
-  return (
-    <span
-      className={`view-count-stat${onCommit ? ' view-count-stat-editable' : ''}`}
-      onMouseDown={(e) => e.stopPropagation()}
-      onClick={(e) => {
-        e.stopPropagation()
-        if (!onCommit) return
-        resolvedRef.current = false
-        setEditing(true)
-      }}
-    >
-      {label}: {Math.round(value)}
-    </span>
-  )
-}
+// The footer's own "Min: <n>" / "Max: <n>" field — EditableStat.tsx, shared
+// with ScopeControlBody.tsx's own range/window fields (that file's header
+// comment has the full reasoning this used to carry here).
 
 export function CountBody({ descriptor, state, instanceId }: { descriptor: NodeDescriptor; state: NodeCardState; instanceId?: string }) {
   const valueRef = useRef<HTMLSpanElement | null>(null)

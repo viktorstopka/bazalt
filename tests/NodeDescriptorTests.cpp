@@ -10,7 +10,7 @@ TEST_CASE ("NodeFactory::describeAll() returns a descriptor for every registered
     auto factory = buildDefaultNodeFactory();
     const auto descriptors = factory.describeAll();
 
-    REQUIRE (descriptors.size() == 95); // 93 as of util.bipolarToUnipolar (see git history for the full running tally before this) + view.ripple (design/Visualization/Ripple.png) + view.count (design/Visualization/Count.png)
+    REQUIRE (descriptors.size() == 96); // 93 as of util.bipolarToUnipolar (see git history for the full running tally before this) + view.ripple (design/Visualization/Ripple.png) + view.count (design/Visualization/Count.png) + view.scope.control (design/Visualization/Scope1.png)
 
     auto findByTypeId = [&] (const juce::String& typeId) -> const NodeDescriptor*
     {

@@ -30,6 +30,21 @@ namespace bazalt::engine
         float scopeWindowSeconds = 0.0f;
         ScopeTriggerMode scopeTrigger = ScopeTriggerMode::Free;
 
+        // ---- Rolling history (design/Visualization/Scope1.png) ----
+        /** How much real time the scrolling history spans, in seconds — a
+            few milliseconds to tens of seconds, deliberately a SEPARATE
+            field from `scopeWindowSeconds` even though both mean "how much
+            time this preview shows": that one is capped at the tap's own
+            raw-sample ring depth (~0.2s at 44.1kHz, see its own comment),
+            this one is not (AnalysisThread::publishRollingHistory
+            accumulates incrementally rather than replaying raw samples),
+            and conflating them would make that cap's doc comment a lie for
+            whichever preview kind didn't mean it. 0 is not a valid request
+            here (unlike scopeWindowSeconds' "0 = everything the tap
+            holds") — AnalysisThread clamps it to a sane minimum.
+        */
+        float historyWindowSeconds = 0.0f;
+
         // ---- Spectrum ----
         int fftOrder = defaultFftOrder;
         float spectrumTiltDbPerOctave = 0.0f; // about 1 kHz
@@ -49,6 +64,15 @@ namespace bazalt::engine
             settings.scopeWindowSeconds = std::max (0.0f, preview.timeWindowSeconds);
             settings.scopeTrigger = preview.triggerMode == ScopeTriggerMode::RisingEdge ? ScopeTriggerMode::RisingEdge
                                                                                         : ScopeTriggerMode::Free;
+            // Same source field (PreviewDescriptor::timeWindowSeconds) as
+            // scopeWindowSeconds above, just read into the other field too —
+            // whichever preview kind a tap was actually subscribed for is
+            // the only one AnalysisThread will ever act on
+            // (isFrameTypeNeeded), so there's no real ambiguity in letting
+            // one PreviewDescriptor field answer "how much time" for either
+            // interpretation rather than inventing a second declaration-side
+            // field just to keep them looking separate this early.
+            settings.historyWindowSeconds = std::max (0.0f, preview.timeWindowSeconds);
 
             auto order = minFftOrder;
             while (order < maxFftOrder && (1 << order) < preview.fftSize)

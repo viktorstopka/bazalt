@@ -41,6 +41,7 @@ const FRAME_TYPE_PATH: Record<TelemetryFrameType, string> = {
   [TelemetryFrameType.Spectrum]: 'spectrum',
   [TelemetryFrameType.Meter]: 'meter',
   [TelemetryFrameType.EventImpulse]: 'eventImpulse',
+  [TelemetryFrameType.RollingHistory]: 'history', // PluginEditor.cpp's own frameTypeFromPathSegment()
 }
 
 interface TapState {

@@ -26,6 +26,12 @@ export const TelemetryFrameType = {
   // fixed-shape buffer like the three above (see TelemetryFrame.h's own
   // header comment on this value).
   EventImpulse: 3,
+  // design/Visualization/Scope1.png: a long-window scrolling history — the
+  // SAME fixed-shape (lo, hi)-pair-per-column layout as Oscilloscope, just
+  // built incrementally engine-side so the window can span tens of seconds
+  // instead of being capped at the tap ring's own raw-sample depth (see
+  // AnalysisThread::publishRollingHistory's own comment).
+  RollingHistory: 4,
 } as const
 export type TelemetryFrameType = (typeof TelemetryFrameType)[keyof typeof TelemetryFrameType]
 

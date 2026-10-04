@@ -29,7 +29,21 @@ namespace bazalt::engine
         // consecutive frames' lengths differ, which they almost always
         // will here) — nothing about the header/payload framing itself
         // needed to change for this.
-        EventImpulse = 3
+        EventImpulse = 3,
+        // design/Visualization/Scope1.png: a long-window scrolling history —
+        // fixed-shape (AnalysisThread::maxHistoryColumns (lo, hi) pairs,
+        // oldest first) exactly like Oscilloscope's own payload, but
+        // computed completely differently: Oscilloscope recomputes its
+        // whole window from the tap's raw sample ring every drain (capped
+        // at the ring's own 8192-sample depth, ~0.2s at 44.1kHz — nowhere
+        // near "tens of seconds"), while this is built incrementally,
+        // decimating only the NEW samples seen since the last drain into a
+        // persistent per-tap ring of columns (AnalysisThread's own
+        // historyColumnLo/Hi/Head/ElapsedSeconds state), so an arbitrarily
+        // long window costs a few hundred floats of state per tap, not
+        // hundreds of thousands of raw samples. See
+        // AnalysisThread::publishRollingHistory for the actual algorithm.
+        RollingHistory = 4
     };
 
     struct TelemetryFrameHeader

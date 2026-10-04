@@ -21,6 +21,7 @@ import { withRevealedGroupPorts } from '../graph/portGroups'
 import { MacroBody } from './MacroBody'
 import { RippleBody } from './RippleBody'
 import { CountBody } from './CountBody'
+import { ScopeControlBody } from './ScopeControlBody'
 import './NodeCard.css'
 
 /** PortDescriptor.h's own contract: "falls back to id in the UI if empty" —
@@ -106,6 +107,19 @@ export interface NodeCardState {
   countMaxOverride?: number
   onSetCountMin?: (value: number) => void
   onSetCountMax?: (value: number) => void
+  /** design/Visualization/Scope1.png's editable vertical-range footer —
+      the generic equivalent of countMinOverride/onSetCountMin above, for
+      ANY viewer with an auto-ranging display scale (ScopeHistoryBody.tsx,
+      shared across every view.scope.* variant and a future view.gate).
+      A single, type-id-agnostic property key pair rather than one bespoke
+      pair per viewer type — see graphStore.ts's setViewerRangeMin/Max.
+      Undefined for every other node type, and for a viewer whose range has
+      never been edited (ScopeHistoryBody.tsx's own auto-range/auto-freeze
+      logic is what supplies a value in that case instead). */
+  viewerRangeMinOverride?: number
+  viewerRangeMaxOverride?: number
+  onSetViewerRangeMin?: (value: number) => void
+  onSetViewerRangeMax?: (value: number) => void
   /** MacroEditTypeModal's own portal target (GraphSurface.tsx's
       `overlayTarget`, the screen-space `.infinite-canvas-overlay` div) —
       see MacroBody.tsx's own comment on why this can't just render inline:
@@ -947,6 +961,9 @@ export function NodeCard({ descriptor: declaredDescriptor, state = {}, instanceI
   // reports an ordinary Glance layoutVariant too; this is a visual swap
   // only.
   if (descriptor.typeId === 'view.count') return <CountBody descriptor={descriptor} state={state} instanceId={instanceId} />
+  // design/Visualization/Scope1.png: same client-side-only typeId dispatch
+  // as view.ripple/view.count just above.
+  if (descriptor.typeId === 'view.scope.control') return <ScopeControlBody descriptor={descriptor} state={state} instanceId={instanceId} />
   if (descriptor.layoutVariant === 'decoration') return <DecorationBody descriptor={descriptor} />
   if (descriptor.layoutVariant === 'singleton') return <SingletonBody descriptor={descriptor} state={state} instanceId={instanceId} />
   if (descriptor.layoutVariant === 'glance') return <GlanceBody descriptor={descriptor} state={state} instanceId={instanceId} />
