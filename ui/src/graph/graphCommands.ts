@@ -10,6 +10,10 @@ import { getNativeFunction } from '@juce-framework/webview'
 export interface CommandResult {
   success: boolean
   errorMessage: string
+  /** graphConnectWithAutoAdapt only: the connection loses information
+      (stereo into a mono-only port) and needs one of these choices —
+      call again passing it. */
+  choices?: string[]
 }
 
 const NOT_IN_WEBVIEW: CommandResult = { success: false, errorMessage: 'Not running inside the plugin WebView' }
@@ -47,6 +51,12 @@ export function graphCreateMacro(
   return callCommand('graphCreateMacro', nodeId, x, y, slot, min, max, isInteger ? 1 : 0, quantity, unit, value)
 }
 
+/** wiki/plans/Decorations.md §4: a deco.image node showing `base64` (already
+    compressed), stored once per patch; refused past the patch's image limit. */
+export function graphAddImage(nodeId: string, x: number, y: number, mimeType: string, base64: string, width: number, height: number): Promise<CommandResult> {
+  return callCommand('graphAddImage', nodeId, x, y, mimeType, base64, width, height)
+}
+
 export function graphDeleteNode(nodeId: string): Promise<CommandResult> {
   return callCommand('graphDeleteNode', nodeId)
 }
@@ -62,12 +72,24 @@ export function graphDisconnect(fromNodeId: string, fromPortId: string, toNodeId
     succeeds or fails outright. See canConnect.ts for the client-side
     prediction used for live drag feedback before a drop is attempted.
 */
-export function graphConnectWithAutoAdapt(fromNodeId: string, fromPortId: string, toNodeId: string, toPortId: string): Promise<CommandResult> {
-  return callCommand('graphConnectWithAutoAdapt', fromNodeId, fromPortId, toNodeId, toPortId)
+export function graphConnectWithAutoAdapt(fromNodeId: string, fromPortId: string, toNodeId: string, toPortId: string, choice = ''): Promise<CommandResult> {
+  return callCommand('graphConnectWithAutoAdapt', fromNodeId, fromPortId, toNodeId, toPortId, choice)
 }
 
 export function graphSetParameterValue(nodeId: string, parameterId: string, value: number): Promise<CommandResult> {
   return callCommand('graphSetParameterValue', nodeId, parameterId, value)
+}
+
+/** While a slider is dragged: the value goes to the running nodes, smoothed,
+    with no recompile and no undo step (plugin/source/LiveParameterEdits.h).
+    Resolves false for a value that can't change live (a structural
+    parameter) — that one simply takes effect on commit. */
+export async function graphSetParameterLive(nodeId: string, parameterId: string, value: number): Promise<boolean> {
+  return (await getNativeFunction('graphSetParameterLive')(nodeId, parameterId, value)) as boolean
+}
+
+export async function graphReleaseParameterLive(nodeId: string, parameterId: string): Promise<void> {
+  await getNativeFunction('graphReleaseParameterLive')(nodeId, parameterId)
 }
 
 export function graphMoveNode(nodeId: string, x: number, y: number): Promise<CommandResult> {
@@ -173,6 +195,9 @@ export interface NodeMultiplicityBadge {
 export interface GraphMultiplicity {
   ports: Record<string, Record<string, PortMultiplicityInfo>>
   badges: Record<string, NodeMultiplicityBadge>
+  /** Node id -> its output ports carrying stereo in the compiled graph
+      (wiki/plans/StereoChannels.md). */
+  stereo?: Record<string, string[]>
 }
 
 export async function graphGetNodeMultiplicity(): Promise<GraphMultiplicity | null> {

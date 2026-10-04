@@ -60,11 +60,13 @@ import type { NodeDescriptor, PortDescriptor, Quantity, ValueKind } from './desc
 import { fetchNodeDescriptors } from './fetchNodeDescriptors'
 import { canConnectPorts, findPort, type ConnectionEndpoint } from './canConnect'
 import { quantityUnit } from '../format/valueFormat'
+import { classifyPortUiKind, type PortUiKind } from './portUiKind'
 import {
   graphAddNode,
   graphConnectWithAutoAdapt,
   graphCreateMacro,
   graphDeleteNode,
+  graphAddImage,
   graphDisconnect,
   graphGetNodeMultiplicity,
   graphGetSnapshot,
@@ -72,17 +74,35 @@ import {
   graphRestoreSnapshot,
   graphSetOutput,
   graphSetParameterValue,
+  graphSetParameterLive,
+  graphReleaseParameterLive,
   graphSetProperty,
   type CommandResult,
   type NodeMultiplicityBadge,
   type PortMultiplicityInfo,
 } from './graphCommands'
 
+/** What a decoration (wiki/plans/Decorations.md) shows — its own
+    NodeInstance.properties, edited through graphSetProperty. */
+export interface DecorationProps {
+  text?: string
+  width?: number
+  height?: number
+  colour?: number // index into DECORATION_COLOURS
+  size?: number // deco.header: 0 small, 1 medium, 2 large
+  asset?: string // deco.image: content id into the snapshot's `assets`
+}
+
+export const DECORATION_TYPES = new Set(['deco.header', 'deco.comment', 'deco.box', 'deco.image'])
+/** Decorations drawn behind everything else. */
+export const BACKGROUND_DECORATIONS = new Set(['deco.box', 'deco.image'])
+
 export interface GraphNode {
   id: string
   typeId: string
   x: number
   y: number
+  decoration?: DecorationProps
   titleOverride?: string
   bypassed: boolean
   error?: string
@@ -122,12 +142,22 @@ export interface GraphNode {
       countMaxOverride above (properties["viewer.rangeMin"]/["viewer.rangeMax"],
       same plain-number-via-graphSetProperty storage), shared by every
       auto-ranging viewer (ScopeHistoryBody.tsx, every view.scope.* variant
-      and a future view.gate) rather than one bespoke property-key pair per
+      and view.gate) rather than one bespoke property-key pair per
       node type. Undefined until the user has edited it — ScopeHistoryBody.tsx's
       own auto-range/auto-freeze logic is what supplies a value before that.
   */
   viewerRangeMinOverride?: number
   viewerRangeMaxOverride?: number
+  /** design/Visualization/ScopeMod.png's editable centre line
+      (properties["viewer.center"]) — the value the filled trace is painted
+      from. Same storage and same "undefined until edited" rule as the range
+      pair above; ScopeHistoryBody.tsx supplies the default (the middle
+      of the range: 0 for bipolar, 0.5 for unipolar) before that. */
+  viewerCenterOverride?: number
+  /** A phase-locked preview's playhead mode (properties["preview.playhead"]:
+      0 Auto, 1 On, 2 Off) — undefined means Auto. Display-only, so a
+      property, not a parameter. */
+  previewPlayheadMode?: number
 }
 
 /** TypedValueNodeBase.h's `TypedValueType` enum, mirrored — rewritten per
@@ -255,6 +285,22 @@ export interface GraphSnapshot {
       start of the next user gesture, not on a timer.
   */
   lastError: string | null
+  /** A connection waiting for the user to say how stereo becomes mono
+      (wiki/plans/StereoChannels.md §3) — the chooser shows while set. */
+  pendingConnectionChoice: PendingConnectionChoice | null
+  /** Image data the patch carries, by content id (deco.image's `asset`). */
+  assets: ReadonlyMap<string, { type: string; data: string }>
+  /** Node id -> output port ids that carry stereo, as compiled — stereo
+      cables draw doubled (wiki/plans/StereoChannels.md). */
+  stereoOutputs: ReadonlyMap<string, ReadonlySet<string>>
+}
+
+export interface PendingConnectionChoice {
+  fromNodeId: string
+  fromPortId: string
+  toNodeId: string
+  toPortId: string
+  choices: readonly string[]
 }
 
 // ---- Wire shape from the engine's own PatchDocument JSON -----------------
@@ -276,6 +322,19 @@ interface PatchConnectionJson {
 interface PatchDocumentJson {
   nodes?: PatchNodeJson[]
   connections?: PatchConnectionJson[]
+  assets?: Record<string, { type: string; data: string }>
+}
+
+function decorationFromProperties(properties: Record<string, unknown>): DecorationProps {
+  const num = (v: unknown) => (typeof v === 'number' ? v : undefined)
+  return {
+    text: typeof properties.text === 'string' ? properties.text : undefined,
+    width: num(properties.width),
+    height: num(properties.height),
+    colour: num(properties.colour),
+    size: num(properties.size),
+    asset: typeof properties.asset === 'string' ? properties.asset : undefined,
+  }
 }
 
 function wireId(toNodeId: string, toPortId: string): string {
@@ -304,6 +363,13 @@ function parseMacroEnumOptionLabels(raw: unknown): string[] | undefined {
 
 function patchJsonToLocalState(json: string): { nodes: Map<string, GraphNode>; wires: Map<string, GraphWire> } {
   const doc = JSON.parse(json) as PatchDocumentJson
+  // Content-addressed, so merging is always right (an id never changes
+  // meaning); an undo can still show an image a later edit dropped.
+  if (doc.assets) {
+    const merged = new Map(assets)
+    for (const [id, asset] of Object.entries(doc.assets)) merged.set(id, asset)
+    assets = merged
+  }
   const nodes = new Map<string, GraphNode>()
   for (const n of doc.nodes ?? []) {
     const properties = n.properties ?? {}
@@ -313,6 +379,8 @@ function patchJsonToLocalState(json: string): { nodes: Map<string, GraphNode>; w
     const countMax = properties['view.count.max']
     const viewerRangeMin = properties['viewer.rangeMin']
     const viewerRangeMax = properties['viewer.rangeMax']
+    const viewerCenter = properties['viewer.center']
+    const previewPlayhead = properties['preview.playhead']
     nodes.set(n.id, {
       id: n.id,
       typeId: n.type,
@@ -326,6 +394,9 @@ function patchJsonToLocalState(json: string): { nodes: Map<string, GraphNode>; w
       countMaxOverride: typeof countMax === 'number' ? countMax : undefined,
       viewerRangeMinOverride: typeof viewerRangeMin === 'number' ? viewerRangeMin : undefined,
       viewerRangeMaxOverride: typeof viewerRangeMax === 'number' ? viewerRangeMax : undefined,
+      viewerCenterOverride: typeof viewerCenter === 'number' ? viewerCenter : undefined,
+      previewPlayheadMode: typeof previewPlayhead === 'number' ? previewPlayhead : undefined,
+      decoration: DECORATION_TYPES.has(n.type) ? decorationFromProperties(properties) : undefined,
     })
   }
   const wires = new Map<string, GraphWire>()
@@ -343,6 +414,9 @@ let descriptors: NodeDescriptor[] = []
 let descriptorsLoaded = false
 let multiplicity = new Map<string, NodeMultiplicity>()
 let lastError: string | null = null
+let pendingConnectionChoice: PendingConnectionChoice | null = null
+let stereoOutputs: ReadonlyMap<string, ReadonlySet<string>> = new Map()
+let assets: ReadonlyMap<string, { type: string; data: string }> = new Map()
 
 /** Fetched in parallel with graphGetSnapshot everywhere that's refreshed
     (see the header comment for why: both are "resync local state from the
@@ -389,6 +463,8 @@ async function fetchMultiplicity(): Promise<Map<string, NodeMultiplicity>> {
   const result = await graphGetNodeMultiplicity()
   const map = new Map<string, NodeMultiplicity>()
   if (!result) return map
+  // Same fetch, same moment: which compiled outputs are stereo.
+  stereoOutputs = new Map(Object.entries(result.stereo ?? {}).map(([nodeId, ports]) => [nodeId, new Set(ports)]))
   for (const [nodeId, ports] of Object.entries(result.ports)) {
     map.set(nodeId, { ports: new Map(Object.entries(ports)), badge: result.badges[nodeId] })
   }
@@ -447,6 +523,9 @@ function buildSnapshot(): GraphSnapshot {
     canUndo: past.length > 0,
     canRedo: future.length > 0,
     lastError,
+    pendingConnectionChoice,
+    stereoOutputs,
+    assets,
   }
 }
 
@@ -593,7 +672,7 @@ export function getEndpoint(nodeId: string, portId: string, direction: 'input' |
   return endpointFor(nodeId, portId, direction, new Set())
 }
 
-/** A polymorphic node (util.reroute, logic.select/compare, adapt.sampleHold)
+/** A polymorphic node (deco.reroute, logic.select/compare, adapt.sampleHold)
     declares default port types, but a placed one's real types follow what is
     wired to it (Node.h, hasPolymorphicPorts(); the engine resolves it in
     GraphCompiler). Predicting a wire against the declared defaults would
@@ -847,12 +926,36 @@ export async function addNode(typeId: string, x: number, y: number): Promise<str
   return id
 }
 
-/** Removes the given nodes, one command per node, in one undo step. */
+/** Removes the given nodes, one command per node, in one undo step. A
+    deleted reroute (deco.reroute) reconnects what fed it to everything it fed
+    (wiki/plans/Decorations.md §3) — tidying cable routing never breaks the
+    patch. */
 export function deleteNodes(ids: readonly string[]): void {
   if (ids.length === 0) return
+  const deleting = new Set(ids)
+  // Follow chains of deleted reroutes back to a real source.
+  const sourceOf = (nodeId: string): GraphWire | undefined => {
+    let wire = findWireAtInput(nodeId, 'in')
+    const seen = new Set<string>()
+    while (wire && deleting.has(wire.fromNodeId) && nodes.get(wire.fromNodeId)?.typeId === 'deco.reroute' && !seen.has(wire.fromNodeId)) {
+      seen.add(wire.fromNodeId)
+      wire = findWireAtInput(wire.fromNodeId, 'in')
+    }
+    return wire && !deleting.has(wire.fromNodeId) ? wire : undefined
+  }
+  const reconnections: { fromNodeId: string; fromPortId: string; toNodeId: string; toPortId: string }[] = []
+  for (const id of ids) {
+    if (nodes.get(id)?.typeId !== 'deco.reroute') continue
+    const source = sourceOf(id)
+    if (!source) continue
+    for (const wire of wires.values())
+      if (wire.fromNodeId === id && !deleting.has(wire.toNodeId))
+        reconnections.push({ fromNodeId: source.fromNodeId, fromPortId: source.fromPortId, toNodeId: wire.toNodeId, toPortId: wire.toPortId })
+  }
   void withHistory(
     async () => {
       for (const id of ids) await fireCommand(() => graphDeleteNode(id))
+      for (const c of reconnections) await fireCommand(() => graphConnectWithAutoAdapt(c.fromNodeId, c.fromPortId, c.toNodeId, c.toPortId))
     },
     () => {
       for (const id of ids) {
@@ -990,6 +1093,71 @@ export function setViewerRangeMax(id: string, value: number): void {
   )
 }
 
+/** design/Visualization/ScopeMod.png: "The centre line's position is
+    editable, so a unipolar signal can be given a centre of 0.5, or of 0" —
+    the same generic, type-id-agnostic property storage as the range pair
+    above. */
+export function setViewerCenter(id: string, value: number): void {
+  void withHistory(
+    () => fireCommand(() => graphSetProperty(id, 'viewer.center', value)).then(() => undefined),
+    () => {
+      const node = nodes.get(id)
+      if (node) nodes.set(id, { ...node, viewerCenterOverride: value })
+    },
+  )
+}
+
+/** Sets one or more of a decoration's own properties (text, size, colour,
+    width/height — wiki/plans/Decorations.md) in one undo step. The engine
+    stores them without recompiling. */
+export function setDecorationProperties(id: string, changes: Partial<DecorationProps>): void {
+  const entries = Object.entries(changes).filter(([, v]) => v !== undefined) as [string, string | number][]
+  if (entries.length === 0) return
+  void withHistory(
+    async () => {
+      for (const [key, value] of entries) await fireCommand(() => graphSetProperty(id, key, value))
+    },
+    () => {
+      const node = nodes.get(id)
+      if (node) nodes.set(id, { ...node, decoration: { ...node.decoration, ...changes } })
+    },
+  )
+}
+
+/** Adds an image decal at (x, y) — `base64` already compressed by
+    imageImport.ts. Resolves to the error message when the engine refuses it
+    (over the patch's image limit), else null. */
+export async function addImageAt(x: number, y: number, mimeType: string, base64: string, width: number, height: number): Promise<string | null> {
+  const id = makeId('node')
+  let error: string | null = null
+  await withHistory(async () => {
+    const result = await graphAddImage(id, x, y, mimeType, base64, width, height)
+    if (!result.success) {
+      error = result.errorMessage
+      lastError = result.errorMessage
+    } else selection = new Set([id])
+  })
+  return error
+}
+
+/** Shows a message in the top bar's error slot (e.g. an image that couldn't
+    be read) without any command having run. */
+export function reportError(message: string): void {
+  lastError = message
+  notify()
+}
+
+/** A phase-locked preview's playhead override: 0 Auto, 1 On, 2 Off. */
+export function setPreviewPlayheadMode(id: string, mode: number): void {
+  void withHistory(
+    () => fireCommand(() => graphSetProperty(id, 'preview.playhead', mode)).then(() => undefined),
+    () => {
+      const node = nodes.get(id)
+      if (node) nodes.set(id, { ...node, previewPlayheadMode: mode })
+    },
+  )
+}
+
 export function toggleBypass(id: string): void {
   const node = nodes.get(id)
   if (!node) return
@@ -1040,6 +1208,32 @@ export function setParameterValue(nodeId: string, parameterId: string, value: nu
   )
 }
 
+/** A slider mid-drag (value) or just released (null): streams the value to
+    the running engine without a recompile or an undo step — the commit on
+    release (setParameterValue) is still what's saved. Coalesced to at most
+    one message per animation frame per (node, parameter); the engine glides
+    between them (LiveParameterEdits.h), so the sweep sounds continuous. */
+const pendingLiveValues = new Map<string, { nodeId: string; parameterId: string; value: number }>()
+let liveFlushScheduled = false
+
+export function setParameterLive(nodeId: string, parameterId: string, value: number | null): void {
+  const key = `${nodeId}\u0000${parameterId}`
+  if (value === null) {
+    pendingLiveValues.delete(key)
+    graphReleaseParameterLive(nodeId, parameterId).catch(() => undefined)
+    return
+  }
+  pendingLiveValues.set(key, { nodeId, parameterId, value })
+  if (liveFlushScheduled) return
+  liveFlushScheduled = true
+  requestAnimationFrame(() => {
+    liveFlushScheduled = false
+    for (const live of pendingLiveValues.values())
+      graphSetParameterLive(live.nodeId, live.parameterId, live.value).catch(() => undefined)
+    pendingLiveValues.clear()
+  })
+}
+
 export function setSelection(ids: readonly string[]): void {
   const next = new Set(ids)
   if (next.size === selection.size && [...next].every((id) => selection.has(id))) return
@@ -1068,10 +1262,37 @@ export function commitNodeMoves(updates: ReadonlyArray<{ id: string; x: number; 
   )
 }
 
+/** Connects with auto-adapt; a connection that would throw information away
+    (stereo into a mono-only port) isn't made — it becomes the pending choice
+    the chooser asks about, then resolveConnectionChoice() finishes it. */
+async function connectOrAsk(fromNodeId: string, fromPortId: string, toNodeId: string, toPortId: string): Promise<boolean> {
+  const result = await graphConnectWithAutoAdapt(fromNodeId, fromPortId, toNodeId, toPortId)
+  if (!result.success && result.choices && result.choices.length > 0) {
+    pendingConnectionChoice = { fromNodeId, fromPortId, toNodeId, toPortId, choices: result.choices }
+    return false
+  }
+  if (!result.success) lastError = result.errorMessage
+  return result.success
+}
+
+/** The chooser's answer: `choice` makes the connection through a visible
+    adapter in that mode; null cancels it. */
+export function resolveConnectionChoice(choice: string | null): void {
+  const pending = pendingConnectionChoice
+  pendingConnectionChoice = null
+  notify()
+  if (!pending || choice === null) return
+  void withHistory(async () => {
+    if (await fireCommand(() => graphConnectWithAutoAdapt(pending.fromNodeId, pending.fromPortId, pending.toNodeId, pending.toPortId, choice))) {
+      await designateOutputIfMasterOut(pending.toNodeId)
+    }
+  })
+}
+
 export function addWire(fromNodeId: string, fromPortId: string, toNodeId: string, toPortId: string): void {
   void withHistory(
     async () => {
-      if (await fireCommand(() => graphConnectWithAutoAdapt(fromNodeId, fromPortId, toNodeId, toPortId))) {
+      if (await connectOrAsk(fromNodeId, fromPortId, toNodeId, toPortId)) {
         await designateOutputIfMasterOut(toNodeId)
       }
     },
@@ -1112,7 +1333,7 @@ export function commitWireDrag(fromNodeId: string, fromPortId: string, target: {
   void withHistory(
     async () => {
       if (detachedWire) await fireCommand(() => graphDisconnect(detachedWire.fromNodeId, detachedWire.fromPortId, detachedWire.toNodeId, detachedWire.toPortId))
-      if (target && (await fireCommand(() => graphConnectWithAutoAdapt(fromNodeId, fromPortId, target.nodeId, target.portId)))) {
+      if (target && (await connectOrAsk(fromNodeId, fromPortId, target.nodeId, target.portId))) {
         await designateOutputIfMasterOut(target.nodeId)
       }
     },
@@ -1469,141 +1690,68 @@ export function createMacroFromPort(nodeId: string, portId: string, x: number, y
   return macroId
 }
 
-/** The authoritative check `createRippleFromPort` uses right before
-    committing — same "check canConnectPorts against the real candidate
-    descriptor before sending any command" discipline isMacroConnectable()
-    above follows, rather than trusting the coarse Event-type check in
-    createRippleFromPort/InfiniteCanvas.tsx's own gating to be the only
-    guard.
-*/
-function isRippleConnectable(port: PortDescriptor): boolean {
-  const rippleDescriptor = getDescriptor('view.ripple')
-  const rippleInput = rippleDescriptor && findPort(rippleDescriptor, 'in', 'input')
-  if (!rippleInput) return false
-  return canConnectPorts(port, rippleInput).outcome !== 'reject'
+/** "Ctrl/Cmd-clicking an output port spawns the viewer matching that
+    port's type, already connected" (design/Visualization/Scope1.png; the
+    same rule Ripple.png, Count.png, ScopeMod.png and Gate.png each state for
+    their own type). One table, keyed by the same port classification that
+    colours the port (classifyPortUiKind), so "which viewer" can never drift
+    from "which colour": a port that looks orange opens the orange viewer.
+    Undefined for a type with no viewer of its own (Audio, Note, Data). */
+const DEFAULT_VIEWER_BY_PORT_KIND: Partial<Record<PortUiKind, string>> = {
+  trigger: 'view.ripple', // Ripple.png — the Event viewer
+  integer: 'view.count', // Count.png
+  value: 'view.scope.control', // Scope1.png — plain real-quantity Control
+  modulation: 'view.scope.modulation', // ScopeMod.png — Unipolar/Bipolar Control
+  boolean: 'view.gate', // Gate.png
 }
 
-/** design/Visualization/Ripple.png: "Ctrl/Cmd-clicking an Event output
-    port spawns this node already connected to that port. It is the
-    default viewer for the Event type." Creates a new view.ripple node at
-    (x, y) and wires the clicked output port straight into its own 'in'
-    port — one undo step (addNode -> connect), the same composite-command
-    shape createMacroFromPort above uses, just simpler: view.ripple has no
-    parameters at all, so there's no seed/slot-claim step in between.
+export function defaultViewerTypeForPort(port: PortDescriptor): string | undefined {
+  // A Pitch-quantity Control port gets the tuner (design/Visualization/Tune.png),
+  // not the generic Control scope.
+  if (port.type === 'control' && port.quantity === 'pitch') return 'view.tune'
+  // classifyPortUiKind falls back to 'value' for a type it has no colour for
+  // (Spectral) — only a genuine Control port gets the Control scope.
+  const kind = classifyPortUiKind(port)
+  if (kind === 'value' && port.type !== 'control') return undefined
+  return DEFAULT_VIEWER_BY_PORT_KIND[kind]
+}
+
+/** Spawns `defaultViewerTypeForPort`'s viewer at (x, y) and wires the
+    clicked output port straight into its own 'in' port — one undo step
+    (addNode -> connect), the same composite-command shape createMacroFromPort
+    above uses, just simpler: no viewer needs a seed/slot-claim step in
+    between.
 
     No-op (returns undefined, no command sent) if the port doesn't exist,
-    isn't Event-typed, or isRippleConnectable() says the real engine would
-    reject the resulting wire anyway — InfiniteCanvas.tsx's Ctrl/Cmd+click
-    handling is expected to have already checked the port's resolved type
-    before calling this, but this function re-checks both itself too, the
-    same "check first, commit only if it would work" discipline
-    createMacroFromPort's own doc comment explains in full (and for the
-    same reason: never commit the addNode step and then fail the connect
-    step, leaving an orphaned view.ripple behind).
+    has no viewer, or canConnectPorts() against the real viewer descriptor
+    says the engine would reject the wire anyway — the same "check first,
+    commit only if it would work" discipline createMacroFromPort's own doc
+    comment explains in full (never commit the addNode step and then fail
+    the connect step, leaving an orphaned viewer behind).
 */
-export function createRippleFromPort(nodeId: string, portId: string, x: number, y: number): string | undefined {
+export function createViewerFromPort(nodeId: string, portId: string, x: number, y: number): string | undefined {
   const endpoint = getEndpoint(nodeId, portId, 'output')
-  if (!endpoint || endpoint.port.type !== 'event' || !isRippleConnectable(endpoint.port)) return undefined
+  const typeId = endpoint && defaultViewerTypeForPort(endpoint.port)
+  if (!endpoint || !typeId) return undefined
 
-  const rippleId = makeId('node')
+  const viewerDescriptor = getDescriptor(typeId)
+  const viewerInput = viewerDescriptor && findPort(viewerDescriptor, 'in', 'input')
+  if (!viewerInput || canConnectPorts(endpoint.port, viewerInput).outcome === 'reject') return undefined
+
+  const viewerId = makeId('node')
 
   void withHistory(
     async () => {
-      if (!(await fireCommand(() => graphAddNode('view.ripple', rippleId, x, y)))) return
-      await fireCommand(() => graphConnectWithAutoAdapt(nodeId, portId, rippleId, 'in'))
+      if (!(await fireCommand(() => graphAddNode(typeId, viewerId, x, y)))) return
+      await fireCommand(() => graphConnectWithAutoAdapt(nodeId, portId, viewerId, 'in'))
     },
     () => {
-      nodes.set(rippleId, { id: rippleId, typeId: 'view.ripple', x, y, bypassed: false })
-      const newWireId = wireId(rippleId, 'in')
-      wires.set(newWireId, { id: newWireId, fromNodeId: nodeId, fromPortId: portId, toNodeId: rippleId, toPortId: 'in' })
-      selection = new Set([rippleId])
+      nodes.set(viewerId, { id: viewerId, typeId, x, y, bypassed: false })
+      const newWireId = wireId(viewerId, 'in')
+      wires.set(newWireId, { id: newWireId, fromNodeId: nodeId, fromPortId: portId, toNodeId: viewerId, toPortId: 'in' })
+      selection = new Set([viewerId])
     },
   )
 
-  return rippleId
-}
-
-/** Same authoritative-recheck discipline isRippleConnectable() above
-    follows, for view.count's own "in" port. */
-function isCountConnectable(port: PortDescriptor): boolean {
-  const countDescriptor = getDescriptor('view.count')
-  const countInput = countDescriptor && findPort(countDescriptor, 'in', 'input')
-  if (!countInput) return false
-  return canConnectPorts(port, countInput).outcome !== 'reject'
-}
-
-/** design/Visualization/Count.png: "Ctrl/Cmd-clicking an integer output
-    port spawns this node already connected to that port. It is the
-    default viewer for the integer type." Same shape as
-    createRippleFromPort above, one undo step (addNode -> connect) — see
-    that function's own doc comment for the full reasoning, which applies
-    here unchanged (view.count also has no parameters at all, so no seed/
-    slot-claim step in between).
-
-    No-op (returns undefined, no command sent) if the port doesn't exist,
-    isn't an integer Control port, or isCountConnectable() says the real
-    engine would reject the resulting wire anyway.
-*/
-export function createCountFromPort(nodeId: string, portId: string, x: number, y: number): string | undefined {
-  const endpoint = getEndpoint(nodeId, portId, 'output')
-  if (!endpoint || endpoint.port.type !== 'control' || !endpoint.port.isInteger || !isCountConnectable(endpoint.port)) return undefined
-
-  const countId = makeId('node')
-
-  void withHistory(
-    async () => {
-      if (!(await fireCommand(() => graphAddNode('view.count', countId, x, y)))) return
-      await fireCommand(() => graphConnectWithAutoAdapt(nodeId, portId, countId, 'in'))
-    },
-    () => {
-      nodes.set(countId, { id: countId, typeId: 'view.count', x, y, bypassed: false })
-      const newWireId = wireId(countId, 'in')
-      wires.set(newWireId, { id: newWireId, fromNodeId: nodeId, fromPortId: portId, toNodeId: countId, toPortId: 'in' })
-      selection = new Set([countId])
-    },
-  )
-
-  return countId
-}
-
-/** Same authoritative-recheck discipline isRippleConnectable()/
-    isCountConnectable() above follow, for view.scope.control's own "in"
-    port. */
-function isScopeControlConnectable(port: PortDescriptor): boolean {
-  const scopeDescriptor = getDescriptor('view.scope.control')
-  const scopeInput = scopeDescriptor && findPort(scopeDescriptor, 'in', 'input')
-  if (!scopeInput) return false
-  return canConnectPorts(port, scopeInput).outcome !== 'reject'
-}
-
-/** design/Visualization/Scope1.png: "Ctrl/Cmd-clicking an output port
-    spawns the viewer matching that port's type, already connected." For a
-    plain (non-integer, non-Modulation-quantity) Control port specifically
-    — view.count/createCountFromPort already owns the integer case, and a
-    unipolar/bipolar Modulation port has no viewer of its own yet (the
-    task that added this explicitly scoped Modulation/Gate as separate,
-    later work). Same shape as createCountFromPort above, one undo step.
-*/
-export function createScopeControlFromPort(nodeId: string, portId: string, x: number, y: number): string | undefined {
-  const endpoint = getEndpoint(nodeId, portId, 'output')
-  if (!endpoint || endpoint.port.type !== 'control' || endpoint.port.isInteger) return undefined
-  if (endpoint.port.quantity === 'unipolar' || endpoint.port.quantity === 'bipolar') return undefined
-  if (!isScopeControlConnectable(endpoint.port)) return undefined
-
-  const scopeId = makeId('node')
-
-  void withHistory(
-    async () => {
-      if (!(await fireCommand(() => graphAddNode('view.scope.control', scopeId, x, y)))) return
-      await fireCommand(() => graphConnectWithAutoAdapt(nodeId, portId, scopeId, 'in'))
-    },
-    () => {
-      nodes.set(scopeId, { id: scopeId, typeId: 'view.scope.control', x, y, bypassed: false })
-      const newWireId = wireId(scopeId, 'in')
-      wires.set(newWireId, { id: newWireId, fromNodeId: nodeId, fromPortId: portId, toNodeId: scopeId, toPortId: 'in' })
-      selection = new Set([scopeId])
-    },
-  )
-
-  return scopeId
+  return viewerId
 }

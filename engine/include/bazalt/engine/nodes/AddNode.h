@@ -25,7 +25,7 @@ namespace bazalt::engine::nodes
         convenience, which an unwired Audio input never needed (silence is
         already the sum identity). Now genuinely polymorphic
         (`PortPolymorphism::SignalAndQuantity`, the same mechanism
-        `util.reroute`/`logic.select` already use — declared first among
+        `deco.reroute`/`logic.select` already use — declared first among
         the group's wired members wins if they disagree, InheritingPortsNode.h's
         own `offer()` rule, reimplemented here directly since this node's
         growable-group shape doesn't fit that class's fixed-arity one):
@@ -55,7 +55,7 @@ namespace bazalt::engine::nodes
         int getNumOutputPorts() const noexcept override { return numOutputs; }
 
         juce::String getTitle() const override { return "Add"; }
-        juce::String getCategory() const override { return "Utility"; }
+        juce::String getCategory() const override { return "Math"; }
 
         bool hasPolymorphicPorts() const noexcept override { return true; }
 
@@ -139,6 +139,7 @@ namespace bazalt::engine::nodes
                 auto port = makeNumericGroupPort (group, i, 0.0f);
                 port.type = resolvedType;
                 port.quantity = resolvedQuantity;
+                port.channels = Channels::Inherited;
                 port.polymorphism = PortPolymorphism::SignalAndQuantity;
                 ports.push_back (port);
             }
@@ -148,7 +149,7 @@ namespace bazalt::engine::nodes
         std::vector<PortDescriptor> getOutputPorts() const override
         {
             return { PortDescriptor { .id = "out", .type = resolvedType, .isPrimaryOutput = true,
-                                       .quantity = resolvedQuantity, .polymorphism = PortPolymorphism::SignalAndQuantity } };
+                                       .quantity = resolvedQuantity, .channels = Channels::Inherited, .polymorphism = PortPolymorphism::SignalAndQuantity } };
         }
 
         void setParameter (const juce::String& parameterId, float value) override

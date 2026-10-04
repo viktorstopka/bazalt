@@ -8,7 +8,7 @@ namespace bazalt::engine::nodes
     /** Shared base for the nodes whose data ports take on the type and/or
         quantity of what is wired to them (logic.select, logic.compare,
         adapt.sampleHold) — the multi-input generalisation of what
-        `util.reroute` does for one port. See Node.h's
+        `deco.reroute` does for one port. See Node.h's
         `resolveIncomingPort()` for how the compiler drives this, and
         PortDescriptor::polymorphic for what the UI mirrors.
 

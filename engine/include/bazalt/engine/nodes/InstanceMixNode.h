@@ -66,8 +66,21 @@ namespace bazalt::engine::nodes
 
         std::vector<PortDescriptor> getOutputPorts() const override
         {
-            return { { "out", SignalType::Audio } };
+            PortDescriptor port { "out", SignalType::Audio };
+            port.channels = stereo ? Channels::Stereo : Channels::Mono;
+            return { port };
         }
+
+        int getNumOutputChannels() const noexcept override { return stereo ? 2 : 1; }
+
+        /** wiki/plans/StereoChannels.md: whether the voices this node sums are
+            stereo. Not a user parameter (absent from getParameters()) — the
+            driver (GraphEditController) sets it on the global graph's copy
+            of this node from the compiled voice plans' own output width, so
+            a per-voice stereo chain (a per-voice pan, a stereo resonator)
+            reaches the global domain intact instead of losing its right
+            channel. */
+        static constexpr const char* channelsParameterId = "instance.sum.channels";
 
         bool supportsPerSample() const noexcept override { return false; } // domain seam, same as VoiceSumNode
 
@@ -104,6 +117,8 @@ namespace bazalt::engine::nodes
                 silenceThresholdDb = value;
             else if (parameterId == "instance.sum.silenceHoldTimeMs")
                 silenceHoldTimeMs = value;
+            else if (parameterId == channelsParameterId)
+                stereo = value > 1.5f;
         }
 
         enum class Mode
@@ -120,30 +135,40 @@ namespace bazalt::engine::nodes
             comment. `samples` must remain valid only for the duration of
             the immediately-following `processBlock()` call.
         */
-        void setExternalBlock (const float* samples, int numSamples) noexcept
+        void setExternalBlock (const float* samples, int numSamples, const float* rightSamples = nullptr) noexcept
         {
             externalSamples = samples;
+            externalRightSamples = rightSamples != nullptr ? rightSamples : samples;
             externalNumSamples = numSamples;
         }
 
         void processBlock (const float* const*, float* const* outputs, int numSamples) noexcept override
         {
-            if (externalSamples != nullptr && numSamples == externalNumSamples)
-                std::memcpy (outputs[0], externalSamples, (size_t) numSamples * sizeof (float));
-            else
-                std::memset (outputs[0], 0, (size_t) numSamples * sizeof (float));
+            const auto valid = externalSamples != nullptr && numSamples == externalNumSamples;
+            for (int channel = 0; channel < (stereo ? 2 : 1); ++channel)
+            {
+                const auto* source = channel == 0 ? externalSamples : externalRightSamples;
+                if (valid)
+                    std::memcpy (outputs[channel], source, (size_t) numSamples * sizeof (float));
+                else
+                    std::memset (outputs[channel], 0, (size_t) numSamples * sizeof (float));
+            }
         }
 
         void processSample (const float*, float* outputs) noexcept override
         {
             outputs[0] = 0.0f; // never legally reached — supportsPerSample() is false
+            if (stereo)
+                outputs[1] = 0.0f;
         }
 
     private:
         Mode mode = Mode::Sum;
         float silenceThresholdDb = -80.0f;
         float silenceHoldTimeMs = 200.0f;
+        bool stereo = false;
         const float* externalSamples = nullptr;
+        const float* externalRightSamples = nullptr;
         int externalNumSamples = 0;
     };
 }

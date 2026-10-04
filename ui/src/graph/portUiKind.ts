@@ -102,7 +102,7 @@ export function portUiStyle(
 }
 
 /** wiki/plans/PropsAndMacroRedesign.md Batch C: a polymorphic port
-    (`polymorphism !== 'none'` — view.glance, util.reroute, logic.select,
+    (`polymorphism !== 'none'` — view.glance, deco.reroute, logic.select,
     adapt.sampleHold, view.scope/meter) with nothing resolvable feeding it
     yet has no real type to colour by — its declared default (e.g. Glance's
     own Audio) is just a fallback for the compiler, not a claim "this only

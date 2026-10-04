@@ -291,7 +291,7 @@ namespace
     NodeFactory buildTestFactory()
     {
         NodeFactory factory;
-        factory.registerType ("util.reroute", [] { return std::make_unique<nodes::RerouteNode>(); });
+        factory.registerType ("deco.reroute", [] { return std::make_unique<nodes::RerouteNode>(); });
         factory.registerType ("test.controlConstant", [] { return std::make_unique<ControlConstantNode>(); });
         factory.registerType ("test.controlScale", [] { return std::make_unique<ControlScaleNode>(); });
         factory.registerType ("test.noteSource", [] { return std::make_unique<NoteSourceNode>(); });
@@ -374,7 +374,7 @@ TEST_CASE ("GraphCompiler routes a feedback cycle into a per-sample region", "[e
     // mix, delay, damp are the cycle; excite is external and must NOT be
     // scheduled inside the region.
     CHECK (region.nodeSlotsInOrder.size() == 3);
-    REQUIRE (region.externalOutputBufferIndex >= 0); // damp's output is the graph's designated output
+    REQUIRE (! region.externalOutputs.empty()); // damp's output is the graph's designated output
 }
 
 TEST_CASE ("GraphCompiler rejects a cycle containing a node that can't run per-sample", "[engine][GraphCompiler]")
@@ -562,7 +562,7 @@ TEST_CASE ("A Reroute takes on a Control signal's type instead of forcing Audio 
     // Audio, so canConnect() rejected wiring one into any Control chain.
     NodeGraph graph;
     graph.addNode ({ "src", "test.controlConstant", {}, { { "value", 0.25f } }, {} });
-    graph.addNode ({ "rr", "util.reroute", {}, {}, {} });
+    graph.addNode ({ "rr", "deco.reroute", {}, {}, {} });
     graph.addNode ({ "scale", "test.controlScale", {}, { { "gain", 4.0f } }, {} });
     graph.addConnection ({ "src", "out", "rr", "in" });
     graph.addConnection ({ "rr", "out", "scale", "in" });
@@ -583,7 +583,7 @@ TEST_CASE ("A Reroute carries Note data through intact (docs/CLEANUP.md P1 #2)",
 {
     NodeGraph graph;
     graph.addNode ({ "src", "test.noteSource", {}, {}, {} });
-    graph.addNode ({ "rr", "util.reroute", {}, {}, {} });
+    graph.addNode ({ "rr", "deco.reroute", {}, {}, {} });
     graph.addNode ({ "cap", "test.noteCapture", {}, {}, {} });
     graph.addConnection ({ "src", "notes", "rr", "in" });
     graph.addConnection ({ "rr", "out", "cap", "spawn" });
@@ -613,8 +613,8 @@ TEST_CASE ("A chain of Reroutes resolves to the source's type regardless of node
     // passes if the compiler genuinely iterates to a fixed point.
     NodeGraph graph;
     graph.addNode ({ "cap", "test.noteCapture", {}, {}, {} });
-    graph.addNode ({ "rr2", "util.reroute", {}, {}, {} });
-    graph.addNode ({ "rr1", "util.reroute", {}, {}, {} });
+    graph.addNode ({ "rr2", "deco.reroute", {}, {}, {} });
+    graph.addNode ({ "rr1", "deco.reroute", {}, {}, {} });
     graph.addNode ({ "src", "test.noteSource", {}, {}, {} });
     graph.addConnection ({ "src", "notes", "rr1", "in" });
     graph.addConnection ({ "rr1", "out", "rr2", "in" });
@@ -639,7 +639,7 @@ TEST_CASE ("A Reroute fed one type still rejects a downstream port of an incompa
     // Audio input has to fail canConnect() at the Reroute's OUTPUT side.
     NodeGraph graph;
     graph.addNode ({ "src", "test.noteSource", {}, {}, {} });
-    graph.addNode ({ "rr", "util.reroute", {}, {}, {} });
+    graph.addNode ({ "rr", "deco.reroute", {}, {}, {} });
     graph.addNode ({ "scale", "test.scale", {}, { { "gain", 1.0f } }, {} });
     graph.addConnection ({ "src", "notes", "rr", "in" });
     graph.addConnection ({ "rr", "out", "scale", "in" });
@@ -659,7 +659,7 @@ TEST_CASE ("A recompile never reuses a Reroute, so it can't keep a stale type af
 
     NodeGraph connected;
     connected.addNode ({ "src", "test.controlConstant", {}, { { "value", 1.0f } }, {} });
-    connected.addNode ({ "rr", "util.reroute", {}, {}, {} });
+    connected.addNode ({ "rr", "deco.reroute", {}, {}, {} });
     connected.addConnection ({ "src", "out", "rr", "in" });
     connected.setOutput ("rr", "out");
 
@@ -672,7 +672,7 @@ TEST_CASE ("A recompile never reuses a Reroute, so it can't keep a stale type af
     // Audio, and the same graph must compile the same way regardless of
     // what was edited before it.
     NodeGraph disconnected;
-    disconnected.addNode ({ "rr", "util.reroute", {}, {}, {} });
+    disconnected.addNode ({ "rr", "deco.reroute", {}, {}, {} });
     disconnected.setOutput ("rr", "out");
 
     auto second = GraphCompiler::compile (disconnected, factory, { 44100.0, 64 }, 2, &first.plan);

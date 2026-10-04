@@ -41,7 +41,11 @@ interface OpenFlyout {
 
 const HOVER_INTENT_MS = 150
 
-export function AddMenu({ x, y, descriptors, onChoose, onClose }: AddMenuProps) {
+export function AddMenu({ x, y, descriptors: allDescriptors, onChoose, onClose }: AddMenuProps) {
+  // A deprecated type (Node::isDeprecated()) still loads and runs in an
+  // existing patch, but is never offered for placement — this menu is the
+  // one place a new node gets chosen, so this is the one place it's hidden.
+  const descriptors = useMemo(() => allDescriptors.filter((d) => !d.deprecated), [allDescriptors])
   const [query, setQuery] = useState('')
   // Keyed by a row's stable key ("item:<typeId>" / "cat:<path>"), not raw
   // index: real descriptors can arrive asynchronously after the menu is

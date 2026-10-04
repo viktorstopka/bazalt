@@ -43,7 +43,13 @@ namespace bazalt::engine
         // long window costs a few hundred floats of state per tap, not
         // hundreds of thousands of raw samples. See
         // AnalysisThread::publishRollingHistory for the actual algorithm.
-        RollingHistory = 4
+        RollingHistory = 4,
+        // PreviewKind::PhaseLocked: payload is [playhead (0..phaseLockedCycles),
+        // frequencyHz, then AnalysisThread::phaseLockedPoints values spanning
+        // phaseLockedCycles cycles from phase zero]. NaN values are "no data
+        // yet" (a folded bin nothing has landed in). Same length every
+        // publish, so the UI interpolates between frames point by point.
+        PhaseLocked = 5
     };
 
     struct TelemetryFrameHeader

@@ -545,3 +545,40 @@ TEST_CASE ("publishRollingHistory publishes nothing new on a drain with no new s
     CHECK (secondSequence == firstSequence); // no fresh publish happened
     CHECK (secondPayload == firstPayload);
 }
+
+TEST_CASE ("publishRollingHistory never drops a single-sample gate pulse, even at the longest window",
+           "[engine][telemetry][AnalysisThread][scope][view.gate]")
+{
+    // design/Visualization/Gate.png: "A brief true state must never be
+    // dropped... a single-sample gate pulse has to show up as a visible
+    // sliver. This is the whole reason the node exists." At the maximum
+    // window each column spans ~5000 samples, so a point-sampled column
+    // would miss this pulse with near certainty; min/max folding must not.
+    RollingHistoryRig rig (30.0f);
+
+    std::vector<float> block (2048, 0.0f);
+    for (int i = 0; i < 3; ++i) { rig.push (block); rig.drain(); }
+    block[1000] = 1.0f; // exactly one true sample
+    rig.push (block);
+    rig.drain();
+    block[1000] = 0.0f;
+    for (int i = 0; i < 3; ++i) { rig.push (block); rig.drain(); }
+
+    const auto payload = rig.latestFrame().second;
+    REQUIRE (! payload.empty());
+
+    int trueColumns = 0;
+    for (size_t column = 0; column < payload.size() / 2; ++column)
+    {
+        const auto lo = payload[column * 2];
+        const auto hi = payload[column * 2 + 1];
+        if (std::isnan (lo))
+            continue;
+        if (hi == 1.0f)
+        {
+            ++trueColumns;
+            CHECK (lo == 0.0f); // it was a pulse, not a held gate: the same column also saw false
+        }
+    }
+    CHECK (trueColumns == 1);
+}

@@ -64,6 +64,7 @@ namespace bazalt::engine
         bool meter = true;
         bool eventImpulse = true;
         bool rollingHistory = true;
+        bool phaseLocked = true;
     };
 
     class TelemetryHub
@@ -89,9 +90,9 @@ namespace bazalt::engine
             to ask again (no "the engine just reset" event reaches it), so
             the fix is here: an already-active slot's SUBSCRIPTION (name/
             settings/frameTypesMask/synthetic) survives a re-prepare
-            untouched — only its PHYSICAL buffers are rebuilt fresh below
-            (their pre-reprepare contents are stale/meaningless either way,
-            same as any other reprepare). A never-subscribed slot is still
+            untouched, and so does its Tap* (the same object, re-prepared in
+            place) — only the buffer CONTENTS are cleared below (stale/
+            meaningless after a reprepare either way). A never-subscribed slot is still
             reset to the same clean "nothing here" state as before.
         */
         void prepare (size_t tapCapacitySamples, size_t maxFrameBytes)
@@ -100,12 +101,21 @@ namespace bazalt::engine
             {
                 const auto wasActive = slot.active.load (std::memory_order_relaxed);
 
-                slot.tap = std::make_unique<Tap>();
+                // Allocated once, then re-prepared IN PLACE on every later
+                // call: a live ExecutionPlan (tapForBufferIndex) and
+                // PluginProcessor's tapPointers[] cache these Tap*s, so
+                // replacing the object here would leave the audio thread
+                // pushing into freed memory — and the analysis thread
+                // reading a fresh, never-written Tap (the real cause of
+                // "the ripple stopped responding" after a device switch).
+                if (slot.tap == nullptr)
+                    slot.tap = std::make_unique<Tap>();
                 slot.tap->prepare (tapCapacitySamples);
 
                 for (auto& buffer : slot.frameBuffers)
                 {
-                    buffer = std::make_unique<TelemetryFrameBuffer>();
+                    if (buffer == nullptr)
+                        buffer = std::make_unique<TelemetryFrameBuffer>();
                     buffer->prepare (maxFrameBytes);
                 }
 
@@ -206,6 +216,7 @@ namespace bazalt::engine
             settings.spectrumTiltDbPerOctave = slot.spectrumTilt.load (std::memory_order_relaxed);
             settings.spectrumAveraging = slot.spectrumAveraging.load (std::memory_order_relaxed);
             settings.meterMode = (MeterMode) slot.meterMode.load (std::memory_order_relaxed);
+            settings.phaseLockedFold = slot.phaseLockedFold.load (std::memory_order_relaxed);
             return settings;
         }
 
@@ -272,6 +283,7 @@ namespace bazalt::engine
             slot.spectrumTilt.store (settings.spectrumTiltDbPerOctave, std::memory_order_relaxed);
             slot.spectrumAveraging.store (settings.spectrumAveraging, std::memory_order_relaxed);
             slot.meterMode.store ((int) settings.meterMode, std::memory_order_relaxed);
+            slot.phaseLockedFold.store (settings.phaseLockedFold, std::memory_order_relaxed);
         }
 
         static uint32_t frameTypesToMask (TelemetryFrameTypesNeeded needed) noexcept
@@ -282,6 +294,7 @@ namespace bazalt::engine
             if (needed.meter)         mask |= (1u << (uint32_t) TelemetryFrameType::Meter);
             if (needed.eventImpulse)  mask |= (1u << (uint32_t) TelemetryFrameType::EventImpulse);
             if (needed.rollingHistory) mask |= (1u << (uint32_t) TelemetryFrameType::RollingHistory);
+            if (needed.phaseLocked)    mask |= (1u << (uint32_t) TelemetryFrameType::PhaseLocked);
             return mask;
         }
 
@@ -290,7 +303,7 @@ namespace bazalt::engine
             juce::String name; // message-thread-owned only
             std::atomic<bool> active { false };
             std::atomic<bool> synthetic { false }; // see subscribeTap()'s "demo." note
-            std::atomic<uint32_t> frameTypesMask { 0b11111 }; // M20 — see isFrameTypeNeeded()'s own comment; defaults to all 5
+            std::atomic<uint32_t> frameTypesMask { 0b111111 }; // M20 — see isFrameTypeNeeded()'s own comment; defaults to all 6
 
             // ADR-0029 - see TapSettings. Individually atomic; a snapshot is
             // getTapSettingsBySlot().
@@ -301,9 +314,10 @@ namespace bazalt::engine
             std::atomic<float> spectrumTilt { 0.0f };
             std::atomic<float> spectrumAveraging { 0.0f };
             std::atomic<int> meterMode { (int) MeterMode::Peak };
+            std::atomic<bool> phaseLockedFold { false };
             uint64_t lastUsedSequence = 0; // message-thread-owned only
             std::unique_ptr<Tap> tap;
-            std::array<std::unique_ptr<TelemetryFrameBuffer>, 5> frameBuffers;
+            std::array<std::unique_ptr<TelemetryFrameBuffer>, 6> frameBuffers;
         };
 
         Slot* findSlotByName (const juce::String& name) noexcept

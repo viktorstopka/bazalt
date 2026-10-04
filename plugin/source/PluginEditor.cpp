@@ -1,4 +1,5 @@
 #include "PluginEditor.h"
+#include "UserPatchLibrary.h"
 #include "NodeDescriptorJson.h"
 #include "bazalt/engine/patch/PatchSerializer.h"
 #include "bazalt/engine/telemetry/TelemetryFrame.h"
@@ -152,6 +153,8 @@ namespace bazalt
                 return bazalt::engine::TelemetryFrameType::EventImpulse;
             if (segment == "history")
                 return bazalt::engine::TelemetryFrameType::RollingHistory;
+            if (segment == "phaseLocked")
+                return bazalt::engine::TelemetryFrameType::PhaseLocked;
             return std::nullopt;
         }
 
@@ -220,6 +223,13 @@ namespace bazalt
             auto* obj = new juce::DynamicObject();
             obj->setProperty ("success", result.success);
             obj->setProperty ("errorMessage", result.errorMessage);
+            if (! result.choices.isEmpty())
+            {
+                juce::Array<juce::var> choices;
+                for (const auto& choice : result.choices)
+                    choices.add (choice);
+                obj->setProperty ("choices", choices);
+            }
             return juce::var (obj);
         }
 
@@ -307,7 +317,32 @@ namespace bazalt
         {
             auto& controller = processor.getGraphEditController();
             const auto result = controller.setParameterValue (argString (args, 0), argString (args, 1), argFloat (args, 2));
+            // A commit ends any live drag of the same value (LiveParameterEdits.h):
+            // its slot glides to the final value and frees itself.
+            processor.getLiveParameterEdits().release (argString (args, 0), argString (args, 1));
             completion (commandResultToVar (result));
+        });
+
+        // While a slider is dragged: stream the value to the running nodes,
+        // smoothed, without recompiling (LiveParameterEdits.h). Only values a
+        // running node can take live — a port's fallback value or a
+        // non-structural parameter; anything else waits for the commit.
+        options = options.withNativeFunction ("graphSetParameterLive", [&processor] (Args args, Completion completion)
+        {
+            const auto nodeId = argString (args, 0);
+            const auto parameterId = argString (args, 1);
+            auto& live = processor.getLiveParameterEdits();
+            const auto ok = (live.isActive (nodeId, parameterId) || processor.getGraphEditController().isLiveEditable (nodeId, parameterId))
+                            && live.set (nodeId, parameterId, argFloat (args, 2));
+            completion (ok);
+        });
+
+        // The drag ended (with or without a commit): the slot glides to its
+        // last value and frees itself.
+        options = options.withNativeFunction ("graphReleaseParameterLive", [&processor] (Args args, Completion completion)
+        {
+            processor.getLiveParameterEdits().release (argString (args, 0), argString (args, 1));
+            completion (true);
         });
 
         options = options.withNativeFunction ("graphSetOutput", [&processor] (Args args, Completion completion)
@@ -321,6 +356,16 @@ namespace bazalt
         {
             auto& controller = processor.getGraphEditController();
             const auto result = controller.moveNode (argString (args, 0), argFloat (args, 1), argFloat (args, 2));
+            completion (commandResultToVar (result));
+        });
+
+        // wiki/plans/Decorations.md §4: (nodeId, x, y, mimeType, base64,
+        // width, height) — the UI has already compressed the image.
+        options = options.withNativeFunction ("graphAddImage", [&processor] (Args args, Completion completion)
+        {
+            auto& controller = processor.getGraphEditController();
+            const auto result = controller.addImage (argString (args, 0), argFloat (args, 1), argFloat (args, 2), argString (args, 3),
+                                                     argString (args, 4), argFloat (args, 5), argFloat (args, 6));
             completion (commandResultToVar (result));
         });
 
@@ -341,7 +386,7 @@ namespace bazalt
         {
             auto& controller = processor.getGraphEditController();
             const auto result = controller.connectWithAutoAdapt (argString (args, 0), argString (args, 1),
-                                                                   argString (args, 2), argString (args, 3));
+                                                                   argString (args, 2), argString (args, 3), argString (args, 4));
             completion (commandResultToVar (result));
         });
 
@@ -383,6 +428,54 @@ namespace bazalt
             obj->setProperty ("errorMessage", result.errorMessage);
             obj->setProperty ("path", file.getFullPathName());
             completion (juce::var (obj));
+        });
+
+        // ---- The user's patch library (UserPatchLibrary.h): saved in the
+        // per-user app-data folder, so the VST3 and the Standalone share it.
+        options = options.withNativeFunction ("patchList", [] (Args, Completion completion)
+        {
+            juce::Array<juce::var> list;
+            for (const auto& entry : bazalt::UserPatchLibrary().list())
+            {
+                auto* obj = new juce::DynamicObject();
+                obj->setProperty ("name", entry.name);
+                obj->setProperty ("fileName", entry.fileName);
+                obj->setProperty ("modifiedAtMs", (double) entry.modifiedAtMs);
+                list.add (juce::var (obj));
+            }
+            completion (juce::var (list));
+        });
+
+        options = options.withNativeFunction ("patchExists", [] (Args args, Completion completion)
+        {
+            completion (bazalt::UserPatchLibrary().exists (argString (args, 0)));
+        });
+
+        // Saves the CURRENT graph under a name (overwriting a same-named
+        // user patch — the UI asks first).
+        options = options.withNativeFunction ("patchSave", [&processor] (Args args, Completion completion)
+        {
+            juce::String error;
+            const auto document = bazalt::engine::PatchDocument::fromNodeGraph (processor.getGraphEditController().getGraph());
+            const auto fileName = bazalt::UserPatchLibrary().save (argString (args, 0), document, error);
+
+            auto* obj = new juce::DynamicObject();
+            obj->setProperty ("success", fileName.isNotEmpty());
+            obj->setProperty ("errorMessage", error);
+            obj->setProperty ("fileName", fileName);
+            completion (juce::var (obj));
+        });
+
+        // Returns the patch's JSON; the UI loads it through graphRestoreSnapshot
+        // like any other patch (one undo step, same path as a factory patch).
+        options = options.withNativeFunction ("patchLoad", [] (Args args, Completion completion)
+        {
+            completion (bazalt::UserPatchLibrary().load (argString (args, 0)));
+        });
+
+        options = options.withNativeFunction ("patchDelete", [] (Args args, Completion completion)
+        {
+            completion (bazalt::UserPatchLibrary().remove (argString (args, 0)));
         });
 
         options = options.withNativeFunction ("graphRestoreSnapshot", [&processor] (Args args, Completion completion)
@@ -456,9 +549,21 @@ namespace bazalt
                 badgesObj->setProperty (nodeId, juce::var (badgeObj));
             }
 
+            // wiki/plans/StereoChannels.md: which outputs carry stereo, so the
+            // editor can draw those cables as stereo.
+            auto* stereoObj = new juce::DynamicObject();
+            for (const auto& [nodeId, portIds] : controller.getStereoOutputs())
+            {
+                juce::Array<juce::var> ids;
+                for (const auto& portId : portIds)
+                    ids.add (portId);
+                stereoObj->setProperty (nodeId, ids);
+            }
+
             auto* root = new juce::DynamicObject();
             root->setProperty ("ports", juce::var (portsObj));
             root->setProperty ("badges", juce::var (badgesObj));
+            root->setProperty ("stereo", juce::var (stereoObj));
             completion (juce::JSON::toString (juce::var (root), true));
         });
 

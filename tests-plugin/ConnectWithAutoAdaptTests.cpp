@@ -79,12 +79,16 @@ TEST_CASE ("connectWithAutoAdapt inserts and seeds a real adapt.map node for Uni
 
     REQUIRE (mapNode != nullptr);
 
-    // Seeded from the destination port's own range — delay.line's default
-    // maxDelaySamples is 4096 (DelayNode.h's constructor default).
-    REQUIRE (mapNode->parameters.count ("adapt.map.min") == 1);
-    CHECK (mapNode->parameters.at ("adapt.map.min") == 1.0f);
-    REQUIRE (mapNode->parameters.count ("adapt.map.max") == 1);
-    CHECK (mapNode->parameters.at ("adapt.map.max") == 4096.0f);
+    // Output range seeded from the destination port's own range —
+    // delay.line's default maxDelaySamples is 4096 (DelayNode.h's
+    // constructor default); input range from the Unipolar source, 0..1.
+    REQUIRE (mapNode->parameters.count ("adapt.map.outMin") == 1);
+    CHECK (mapNode->parameters.at ("adapt.map.outMin") == 1.0f);
+    REQUIRE (mapNode->parameters.count ("adapt.map.outMax") == 1);
+    CHECK (mapNode->parameters.at ("adapt.map.outMax") == 4096.0f);
+    REQUIRE (mapNode->parameters.count ("adapt.map.inMin") == 1);
+    CHECK (mapNode->parameters.at ("adapt.map.inMin") == 0.0f);
+    CHECK (mapNode->parameters.at ("adapt.map.inMax") == 1.0f);
 
     bool sourceToAdapter = false, adapterToDestination = false;
     for (const auto& c : graph.getConnections())
@@ -163,45 +167,61 @@ TEST_CASE ("connectWithAutoAdapt inserts adapt.pitchToFrequency for Pitch into a
     CHECK (converterToDestination);
 }
 
-TEST_CASE ("connectWithAutoAdapt auto-inserts mix.downmix for a Stereo source into a mono-only port",
+TEST_CASE ("connectWithAutoAdapt wires a Stereo source straight into a per-channel port",
            "[plugin][GraphEditController][CanConnect][Stereo]")
 {
-    // Real stereo cable redesign (wiki/NODES.System.md §9): mix.downmix
-    // became a genuine 1-in-1-out node (one real Channels::Stereo "in", one
-    // mono "out"), closing the gap CanConnect.cpp used to flag — before this
-    // redesign, downmix's 2-in-1-out shape never fit connectWithAutoAdapt's
-    // single-AdapterStep splice mechanism and this exact scenario was
-    // rejected outright.
+    // wiki/plans/StereoChannels.md: mix.gain's audio input follows the width
+    // of its source, so stereo stays stereo — nothing is inserted.
     BazaltAudioProcessor processor;
     processor.prepareToPlay (44100.0, 512);
     auto& controller = processor.getGraphEditController();
     REQUIRE (controller.setGraph (bazalt::engine::buildVoiceProofGraph()).success);
 
     processor.getNodeFactory().registerType ("test.stereoSource", [] { return std::make_unique<StereoTestSourceNode>(); });
-
     REQUIRE (controller.addNode ("test.stereoSource", "stereoSrc", 0.0f, 0.0f).success);
 
     const auto nodesBefore = controller.getGraph().getNodes().size();
-    const auto result = controller.connectWithAutoAdapt ("stereoSrc", "out", "amp", "audio");
+    REQUIRE (controller.connectWithAutoAdapt ("stereoSrc", "out", "amp", "audio").success);
+    CHECK (controller.getGraph().getNodes().size() == nodesBefore);
+}
 
-    REQUIRE (result.success);
-    CHECK (controller.getGraph().getNodes().size() == nodesBefore + 1); // exactly one mix.downmix inserted
+TEST_CASE ("connectWithAutoAdapt asks before reducing stereo into a mono-only port, then inserts the chosen downmix",
+           "[plugin][GraphEditController][CanConnect][Stereo]")
+{
+    BazaltAudioProcessor processor;
+    processor.prepareToPlay (44100.0, 512);
+    auto& controller = processor.getGraphEditController();
+    REQUIRE (controller.setGraph (bazalt::engine::buildVoiceProofGraph()).success);
+
+    processor.getNodeFactory().registerType ("test.stereoSource", [] { return std::make_unique<StereoTestSourceNode>(); });
+    REQUIRE (controller.addNode ("test.stereoSource", "stereoSrc", 0.0f, 0.0f).success);
+    REQUIRE (controller.addNode ("env.follower", "follower", 100.0f, 0.0f).success); // its detector input is one signal
+
+    const auto nodesBefore = controller.getGraph().getNodes().size();
+
+    // No choice: nothing changes, and the result names the options.
+    const auto asked = controller.connectWithAutoAdapt ("stereoSrc", "out", "follower", "in");
+    CHECK_FALSE (asked.success);
+    CHECK (asked.choices.contains ("mid"));
+    CHECK (asked.choices.contains ("left"));
+    CHECK (asked.choices.contains ("right"));
+    CHECK (asked.choices.contains ("side"));
+    CHECK (controller.getGraph().getNodes().size() == nodesBefore);
+
+    // With a choice: one visible mix.downmix in that mode.
+    REQUIRE (controller.connectWithAutoAdapt ("stereoSrc", "out", "follower", "in", "right").success);
+    CHECK (controller.getGraph().getNodes().size() == nodesBefore + 1);
 
     const auto& nodes = controller.getGraph().getNodes();
     const auto downmixIt = std::find_if (nodes.begin(), nodes.end(), [] (const auto& n) { return n.type == "mix.downmix"; });
     REQUIRE (downmixIt != nodes.end());
+    CHECK (downmixIt->parameters.at ("mix.downmix.mode") == 3.0f); // "right"
 
     const auto& connections = controller.getGraph().getConnections();
-    const auto feedsDownmixIn = std::any_of (connections.begin(), connections.end(), [&] (const auto& c)
-    {
-        return c.fromNodeId == "stereoSrc" && c.fromPortId == "out" && c.toNodeId == downmixIt->id && c.toPortId == "in";
-    });
-    const auto downmixFeedsAmp = std::any_of (connections.begin(), connections.end(), [&] (const auto& c)
-    {
-        return c.fromNodeId == downmixIt->id && c.fromPortId == "out" && c.toNodeId == "amp" && c.toPortId == "audio";
-    });
-    CHECK (feedsDownmixIn);
-    CHECK (downmixFeedsAmp);
+    CHECK (std::any_of (connections.begin(), connections.end(), [&] (const auto& c)
+                        { return c.fromNodeId == "stereoSrc" && c.toNodeId == downmixIt->id && c.toPortId == "in"; }));
+    CHECK (std::any_of (connections.begin(), connections.end(), [&] (const auto& c)
+                        { return c.fromNodeId == downmixIt->id && c.toNodeId == "follower" && c.toPortId == "in"; }));
 }
 
 TEST_CASE ("connectWithAutoAdapt inserts adapt.audioToControl for raw Audio into a modulation-quantity port",
@@ -271,8 +291,13 @@ TEST_CASE ("connectWithAutoAdapt inserts adapt.audioToControl then adapt.map for
 
     // adapt.map seeded from the destination's own range (filter.svf.cutoff),
     // exactly like every other seedFromDestinationRange step.
-    REQUIRE (mapNode->parameters.count ("adapt.map.min") == 1);
-    REQUIRE (mapNode->parameters.count ("adapt.map.max") == 1);
+    REQUIRE (mapNode->parameters.count ("adapt.map.outMin") == 1);
+    REQUIRE (mapNode->parameters.count ("adapt.map.outMax") == 1);
+    // The input range comes from adapt.audioToControl's own Bipolar output,
+    // not from the raw Audio source.
+    REQUIRE (mapNode->parameters.count ("adapt.map.inMin") == 1);
+    CHECK (mapNode->parameters.at ("adapt.map.inMin") == -1.0f);
+    CHECK (mapNode->parameters.at ("adapt.map.inMax") == 1.0f);
 
     bool sourceToBridge = false, bridgeToMap = false, mapToDestination = false;
     for (const auto& c : graph.getConnections())

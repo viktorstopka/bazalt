@@ -24,12 +24,12 @@ namespace bazalt::engine::nodes
         int getNumOutputPorts() const noexcept override { return numOutputs; }
 
         juce::String getTitle() const override { return "Listen"; }
-        juce::String getCategory() const override { return "Utility"; }
+        juce::String getCategory() const override { return "View"; }
         juce::String getIcon() const override { return "ear"; }
 
         std::vector<PortDescriptor> getInputPorts() const override
         {
-            return { { "in", SignalType::Audio } };
+            return { perChannel ({ "in", SignalType::Audio }) };
         }
 
         void processSample (const float*, float*) noexcept override {}

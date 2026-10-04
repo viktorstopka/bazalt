@@ -337,7 +337,7 @@ TEST_CASE ("A subscription whose node is deleted is harmless, and re-attaches if
     CHECK (tap->getTotalPushed() == whileAbsent + 2 * 512);
 }
 
-// ---- ADR-0029: view.scope / view.spectrum / view.meter ----
+// ---- ADR-0029: viewers (view.cycle / view.spectrum / view.meter) ----
 //
 // A viewer has one input and no outputs; its preview taps the buffer wired into
 // that input.
@@ -366,11 +366,11 @@ namespace
     }
 }
 
-TEST_CASE ("A view.scope's preview taps the signal wired into its input", "[plugin][telemetry][view][ADR-0029]")
+TEST_CASE ("A viewer's preview taps the signal wired into its input", "[plugin][telemetry][view][ADR-0029]")
 {
     BazaltAudioProcessor processor;
     processor.prepareToPlay (44100.0, 512);
-    REQUIRE (processor.getGraphEditController().setGraph (graphWithViewers ({ { "scope", "view.scope" } })).success);
+    REQUIRE (processor.getGraphEditController().setGraph (graphWithViewers ({ { "scope", "view.meter" } })).success);
     wire (processor, "scope");
 
     REQUIRE (processor.subscribeVisualizationTap ("scope", "in", bazalt::engine::PreviewKind::Waveform));
@@ -391,7 +391,7 @@ TEST_CASE ("A viewer placed before it is wired is pending, and comes alive when 
 {
     BazaltAudioProcessor processor;
     processor.prepareToPlay (44100.0, 512);
-    REQUIRE (processor.getGraphEditController().setGraph (graphWithViewers ({ { "scope", "view.scope" } })).success);
+    REQUIRE (processor.getGraphEditController().setGraph (graphWithViewers ({ { "scope", "view.meter" } })).success);
 
     // The port exists, nothing is wired to it: accepted, but silent.
     REQUIRE (processor.subscribeVisualizationTap ("scope", "in", bazalt::engine::PreviewKind::Waveform));
@@ -418,7 +418,7 @@ TEST_CASE ("A subscription to a port the node does not have is still refused",
 {
     BazaltAudioProcessor processor;
     processor.prepareToPlay (44100.0, 512);
-    REQUIRE (processor.getGraphEditController().setGraph (graphWithViewers ({ { "scope", "view.scope" } })).success);
+    REQUIRE (processor.getGraphEditController().setGraph (graphWithViewers ({ { "scope", "view.meter" } })).success);
 
     CHECK_FALSE (processor.subscribeVisualizationTap ("scope", "out", bazalt::engine::PreviewKind::Waveform)); // a viewer has no output
     CHECK_FALSE (processor.subscribeVisualizationTap ("no-such-viewer", "in", bazalt::engine::PreviewKind::Waveform));
@@ -430,7 +430,7 @@ TEST_CASE ("A source's own preview and two viewers on the same cable all receive
     BazaltAudioProcessor processor;
     processor.prepareToPlay (44100.0, 512);
     REQUIRE (processor.getGraphEditController().setGraph (
-                 graphWithViewers ({ { "scope", "view.scope" }, { "meter", "view.meter" } })).success);
+                 graphWithViewers ({ { "scope", "view.cycle" }, { "meter", "view.meter" } })).success);
     wire (processor, "scope");
     wire (processor, "meter");
 
@@ -460,7 +460,7 @@ TEST_CASE ("A source's own preview and two viewers on the same cable all receive
     CHECK (meter->getTotalPushed() == 3 * 512);
 }
 
-TEST_CASE ("view.scope and view.meter take Audio and Control; view.spectrum takes Audio only; none takes a Note",
+TEST_CASE ("view.cycle and view.meter take Audio and Control; view.spectrum takes Audio only; none takes a Note",
            "[plugin][view][ADR-0029]")
 {
     BazaltAudioProcessor processor;
@@ -471,7 +471,7 @@ TEST_CASE ("view.scope and view.meter take Audio and Control; view.spectrum take
     graph.addNode ({ "audio", "io.audioIn", {}, {}, {} });
     graph.addNode ({ "control", "util.constant", {}, { { "util.constant.value", 0.5f } }, {} });
     graph.addNode ({ "notes", "io.noteIn", {}, {}, {} });
-    graph.addNode ({ "scope", "view.scope", {}, {}, {} });
+    graph.addNode ({ "scope", "view.cycle", {}, {}, {} });
     graph.addNode ({ "spectrum", "view.spectrum", {}, {}, {} });
     graph.addNode ({ "meter", "view.meter", {}, {}, {} });
     graph.addNode ({ "out", "io.output", {}, {}, {} });
@@ -522,39 +522,26 @@ namespace
 TEST_CASE ("A viewer's parameters set the analysis of its tap, and follow edits", "[plugin][telemetry][view][ADR-0029]")
 {
     using bazalt::engine::MeterMode;
-    using bazalt::engine::ScopeTriggerMode;
 
     BazaltAudioProcessor processor;
     processor.prepareToPlay (44100.0, 512);
     auto& controller = processor.getGraphEditController();
-    REQUIRE (controller.setGraph (graphWithViewers ({ { "scope", "view.scope" }, { "spectrum", "view.spectrum" }, { "meter", "view.meter" } })).success);
-    wire (processor, "scope");
+    REQUIRE (controller.setGraph (graphWithViewers ({ { "spectrum", "view.spectrum" }, { "meter", "view.meter" } })).success);
     wire (processor, "spectrum");
     wire (processor, "meter");
 
-    REQUIRE (processor.subscribeVisualizationTap ("scope", "in", bazalt::engine::PreviewKind::Waveform));
     REQUIRE (processor.subscribeVisualizationTap ("spectrum", "in", bazalt::engine::PreviewKind::Spectrum));
     REQUIRE (processor.subscribeVisualizationTap ("meter", "in", bazalt::engine::PreviewKind::Meter));
-    auto* scopeTap = tapFor (processor, "scope", "in");
     auto* spectrumTap = tapFor (processor, "spectrum", "in");
     auto* meterTap = tapFor (processor, "meter", "in");
 
     // As placed: every default.
-    auto scope = settingsOf (processor, scopeTap);
-    CHECK (scope.scopeWindowSeconds == Catch::Approx (0.05f));
-    CHECK (scope.scopeTrigger == ScopeTriggerMode::Free);
     auto spectrum = settingsOf (processor, spectrumTap);
     CHECK (spectrum.fftOrder == 11);
     CHECK (spectrum.spectrumTiltDbPerOctave == 0.0f);
     CHECK (settingsOf (processor, meterTap).meterMode == MeterMode::Peak);
 
     // Each edit recompiles; the re-attach must pick the new value up.
-    REQUIRE (controller.setParameterValue ("scope", "view.scope.timeWindow", 10.0f).success);
-    REQUIRE (controller.setParameterValue ("scope", "view.scope.trigger", 1.0f).success);
-    scope = settingsOf (processor, scopeTap);
-    CHECK (scope.scopeWindowSeconds == Catch::Approx (0.010f));
-    CHECK (scope.scopeTrigger == ScopeTriggerMode::RisingEdge);
-
     REQUIRE (controller.setParameterValue ("spectrum", "view.spectrum.fftSize", 4.0f).success);
     REQUIRE (controller.setParameterValue ("spectrum", "view.spectrum.tilt", 3.0f).success);
     REQUIRE (controller.setParameterValue ("spectrum", "view.spectrum.averaging", 0.5f).success);
@@ -567,7 +554,6 @@ TEST_CASE ("A viewer's parameters set the analysis of its tap, and follow edits"
     CHECK (settingsOf (processor, meterTap).meterMode == MeterMode::TruePeak);
 
     // Editing one viewer leaves the others alone.
-    CHECK (settingsOf (processor, scopeTap).scopeWindowSeconds == Catch::Approx (0.010f));
     REQUIRE (controller.setParameterValue ("meter", "view.meter.mode", 1.0f).success);
     CHECK (settingsOf (processor, meterTap).meterMode == MeterMode::Rms);
     CHECK (settingsOf (processor, spectrumTap).fftOrder == 13);
@@ -580,23 +566,24 @@ TEST_CASE ("A viewer placed with saved parameters starts with them, and a previe
     processor.prepareToPlay (44100.0, 512);
 
     auto graph = audioInToOutputGraph();
-    graph.addNode ({ "scope", "view.scope", {}, { { "view.scope.timeWindow", 5.0f }, { "view.scope.trigger", 1.0f } }, {} });
-    graph.addConnection ({ "in", "channel.0", "scope", "in" });
+    graph.addNode ({ "spectrum", "view.spectrum", {}, { { "view.spectrum.fftSize", 4.0f } }, {} });
+    graph.addConnection ({ "in", "channel.0", "spectrum", "in" });
+    graph.addNode ({ "cycle", "view.cycle", {}, {}, {} });
+    graph.addConnection ({ "in", "channel.0", "cycle", "in" });
     REQUIRE (processor.getGraphEditController().setGraph (graph).success);
 
-    REQUIRE (processor.subscribeVisualizationTap ("scope", "in", bazalt::engine::PreviewKind::Waveform));
-    const auto scope = settingsOf (processor, tapFor (processor, "scope", "in"));
-    CHECK (scope.scopeWindowSeconds == Catch::Approx (0.005f));
-    CHECK (scope.scopeTrigger == bazalt::engine::ScopeTriggerMode::RisingEdge);
+    REQUIRE (processor.subscribeVisualizationTap ("spectrum", "in", bazalt::engine::PreviewKind::Spectrum));
+    CHECK (settingsOf (processor, tapFor (processor, "spectrum", "in")).fftOrder == 13);
 
-    // osc.analog declares a Waveform preview with its own explicit 15ms
-    // window (OscillatorNode.h - narrowed from the struct default 50ms:
-    // direct feedback that the default packed too many cycles of a typical
-    // audio-rate tone into the node-card preview's 128 buckets to read as a
-    // smooth wave); before ADR-0029 that number was descriptive only.
+    // view.cycle declares a phase-locked preview that folds its real samples.
+    REQUIRE (processor.subscribeVisualizationTap ("cycle", "out", bazalt::engine::PreviewKind::PhaseLocked));
+    CHECK (settingsOf (processor, tapFor (processor, "cycle", "out")).phaseLockedFold);
+
+    // osc.analog declares a phase-locked preview of its own waveform
+    // (rendered from its snapshot, not folded).
     BazaltAudioProcessor voiceProcessor;
     voiceProcessor.prepareToPlay (44100.0, 512);
     REQUIRE (voiceProcessor.getGraphEditController().setGraph (bazalt::engine::buildVoiceProofGraph()).success);
-    REQUIRE (voiceProcessor.subscribeVisualizationTap ("osc", "out", bazalt::engine::PreviewKind::Waveform));
-    CHECK (settingsOf (voiceProcessor, tapFor (voiceProcessor, "osc", "out")).scopeWindowSeconds == Catch::Approx (0.015f));
+    REQUIRE (voiceProcessor.subscribeVisualizationTap ("osc", "out", bazalt::engine::PreviewKind::PhaseLocked));
+    CHECK_FALSE (settingsOf (voiceProcessor, tapFor (voiceProcessor, "osc", "out")).phaseLockedFold);
 }

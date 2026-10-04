@@ -30,3 +30,9 @@
 .node-context-menu-delete {
   color: var(--color-error) !important;
 }
+
+.node-context-menu-title {
+  padding: 4px 10px 6px;
+  color: var(--color-textSecondary);
+  font-size: 11px;
+}

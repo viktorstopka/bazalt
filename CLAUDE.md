@@ -16,10 +16,9 @@ answering a specific question) and `wiki/NODES_Gaps.md` (found-defect
 tracking for existing behavior). A plan file isn't deleted once it's built —
 it stays as the durable project record (see `wiki/plans/UtilMacro.md`'s own
 "Status: Built" header, written at completion rather than mid-discussion);
-all four files currently in `wiki/plans/` (`AudioControlBridge.md`,
-`ControlToAudioBridge.md`, `DomainRedesign.md`, `UtilMacro.md`) are fully
-implemented today, same as the proposal they once were before any code
-existed. **Historical design docs (M0–M22 era, superseded, not maintained —
+each plan's own `Status:` header says whether it's built or still a
+proposal — e.g. `Factories.md`, `BakedPhysics.md` and `SpatialScene.md`
+(2026-10-04) are Proposed only, no code exists for them yet. **Historical design docs (M0–M22 era, superseded, not maintained —
 don't read for current specs/plan):** `archive_docs/ARCHITECTURE.md`,
 `archive_docs/NODE_EDITOR.md`, `archive_docs/MILESTONES.md`,
 `archive_docs/decisions/`. Still the right place to look for *why* something
@@ -239,9 +238,16 @@ ctest --test-dir build -C Debug -R PluginTests --output-on-failure
   object — carrying forward filter memory, envelope stage, delay-line
   contents — whenever that node's `(id, type, parameters)` are all
   unchanged from the previous plan (`ExecutionPlan::nodeIdToAppliedParameters`).
-  Editing a node's own parameters still always takes effect immediately via
-  a fresh node (exactly like pre-M17 behaviour); it just doesn't also get
-  the state-preservation bonus on that same edit. This is a real
+  As of 2026-10-04 a VALUE-ONLY edit (a port's fallback value or a
+  non-structural parameter) also keeps the running node: the new values
+  ride with the new plan (`ExecutionPlan::pendingParameterUpdates`) and the
+  audio thread applies them at that plan's first block, so editing a value
+  no longer resets filter memory or oscillator phase (no click). A
+  structural parameter, or a parameter key appearing/disappearing, still
+  builds a fresh node. While a slider is being dragged nothing recompiles
+  at all: `plugin/source/LiveParameterEdits.h` streams the value to the
+  running nodes and glides to it (~15 ms); the release commits as an
+  ordinary edit. This is a real
   `(nodeID)`-keyed reuse mechanism, not literally the separate pool
   ARCHITECTURE.md §3.2 originally sketched — close enough in effect that
   the doc's own gap is considered closed, but don't assume the exact data

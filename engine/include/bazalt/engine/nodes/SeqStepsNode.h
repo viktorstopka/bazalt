@@ -129,7 +129,7 @@ namespace bazalt::engine::nodes
 
             // wiki/plans/PropsAndMacroRedesign.md Batch D: the old
             // Unipolar/Bipolar "Range" selector was a redundant 2-line
-            // remap the generic adapt.remap/util.bipolarToUnipolar already
+            // remap the generic adapt.map/util.bipolarToUnipolar already
             // cover — step values are always bipolar now, matching how
             // they're always hand-edited (-1..1).
             const auto raw = stepValues[(size_t) juce::jlimit (0, maxSteps - 1, currentIndex)];

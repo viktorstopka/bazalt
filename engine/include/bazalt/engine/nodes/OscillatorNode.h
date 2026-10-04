@@ -2,7 +2,9 @@
 
 #include "bazalt/engine/graph/Node.h"
 #include "bazalt/engine/graph/ValueTypes.h"
-#include "bazalt/engine/PolyBlepOscillator.h"
+#include "bazalt/engine/BandLimited.h"
+#include "bazalt/engine/telemetry/PhaseSnapshot.h"
+#include <vector>
 #include <algorithm>
 #include <cmath>
 
@@ -36,29 +38,52 @@ namespace bazalt::engine::nodes
         already unconditionally overwrote frequency every sample connected
         or not; neither connected leaves the oscillator at whatever
         setParameter() last configured, exactly like before this change.
+
+        Completed 2026-10-04 (wiki/plans/SoundPalette.md Batch 2, closing
+        the MVP): `fine` (cents, on top of pitch/frequency), `pulseWidth`
+        (Square only), `phase` (through-zero phase modulation in cycles — it
+        offsets the read point, never the running accumulator, the same rule
+        as osc.sine), and `sync` (Event: resets the cycle). A real phase
+        source, so its phase-locked preview draws what it plays. Every
+        shape comes from bandLimited::evaluate, the definition the
+        per-shape oscillators and the preview share.
     */
     class OscillatorNode : public Node
     {
     public:
         static constexpr float defaultFrequencyHz = 440.0f; // also osc.analog.frequency's descriptor default
-        static constexpr int numInputs = 2; // pitch, frequency
+        static constexpr int numInputs = 6; // pitch, frequency, fine, pulseWidth, phase, sync
         static constexpr int numOutputs = 1;
 
         void prepare (const NodePrepareInfo& info) override
         {
-            oscillator.prepare (info.sampleRate);
-
-            // Start at the frequency the card DISPLAYS (the port's own default,
-            // 440 Hz). PolyBlepOscillator starts at 0 Hz - silent DC - so an
-            // oscillator with nothing wired to its pitch used to be silent while
-            // showing "Frequency 440 Hz". It never mattered while every
-            // oscillator sat in a voice graph (the allocator always drives pitch);
-            // it matters now that a graph with no allocator plays (M21). Runs
-            // before the compiler applies the instance's saved parameters, so a
-            // saved frequency still wins.
-            oscillator.setFrequency (defaultFrequencyHz);
+            sampleRate = info.sampleRate;
+            phaseTrack.assign ((size_t) std::max (1, info.maxBlockSize), 0.0f);
         }
-        void reset() override { oscillator.reset(); }
+        void reset() override
+        {
+            phase = 0.0;
+            cycleCount = 0;
+        }
+
+        bool isPhaseSource() const noexcept override { return true; }
+        const float* getPhaseTrack() const noexcept override { return phaseTrack.data(); }
+        void capturePhaseSnapshot (PhaseSnapshot& snapshot) const noexcept override
+        {
+            snapshot.render = &renderCycle;
+            snapshot.frequencyHz = lastFrequency;
+            snapshot.sampleRate = sampleRate;
+            snapshot.playhead = (float) ((double) cycleCount + phase);
+            snapshot.params[0] = (float) waveform;
+            snapshot.params[1] = lastPhaseOffset;
+            snapshot.params[2] = lastPulseWidth;
+        }
+
+        void processBlock (const float* const* inputs, float* const* outputs, int numSamples) noexcept override
+        {
+            trackIndex = 0;
+            Node::processBlock (inputs, outputs, numSamples);
+        }
 
         int getNumInputPorts() const noexcept override { return numInputs; }
         int getNumOutputPorts() const noexcept override { return numOutputs; }
@@ -73,63 +98,31 @@ namespace bazalt::engine::nodes
                                   .minValue = 0.0f, .maxValue = 127.0f, .defaultValue = 60.0f,
                                   .hasFallbackWhenUnconnected = true, .quantity = Quantity::Pitch },
                 ValueTypes::frequencyPort ("osc.analog.frequency", "Frequency", defaultFrequencyHz),
+                PortDescriptor { .id = "osc.analog.fine", .type = SignalType::Control, .label = "Fine", .unit = "ct",
+                                  .minValue = -100.0f, .maxValue = 100.0f, .defaultValue = 0.0f,
+                                  .hasFallbackWhenUnconnected = true, .polarity = Polarity::Bipolar },
+                PortDescriptor { .id = "osc.analog.pulseWidth", .type = SignalType::Control, .label = "Pulse Width",
+                                  .minValue = 0.0f, .maxValue = 1.0f, .defaultValue = 0.5f,
+                                  .hasFallbackWhenUnconnected = true, .quantity = Quantity::Unipolar },
+                PortDescriptor { .id = "osc.analog.phase", .type = SignalType::Control, .label = "Phase",
+                                  .minValue = -1.0f, .maxValue = 1.0f, .defaultValue = 0.0f,
+                                  .hasFallbackWhenUnconnected = true, .quantity = Quantity::Bipolar,
+                                  .polarity = Polarity::Bipolar },
+                PortDescriptor { .id = "sync", .type = SignalType::Event, .label = "Sync" },
             };
         }
         std::vector<PortDescriptor> getOutputPorts() const override
         {
-            return { { "out", SignalType::Audio } };
+            return { PortDescriptor { .id = "out", .type = SignalType::Audio, .label = "Out", .isPrimaryOutput = true } };
         }
 
-        /** M20 step 8: the first real node wired end to end onto the
-            visualization system — a plain Waveform on the oscillator's own
-            audio output, the simplest possible proof of the whole pipeline
-            (declaration -> subscribeVisualizationTap -> tap push -> UI
-            render). VisualizationTapTests.cpp already exercises this exact
-            (nodeId "osc", portId "out") pair.
-        */
         std::vector<PreviewDescriptor> getPreviews() const override
         {
-            // Direct feedback: the struct default (50ms, PreviewDescriptor.h)
-            // packs ~22 cycles of this node's own 440Hz default into the
-            // node-card preview's 128 buckets - under 6 buckets per cycle,
-            // visibly faceted rather than a smooth wave, and cramped enough
-            // to read as "squashed" on top of that. 15ms shows a handful of
-            // cycles (~7 at 440Hz) with real resolution to draw each one
-            // with (~18 buckets/cycle) - short enough that a sub-audio-rate
-            // use (an LFO wired through this oscillator instead of `lfo.shape`,
-            // which doesn't exist yet) will show mostly a flat/slow line
-            // rather than a cycle, but that's an inherent trade-off of any
-            // one fixed window for a node whose actual rate isn't known
-            // ahead of time - this node's own doc comment already frames it
-            // as the audio-rate oscillator, so audio-rate is what its own
-            // preview is tuned for.
-            return { PreviewDescriptor { .kind = PreviewKind::Waveform, .portId = "out", .timeWindowSeconds = 0.015f } };
+            return { PreviewDescriptor { .kind = PreviewKind::PhaseLocked, .portId = "out" } };
         }
 
         std::vector<ParameterDescriptor> getParameters() const override
         {
-            // "shape" is quantized to one of 4 waveforms by
-            // waveformForShapeValue() below regardless of what's set here.
-            // M14: given a real kind=Enum + enumOptions now (the first
-            // node migrated to the new value contract, VALUE_MODEL.md §2)
-            // — a real dropdown of named waveforms instead of a raw 0-3
-            // slider. isStructural=true because switching waveform swaps
-            // which PolyBLEP correction table renderNextSample() uses, not
-            // because it reallocates (the strict VALUE_MODEL.md §5 test
-            // is arguably borderline here; NODE_CATALOG.md's rewritten
-            // catalog calls osc.analog.shape Structural explicitly, so
-            // this migration follows that call rather than relitigating
-            // it). Known, deliberate half-migration: the underlying
-            // storage stays the same index-coupled float 0-3
-            // waveformForShapeValue() switches on — VALUE_MODEL.md §2's
-            // "nothing may rely on option index" isn't fully met yet,
-            // that would mean changing setParameter()'s own storage
-            // representation, a DSP-touching change out of scope for a
-            // schema-only migration (this milestone's own exit criteria
-            // requires bit-identical render-cli output). enumOptions'
-            // order below matches waveformForShapeValue()'s switch only
-            // because nothing has migrated off that coupling yet, not
-            // because order is meant to matter.
             return { ParameterDescriptor { .id = "osc.analog.shape",
                                             .minValue = 0.0f,
                                             .maxValue = 3.0f,
@@ -147,37 +140,62 @@ namespace bazalt::engine::nodes
         void setParameter (const juce::String& parameterId, float value) override
         {
             if (parameterId == "osc.analog.frequency")
-                oscillator.setFrequency (value);
+                storedFrequency = value;
             else if (parameterId == "osc.analog.shape")
                 setWaveform (waveformForShapeValue (value));
+            else if (parameterId == "osc.analog.fine")
+                storedFine = value;
+            else if (parameterId == "osc.analog.pulseWidth")
+                storedPulseWidth = value;
+            else if (parameterId == "osc.analog.phase")
+                storedPhase = value;
         }
 
-        void setWaveform (OscillatorWaveform waveform) noexcept { oscillator.setWaveform (waveform); }
+        void setWaveform (OscillatorWaveform newWaveform) noexcept { waveform = newWaveform; }
 
         void processSample (const float* inputs, float* outputs) noexcept override
         {
-            // NaN means the port is unconnected (GraphCompiler.cpp's
-            // hasFallbackWhenUnconnected sentinel). Pitch (semitones,
-            // converted to Hz) wins whenever connected, matching its
-            // pre-M20 behaviour of unconditionally overwriting frequency
-            // every sample; frequency (direct Hz) drives it only when
-            // pitch isn't connected; if neither is connected, the
-            // oscillator is left at whatever setParameter() last
-            // configured, exactly like before either port existed.
-            if (! std::isnan (inputs[0]))
-                oscillator.setFrequency (440.0f * std::pow (2.0f, (inputs[0] - 69.0f) / 12.0f));
-            else if (! std::isnan (inputs[1]))
-                oscillator.setFrequency (inputs[1]);
+            // NaN means the port is unconnected (the hasFallbackWhenUnconnected
+            // sentinel). Pitch (semitones -> Hz) wins whenever connected;
+            // frequency (direct Hz) drives it only when pitch isn't.
+            auto frequency = ! std::isnan (inputs[0]) ? 440.0f * std::pow (2.0f, (inputs[0] - 69.0f) / 12.0f)
+                                                       : (! std::isnan (inputs[1]) ? inputs[1] : storedFrequency);
+            const auto fine = std::isnan (inputs[2]) ? storedFine : inputs[2];
+            if (fine != 0.0f)
+                frequency *= std::exp2 (fine / 1200.0f);
+            const auto pulseWidth = std::isnan (inputs[3]) ? storedPulseWidth : inputs[3];
+            const auto phaseOffset = std::isnan (inputs[4]) ? storedPhase : inputs[4];
 
-            outputs[0] = oscillator.renderNextSample();
+            if (std::fabs (inputs[5]) > 0.0f)
+                phase = 0.0;
+
+            if (trackIndex < phaseTrack.size())
+                phaseTrack[trackIndex++] = (float) ((double) cycleCount + phase);
+
+            const auto dt = sampleRate > 0.0 ? std::fabs ((double) frequency) / sampleRate : 0.0;
+            outputs[0] = (float) bandLimited::evaluate (waveform, bandLimited::wrap (phase + (double) phaseOffset), dt, pulseWidth);
+
+            lastFrequency = frequency;
+            lastPhaseOffset = phaseOffset;
+            lastPulseWidth = pulseWidth;
+
+            if (sampleRate > 0.0)
+            {
+                phase += (double) frequency / sampleRate;
+                const auto wraps = std::floor (phase);
+                if (wraps != 0.0)
+                {
+                    phase -= wraps;
+                    cycleCount = (int) (((long long) cycleCount + (long long) wraps) % phaseLockedCycles + phaseLockedCycles) % phaseLockedCycles;
+                }
+            }
         }
 
     private:
         // "shape" is a macro-automatable stand-in for waveform selection —
-        // continuous input, quantized to one of the four PolyBLEP
-        // waveforms, matching the "oscillator shape" macro target
-        // ARCHITECTURE.md §4.3 asks for. Sine=0, Saw=1, Square=2,
-        // Triangle=3, matching OscillatorWaveform's declaration order.
+        // continuous input, quantized to one of the four band-limited
+        // waveforms. Sine=0, Saw=1, Square=2, Triangle=3, matching
+        // OscillatorWaveform's declaration order.
         static OscillatorWaveform waveformForShapeValue (float value) noexcept
         {
             const auto index = (int) std::round (std::clamp (value, 0.0f, 3.0f));
@@ -191,6 +209,19 @@ namespace bazalt::engine::nodes
             }
         }
 
-        PolyBlepOscillator oscillator;
+        static float renderCycle (const PhaseSnapshot& snapshot, double cyclePosition)
+        {
+            const auto dt = snapshot.sampleRate > 0.0 ? std::fabs (snapshot.frequencyHz) / snapshot.sampleRate : 0.0;
+            return (float) bandLimited::evaluate ((OscillatorWaveform) (int) snapshot.params[0],
+                                                  bandLimited::wrap (cyclePosition + (double) snapshot.params[1]), dt, snapshot.params[2]);
+        }
+
+        OscillatorWaveform waveform = OscillatorWaveform::Saw;
+        double sampleRate = 44100.0, phase = 0.0;
+        int cycleCount = 0;
+        std::vector<float> phaseTrack;
+        size_t trackIndex = 0;
+        float storedFrequency = defaultFrequencyHz, storedFine = 0.0f, storedPulseWidth = 0.5f, storedPhase = 0.0f;
+        float lastFrequency = defaultFrequencyHz, lastPhaseOffset = 0.0f, lastPulseWidth = 0.5f;
     };
 }

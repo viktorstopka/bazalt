@@ -101,7 +101,7 @@ namespace bazalt::engine::nodes
         std::vector<PortDescriptor> getInputPorts() const override
         {
             return {
-                { "excite", SignalType::Audio },
+                perChannel ({ "excite", SignalType::Audio }),
                 PortDescriptor { .id = "pitch", .type = SignalType::Control, .unit = "st",
                                   .minValue = 0.0f, .maxValue = 127.0f, .defaultValue = 60.0f,
                                   .hasFallbackWhenUnconnected = true, .quantity = Quantity::Pitch },
@@ -120,8 +120,8 @@ namespace bazalt::engine::nodes
         std::vector<PortDescriptor> getOutputPorts() const override
         {
             return {
-                PortDescriptor { .id = "out", .type = SignalType::Audio, .label = "Out", .isPrimaryOutput = true },
-                PortDescriptor { .id = "motion", .type = SignalType::Audio, .label = "Motion" },
+                perChannel (PortDescriptor { .id = "out", .type = SignalType::Audio, .label = "Out", .isPrimaryOutput = true }),
+                perChannel (PortDescriptor { .id = "motion", .type = SignalType::Audio, .label = "Motion" }),
             };
         }
 

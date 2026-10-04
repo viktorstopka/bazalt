@@ -21,6 +21,10 @@ namespace bazalt::engine
         nextSlotToVisit = 0;
 
         scratchSamples.assign (maxSamplesPerDrain, 0.0f);
+        scratchPhases.assign (maxSamplesPerDrain, 0.0f);
+        phaseBins.assign (TelemetryHub::maxTaps * (size_t) phaseLockedPoints, std::numeric_limits<float>::quiet_NaN());
+        phaseLastScannedTotalBySlot.fill (0);
+        phaseLockedPayload.assign ((size_t) phaseLockedPoints + 2, 0.0f);
         oscilloscopePayload.assign ((size_t) oscilloscopeBuckets * 2, 0.0f);
         fftData.assign ((size_t) maxFftSize * 2, 0.0f);
         eventImpulsePayload.assign ((size_t) maxEventsPerPublish, 0.0f);
@@ -133,7 +137,7 @@ namespace bazalt::engine
             tap->push (scratchSamples.data(), numSyntheticSamples);
         }
 
-        const auto numRead = tap->readLatest (scratchSamples.data(), (int) scratchSamples.size());
+        const auto numRead = tap->readLatest (scratchSamples.data(), (int) scratchSamples.size(), scratchPhases.data());
         if (numRead == 0)
             return;
 
@@ -158,6 +162,8 @@ namespace bazalt::engine
             publishEventImpulse (slotIndex, scratchSamples.data(), numRead, tap->getTotalPushed());
         if (hub.isFrameTypeNeeded (slotIndex, TelemetryFrameType::RollingHistory))
             publishRollingHistory (slotIndex, scratchSamples.data(), numRead, tap->getTotalPushed(), settings);
+        if (hub.isFrameTypeNeeded (slotIndex, TelemetryFrameType::PhaseLocked))
+            publishPhaseLocked (slotIndex, *tap, scratchSamples.data(), scratchPhases.data(), numRead, tap->getTotalPushed(), settings);
     }
 
     void AnalysisThread::publishOscilloscope (size_t slotIndex, const float* samples, int numSamples, const TapSettings& settings)
@@ -586,6 +592,86 @@ namespace bazalt::engine
         serializeTelemetryFrame (header, historyPayload.data(), (uint32_t) historyPayload.size(), frameScratch);
 
         if (auto* buffer = hub.getFrameBufferBySlot (slotIndex, TelemetryFrameType::RollingHistory))
+            buffer->publish (frameScratch.data(), frameScratch.size());
+    }
+
+    void AnalysisThread::publishPhaseLocked (size_t slotIndex, const Tap& tap, const float* samples, const float* phases, int numSamples,
+                                             uint64_t totalPushed, const TapSettings& settings)
+    {
+        // The phase source's latest state: the playhead and frequency for
+        // both modes, and (render mode) the waveform itself. No snapshot
+        // means this buffer has no phase source at all — nothing to lock to,
+        // so nothing is published rather than a guess.
+        PhaseSnapshot snapshot;
+        if (! tap.readSnapshot (snapshot))
+            return;
+
+        auto* values = phaseLockedPayload.data() + 2;
+        phaseLockedPayload[0] = snapshot.playhead;
+        phaseLockedPayload[1] = (float) snapshot.frequencyHz;
+
+        if (! settings.phaseLockedFold)
+        {
+            // Render mode: the source's own waveform at its current, fully
+            // modulated parameters, aligned to phase zero — exact at any
+            // rate, and re-evaluated every drain, so modulation reads as the
+            // shape changing in place.
+            if (snapshot.render == nullptr)
+                return;
+            for (int i = 0; i < phaseLockedPoints; ++i)
+                values[i] = snapshot.render (snapshot, (double) i / (double) phaseLockedPointsPerCycle);
+        }
+        else
+        {
+            // Fold mode: this buffer's REAL samples placed by the phase each
+            // was produced at. A fast signal lands at slightly different
+            // phases every cycle, so the bins fill densely within a few
+            // cycles (equivalent-time sampling, as a sampling scope does); a
+            // slow one is drawn in behind the playhead.
+            auto* bins = phaseBins.data() + slotIndex * (size_t) phaseLockedPoints;
+            auto& scanned = phaseLastScannedTotalBySlot[slotIndex];
+            if (totalPushed < scanned) // the tap was reset (a new subscriber)
+                std::fill (bins, bins + phaseLockedPoints, std::numeric_limits<float>::quiet_NaN());
+
+            const auto fresh = totalPushed > scanned ? (int) std::min<uint64_t> (totalPushed - scanned, (uint64_t) numSamples) : 0;
+            scanned = totalPushed;
+
+            for (int i = numSamples - fresh; i < numSamples; ++i)
+            {
+                const auto phase = phases[i];
+                if (std::isnan (phase))
+                    continue;
+                const auto bin = std::clamp ((int) (phase * (float) phaseLockedPointsPerCycle), 0, phaseLockedPoints - 1);
+                bins[bin] = samples[i];
+            }
+
+            // Short holes between filled bins (a frequency that divides the
+            // sample rate exactly revisits the same bins) are bridged
+            // linearly; long ones — not yet reached by a slow playhead —
+            // stay NaN and draw as nothing.
+            constexpr int maxBridge = phaseLockedPointsPerCycle / 8;
+            int lastFilled = -1;
+            for (int i = 0; i < phaseLockedPoints; ++i)
+            {
+                values[i] = bins[i];
+                if (std::isnan (bins[i]))
+                    continue;
+                if (lastFilled >= 0 && i - lastFilled > 1 && i - lastFilled <= maxBridge)
+                    for (int k = lastFilled + 1; k < i; ++k)
+                        values[k] = bins[lastFilled] + (bins[i] - bins[lastFilled]) * (float) (k - lastFilled) / (float) (i - lastFilled);
+                lastFilled = i;
+            }
+        }
+
+        TelemetryFrameHeader header;
+        header.tapId = (uint32_t) slotIndex;
+        header.frameType = TelemetryFrameType::PhaseLocked;
+        header.sampleRate = (float) sampleRate;
+        header.sequenceNumber = sequenceNumber;
+
+        serializeTelemetryFrame (header, phaseLockedPayload.data(), (uint32_t) phaseLockedPayload.size(), frameScratch);
+
+        if (auto* buffer = hub.getFrameBufferBySlot (slotIndex, TelemetryFrameType::PhaseLocked))
             buffer->publish (frameScratch.data(), frameScratch.size());
     }
 }

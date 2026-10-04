@@ -8,15 +8,17 @@ import { AddMenu } from '../graph/AddMenu'
 import { buildAnchorMap, measureNodeLocalPortOffsets, portKey, type PortAnchor } from '../graph/portAnchors'
 import { portUiStyleForEndpoint, resolvePortIsPoly } from '../graph/portUiKind'
 import { canConnect, type ConnectionEndpoint } from '../graph/canConnect'
+import { importImage } from '../graph/imageImport'
 import {
+  addImageAt,
   addNode,
   canSplice,
+  reportError,
   commitNodeMoves,
   commitWireDrag,
-  createCountFromPort,
   createMacroFromPort,
-  createRippleFromPort,
-  createScopeControlFromPort,
+  createViewerFromPort,
+  defaultViewerTypeForPort,
   deleteNodes,
   ensureInitialized,
   findWireAtInput,
@@ -150,7 +152,7 @@ function closestPortAnchor(target: EventTarget | null): PortHit | null {
     source, is the only place this can actually be stopped.
 */
 function isOwnGestureTarget(target: EventTarget | null): boolean {
-  return target instanceof Element && !!target.closest('.value-slider, .trigger-select')
+  return target instanceof Element && !!target.closest('.value-slider, .trigger-select, .deco-own-gesture')
 }
 
 // Module-level (not a component ref) for the same reason interactionStore's
@@ -457,6 +459,8 @@ export const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, InfiniteCanvasPro
     let panLastX = 0
     let panLastY = 0
     let ghostSpliceHoverWireId: string | null = null
+    // The anchor map of the last frame, for hit-testing wires outside frame().
+    let latestAnchors = new Map<string, PortAnchor>()
     let rightClickStart: { x: number; y: number; wasGhostActive: boolean } | null = null
     let lastMouseCanvasX = 0
     let lastMouseCanvasY = 0
@@ -573,6 +577,7 @@ export const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, InfiniteCanvasPro
             })
           : graphNow.nodes
       const anchors = buildAnchorMap(positionsForAnchors, nodeOffsetCache, camera)
+      latestAnchors = anchors
 
       // Wire-drag hover detection happens BEFORE the main cable list is
       // built, so a "will replace" hit can dim the existing wire it would
@@ -712,7 +717,8 @@ export const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, InfiniteCanvasPro
           alpha = 1
           dashed = !ghostSpliceValid
         }
-        cables.push({ from, to, color, alpha, dashed })
+        const stereo = graphNow.stereoOutputs.get(wire.fromNodeId)?.has(wire.fromPortId) ?? false
+        cables.push({ from, to, color, alpha, dashed, stereo })
       }
 
       if (g?.kind === 'wireDrag') {
@@ -898,6 +904,99 @@ export const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, InfiniteCanvasPro
       if (document.hidden) onWindowBlur()
     }
 
+    /** The wire passing within `tolerance` screen pixels of a canvas-local
+        point, if any (the same tessellation the renderer draws). */
+    const wireNear = (point: Point, tolerance = 6): string | null => {
+      let nearest: string | null = null
+      let nearestDistance = tolerance
+      for (const wire of getGraphSnapshot().wires) {
+        const from = latestAnchors.get(portKey(wire.fromNodeId, wire.fromPortId, 'output'))
+        const to = latestAnchors.get(portKey(wire.toNodeId, wire.toPortId, 'input'))
+        if (!from || !to) continue
+        const points = tessellateCable({ from, to, color: [0, 0, 0], alpha: 1, dashed: false })
+        for (let i = 0; i < points.length - 1; i++) {
+          const d = distanceToSegment(point, points[i], points[i + 1])
+          if (d < nearestDistance) {
+            nearestDistance = d
+            nearest = wire.id
+          }
+        }
+      }
+      return nearest
+    }
+
+    /** wiki/plans/Decorations.md §3: a reroute dot dropped into a wire at a
+        canvas-local point, centred on it — one undo step. */
+    const rerouteWireAt = (wireId: string, canvasX: number, canvasY: number): void => {
+      const world = canvasToWorld(canvasX, canvasY)
+      spliceInsert(wireId, 'deco.reroute', world.x - 7, world.y - 7)
+      requestFrame()
+    }
+
+    /** Imports image files at a canvas-local point, cascading several. */
+    const importImagesAt = async (files: readonly Blob[], canvasX: number, canvasY: number): Promise<void> => {
+      const world = canvasToWorld(canvasX, canvasY)
+      let offset = 0
+      for (const file of files) {
+        if (!file.type.startsWith('image/')) continue
+        try {
+          const image = await importImage(file)
+          await addImageAt(Math.round(world.x + offset), Math.round(world.y + offset), image.mimeType, image.base64, image.width, image.height)
+        } catch (error) {
+          reportError(`Couldn't add the image: ${error instanceof Error ? error.message : String(error)}`)
+        }
+        offset += 24
+      }
+      requestFrame()
+    }
+
+    const pickImageAt = (canvasX: number, canvasY: number): void => {
+      const input = document.createElement('input')
+      input.type = 'file'
+      input.accept = 'image/*'
+      input.multiple = true
+      // Attached while the dialog is open: some WebViews (WebKitGTK) never
+      // fire `change` on a file input that isn't in the document.
+      input.style.display = 'none'
+      document.body.appendChild(input)
+      input.onchange = () => {
+        void importImagesAt([...(input.files ?? [])], canvasX, canvasY)
+        input.remove()
+      }
+      input.click()
+    }
+
+    const onDragOver = (e: DragEvent): void => {
+      if (e.dataTransfer?.types.includes('Files')) {
+        e.preventDefault()
+        e.dataTransfer.dropEffect = 'copy'
+      }
+    }
+
+    const onDrop = (e: DragEvent): void => {
+      const files = [...(e.dataTransfer?.files ?? [])].filter((f) => f.type.startsWith('image/'))
+      if (files.length === 0) return
+      e.preventDefault()
+      const rect = canvas.getBoundingClientRect()
+      void importImagesAt(files, e.clientX - rect.left, e.clientY - rect.top)
+    }
+
+    const onPaste = (e: ClipboardEvent): void => {
+      const target = e.target as HTMLElement | null
+      if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)) return
+      const files = [...(e.clipboardData?.items ?? [])].filter((item) => item.kind === 'file' && item.type.startsWith('image/')).map((item) => item.getAsFile()).filter((f): f is File => f !== null)
+      if (files.length === 0) return
+      e.preventDefault()
+      void importImagesAt(files, lastMouseCanvasX, lastMouseCanvasY)
+    }
+
+    const onDoubleClick = (e: MouseEvent): void => {
+      if (!isCanvasOrWorldTarget(e.target) || closestNodeId(e.target)) return
+      const rect = canvas.getBoundingClientRect()
+      const wireId = wireNear({ x: e.clientX - rect.left, y: e.clientY - rect.top })
+      if (wireId) rerouteWireAt(wireId, e.clientX - rect.left, e.clientY - rect.top)
+    }
+
     // ---- Pointer interaction ----
     const onMouseDown = (e: MouseEvent): void => {
       if (isOwnGestureTarget(e.target)) return
@@ -963,57 +1062,22 @@ export const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, InfiniteCanvasPro
       if (port) {
         e.preventDefault()
         if (port.direction === 'output') {
-          // design/Visualization/Ripple.png: "Ctrl/Cmd-clicking an Event
-          // output port spawns this node already connected to that port.
-          // It is the default viewer for the Event type." A plain click
-          // still starts the ordinary wireDrag gesture below — this only
-          // intercepts the modifier-held case, and only for a port whose
-          // live-resolved type is actually Event (getEndpoint, not the
-          // port's own static descriptor, same reasoning NodeCard.tsx's
-          // resolvedPortStyle already follows for polymorphic/config-driven
-          // ports).
+          // "Ctrl/Cmd-clicking an output port spawns the viewer matching
+          // that port's type, already connected" (design/Visualization/*.png
+          // — Ripple, Count, Scope, Scope (Modulation), Gate). A plain click
+          // still starts the ordinary wireDrag gesture below; this only
+          // intercepts the modifier-held case, and only when the port's
+          // live-resolved type (getEndpoint, not its static descriptor —
+          // same reasoning NodeCard.tsx's resolvedPortStyle follows) has a
+          // viewer at all. graphStore.ts's DEFAULT_VIEWER_BY_PORT_KIND is the
+          // one table that decides which.
           if (e.ctrlKey || e.metaKey) {
             const endpoint = getEndpoint(port.nodeId, port.portId, 'output')
-            if (endpoint && endpoint.port.type === 'event') {
+            if (endpoint && defaultViewerTypeForPort(endpoint.port)) {
               const worldPos = canvasToWorld(lastMouseCanvasX, lastMouseCanvasY)
               const x = snapValue(worldPos.x + 40, snapSettingsRef.current)
               const y = snapValue(worldPos.y + 40, snapSettingsRef.current)
-              createRippleFromPort(port.nodeId, port.portId, x, y)
-              requestFrame()
-              return
-            }
-            // design/Visualization/Count.png: "Ctrl/Cmd-clicking an integer
-            // output port spawns this node already connected to that port.
-            // It is the default viewer for the integer type." Same shape as
-            // the Event/Ripple branch just above, for an integer Control
-            // port instead.
-            if (endpoint && endpoint.port.type === 'control' && endpoint.port.isInteger) {
-              const worldPos = canvasToWorld(lastMouseCanvasX, lastMouseCanvasY)
-              const x = snapValue(worldPos.x + 40, snapSettingsRef.current)
-              const y = snapValue(worldPos.y + 40, snapSettingsRef.current)
-              createCountFromPort(port.nodeId, port.portId, x, y)
-              requestFrame()
-              return
-            }
-            // design/Visualization/Scope1.png: "Ctrl/Cmd-clicking an output
-            // port spawns the viewer matching that port's type" — a plain
-            // (non-integer, non-Modulation-quantity) Control port's own
-            // viewer. Checked after the integer branch above since an
-            // integer Control port would otherwise also match "control"
-            // here; Modulation (unipolar/bipolar) has no viewer of its own
-            // yet, so it deliberately falls through to the ordinary
-            // wireDrag gesture below instead of matching this branch.
-            if (
-              endpoint &&
-              endpoint.port.type === 'control' &&
-              !endpoint.port.isInteger &&
-              endpoint.port.quantity !== 'unipolar' &&
-              endpoint.port.quantity !== 'bipolar'
-            ) {
-              const worldPos = canvasToWorld(lastMouseCanvasX, lastMouseCanvasY)
-              const x = snapValue(worldPos.x + 40, snapSettingsRef.current)
-              const y = snapValue(worldPos.y + 40, snapSettingsRef.current)
-              createScopeControlFromPort(port.nodeId, port.portId, x, y)
+              createViewerFromPort(port.nodeId, port.portId, x, y)
               requestFrame()
               return
             }
@@ -1072,6 +1136,16 @@ export const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, InfiniteCanvasPro
 
       // Opt-in: only the bare canvas/world background may start box-select.
       if (!isCanvasOrWorldTarget(e.target)) return
+
+      // Ctrl/Cmd-click on a wire drops a reroute dot into it (cable management).
+      if (e.ctrlKey || e.metaKey) {
+        const wireId = wireNear({ x: lastMouseCanvasX, y: lastMouseCanvasY })
+        if (wireId) {
+          e.preventDefault()
+          rerouteWireAt(wireId, lastMouseCanvasX, lastMouseCanvasY)
+          return
+        }
+      }
 
       setGesture({ kind: 'boxSelect', startX: e.clientX, startY: e.clientY, additive: e.shiftKey, baseSelection: new Set(getGraphSnapshot().selection) })
       if (selectionBoxRef.current) {
@@ -1257,6 +1331,12 @@ export const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, InfiniteCanvasPro
       const worldPos = canvasToWorld(lastMouseCanvasX, lastMouseCanvasY)
       const x = snapValue(worldPos.x, snapSettingsRef.current)
       const y = snapValue(worldPos.y, snapSettingsRef.current)
+      if (currentGhost.typeId === 'deco.image') {
+        // An image comes from a file: placing one opens the picker.
+        clearGhost()
+        pickImageAt(lastMouseCanvasX, lastMouseCanvasY)
+        return
+      }
       if (ghostSpliceHoverWireId && canSplice(ghostSpliceHoverWireId, currentGhost.typeId)) {
         spliceInsert(ghostSpliceHoverWireId, currentGhost.typeId, x, y)
       } else {
@@ -1318,6 +1398,10 @@ export const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, InfiniteCanvasPro
     container.addEventListener('click', onClick)
     container.addEventListener('wheel', onWheel, { passive: false })
     container.addEventListener('contextmenu', onContextMenu)
+    container.addEventListener('dblclick', onDoubleClick)
+    container.addEventListener('dragover', onDragOver)
+    container.addEventListener('drop', onDrop)
+    window.addEventListener('paste', onPaste)
 
     requestFrame()
 
@@ -1338,6 +1422,10 @@ export const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, InfiniteCanvasPro
       container.removeEventListener('click', onClick)
       container.removeEventListener('wheel', onWheel)
       container.removeEventListener('contextmenu', onContextMenu)
+      container.removeEventListener('dblclick', onDoubleClick)
+      container.removeEventListener('dragover', onDragOver)
+      container.removeEventListener('drop', onDrop)
+      window.removeEventListener('paste', onPaste)
       requestFrameRef.current = () => {}
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps

@@ -1,0 +1,206 @@
+/* The Decorations family (wiki/plans/Decorations.md). Not the node look: no
+   frame, no title bar, no port rows. */
+.deco {
+  position: relative;
+  box-sizing: border-box;
+}
+
+.deco-selected {
+  outline: var(--canvas-hairline, var(--stroke-thin)) solid var(--color-accent);
+  outline-offset: 4px;
+}
+
+.deco-placeholder {
+  opacity: 0.45;
+}
+
+/* ---- Header: large text, nothing else ---- */
+.deco-header-text {
+  font-family: var(--font-primary);
+  font-weight: 600;
+  color: var(--color-textPrimary);
+  white-space: pre;
+  line-height: 1.1;
+  user-select: none;
+}
+
+/* ---- Comment: a paragraph that wraps to its width ---- */
+.deco-comment {
+  padding: 8px 10px;
+  background: rgba(255, 255, 255, 0.035);
+  border-radius: var(--radius-sm);
+}
+
+.deco-comment-text {
+  font-family: var(--font-primary);
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--color-textSecondary);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  user-select: none;
+}
+
+/* ---- Box: purely visual, behind everything ---- */
+.deco-box {
+  border: var(--canvas-hairline, var(--stroke-thin)) solid color-mix(in srgb, var(--deco-colour) 55%, transparent);
+  background: color-mix(in srgb, var(--deco-colour) 14%, transparent);
+  border-radius: var(--radius-sm);
+}
+
+.deco-box-label {
+  position: absolute;
+  left: 10px;
+  top: 6px;
+  font-family: var(--font-primary);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--deco-colour);
+  white-space: pre;
+  min-width: 40px;
+  user-select: none;
+}
+
+/* ---- Image: the picture, nothing else ---- */
+.deco-image-img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: fill;
+  pointer-events: none;
+  user-select: none;
+}
+
+.deco-image-missing {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: var(--canvas-hairline, var(--stroke-thin)) dashed var(--color-textSecondary);
+  color: var(--color-textSecondary);
+  font-family: var(--font-primary);
+  font-size: 12px;
+}
+
+/* ---- Shared: text editing, toolbars, resize handles ---- */
+.deco-text-input {
+  display: block;
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 120px;
+  margin: 0;
+  padding: 0;
+  border: none;
+  outline: var(--canvas-hairline, var(--stroke-thin)) solid var(--color-accent);
+  background: var(--color-panel);
+  resize: none;
+  cursor: text;
+  user-select: text;
+}
+
+.deco-toolbar {
+  position: absolute;
+  bottom: 100%;
+  right: 0;
+  margin-bottom: 8px;
+  display: flex;
+  gap: 4px;
+  cursor: default;
+}
+
+.deco-chip {
+  all: unset;
+  font-family: var(--font-primary);
+  font-size: 11px;
+  padding: 1px 6px;
+  border-radius: var(--radius-sm);
+  color: var(--color-textSecondary);
+  background: var(--color-panel);
+  border: var(--canvas-hairline, var(--stroke-thin)) solid var(--color-panelBorder);
+  cursor: pointer;
+}
+
+.deco-chip-active {
+  color: var(--color-textPrimary);
+  border-color: var(--color-accent);
+}
+
+.deco-swatch {
+  all: unset;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  cursor: pointer;
+  opacity: 0.8;
+}
+
+.deco-swatch-active {
+  outline: var(--canvas-hairline, var(--stroke-thin)) solid var(--color-textPrimary);
+  outline-offset: 2px;
+  opacity: 1;
+}
+
+.deco-resize {
+  position: absolute;
+  background: var(--color-accent);
+}
+
+.deco-resize-corner {
+  right: -5px;
+  bottom: -5px;
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+  cursor: nwse-resize;
+}
+
+.deco-resize-side {
+  right: -4px;
+  top: 50%;
+  width: 6px;
+  height: 24px;
+  margin-top: -12px;
+  border-radius: 3px;
+  cursor: ew-resize;
+}
+
+/* ---- Reroute: drag the dot to move it; drag out of the thin zone just past
+   its right edge for a new cable; drop a cable anywhere on it (the drop
+   target is found by distance, so its input anchor needs no hit area). ---- */
+.deco-reroute {
+  position: relative;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  border: var(--canvas-hairline, var(--stroke-thin)) solid var(--color-textSecondary);
+  background: var(--color-nodeFill);
+  box-sizing: border-box;
+}
+
+.deco-reroute-connected {
+  background: var(--color-textSecondary);
+}
+
+.deco-reroute.deco-selected {
+  outline-offset: 2px;
+}
+
+.deco-reroute-anchor {
+  position: absolute;
+  top: 0;
+  height: 100%;
+}
+
+.deco-reroute-in {
+  left: 0;
+  width: 2px;
+  pointer-events: none;
+}
+
+.deco-reroute-out {
+  left: 100%;
+  width: 8px;
+  margin-left: -3px;
+  cursor: crosshair;
+}

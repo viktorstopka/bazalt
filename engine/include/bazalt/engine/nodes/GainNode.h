@@ -44,7 +44,7 @@ namespace bazalt::engine::nodes
         std::vector<PortDescriptor> getInputPorts() const override
         {
             return {
-                { "audio", SignalType::Audio },
+                perChannel ({ "audio", SignalType::Audio }),
                 PortDescriptor { .id = "gain", .type = SignalType::Control, .label = "Gain",
                                   .minValue = 0.0f, .maxValue = 4.0f, .defaultValue = defaultGain,
                                   .isLogScale = true, .hasFallbackWhenUnconnected = true,
@@ -54,7 +54,7 @@ namespace bazalt::engine::nodes
 
         std::vector<PortDescriptor> getOutputPorts() const override
         {
-            return { { "out", SignalType::Audio } };
+            return { perChannel ({ "out", SignalType::Audio }) };
         }
 
         /** M20 step 8: a default Meter on the Gain node's own output — the plan's

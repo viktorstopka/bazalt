@@ -17,13 +17,14 @@
 #include "bazalt/engine/nodes/MultiplyNode.h"
 #include "bazalt/engine/nodes/RoundNode.h"
 #include "bazalt/engine/nodes/ClampNode.h"
-#include "bazalt/engine/nodes/RemapNode.h"
 #include "bazalt/engine/nodes/ListenNode.h"
 #include "bazalt/engine/nodes/ViewNodes.h"
-#include "bazalt/engine/nodes/ViewGlanceNode.h"
+#include "bazalt/engine/nodes/ViewCycleNode.h"
 #include "bazalt/engine/nodes/ViewRippleNode.h"
 #include "bazalt/engine/nodes/ViewCountNode.h"
 #include "bazalt/engine/nodes/ViewScopeControlNode.h"
+#include "bazalt/engine/nodes/ViewScopeModulationNode.h"
+#include "bazalt/engine/nodes/ViewGateNode.h"
 #include "bazalt/engine/nodes/OutputNode.h"
 #include "bazalt/engine/nodes/NormaliseNode.h"
 #include "bazalt/engine/nodes/ThresholdNode.h"
@@ -49,7 +50,8 @@
 #include "bazalt/engine/nodes/CrossfadeNode.h"
 #include "bazalt/engine/nodes/LogicNotNode.h"
 #include "bazalt/engine/nodes/LogicToggleNode.h"
-#include "bazalt/engine/nodes/LogicBooleanNode.h"
+#include "bazalt/engine/nodes/LogicGateNodes.h"
+#include "bazalt/engine/nodes/LogicEventNodes.h"
 #include "bazalt/engine/nodes/LogicSelectNode.h"
 #include "bazalt/engine/nodes/LogicCompareNode.h"
 #include "bazalt/engine/nodes/SampleHoldNode.h"
@@ -67,6 +69,17 @@
 #include "bazalt/engine/nodes/RandomDriftNode.h"
 #include "bazalt/engine/nodes/PanNode.h"
 #include "bazalt/engine/nodes/WidthNode.h"
+#include "bazalt/engine/nodes/DiffuserNode.h"
+#include "bazalt/engine/nodes/ReverbNode.h"
+#include "bazalt/engine/nodes/NoiseColoredNode.h"
+#include "bazalt/engine/nodes/NoiseDustNode.h"
+#include "bazalt/engine/nodes/ShapeNodes.h"
+#include "bazalt/engine/nodes/LfoNode.h"
+#include "bazalt/engine/nodes/AnalysisLevelNode.h"
+#include "bazalt/engine/nodes/DynamicsNodes.h"
+#include "bazalt/engine/nodes/FreqShiftNode.h"
+#include "bazalt/engine/nodes/ViewTuneNode.h"
+#include "bazalt/engine/nodes/DecorationNodes.h"
 #include "bazalt/engine/nodes/StereoSplitNode.h"
 #include "bazalt/engine/nodes/StereoCombineNode.h"
 #include "bazalt/engine/nodes/ClockPulseNode.h"
@@ -116,21 +129,21 @@ namespace bazalt::engine
         factory.registerType ("filter.onepole", [] { return std::make_unique<nodes::OnePoleFilterNode>(); });
         factory.registerType ("util.constant", [] { return std::make_unique<nodes::ConstantNode>(); });
         factory.registerType ("util.macro", [] { return std::make_unique<nodes::MacroNode>(); });
-        factory.registerType ("util.reroute", [] { return std::make_unique<nodes::RerouteNode>(); });
+        factory.registerType ("deco.reroute", [] { return std::make_unique<nodes::RerouteNode>(); });
         factory.registerType ("adapt.map", [] { return std::make_unique<nodes::MapNode>(); });
         factory.registerType ("math.add", [] { return std::make_unique<nodes::AddNode>(); });
         factory.registerType ("math.multiply", [] { return std::make_unique<nodes::MultiplyNode>(); });
         factory.registerType ("math.round", [] { return std::make_unique<nodes::RoundNode>(); });
         factory.registerType ("math.clamp", [] { return std::make_unique<nodes::ClampNode>(); });
-        factory.registerType ("adapt.remap", [] { return std::make_unique<nodes::RemapNode>(); });
         factory.registerType ("view.listen", [] { return std::make_unique<nodes::ListenNode>(); });
-        factory.registerType ("view.scope", [] { return std::make_unique<nodes::ViewScopeNode>(); });
         factory.registerType ("view.spectrum", [] { return std::make_unique<nodes::ViewSpectrumNode>(); });
         factory.registerType ("view.meter", [] { return std::make_unique<nodes::ViewMeterNode>(); });
-        factory.registerType ("view.glance", [] { return std::make_unique<nodes::ViewGlanceNode>(); });
+        factory.registerType ("view.cycle", [] { return std::make_unique<nodes::ViewCycleNode>(); }); // phase-locked viewer, replaces view.scope/view.glance
         factory.registerType ("view.ripple", [] { return std::make_unique<nodes::ViewRippleNode>(); });
         factory.registerType ("view.count", [] { return std::make_unique<nodes::ViewCountNode>(); }); // design/Visualization/Count.png
         factory.registerType ("view.scope.control", [] { return std::make_unique<nodes::ViewScopeControlNode>(); }); // design/Visualization/Scope1.png
+        factory.registerType ("view.scope.modulation", [] { return std::make_unique<nodes::ViewScopeModulationNode>(); }); // design/Visualization/ScopeMod.png
+        factory.registerType ("view.gate", [] { return std::make_unique<nodes::ViewGateNode>(); }); // design/Visualization/Gate.png
         factory.registerType ("io.output", [] { return std::make_unique<nodes::OutputNode>(); });
         factory.registerType ("adapt.normalise", [] { return std::make_unique<nodes::NormaliseNode>(); });
         factory.registerType ("adapt.threshold", [] { return std::make_unique<nodes::ThresholdNode>(); });
@@ -142,7 +155,7 @@ namespace bazalt::engine
         // into control and ints... annoying").
         factory.registerType ("adapt.boolToControl", [] { return std::make_unique<nodes::BoolToControlNode>(); });
         // Exact Pitch<->Frequency conversion (direct feedback found the
-        // generic adapt.remap fallback was quietly wrong for this pair —
+        // generic adapt.map fallback was quietly wrong for this pair —
         // linear where the real relationship is exponential).
         factory.registerType ("adapt.pitchToFrequency", [] { return std::make_unique<nodes::PitchToFrequencyNode>(); });
         factory.registerType ("adapt.frequencyToPitch", [] { return std::make_unique<nodes::FrequencyToPitchNode>(); });
@@ -167,7 +180,12 @@ namespace bazalt::engine
         factory.registerType ("mix.crossfade", [] { return std::make_unique<nodes::CrossfadeNode>(); });
         factory.registerType ("logic.not", [] { return std::make_unique<nodes::LogicNotNode>(); });
         factory.registerType ("logic.toggle", [] { return std::make_unique<nodes::LogicToggleNode>(); });
-        factory.registerType ("logic.boolean", [] { return std::make_unique<nodes::LogicBooleanNode>(); });
+        factory.registerType ("logic.and", [] { return std::make_unique<nodes::LogicAndNode>(); });
+        factory.registerType ("logic.or", [] { return std::make_unique<nodes::LogicOrNode>(); });
+        factory.registerType ("logic.xor", [] { return std::make_unique<nodes::LogicXorNode>(); });
+        factory.registerType ("logic.eventGroup", [] { return std::make_unique<nodes::LogicEventGroupNode>(); });
+        factory.registerType ("logic.edge", [] { return std::make_unique<nodes::LogicEdgeNode>(); });
+        factory.registerType ("logic.latch", [] { return std::make_unique<nodes::LogicLatchNode>(); });
         factory.registerType ("logic.select", [] { return std::make_unique<nodes::LogicSelectNode>(); });
         factory.registerType ("logic.compare", [] { return std::make_unique<nodes::LogicCompareNode>(); });
         factory.registerType ("adapt.sampleHold", [] { return std::make_unique<nodes::SampleHoldNode>(); });
@@ -176,6 +194,9 @@ namespace bazalt::engine
         factory.registerType ("io.transport", [] { return std::make_unique<nodes::IoTransportNode>(); });
         // M22 (Basic synthesis), wave 1 — cheap wins needing no new DSP primitive.
         factory.registerType ("osc.sine", [] { return std::make_unique<nodes::SineOscillatorNode>(); });
+        factory.registerType ("osc.saw", [] { return std::make_unique<nodes::SawOscillatorNode>(); });
+        factory.registerType ("osc.square", [] { return std::make_unique<nodes::SquareOscillatorNode>(); });
+        factory.registerType ("osc.triangle", [] { return std::make_unique<nodes::TriangleOscillatorNode>(); });
         factory.registerType ("filter.dcBlock", [] { return std::make_unique<nodes::DcBlockNode>(); });
         factory.registerType ("env.follower", [] { return std::make_unique<nodes::EnvelopeFollowerNode>(); });
         // M22 wave 2 — the Biquad family.
@@ -193,6 +214,27 @@ namespace bazalt::engine
         // real stereo nodes raised.
         factory.registerType ("space.pan", [] { return std::make_unique<nodes::PanNode>(); });
         factory.registerType ("space.width", [] { return std::make_unique<nodes::WidthNode>(); });
+        // wiki/plans/Reverb.md
+        factory.registerType ("space.diffuser", [] { return std::make_unique<nodes::DiffuserNode>(); });
+        factory.registerType ("space.reverb", [] { return std::make_unique<nodes::ReverbNode>(); });
+        // wiki/plans/SoundPalette.md
+        factory.registerType ("noise.colored", [] { return std::make_unique<nodes::NoiseColoredNode>(); });
+        factory.registerType ("noise.dust", [] { return std::make_unique<nodes::NoiseDustNode>(); });
+        factory.registerType ("shape.rectify", [] { return std::make_unique<nodes::ShapeRectifyNode>(); });
+        factory.registerType ("shape.crush", [] { return std::make_unique<nodes::ShapeCrushNode>(); });
+        factory.registerType ("shape.waveshaper", [] { return std::make_unique<nodes::ShapeWaveshaperNode>(); });
+        factory.registerType ("shape.fold", [] { return std::make_unique<nodes::ShapeFoldNode>(); });
+        factory.registerType ("lfo.shape", [] { return std::make_unique<nodes::LfoNode>(); });
+        factory.registerType ("analysis.level", [] { return std::make_unique<nodes::AnalysisLevelNode>(); });
+        factory.registerType ("dyn.compress", [] { return std::make_unique<nodes::DynCompressNode>(); });
+        factory.registerType ("dyn.gate", [] { return std::make_unique<nodes::DynGateNode>(); });
+        factory.registerType ("fx.freqShift", [] { return std::make_unique<nodes::FreqShiftNode>(); });
+        factory.registerType ("view.tune", [] { return std::make_unique<nodes::ViewTuneNode>(); }); // design/Visualization/Tune.png
+        // wiki/plans/Decorations.md — canvas-only, never compiled
+        factory.registerDecoration ("deco.header", [] { return std::make_unique<nodes::DecorationNode> ("Header", "heading"); });
+        factory.registerDecoration ("deco.comment", [] { return std::make_unique<nodes::DecorationNode> ("Comment", "comment"); });
+        factory.registerDecoration ("deco.box", [] { return std::make_unique<nodes::DecorationNode> ("Box", "box"); });
+        factory.registerDecoration ("deco.image", [] { return std::make_unique<nodes::DecorationNode> ("Image", "image"); });
         factory.registerType ("stereo.split", [] { return std::make_unique<nodes::StereoSplitNode>(); });
         factory.registerType ("stereo.combine", [] { return std::make_unique<nodes::StereoCombineNode>(); });
         // Clock+Seq batch (wiki/NODES.Status.md's own build-next order, step 1).
@@ -242,7 +284,7 @@ namespace bazalt::engine
         // wiki/plans/PropsAndMacroRedesign.md Batch D: explicit, manual-
         // placement-only converters replacing the three nodes' old
         // Unipolar/Bipolar selector parameters - never auto-inserted by
-        // connectWithAutoAdapt (adapt.remap's own generic fallback already
+        // connectWithAutoAdapt (adapt.map's own generic fallback already
         // covers a Unipolar<->Bipolar quantity mismatch).
         factory.registerType ("util.unipolarToBipolar", [] { return std::make_unique<nodes::UnipolarToBipolarNode>(); });
         factory.registerType ("util.bipolarToUnipolar", [] { return std::make_unique<nodes::BipolarToUnipolarNode>(); });

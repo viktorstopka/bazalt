@@ -48,7 +48,7 @@ namespace bazalt::engine::nodes
         std::vector<PortDescriptor> getInputPorts() const override
         {
             return {
-                { "in", SignalType::Audio },
+                perChannel ({ "in", SignalType::Audio }),
                 PortDescriptor { .id = "filter.dcBlock.cutoff", .type = SignalType::Control, .label = "Cutoff",
                                   .unit = "Hz", .minValue = 1.0f, .maxValue = 100.0f, .defaultValue = defaultCutoffHz,
                                   .isLogScale = true, .hasFallbackWhenUnconnected = true, .quantity = Quantity::Frequency,
@@ -58,7 +58,7 @@ namespace bazalt::engine::nodes
 
         std::vector<PortDescriptor> getOutputPorts() const override
         {
-            return { { "out", SignalType::Audio } };
+            return { perChannel ({ "out", SignalType::Audio }) };
         }
 
         void setParameter (const juce::String& parameterId, float value) override

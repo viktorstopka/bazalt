@@ -1,7 +1,8 @@
 #include <catch2/catch_test_macros.hpp>
 #include "bazalt/engine/graph/GraphCompiler.h"
 #include "bazalt/engine/graph/ProofGraphs.h"
-#include "bazalt/engine/nodes/LogicBooleanNode.h"
+#include "bazalt/engine/nodes/LogicGateNodes.h"
+#include "bazalt/engine/nodes/LogicEventNodes.h"
 #include "bazalt/engine/nodes/LogicNotNode.h"
 #include "bazalt/engine/nodes/LogicToggleNode.h"
 #include <limits>
@@ -149,55 +150,116 @@ TEST_CASE ("threshold -> logic.toggle -> env.adsr gate compiles and toggles, so 
         CHECK (output[i] == 1.0f);
 }
 
-TEST_CASE ("LogicBooleanNode applies each op over only its WIRED inputs", "[engine][nodes][logic][M21]")
+TEST_CASE ("And / Or / Xor apply over only their WIRED inputs; Invert gives Nand / Nor / Xnor", "[engine][nodes][logic]")
 {
     const auto unwired = std::numeric_limits<float>::quiet_NaN(); // GraphCompiler's sentinel for an unwired fallback port
 
-    auto resultOf = [&] (float opValue, std::vector<float> inputs)
+    auto resultOf = [&] (LogicGateOp op, bool invert, std::vector<float> inputs)
     {
-        LogicBooleanNode node;
+        LogicGateNode node (op);
         node.setGroupPortCount ((int) inputs.size());
-        node.setParameter ("logic.boolean.op", opValue);
-
+        node.setParameter (node.typeId() + ".invert", invert ? 1.0f : 0.0f);
         float out = -1.0f;
         node.processSample (inputs.data(), &out);
         return out;
     };
+    using enum LogicGateOp;
 
-    // AND (default): every wired input true. The spare port must not force false.
-    CHECK (resultOf (0.0f, { 1.0f, 1.0f }) == 1.0f);
-    CHECK (resultOf (0.0f, { 1.0f, 0.0f }) == 0.0f);
-    CHECK (resultOf (0.0f, { 1.0f, unwired }) == 1.0f);
-    CHECK (resultOf (0.0f, { 1.0f, 1.0f, unwired }) == 1.0f);
+    // AND: every wired input true. The spare port must not force false.
+    CHECK (resultOf (And, false, { 1.0f, 1.0f }) == 1.0f);
+    CHECK (resultOf (And, false, { 1.0f, 0.0f }) == 0.0f);
+    CHECK (resultOf (And, false, { 1.0f, unwired }) == 1.0f);
+    CHECK (resultOf (And, false, { 1.0f, 1.0f, unwired }) == 1.0f);
 
-    // OR
-    CHECK (resultOf (1.0f, { 0.0f, 1.0f }) == 1.0f);
-    CHECK (resultOf (1.0f, { 0.0f, 0.0f }) == 0.0f);
-    CHECK (resultOf (1.0f, { 0.0f, unwired }) == 0.0f);
+    CHECK (resultOf (Or, false, { 0.0f, 1.0f }) == 1.0f);
+    CHECK (resultOf (Or, false, { 0.0f, 0.0f }) == 0.0f);
+    CHECK (resultOf (Or, false, { 0.0f, unwired }) == 0.0f);
 
     // XOR is parity across however many are wired.
-    CHECK (resultOf (2.0f, { 1.0f, 1.0f, 1.0f }) == 1.0f);
-    CHECK (resultOf (2.0f, { 1.0f, 1.0f, 0.0f }) == 0.0f);
-    CHECK (resultOf (2.0f, { 1.0f, unwired, unwired }) == 1.0f);
+    CHECK (resultOf (Xor, false, { 1.0f, 1.0f, 1.0f }) == 1.0f);
+    CHECK (resultOf (Xor, false, { 1.0f, 1.0f, 0.0f }) == 0.0f);
+    CHECK (resultOf (Xor, false, { 1.0f, unwired, unwired }) == 1.0f);
 
-    // NAND / NOR
-    CHECK (resultOf (3.0f, { 1.0f, 1.0f }) == 0.0f);
-    CHECK (resultOf (3.0f, { 1.0f, 0.0f }) == 1.0f);
-    CHECK (resultOf (4.0f, { 0.0f, 0.0f }) == 1.0f);
-    CHECK (resultOf (4.0f, { 1.0f, 0.0f }) == 0.0f);
+    // Invert: Nand / Nor / Xnor.
+    CHECK (resultOf (And, true, { 1.0f, 1.0f }) == 0.0f);
+    CHECK (resultOf (And, true, { 1.0f, 0.0f }) == 1.0f);
+    CHECK (resultOf (Or, true, { 0.0f, 0.0f }) == 1.0f);
+    CHECK (resultOf (Or, true, { 1.0f, 0.0f }) == 0.0f);
+    CHECK (resultOf (Xor, true, { 1.0f, 1.0f }) == 1.0f);
 
-    // Nothing wired: false for every op, including the inverting ones.
-    for (const auto op : { 0.0f, 1.0f, 2.0f, 3.0f, 4.0f })
-        CHECK (resultOf (op, { unwired, unwired }) == 0.0f);
+    // Nothing wired: false for every gate, inverted or not.
+    for (const auto op : { And, Or, Xor })
+        for (const auto invert : { false, true })
+            CHECK (resultOf (op, invert, { unwired, unwired }) == 0.0f);
 
     // "True" is > 0.5, the threshold env.adsr's gate uses.
-    CHECK (resultOf (0.0f, { 0.6f, 0.6f }) == 1.0f);
-    CHECK (resultOf (0.0f, { 0.6f, 0.4f }) == 0.0f);
+    CHECK (resultOf (And, false, { 0.6f, 0.6f }) == 1.0f);
+    CHECK (resultOf (And, false, { 0.6f, 0.4f }) == 0.0f);
+
+    CHECK (LogicAndNode {}.typeId() == "logic.and");
+    CHECK (LogicXorNode {}.getTitle() == "Xor");
 }
 
-TEST_CASE ("LogicBooleanNode's group size is clamped to 2..16 and drives its declared ports", "[engine][nodes][logic][M21]")
+TEST_CASE ("Event Group fires when any input fires, merging same-sample events into the strongest", "[engine][nodes][logic]")
 {
-    LogicBooleanNode node;
+    LogicEventGroupNode node;
+    node.setGroupPortCount (3);
+    REQUIRE (node.getInputPorts().size() == 3);
+    CHECK (node.getInputPorts()[2].type == SignalType::Event);
+    CHECK (node.getOutputPorts()[0].type == SignalType::Event);
+
+    auto out = [&] (std::vector<float> in)
+    {
+        float result = -1.0f;
+        node.processSample (in.data(), &result);
+        return result;
+    };
+    CHECK (out ({ 0.0f, 0.0f, 0.0f }) == 0.0f);
+    CHECK (out ({ 0.0f, 0.0f, 1.0f }) == 1.0f);
+    CHECK (out ({ 0.3f, 0.0f, 0.8f }) == 0.8f);
+}
+
+TEST_CASE ("Edge turns a Boolean's changes into events: rising, falling, or both", "[engine][nodes][logic]")
+{
+    auto edges = [] (float mode)
+    {
+        LogicEdgeNode node;
+        node.setParameter ("logic.edge.mode", mode);
+        std::vector<float> fired;
+        for (const auto v : { 0.0f, 1.0f, 1.0f, 0.0f, 0.0f, 1.0f })
+        {
+            float out = 0.0f;
+            node.processSample (&v, &out);
+            fired.push_back (out);
+        }
+        return fired;
+    };
+    CHECK (edges (0.0f) == std::vector<float> { 0, 1, 0, 0, 0, 1 }); // rising
+    CHECK (edges (1.0f) == std::vector<float> { 0, 0, 0, 1, 0, 0 }); // falling
+    CHECK (edges (2.0f) == std::vector<float> { 0, 1, 0, 1, 0, 1 }); // both
+}
+
+TEST_CASE ("Latch holds true from Set until Reset, and Reset wins a tie", "[engine][nodes][logic]")
+{
+    LogicLatchNode node;
+    auto step = [&] (float set, float reset)
+    {
+        const float in[2] = { set, reset };
+        float out = -1.0f;
+        node.processSample (in, &out);
+        return out;
+    };
+    CHECK (step (0, 0) == 0.0f);
+    CHECK (step (1, 0) == 1.0f);
+    CHECK (step (0, 0) == 1.0f); // held
+    CHECK (step (1, 0) == 1.0f); // a repeated set is harmless (unlike Toggle)
+    CHECK (step (0, 1) == 0.0f);
+    CHECK (step (1, 1) == 0.0f); // both on one sample: reset wins
+}
+
+TEST_CASE ("A logic gate's group size is clamped to 2..16 and drives its declared ports", "[engine][nodes][logic][M21]")
+{
+    LogicOrNode node;
     CHECK (node.getInputPorts().size() == 2);
     CHECK (node.getNumInputPorts() == 2);
 

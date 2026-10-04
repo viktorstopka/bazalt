@@ -17,6 +17,7 @@
 import { useMemo, useRef, useState, type RefObject } from 'react'
 import { createPortal } from 'react-dom'
 import { NodeCard, type NodeCardState } from '../nodes/NodeCard'
+import { DecorationCard } from '../nodes/DecorationCard'
 import { NodeContextMenu } from './NodeContextMenu'
 import {
   renameNode,
@@ -31,7 +32,12 @@ import {
   setCountMax,
   setViewerRangeMin,
   setViewerRangeMax,
+  setViewerCenter,
+  setPreviewPlayheadMode,
+  setParameterLive,
   resolveNodeDescriptor,
+  DECORATION_TYPES,
+  BACKGROUND_DECORATIONS,
   type GraphNode,
   type GraphWire,
   type NodeMultiplicity,
@@ -75,6 +81,7 @@ function NodeWrapper({ node, descriptor, selected, selection, connectedPortIds, 
     connectedPortIds,
     parameterValues: node.parameterValues,
     onParameterCommit: (id, value) => setParameterValue(node.id, id, value),
+    onParameterLive: (id, value) => setParameterLive(node.id, id, value),
     portMultiplicity: multiplicity?.ports,
     instanceCountBadge: multiplicity?.badge,
     macroEnumOptionLabels: node.macroEnumOptionLabels,
@@ -87,6 +94,10 @@ function NodeWrapper({ node, descriptor, selected, selection, connectedPortIds, 
     viewerRangeMaxOverride: node.viewerRangeMaxOverride,
     onSetViewerRangeMin: (value) => setViewerRangeMin(node.id, value),
     onSetViewerRangeMax: (value) => setViewerRangeMax(node.id, value),
+    viewerCenterOverride: node.viewerCenterOverride,
+    onSetViewerCenter: (value) => setViewerCenter(node.id, value),
+    previewPlayheadMode: node.previewPlayheadMode,
+    onSetPreviewPlayheadMode: (mode) => setPreviewPlayheadMode(node.id, mode),
     overlayTarget,
   }
 
@@ -163,7 +174,11 @@ function NodeWrapper({ node, descriptor, selected, selection, connectedPortIds, 
         setMenuPos({ x: e.clientX, y: e.clientY })
       }}
     >
-      <NodeCard descriptor={displayDescriptor} state={state} instanceId={node.id} />
+      {DECORATION_TYPES.has(node.typeId) || node.typeId === 'deco.reroute' ? (
+        <DecorationCard node={node} descriptor={descriptor} selected={selected} connectedPortIds={connectedPortIds} />
+      ) : (
+        <NodeCard descriptor={displayDescriptor} state={state} instanceId={node.id} />
+      )}
       {editing && (
         <input
           ref={positionRenameInput}
@@ -272,7 +287,9 @@ export function GraphSurface({ nodes, wires, selection, getDescriptor, multiplic
 
   return (
     <div className="graph-surface">
-      {nodes.map((node) => {
+      {/* Boxes and images are backgrounds (wiki/plans/Decorations.md): drawn
+          first, so every node and cable-anchor sits on top of them. */}
+      {[...nodes.filter((n) => BACKGROUND_DECORATIONS.has(n.typeId)), ...nodes.filter((n) => !BACKGROUND_DECORATIONS.has(n.typeId))].map((node) => {
         // Not the getDescriptor prop (a plain typeId lookup) — a macro
         // configured by addMacroFromPort (graphStore.ts) needs its own
         // per-instance output/parameter shape, which only

@@ -24,7 +24,7 @@ namespace bazalt::engine::nodes
         (gain, LFO depth, ...) at least as often as it bounds an index/count
         — so this inherits isInteger/quantity/unit from whichever of
         in/low/high is wired instead, same "colour follows what's actually
-        there" answer util.reroute/view.glance/logic.compare already give:
+        there" answer deco.reroute/view.glance/logic.compare already give:
         clamping an integer (e.g. straight out of math.round) reads as
         integer end to end, clamping a float stays correctly value/
         modulation-coloured. The SignalType itself stays fixed Control
@@ -43,7 +43,7 @@ namespace bazalt::engine::nodes
         int getNumOutputPorts() const noexcept override { return numOutputs; }
 
         juce::String getTitle() const override { return "Clamp"; }
-        juce::String getCategory() const override { return "Utility"; }
+        juce::String getCategory() const override { return "Math"; }
 
         // Priority order in/low/high: "in" is the value actually being
         // bounded, so it wins when more than one of the three is wired —

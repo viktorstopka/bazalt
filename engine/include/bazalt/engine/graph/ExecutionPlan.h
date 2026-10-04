@@ -125,12 +125,16 @@ namespace bazalt::engine
             std::vector<std::vector<InputRef>> inputsPerNode;     // [position][portIndex]
             std::vector<std::vector<int>> outputScalarIndices;    // [position][portIndex] -> regionScalars index
 
-            // The region's own designated output, published into a
-            // block-length buffer each sample for downstream block-rate
-            // consumers (or for the plan's final output).
-            int outputRegionPosition = -1;
-            int outputPortIndexInNode = 0;
-            int externalOutputBufferIndex = -1;
+            // Every region output channel something outside the region reads
+            // (another step, or the plan's final output), published into a
+            // block-length buffer each sample. One entry per channel — a
+            // stereo region (StereoChannels.md lanes) publishes two.
+            struct ExternalOutput
+            {
+                int scalarIndex = -1;
+                int bufferIndex = -1;
+            };
+            std::vector<ExternalOutput> externalOutputs;
         };
 
         struct Step
@@ -162,6 +166,17 @@ namespace bazalt::engine
         // case where the audio thread genuinely could be that thread).
         std::vector<std::shared_ptr<Node>> nodes;   // owns (or shares) node instances, indexed by slot
         std::unordered_map<juce::String, int> nodeIdToSlot; // stable NodeGraph id -> slot, for driver lookups (noteOn/setFrequency/etc — never used on the audio thread)
+
+        // wiki/plans/StereoChannels.md: a per-channel node fed a stereo
+        // signal runs as one instance per channel ("lane"). Indexed by the
+        // node's own slot (the one nodeIdToSlot names, which is always lane
+        // 0); lane k > 0 lives at an extra slot appended after every graph
+        // node. A single-lane node's entry is just { its own slot }.
+        std::vector<std::vector<int>> laneSlotsBySlot;
+
+        // Every output port that carries two channels in this compile, by node
+        // id — what the editor draws as a stereo cable. Message thread only.
+        std::unordered_map<juce::String, std::vector<juce::String>> stereoOutputPortsByNode;
         // M17: parallel to nodeIdToSlot — lets a future compile ask "does
         // my previous plan's node at this id have the same type as what
         // I'm about to create", without needing the original NodeGraph
@@ -271,6 +286,21 @@ namespace bazalt::engine
         static constexpr int maxTapsPerBuffer = 4;
         std::unique_ptr<std::atomic<Tap*>[]> tapForBufferIndex;
 
+        /** PreviewKind::PhaseLocked's time base, one entry per blockBuffers
+            index: the node whose phase that buffer's signal follows, or
+            nullptr. "Phase follows the cable": a buffer produced by a phase
+            source (Node::isPhaseSource()) uses that node; any other buffer
+            inherits the phase source of its producer's FIRST connected input,
+            recursively — so a filter's output after a saw is drawn against
+            the saw's own phase, stationary and jitter-free, without ever
+            searching the signal for crossings. Filled once by
+            resolvePhaseSources() at compile time (message thread); the audio
+            thread only reads it. */
+        std::vector<Node*> phaseSourceForBuffer;
+
+        /** Message thread, after compile: fills phaseSourceForBuffer. */
+        void resolvePhaseSources();
+
         /** Message thread. Adds `tap` to a buffer's set; false if the index
             is out of range or all maxTapsPerBuffer places are taken. Adding a
             tap already present is a successful no-op.
@@ -368,6 +398,27 @@ namespace bazalt::engine
         };
         MovableAtomicBool previewTapsEnabled;
 
+        /** A value-only edit (non-structural parameters / port fallback
+            values) keeps the running node instead of replacing it — no
+            click, no lost filter memory or oscillator phase. The compiler
+            must never touch a node the audio thread may be running, so the
+            new values travel with the plan and the AUDIO thread applies them
+            itself at the start of this plan's first process() — a block
+            boundary (CLAUDE.md rule 5). Built on the message thread at
+            compile time; never resized afterwards. */
+        struct PendingParameterUpdate
+        {
+            Node* node = nullptr;
+            juce::String parameterId;
+            float value = 0.0f;
+        };
+        std::vector<PendingParameterUpdate> pendingParameterUpdates;
+
+        /** Set by the audio thread once pendingParameterUpdates ran; read by
+            the compiler so a plan replaced before it ever played hands its
+            unapplied updates on to the next one. */
+        MovableAtomicBool pendingParametersApplied;
+
         void setPreviewTapsEnabled (bool enabled) noexcept { previewTapsEnabled.value.store (enabled, std::memory_order_relaxed); }
         bool arePreviewTapsEnabled() const noexcept { return previewTapsEnabled.value.load (std::memory_order_relaxed); }
 
@@ -420,6 +471,24 @@ namespace bazalt::engine
         {
             const auto it = nodeIdToSlot.find (nodeId);
             return it == nodeIdToSlot.end() ? nullptr : nodes[(size_t) it->second].get();
+        }
+
+        /** setParameter() on every lane of a node (StereoChannels.md) — what a
+            live edit or a macro must use, so both channels of a stereo filter
+            move together. Same no-literal rule as getNodeById(). Returns false
+            if the plan has no such node. */
+        bool setParameterOnAllLanes (const juce::String& nodeId, const juce::String& parameterId, float value) const noexcept
+        {
+            const auto it = nodeIdToSlot.find (nodeId);
+            if (it == nodeIdToSlot.end())
+                return false;
+
+            if ((size_t) it->second < laneSlotsBySlot.size())
+                for (const auto slot : laneSlotsBySlot[(size_t) it->second])
+                    nodes[(size_t) slot]->setParameter (parameterId, value);
+            else
+                nodes[(size_t) it->second]->setParameter (parameterId, value);
+            return true;
         }
 
     private:

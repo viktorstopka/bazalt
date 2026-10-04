@@ -5,7 +5,7 @@
 
 namespace bazalt::engine::nodes
 {
-    /** Stable type id: "util.reroute". The Knob decoration (NODE_EDITOR.md
+    /** Stable type id: "deco.reroute". The Knob decoration (NODE_EDITOR.md
         §6.6): one input, passes it straight through. Fan-out to multiple
         destinations needs no special support here — any node's output can
         already feed multiple downstream inputs (GraphCompiler resolves
@@ -55,7 +55,7 @@ namespace bazalt::engine::nodes
         int getNumOutputPorts() const noexcept override { return numOutputs; }
 
         juce::String getTitle() const override { return "Reroute"; }
-        juce::String getCategory() const override { return "Utility"; }
+        juce::String getCategory() const override { return "Decorations"; } // cable management (wiki/plans/Decorations.md)
         NodeLayoutVariant getLayoutVariant() const override { return NodeLayoutVariant::Decoration; }
 
         bool hasPolymorphicPorts() const noexcept override { return true; }
@@ -81,12 +81,12 @@ namespace bazalt::engine::nodes
 
         std::vector<PortDescriptor> getInputPorts() const override
         {
-            return { PortDescriptor { .id = "in", .type = resolvedType, .quantity = resolvedQuantity, .polymorphism = PortPolymorphism::SignalAndQuantity } };
+            return { PortDescriptor { .id = "in", .type = resolvedType, .quantity = resolvedQuantity, .channels = Channels::Inherited, .polymorphism = PortPolymorphism::SignalAndQuantity } };
         }
 
         std::vector<PortDescriptor> getOutputPorts() const override
         {
-            return { PortDescriptor { .id = "out", .type = resolvedType, .isPrimaryOutput = true, .quantity = resolvedQuantity, .polymorphism = PortPolymorphism::SignalAndQuantity } };
+            return { PortDescriptor { .id = "out", .type = resolvedType, .isPrimaryOutput = true, .quantity = resolvedQuantity, .channels = Channels::Inherited, .polymorphism = PortPolymorphism::SignalAndQuantity } };
         }
 
         void processSample (const float* inputs, float* outputs) noexcept override { outputs[0] = inputs[0]; }

@@ -6,8 +6,8 @@
 #include "bazalt/engine/nodes/OscillatorNode.h"
 #include "bazalt/engine/nodes/RerouteNode.h"
 #include "bazalt/engine/nodes/InstanceMixNode.h"
-#include "bazalt/engine/nodes/ViewGlanceNode.h"
-#include "bazalt/engine/nodes/RemapNode.h"
+#include "bazalt/engine/nodes/ViewCycleNode.h"
+#include "bazalt/engine/nodes/MapNode.h"
 
 using namespace bazalt;
 using namespace bazalt::engine;
@@ -52,11 +52,11 @@ TEST_CASE ("nodeDescriptorToVar serializes a node with an unbounded numeric outp
     // PropsAndMacroRedesign.md Batch E gave it a real, configurable range
     // contract, so its own output port is bounded by default now (see the
     // dedicated util.constant descriptor test below).
-    const auto descriptor = describeNode ("adapt.remap", nodes::RemapNode {});
+    const auto descriptor = describeNode ("adapt.map", nodes::MapNode {});
     const auto var = nodeDescriptorToVar (descriptor);
 
     REQUIRE (var.isObject());
-    CHECK (var["typeId"].toString() == "adapt.remap");
+    CHECK (var["typeId"].toString() == "adapt.map");
 
     const auto* outputs = var["outputs"].getArray();
     REQUIRE (outputs != nullptr);
@@ -126,7 +126,7 @@ TEST_CASE ("nodeDescriptorToVar serializes util.constant's new type-aware descri
 TEST_CASE ("nodeDescriptorToVar reports the Decoration layout variant",
            "[plugin][NodeDescriptorJson][NODE_EDITOR]")
 {
-    const auto descriptor = describeNode ("util.reroute", nodes::RerouteNode {});
+    const auto descriptor = describeNode ("deco.reroute", nodes::RerouteNode {});
     const auto var = nodeDescriptorToVar (descriptor);
     CHECK (var["layoutVariant"].toString() == "decoration");
 }
@@ -134,7 +134,7 @@ TEST_CASE ("nodeDescriptorToVar reports the Decoration layout variant",
 TEST_CASE ("nodeDescriptorToVar reports the Glance layout variant and its declared preview",
            "[plugin][NodeDescriptorJson][M0.6]")
 {
-    const auto descriptor = describeNode ("view.glance", nodes::ViewGlanceNode {});
+    const auto descriptor = describeNode ("view.cycle", nodes::ViewCycleNode {});
     const auto var = nodeDescriptorToVar (descriptor);
     CHECK (var["layoutVariant"].toString() == "glance");
 
@@ -142,6 +142,16 @@ TEST_CASE ("nodeDescriptorToVar reports the Glance layout variant and its declar
     REQUIRE (previews != nullptr);
     REQUIRE (previews->size() == 1);
     CHECK ((*previews)[0]["portId"].toString() == "out");
+    CHECK ((*previews)[0]["kind"].toString() == "phaseLocked");
+    CHECK ((*previews)[0]["foldSamples"] == juce::var (true));
+}
+
+TEST_CASE ("nodeDescriptorToVar reports whether a node type is deprecated",
+           "[plugin][NodeDescriptorJson][deprecated]")
+{
+    // The UI's Add menu hides deprecated types (they still load in an
+    // existing patch) — the flag has to actually reach the JSON for that.
+    CHECK (nodeDescriptorToVar (describeNode ("deco.reroute", nodes::RerouteNode {}))["deprecated"] == juce::var (false));
 }
 
 TEST_CASE ("nodeDescriptorToVar serializes InstanceMixNode's port metadata intact",
@@ -241,8 +251,8 @@ TEST_CASE ("nodeDescriptorToVar flags a polymorphic-port node, and only that one
         return nodeDescriptorToVar (describeNode (typeId, *node)).getProperty ("hasPolymorphicPorts", juce::var());
     };
 
-    CHECK (flagFor ("util.reroute").isBool());
-    CHECK ((bool) flagFor ("util.reroute"));
+    CHECK (flagFor ("deco.reroute").isBool());
+    CHECK ((bool) flagFor ("deco.reroute"));
     CHECK (flagFor ("osc.analog").isBool());
     CHECK_FALSE ((bool) flagFor ("osc.analog"));
 }
@@ -267,7 +277,7 @@ TEST_CASE ("nodeDescriptorToVar reports each port's polymorphism, so the UI adop
     };
 
     // Reroute and select's data ports follow type AND quantity...
-    CHECK (polymorphismOf ("util.reroute", "inputs", "in") == "signalAndQuantity");
+    CHECK (polymorphismOf ("deco.reroute", "inputs", "in") == "signalAndQuantity");
     CHECK (polymorphismOf ("logic.select", "inputs", "whenTrue") == "signalAndQuantity");
     CHECK (polymorphismOf ("logic.select", "outputs", "out") == "signalAndQuantity");
     // ...but select's Boolean condition, on that same polymorphic node, stays fixed.

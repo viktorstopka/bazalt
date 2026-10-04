@@ -1,6 +1,6 @@
 // Audio -> Control Bridge (wiki/plans/AudioControlBridge.md). AudioToControlNode's
 // own unit behaviour, plus a real compiled-graph proof that routing a raw
-// waveform through it into another oscillator's phaseMod genuinely produces
+// waveform through it into another oscillator's Phase port genuinely produces
 // audio-rate phase modulation - not just that the graph compiles.
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/catch_approx.hpp>
@@ -69,14 +69,14 @@ TEST_CASE ("AudioToControlNode clamps to the Bipolar contract even when the sour
     CHECK (processOnce (node, 0.9f) == Catch::Approx (1.0f));
 }
 
-TEST_CASE ("Audio to Modulation into phaseMod produces real, measurable audio-rate phase modulation",
+TEST_CASE ("Audio to Modulation into an oscillator's Phase produces real, measurable audio-rate phase modulation",
            "[engine][AudioControlBridge][integration]")
 {
     // The plan's own motivating case (§3): a raw waveform's INSTANTANEOUS
-    // value as the modulator, not a smoothed envelope. osc.sine's "phaseMod"
+    // value as the modulator, not a smoothed envelope. osc.sine's "osc.sine.phase"
     // port is already Bipolar - exactly what adapt.audioToControl produces -
     // so this is the one-step chain, no adapt.map needed: modulator.out ->
-    // bridge.in -> carrier.phaseMod.
+    // bridge.in -> carrier.osc.sine.phase (Phase).
     constexpr double sampleRate = 44100.0;
     constexpr int blockSize = 512;
 
@@ -85,7 +85,7 @@ TEST_CASE ("Audio to Modulation into phaseMod produces real, measurable audio-ra
     graph.addNode ({ "modulator", "osc.sine", {}, { { "osc.sine.frequency", 60.0f } }, {} });
     graph.addNode ({ "bridge", "adapt.audioToControl", {}, {}, {} });
     graph.addConnection ({ "modulator", "out", "bridge", "in" });
-    graph.addConnection ({ "bridge", "out", "carrier", "phaseMod" });
+    graph.addConnection ({ "bridge", "out", "carrier", "osc.sine.phase" });
     graph.setOutput ("carrier", "out");
 
     auto factory = buildDefaultNodeFactory();
@@ -101,7 +101,7 @@ TEST_CASE ("Audio to Modulation into phaseMod produces real, measurable audio-ra
         REQUIRE (std::isfinite (s));
 
     // Independently computed reference: the SAME carrier, un-modulated
-    // (phaseMod pinned to 0 for every sample) - carrier.h's own algorithm,
+    // (Phase pinned to 0 for every sample) - carrier.h's own algorithm,
     // reproduced here rather than re-run through a second compiled plan, so
     // this test doesn't silently depend on bridge.depth's default to "prove"
     // the un-modulated case.
@@ -147,7 +147,7 @@ TEST_CASE ("Audio to Modulation's depth genuinely scales the modulation's audibl
         graph.addNode ({ "modulator", "osc.sine", {}, { { "osc.sine.frequency", 60.0f } }, {} });
         graph.addNode ({ "bridge", "adapt.audioToControl", {}, { { "depth", depth } }, {} });
         graph.addConnection ({ "modulator", "out", "bridge", "in" });
-        graph.addConnection ({ "bridge", "out", "carrier", "phaseMod" });
+        graph.addConnection ({ "bridge", "out", "carrier", "osc.sine.phase" });
         graph.setOutput ("carrier", "out");
 
         auto factory = buildDefaultNodeFactory();
@@ -170,11 +170,12 @@ TEST_CASE ("Audio to Modulation's depth genuinely scales the modulation's audibl
     bool allMatchPlainSine = true;
     for (int i = 0; i < blockSize; ++i)
     {
-        phase += phaseIncrement;
-        phase -= std::floor (phase);
+        // The oscillator reads, then advances: sample 0 is sin(0).
         const auto expected = (float) std::sin (2.0 * juce::MathConstants<double>::pi * phase);
         if (std::fabs (zeroDepth[(size_t) i] - expected) > 1.0e-5f)
             allMatchPlainSine = false;
+        phase += phaseIncrement;
+        phase -= std::floor (phase);
     }
     CHECK (allMatchPlainSine);
 

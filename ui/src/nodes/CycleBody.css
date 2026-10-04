@@ -1,0 +1,7 @@
+/* view.cycle: the phase-locked preview fills the whole scope-style panel. */
+.cycle-card .phase-locked-preview {
+  position: absolute;
+  inset: var(--space-sm) var(--space-sm);
+  height: auto;
+  margin: 0;
+}

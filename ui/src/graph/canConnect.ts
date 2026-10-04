@@ -44,7 +44,7 @@ function isRealQuantity(q: Quantity): boolean {
 function connectAudio(from: PortDescriptor, to: PortDescriptor): CanConnectResult {
   if (from.channels === 'inherited' || to.channels === 'inherited') return ok()
   if (from.channels === 'stereo' && to.channels === 'mono') {
-    return needsAdapters('Stereo source into a mono-only port needs mix.downmix (manual insertion for now)')
+    return needsAdapters('Stereo into a mono-only port: choose Mid, Left, Right or Side')
   }
   return ok() // mono->mono, mono->stereo (free broadcast), stereo->stereo
 }
@@ -154,7 +154,7 @@ export interface ConnectionEndpoint {
   portId: string
   direction: 'input' | 'output'
   port: PortDescriptor
-  /** A polymorphic node (util.reroute) with nothing feeding it yet: its declared
+  /** A polymorphic node (deco.reroute) with nothing feeding it yet: its declared
       port type is only a default, so there is nothing real to predict with. See
       graphStore.endpointFor().
   */

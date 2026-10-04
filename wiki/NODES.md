@@ -42,7 +42,7 @@ are telemetry outputs for live visualization, not ports.
 | Family | Nodes | Status |
 |---|---|---|
 | `io.*` | audioIn, output, noteIn, control, transport | ✅ all 5 |
-| `osc.*` | analog, sine, wavetable, **glottal** (Correction 1) | ✅ analog, sine — 📋 wavetable, glottal |
+| `osc.*` | analog, sine, saw, square, triangle, wavetable, **glottal** (Correction 1) | ✅ analog, sine, saw, square, triangle — 📋 wavetable, glottal |
 | `sampler.*` | player, granular | 📋 both |
 | `noise.*` | colored, dust | 📋 both |
 | `excite.*` | impulse, burst, pluck, mallet, stickSlip, breath, contact, **vocalFolds** (Correction 1) | ✅ impulse, burst, pluck, mallet — 📋 stickSlip, breath, contact, vocalFolds |
@@ -59,13 +59,13 @@ are telemetry outputs for live visualization, not ports.
 | `seq.*` | steps, euclid | ✅ euclid — 🚧 steps |
 | `note.*` | gate, value, quantize, transpose, chord, hold, select, humanize, filter, assemble | ✅ gate, value, quantize, transpose, humanize, filter, assemble — 📋 chord, hold, select (real engine limit — see the `note.filter`/`note.hold` entries below) |
 | `math.*` | add, subtract, multiply, divide, abs, clamp, minmax, power, round, modulo, slew | ✅ all 11 |
-| `logic.*` | boolean, not, compare, toggle, select | ✅ all 5 |
-| `adapt.*` | map, remap, normalise, threshold, sampleHold, **audioToControl** (AudioControlBridge), **controlToAudio** (ControlToAudioBridge), **boolToControl**, **pitchToFrequency**, **frequencyToPitch**, **gateLength** (all new, direct-feedback sweep) | ✅ all 11 |
+| `logic.*` | and, or, xor, not, compare, toggle, latch, select, edge, eventGroup | ✅ all 10 |
+| `adapt.*` | map (absorbed remap, 2026-10-04), normalise, threshold, sampleHold, **audioToControl** (AudioControlBridge), **controlToAudio** (ControlToAudioBridge), **boolToControl**, **pitchToFrequency**, **frequencyToPitch**, **gateLength** (all new, direct-feedback sweep) | ✅ all 10 |
 | `data.*` | load, table, scale, material, analyseModes, lookup, **record**, **eqToCurve** (Correction 2) | ✅ table, scale, material, lookup — 📋 load, analyseModes, record, eqToCurve |
 | `analysis.*` | onset, pitch, level, centroid | 📋 all 4 |
 | `instance.*` | allocate.voice, allocate.swarmPopulation, allocate.swarmTransient, allocate.trigger, sum | ✅ all five — Domain Extensions batch done 2026-10-01 |
 | `util.*` | constant, macro, reroute | ✅ all 3 (`macro` real as of `wiki/plans/UtilMacro.md` — ADR-0030 amends ADR-0015, doesn't reverse it) |
-| `view.*` | listen, scope, spectrum, meter, **glance** (new, 0.6) | ✅ all 5 |
+| `view.*` | listen, spectrum, meter, ripple, count, scope.control, scope.modulation, gate, cycle | ✅ all 9 (scope, glance removed) |
 | `factory.*` | eq, curve, wave, sample, notes, material (Correction 2) | 📋 all 6 |
 
 ---
@@ -94,11 +94,28 @@ Exposes the host's transport — tempo, play state, song position, and a beat pu
 
 ## osc — oscillators
 
-#### `osc.analog` — Analog Oscillator 🚧
-Band-limited virtual-analog oscillator. **In (spec):** `frequency [audio]`; `fine`; `pulseWidth [audio]`; `phaseMod [audio]`; `sync : Event`. **In (real today):** only `frequency`-equivalent (MIDI-note pitch) and a plain Hz frequency input — `fine`/`pulseWidth`/`phaseMod`/`sync` don't exist yet on the shipped node (tracked as a known gap, not silently assumed fixed). **Out:** `out` — `Audio`. **Structural:** `shape` (enum: sine, triangle, saw, square, pulse). **Behavior:** phase accumulator with PolyBLEP correction. **Native:** numerically delicate band-limiting.
+#### `osc.analog` — Analog Oscillator ✅
+One switchable band-limited oscillator (sine/saw/square/triangle), voice-ready. **In:** `pitch` (semitones, wins when wired); `frequency` (Hz); `fine` (cents ±100); `pulseWidth` (Square); `phase` (through-zero phase modulation in cycles — offsets the read point, never the accumulator); `sync : Event` (restarts the cycle). **Out:** `out` — `Audio`. **Structural:** `shape`. **Behavior:** every shape from `bandLimited::evaluate` (PolyBLEP/PolyBLAMP), the same definition its phase-locked preview draws — a real phase source now (the preview was declared but never drew before). Completed 2026-10-04 (`wiki/plans/SoundPalette.md` Batch 2).
 
-#### `osc.sine` — Sine ✅
-Cheap, alias-free sine. **In:** `frequency [audio]`; `phaseMod [audio]`; `sync : Event`. **Out:** `out` — `Audio`. **Native:** inner-loop primitive — FM stacks and modal excitation use many of these.
+#### `osc.sine`, `osc.saw`, `osc.square`, `osc.triangle` — Sine / Saw / Square / Triangle ✅ *(restructured / new 2026-10-04)*
+Four minimal per-shape oscillators sharing one class (`SineOscillatorNode.h`'s
+`BasicOscillatorNode`), one port set and one layout; they differ only in the
+waveform. **In:** `frequency` — value row, Hz, 0.01–20000 (sub-audio on
+purpose), default 440; `amplitude` — value row, 0–1, default 1.00; `phase` —
+Modulation (Bipolar) row, in cycles, default 0.00 — an ordinary modulatable
+port with its own inline value, offsetting the read point (through-zero,
+never detunes the accumulator); it replaced osc.sine's bare `phaseMod` input;
+`pulseWidth` — **Square only**, Unipolar, default 0.5 (clamped 0.01–0.99);
+`sync : Event` — resets phase. **Out:** `out` — `Audio`. **Band-limited:**
+Sine is exact; Saw and Square use PolyBLEP; Triangle uses PolyBLAMP (stateless,
+so a modulated Phase can't make it drift — unlike `osc.analog`'s leaky-
+integrated triangle).
+**Preview:** phase-locked (`PreviewKind::PhaseLocked`) — 4 cycles aligned to
+phase zero, the node's own band-limited function evaluated at its current,
+fully modulated parameters every frame, fixed ±1 scale with headroom (clip
+marked), playhead Auto (shown below 30 Hz) / On / Off. Shared by every phase
+source (`PhaseLockedPreview.tsx`), `osc.analog` included.
+**Native:** inner-loop primitives — FM stacks and modal excitation use many.
 
 #### `osc.wavetable` — Wavetable Oscillator 📋
 Scans across a table of single-cycle waveform frames as it plays, using `position`
@@ -120,12 +137,11 @@ plain playhead can't produce. **In:** `sample` — `Data(sample)`, required; `po
 
 ## noise — stochastic sources
 
-#### `noise.colored` — Noise 📋
-A continuous noise source with a selectable spectral colour (white through violet)
-plus a fine tilt — the raw material behind hiss, air, and shaped textures. **In:** `tilt : float·Bipolar·−1–1·linear·0`. **Out:** `out` — `Audio`. **Structural:** `color` (enum: white, pink, brown, blue, violet).
+#### `noise.colored` — Noise ✅
+White, pink, brown, blue or violet noise (0, −3, −6, +3, +6 dB/oct, measured ±0.1 dB/oct), each at about the same loudness so switching colour changes tone, not level. **In:** `level`. **Out:** `out` — `Audio` (Stereo when `stereo` is on). **Parameters:** `colour`; `stereo` (structural — a second, decorrelated generator: a source declares its own width); `seed` (structural). **Behavior:** xorshift white; Kellet pink; leaky-integrated brown (5 Hz corner from the sample rate); blue/violet = first difference of pink/white. Seeded, so reproducible.
 
-#### `noise.dust` — Dust 📋
-Sparse random impulses — the primitive behind crackle, rain, footsteps, a population of tiny events. **In:** `density [audio]`; `jitter`. **Out:** `pulse` — `Event`; `out` — `Audio`. **Structural:** `seed`. **Native:** sample-accurate event timing an LFO-and-threshold group can't reproduce without aliasing.
+#### `noise.dust` — Dust ✅
+Sparse single-sample impulses at random moments — rain, crackle, clicks, a swarm trigger. **In:** `density` (impulses/s, 0.1–10000, log); `randomness` (0 fixed height … 1 fully random). **Out:** `out` — `Audio`; `trigger` — `Event` (every impulse). **Parameters:** `polarity` (unipolar/bipolar); `seed` (structural). **Behavior:** a per-sample Poisson process (probability density/sampleRate), sample-accurate and block-size independent.
 
 ## excite — physical excitation
 
@@ -138,10 +154,8 @@ path).
 The simplest possible excitation — a single sharp transient (or a short pulse once
 widened) to knock a resonator into motion. **In:** `trigger : Event`; `amplitude`; `width` (0 = a true single-sample delta). **Out:** `out` — `Audio`. **Shape, a real design call the catalog named but didn't define:** `width == 0` fires an exact one-sample delta at `amplitude`; `width > 0` widens into a raised-cosine (Hann) bump over that span instead of a hard rectangular pulse, so widening stays click-free. Capped at 50ms (`maxWidthMs`) — longer than that is `excite.burst`/`excite.pluck`'s job.
 
-#### `excite.burst` — Noise Burst 🚧 *(partially fixed — wiki/NODES_Gaps.md's `hardcoded-trigger`)*
-A timed burst of white noise with a linear decay — the standard broadband
-excitation for plucks, hits, and anything else that needs a transient kick rather
-than a tonal source. **In (spec):** `trigger : Event`; `duration`; `tone`; `shape`. **In (real today):** `trigger : Event` and `duration [audio]·0.1–2000ms·log·30ms` — a clock, a threshold detector, or anything else that produces Events can now start it; the direct C++ `trigger(int durationSamples)` poke still exists too (tests/tools), calling the same internal logic. `tone`/`shape` aren't built yet — still 🚧, not full catalog compliance. **Out:** `out` — `Audio` (white-noise burst, linear decay envelope over the triggered duration).
+#### `excite.burst` — Noise Burst ✅
+A timed burst of noise — the standard broadband excitation for plucks, hits and anything needing a transient kick. **In:** `trigger : Event`; `duration [audio]·0.1–2000ms·log·30ms`; `tone` (−1 dark … 0 white … +1 bright: blends toward an 800 Hz low-passed, level-matched noise or its high-passed remainder); `shape` (−1 fast drop, ramp⁴ … 0 linear … +1 held body, ramp^¼). **Out:** `out` — `Audio`. The direct C++ `trigger(int)` poke still exists (tests/tools). Seeded generator (it used juce::Random's time seed before). Completed 2026-10-04.
 
 #### `excite.pluck` — Pluck ✅ *(PM Core batch 3)*
 A pre-shaped plucked-string excitation, pickup position and hardness baked in —
@@ -198,10 +212,8 @@ A multi-section waveguide whose cross-section profile is read from a curve, so f
 
 ## filter
 
-#### `filter.svf` — State-Variable Filter 🚧
-A state-variable filter offering lowpass/bandpass/highpass/notch/peak modes from
-one topology, self-resonant near the top of its range — the general-purpose swept
-filter. **In:** `in` — `Audio`; `cutoff [audio]`; `resonance [audio]`; `drive`; `keyTrack`; `keyPitch`. **Out (spec):** simultaneous `lowpass`/`bandpass`/`highpass`/`notch`/`peak` port group. **Out (real today):** one mode-switched `out` (host-only `setType()`, no port) — the 5-simultaneous-output redesign is a known, documented gap, not fixed silently. **Structural:** `slope` (enum: 12, 24 dB/oct). **Native:** TPT zero-delay-feedback, numerically delicate.
+#### `filter.svf` — State-Variable Filter ✅
+A state-variable filter with all five responses out at once instead of a mode switch. **In:** `in` — `Audio` (per channel); `cutoff`; `resonance` (Q, 0.707 = Butterworth). **Out:** `out` (lowpass, primary — the id it always had, so patches are unchanged), `bandpass` (peaks at Q at the cutoff), `highpass`, `notch`, `peak`. **Behavior:** Zavalishin TPT in Simper's form, stable under audio-rate modulation, coefficients recomputed only when cutoff/resonance change. Completed 2026-10-04 (was one mode-switched `out`).
 
 #### `filter.ladder` — Ladder Filter ✅
 The classic four-stage transistor-ladder lowpass — warm, self-oscillating at high
@@ -230,24 +242,20 @@ without a physical tract model. **In:** `in`; `vowel [audio]`; `formants` — `D
 
 ## shape — nonlinearities
 
-#### `shape.waveshaper` — Waveshaper 📋
-Passes a signal through a fixed or user-drawn transfer curve for distortion and
-saturation — the general-purpose nonlinearity node. **In:** `in` — `Audio`; `drive [audio]`; `bias`; `mix`; `curve` — `Data(curve)` (optional). **Out:** `out` — `Audio`. **Structural:** `shape` (enum: tanh, arctan, sine fold, asymmetric, hard, custom), `oversampling`. **Native:** oversampling, delicate.
+#### `shape.waveshaper` — Waveshaper ✅
+Drive into a transfer curve. **In:** `in` (per channel); `drive` (0–36 dB); `bias` (asymmetry; its static DC is removed); `output` (dB); `mix`. **Out:** `out`. **Parameters:** `curve` (tanh, cubic, hard, algebraic, asymmetric "tube-ish", sine). **Behavior:** first-order antiderivative antialiasing (ADAA) — each curve ships with its closed-form antiderivative; per sample, no latency, block-size safe, works in feedback loops and per lane (measured ~6 dB less aliasing than the bare curve at 3.5 kHz). Custom curves arrive with `factory.curve`.
 
 #### `shape.clip` — Clip / Safety ✅ *(direct feedback: real, wireable, mid-chain safety)*
 **In:** `in`; `ceiling`; `knee`. **Out:** `out`; `clipping` — `bool`. **Structural:** `mode` (enum: hard, soft, limiter). **Behavior:** the node you put in a feedback loop so a slider can't destroy a speaker. `hard` is an exact clamp to `±ceiling` with a real quadratic soft-knee region (`knee`, 0–1, scaled by `ceiling`) smoothing the approach; `soft` is a `tanh` saturation that asymptotically approaches `ceiling` and never hard-clips at all; `limiter` reuses the same attack(~1ms)/release(~100ms) smoothed gain-reduction envelope the plugin's own always-on master-output `OutputLimiter` uses, plus the same hard-clamp backstop underneath it for a single isolated spike the envelope can't react to in time. `clipping` is live, not static — true only while this sample is actually being altered. A real, wireable complement to the plugin-level safety net (`PluginProcessor.cpp`'s `OutputLimiter`), which protects the final mix unconditionally but can't be inserted mid-chain.
 
-#### `shape.fold` — Wavefolder 📋
-Folds a signal back on itself past a threshold instead of clipping it, producing
-the harmonically rich, reflective character of a wavefolder. **In:** `in`; `drive [audio]`; `offset`; `folds`. **Out:** `out`. **Structural:** `oversampling`.
+#### `shape.fold` — Wavefolder ✅
+Past ±1 the signal folds back instead of clipping — more `fold`, more partials. **In:** `in` (per channel); `fold` (1–20); `bias`; `mix`. **Out:** `out`. **Parameters:** `shape` (triangle / sine folding). **Behavior:** ADAA with the folds' closed-form antiderivatives (periodic, piecewise-quadratic for the triangle).
 
-#### `shape.rectify` — Rectify 📋
-Removes or flips the negative half of a signal — half- or full-wave rectification,
-useful for octave-up effects and envelope-like shaping. **In:** `in`; `amount`. **Out:** `out`. **Structural:** `mode` (enum: half, full).
+#### `shape.rectify` — Rectify ✅
+Half- or full-wave rectification, per channel, ADAA-antialiased — octave-up/buzz tones. **In:** `in`. **Out:** `out`. **Parameters:** `mode` (half, full). Adds DC by nature — follow with `util.dcBlock` when it matters.
 
-#### `shape.crush` — Bitcrush / Downsample 📋
-Reduces bit depth and/or effective sample rate on purpose — the lo-fi/bitcrush
-degradation node. **In:** `in`; `bits [audio]`; `rate [audio]`; `mix`. **Out:** `out`.
+#### `shape.crush` — Bitcrush / Downsample ✅
+Bit depth and sample-rate reduction — deliberately not antialiased. **In:** `in` (per channel); `bits` (1–24, continuous: fractional bits sweep smoothly); `rate` (held sample rate, Hz, phase-accumulator from prepare — block-size independent). **Out:** `out`.
 
 ## delay
 
@@ -257,12 +265,13 @@ building block behind delays, chorus, and feedback networks. **In:** `in` — `A
 
 ## space
 
-#### `space.reverb` — Reverb 📋
-A feedback-delay-network reverb — diffuse decay with size, damping, predelay, and
-tone controls, the general-purpose space/ambience node. **In:** `left`, `right` — `Audio`; `size`; `decay`; `damping`; `predelay`; `diffusion`; `modulation`; `lowCut`, `highCut`; `mix`. **Out:** `left`, `right` — `Audio`. **Structural:** `quality` (enum: low, medium, high — FDN size). **Native:** inner loop scales with network size; cheap enough at low quality to use per voice. **M28.**
+#### `space.reverb` — Reverb ✅
+A feedback-delay-network reverb with physical controls — the general-purpose
+space/ambience node (`wiki/plans/Reverb.md`). **In:** `in` — `Audio` (`Channels::Stereo`); `size` (m, 1–50); `decay` (RT60, s, 0.1–60); `decayLow`, `decayHigh` (×decay below 250 Hz / above 3 kHz); `predelay` (ms); `diffusion`; `modulation`, `modRate`; `early`; `lowCut`, `highCut`; `width`; `mix` (default 0.3 — inserting in a patch is the common case); `freeze` (`Boolean`). **Out:** `out` — `Audio` (`Channels::Stereo`). **Structural:** `quality` (8 or 16 lines). **Behavior:** input tone → predelay → multichannel diffuser (its early sound) → 8/16-line FDN (Householder matrix, per-line shelves derived from the per-band RT60, slowly wandering line lengths read through lossless allpass interpolation) → decorrelated stereo → width → mix. The measured decay per band is what the controls say (±10 %, tested); loudness of a sustained signal is independent of `decay`; `freeze` = lossless loop, muted input. Tested against `Reverb.md` §5's bar in `tests/ReverbTests.cpp`.
 
-#### `space.diffuser` — Diffuser 📋
-**In:** `in`; `size`; `amount`. **Out:** `out`. **Structural:** `stages` (2–8). **Behavior:** an allpass chain — early reflections, transient smearing. **M28.**
+#### `space.diffuser` — Diffuser ✅
+Smears a stereo signal into dense, uncoloured texture without adding a tail —
+the first half of a reverb on its own. **In:** `in` — `Audio` (`Channels::Stereo`); `size` (ms); `diffusion`; `modulation`. **Out:** `out` — `Audio` (`Channels::Stereo`). **Structural:** `stages` (1–6). **Behavior:** eight internal channels through Hadamard diffusion stages with seeded per-channel delays and polarity flips (Geraint Luff's design, the same code `space.reverb` runs); lossless.
 
 #### `space.pan` — Pan ✅
 Positions a mono (or already-stereo) source in the stereo field and outputs one
@@ -302,6 +311,19 @@ at one extreme to an even blend at the mid-point. **In:** `a`, `b` — `Audio`; 
 Collapses a stereo signal down to mono by a chosen rule (sum, one side, mid, or
 side) — the explicit stereo-to-mono adapter `canConnect` reaches for automatically. **In:** `in` — `Audio` (`Channels::Stereo`). **Out:** `out` — `Audio` (mono). **Structural:** `mode` (enum: sum, left, right, mid, side). Genuine 1-in-1-out shape now (`NODES.System.md` §9.2) — `connectWithAutoAdapt` auto-inserts it for a stereo source into a mono-only port, the same way `adapt.map`/`adapt.normalise`/`adapt.threshold` already do.
 
+## dyn — dynamics ✅ *(new family, wiki/plans/SoundPalette.md Batch 3)*
+
+#### `dyn.compress` — Compressor ✅
+Stereo-linked feed-forward compressor with a soft knee (Giannoulis/Massberg/Reiss). **In:** `in` — `Audio` (Stereo); `sidechain` — `Audio` (Stereo, optional — when wired it decides the gain: ducking); `threshold`; `ratio`; `knee`; `attack`; `release`; `makeup`; `mix`. **Out:** `out` (Stereo); `gain` — `Control` (the linear multiplier being applied); `reduction` — `Control` (dB). **Behavior:** peak detector → static curve → gain smoothed in dB. The gain is an output, so the same envelope can duck anything else in the patch by wiring.
+
+#### `dyn.gate` — Gate ✅
+Stereo-linked gate / expander. **In:** `in` (Stereo); `sidechain` (Stereo, optional); `threshold`; `range` (dB down when closed — 80 hard gate, 10 gentle expander); `attack`; `hold`; `release`. **Out:** `out` (Stereo); `gain` — `Control`; `open` — `Boolean`. 3 dB hysteresis so it doesn't chatter.
+
+## fx — other effects
+
+#### `fx.freqShift` — Frequency Shift ✅
+Moves every partial by the same number of Hz (harmonic → inharmonic, bell-like; a few Hz = barber-pole phasing). **In:** `in` (per channel); `shift` (±5000 Hz); `mix`. **Out:** `out` (shifted up by `shift`); `mirror` (shifted down). **Behavior:** Hilbert transformer (Niemitalo's two 4-section allpass chains) + quadrature oscillator, single sideband; measured 49 dB rejection of the other sideband. Chorus/flanger/phaser ship as stock groups once `stock.*` loading exists (SoundPalette.md Batch 4).
+
 ## env — envelopes
 
 #### `env.adsr` — Envelope ✅
@@ -319,10 +341,8 @@ slow-moving loudness contour. **In:** `in` — `Audio`; `attack`; `release`. **O
 
 ## lfo
 
-#### `lfo.shape` — LFO 📋
-A low-frequency modulation source with a selectable or user-drawn waveform,
-sync, and morph between two shapes — the general-purpose wobble/vibrato/tremolo
-driver. **In:** `rate [audio]`; `shape`/`shapeB` — `Data(curve)` (optional); `shapeMorph [audio]`; `phase`; `sync : Event`; `depth`; `smooth`; `fade`. **Out:** `out` — `float·Bipolar [audio]`; `phaseOut`; `cycle` — `Event`. **Structural:** `waveform` (enum: sine, triangle, saw, ramp, square, random step, random smooth, custom), `rateMode`, `retrigger`. **M24.**
+#### `lfo.shape` — LFO ✅ *(v1 — the `Data(curve)` input joins with `factory.curve`)*
+A Control-rate modulation source. **In:** `rate` (Hz, when free); `phase` (offset, cycles); `reset : Event`. **Out:** `out` — `Control` (bipolar or unipolar). **Parameters:** `shape` (sine, triangle, saw, ramp, square, S&H, smooth random); `polarity` (structural); `sync`; `division` (8 bars … 1/32). **Behavior:** synced and with the host playing, the cycle position IS the host position (lands on the same point at the same bar every play); a phase source with the oscillators' phase-locked preview (random shapes show their recent values); seeded randomness.
 
 ## random — controlled unpredictability
 
@@ -437,6 +457,13 @@ a timed gate for whoever needs one. **In:** `gate : bool`; `pitch [audio]`; `vel
 
 ## math — all ✅
 
+**Add-menu category: Math** (top level). Until 2026-10-04 every `math.*` node
+reported `getCategory() == "Utility"`, so they were buried under Utility
+despite their own ids; the same sweep also moved `excite.burst` (was
+Generators) to Excite, `adapt.map` (was Utility) to Adapters, `view.listen`
+(was Utility) to View and `io.output` (was Utility) to IO. Rule: a node's
+Add-menu category follows its id family unless there's a stated reason not to.
+
 Every node here is Control-typed and quantity-inherits from its first connected
 input, EXCEPT `math.add`/`math.multiply` — see their own rows below,
 `wiki/plans/DomainRedesign.md` Batch 3. For the rest: mismatched quantities are
@@ -444,7 +471,7 @@ rejected by `canConnect`.
 
 | Node | Ports | Notes |
 |---|---|---|
-| `math.add` | `in.0…in.N` (growable, min 2) | sums every connected input — genuinely polymorphic (`PortPolymorphism::SignalAndQuantity`, same mechanism as `util.reroute`/`logic.select`): Audio or Control, whichever's wired (SignalType follows the lowest-numbered still-wired input's priority); Quantity is LENIENT, not the same priority rule — only resolves to a specific quantity when every quantity-declaring input unanimously agrees, any disagreement (or nothing declared) falls back to Dimensionless, so summing genuinely different real quantities (a pitch offset + a raw modulation amount, say — `buildInitPatchGraph()`'s own detuneSum/cutoffSum do exactly this) still works. `mix.sum` (see the `mix` section above) folded into this node outright at the same time. |
+| `math.add` | `in.0…in.N` (growable, min 2) | sums every connected input — genuinely polymorphic (`PortPolymorphism::SignalAndQuantity`, same mechanism as `deco.reroute`/`logic.select`): Audio or Control, whichever's wired (SignalType follows the lowest-numbered still-wired input's priority); Quantity is LENIENT, not the same priority rule — only resolves to a specific quantity when every quantity-declaring input unanimously agrees, any disagreement (or nothing declared) falls back to Dimensionless, so summing genuinely different real quantities (a pitch offset + a raw modulation amount, say — `buildInitPatchGraph()`'s own detuneSum/cutoffSum do exactly this) still works. `mix.sum` (see the `mix` section above) folded into this node outright at the same time. |
 | `math.subtract` | `a`, `b` | `a − b` |
 | `math.multiply` | `in.0…in.N` (growable) | multiplies every connected input together — same polymorphism as `math.add` above (this doc previously claimed audio-rate ring-mod already worked here; verified false against the real source and fixed at the same time, Batch 3 — its ports were fixed Control until then). Two Poly Audio signals from the SAME voice-allocator origin into this node's growable ports is exactly detuned self-ring-mod per note, no special case needed. |
 | `math.divide` | `a`, `b`, `safeZero : bool·true` | division by zero returns 0, not NaN |
@@ -460,7 +487,10 @@ rejected by `canConnect`.
 
 | Node | Ports | Notes |
 |---|---|---|
-| `logic.boolean` | `in.0…in.N` (growable); structural `op` (AND/OR/XOR/NAND/NOR) | one node, not five |
+| `logic.and`, `logic.or`, `logic.xor` | `in.0…in.N` (growable bool, like `math.add`) → `out` (bool); `invert` (bool) | separate nodes since 2026-10-04 (replacing `logic.boolean`'s Op menu; patches migrate, `PatchSerializer` v9 → v10). Only wired inputs count; Xor over >2 is parity; `invert` gives Nand / Nor / Xnor |
+| `logic.eventGroup` — Event Group | `in.0…in.N` (growable Event) → `out` (Event) | fires when any input fires; same-sample events merge into the strongest |
+| `logic.edge` — Edge | `in` (bool) → `out` (Event); `mode` Rising / Falling / Both | a state's change as a moment |
+| `logic.latch` — Latch | `set`, `reset` (Event) → `out` (bool) | set/reset flip-flop: repeated sets are harmless (unlike Toggle); reset wins a tie |
 | `logic.not` | `in` → `out` (bool) | inverts a boolean signal |
 | `logic.compare` | `a`, `b`, `tolerance`; structural `op` | `=` uses `tolerance`, not exact float equality |
 | `logic.toggle` | `trigger`, `reset : Event` → `out` (bool); structural `initialState` (bool) | flips on each trigger and holds until the next one or a reset — a button-like latched state; reset and voice-restart both return to `initialState`, not unconditionally false |
@@ -472,20 +502,28 @@ These are the nodes `canConnect` inserts automatically where it can (see
 `NODES.System.md` §4's matrix for exactly which pairs really auto-insert today vs.
 still need placing by hand). Ordinary nodes the user can also place directly.
 
-#### `adapt.map` — Map
-Rescales a normalised (Unipolar/Bipolar) modulation value into a real-quantity
-range — the modulation-to-parameter mapper `canConnect` auto-inserts, seeded
-from the destination port's own range. `in` is polymorphic on quantity, Unipolar
-by default until a genuinely Bipolar source resolves it otherwise, in which
-case it rescales −1…1 into 0…1 before applying `min`/`max` rather than
-clamping the whole negative half away — a real, previously latent gap fixed
-by `wiki/plans/AudioControlBridge.md`, whose own new node was the first
-Bipolar source ever actually wired through this exact path end to end.
-**In:** `in` — `Control [audio]`; `inLow`/`inHigh`/`outLow`/`outHigh`; `curve`; `shape` — `Data(curve)` (optional). **Out:** `out`. **Structural:** `clip` (enum: clip, wrap, fold, none).
-
-#### `adapt.remap` — Remap
-The drawn-curve shaper with the editor in its own body — internally `data.table` +
-`data.lookup`, exists for immediacy. **In:** `in [audio]`; `curve`/`curveB` — `Data(curve)` (optional); `morph [audio]`; `amount`. **Out:** `out`. **Structural:** its own drawn curve, `polarity`, `edgeMode`.
+#### `adapt.map` — Map ✅ *(design/Map.png — redesigned 2026-10-04)*
+The one rescaling adapter: `in` mapped linearly from **In Min…In Max** onto
+**Out Min…Out Max**, clamped. Formerly `adapt.remap` ("Remap"); the old
+two-parameter Map (a fixed 0–1 / −1–1 input onto `min`/`max`) was the special
+case of this with the input range seeded from the source, so it no longer
+exists. `canConnect` auto-inserts it for modulation → real quantity and for two
+different real quantities (Pitch ↔ Frequency excepted), and
+`connectWithAutoAdapt` seeds **both** ranges: the input range from whatever
+feeds it (its declared bounds, else its polarity: Bipolar −1…1, Unipolar 0…1 —
+for `adapt.audioToControl → adapt.map` that's the bridge's own Bipolar output),
+the output range from the destination. Patches saved with either old node are
+rewritten on load (`PatchSerializer` v7 → v8; an old Map fed by a Bipolar
+source comes back with In Min 0 and needs it set to −1 by hand).
+**In:** `in` — `Control` (the merged "In" pass-through row); `inMin`, `inMax`,
+`outMin`, `outMax` — all real, wireable ports. **Out:** `out`.
+**Body:** between In Max and Out Min, a fixed-size mapping diagram — the input
+range as a vertical segment on the left, the output range on the right, both on
+one common scale, joined end to end: a triangle when one range dwarfs the
+other, a bowtie when the mapping inverts. A live readout of committed values,
+in-progress slider drags, and (for wired ranges) the engine's own telemetry.
+**Later:** the drawn-curve shaping NODE_CATALOG.md describes (`curve`, `morph`,
+`clip` modes) grows this node rather than adding another one.
 
 #### `adapt.normalise` — Normalise
 Rescales a real-quantity value down into the 0–1 Unipolar range — the inverse of
@@ -540,14 +578,14 @@ default against a destination range that's always exactly ±1.
 #### `adapt.boolToControl` — From Bool ✅ *(new — direct feedback: "bool not being pluggable into control and ints... annoying")*
 Maps a Boolean to either of two editable numbers — the mechanical Boolean → Control
 bridge `canConnect` auto-inserts, replacing the `logic.select` + two `util.constant`
-workaround outright rather than just easing it. **In:** `in` — `Boolean`. **Out:** `out` — `Control` (Dimensionless — a free pass into any destination, since the two edited values are what actually target it). **Structural:** `whenFalse` (default 0), `whenTrue` (default 1) — plain numbers, not wireable ports, matching `adapt.map`/`adapt.normalise`'s own `min`/`max` convention.
+workaround outright rather than just easing it. **In:** `in` — `Boolean`. **Out:** `out` — `Control` (Dimensionless — a free pass into any destination, since the two edited values are what actually target it). **Structural:** `whenFalse` (default 0), `whenTrue` (default 1) — plain numbers, not wireable ports, matching `adapt.normalise`'s own `min`/`max` convention.
 
 #### `adapt.pitchToFrequency` — Pitch to Frequency ✅ *(new — a real correctness fix, see below)*
 #### `adapt.frequencyToPitch` — Frequency to Pitch ✅ *(new, the inverse)*
 The exact exponential MIDI-pitch↔Hz conversion (A4 = pitch 69 = 440Hz) — `canConnect`
-now prefers these over the generic `adapt.remap` specifically for a `Pitch ↔
+now prefers these over the generic `adapt.map` specifically for a `Pitch ↔
 Frequency` connection. Direct feedback surfaced a real, previously undiscovered
-correctness gap: `adapt.remap` is a plain *linear* interpolation between two seeded
+correctness gap: `adapt.map` is a plain *linear* interpolation between two seeded
 endpoints, but pitch-to-Hz is exponential (each semitone is ×2^(1/12)) — the old
 auto-inserted remap was quietly wrong for every pitch value between its two seed
 points. **In:** `pitch : float·Pitch·0–127·60` / **In:** `frequency : float·Frequency·0.01–20000Hz·440`.
@@ -615,9 +653,8 @@ audio-to-trigger primitive behind hit detection and audio-driven sequencing. **I
 Continuously estimates the fundamental pitch of an incoming signal — turns a
 sung or played note into a Control-rate pitch value with a confidence score. **In:** `in`; `lowestPitch`; `smoothing`. **Out:** `pitch [audio]`; `confidence`; `voiced` — `bool`. **Structural:** `method` (enum: autocorrelation, YIN), `windowSize`.
 
-#### `analysis.level` — Level
-Tracks a signal's loudness with selectable detection (peak, RMS, true peak) —
-the general-purpose metering/level-driven-modulation source. **In:** `in`; `attack`, `release`. **Out:** `level [audio]`; `peak`; `clipped` — `bool`. **Structural:** `detection` (enum: peak, RMS, true peak).
+#### `analysis.level` — Level ✅
+How loud a signal is. **In:** `in` — `Audio` (Stereo; mono broadcasts, both channels measured together — no downmix needed); `attack`; `release`. **Out:** `level` — `Control` (linear); `db` — `Control` (dB). **Parameters:** `mode` (RMS over a 50 ms window, then the ballistics; or peak). A full-scale sine reads 0.707 / −3 dB RMS.
 
 #### `analysis.centroid` — Brightness
 **In:** `in`; `smoothing`. **Out:** `centroid`; `normalised`. **Behavior:** spectral centroid — how bright a signal is, for driving models from incoming sound.
@@ -726,31 +763,42 @@ declares them), already wired in and slotted, in one undo step — and every
 claimed macro shows up as a knob in the top-bar panel automatically, no
 further step needed.
 
-#### `util.reroute` — Reroute ✅
-A pure passthrough with no fixed type of its own — a cable-routing waypoint for
-untangling a busy layout, nothing else. **In:** `in`. **Out:** `out` (adopts the source's signal type *and* quantity — a real, polymorphic port, not hardcoded Audio). Layout waypoint. "Not connectable" reports against this node are tracked as a UI-layer bug in `NODES_Gaps.md`, not a missing feature — the engine-side implementation reads correctly.
-
 #### `util.unipolarToBipolar` / `util.bipolarToUnipolar` — Unipolar to Bipolar / Bipolar to Unipolar ✅ *(`wiki/plans/PropsAndMacroRedesign.md` Batch D)*
 Thin, explicit, self-labeled converters between the two normalised modulation
 ranges — `in [0..1] -> out [-1..1]` and the inverse, clamped not extrapolated.
 **In:** `in`. **Out:** `out`. No structural parameters. Added alongside
 removing `random.stepped`/`seq.steps`/`data.lookup`'s old per-node Unipolar/
 Bipolar selectors (modulation is always bipolar by default now) — a thin
-wrapper over what `adapt.remap` already does (same shape as `adapt.normalise`/
+wrapper over what `adapt.map` already does (same shape as `adapt.normalise`/
 `adapt.map`/`adapt.pitchToFrequency`), for readability in the Add-menu rather
 than filling a capability gap: a Unipolar<->Bipolar quantity mismatch already
-auto-resolves via `adapt.remap`'s own generic fallback. **Deliberately not
+auto-resolves via `adapt.map`'s own generic fallback. **Deliberately not
 auto-inserted** by `connectWithAutoAdapt` — manual placement only.
+
+## deco — decorations ✅ *(wiki/plans/Decorations.md)*
+
+Canvas-only nodes that make a patch read like a page, not just a circuit. Category **Decorations**. Except Reroute, they're registered with `NodeFactory::registerDecoration`: the compiler never instantiates them (no ports, no cost), and what they show lives in their node properties (`text`, `width`, `height`, `colour`, `size`, `asset`), edited without a recompile. Boxes and images draw behind everything else.
+
+#### `deco.reroute` — Reroute ✅
+A dot for cable management — a pure, polymorphic pass-through (adopts the source's type and quantity). **In:** `in` (the dot's left half). **Out:** `out` (its right half; fan out as many cables as you like). **Gestures:** Ctrl/Cmd-click or double-click a wire to drop a reroute into it (one undo step); deleting a reroute reconnects what fed it to everything it fed. Was `util.reroute` (v10→v11 migration); its card used to draw a bare dot with no port anchors, so nothing could connect to it.
+
+#### `deco.header` — Header ✅
+Large text, no frame. Double-click to edit (Enter commits, Escape cancels). S/M/L size chips when selected.
+
+#### `deco.comment` — Comment ✅
+A plain-text paragraph that wraps to its width, muted, on a faint background. Double-click to edit (Shift+Enter for a new line); drag its side handle to change the width.
+
+#### `deco.box` — Box ✅
+A resizable, purely visual rectangle with an optional label (double-click it) and a colour from a muted palette. It owns nothing — to move a group, box-select it.
+
+#### `deco.image` — Image ✅
+A decal. Drop or paste an image onto the canvas (or pick Image in the Add menu for a file dialog). Compressed once on import — longest side ≤ 2048 px, WebP (JPEG/PNG where WebP can't be encoded); SVG and GIFs up to 1 MB kept as they are. Stored once per patch by content (`assets`); an image that would take the patch past 5 MB is refused. Resize from the corner (aspect locked; Shift frees it).
 
 ## view — listening and looking — all ✅
 
 #### `view.listen` — Listen
 Routes whatever's plugged into it straight to the monitored output, so you can
 audition one point in the graph in isolation without rewiring anything. **In:** `in` — `Audio`. **Behavior:** auditions this point in the graph, replacing normal output while active. **Taps:** `in`.
-
-#### `view.scope` — Scope
-A live oscilloscope trace of whatever's wired into it, over a window of time —
-the standard "watch the waveform" view. **In:** `in` — `Audio` or `Control`. **Structural:** `timeWindow`, `triggerMode`.
 
 #### `view.spectrum` — Spectrum
 A live FFT display of a signal's frequency content — the standard "watch the
@@ -761,8 +809,65 @@ actually doing to the harmonic content. **In:** `in` — `Audio`. **Structural:*
 A live level readout of whatever's wired into it — peak, RMS, true peak, or a
 histogram, for watching loudness rather than shape. **In:** `in` — `Audio` or `Control`. **Structural:** `mode` (enum: peak, RMS, true peak, histogram).
 
-#### `view.glance` — Glance ✅ *(new, Milestone 0.6 — wiki/NODES_Gaps.md's `single-type-preview-coverage`)*
-**In:** `in` — `Audio`, `Control`, `Boolean` or `Event` (polymorphic — adopts whatever's wired, same mechanism `util.reroute`/`view.scope`/`view.meter` use). **Out:** `out` — same type/quantity as `in`, unchanged value. **Behavior:** splices into any existing cable like `util.reroute` does, and shows a live trace of whatever passes through — unlike the three viewers above, it has a real output and doesn't need a separate branch off the wire. `NodeLayoutVariant::Glance`: no title, no parameter list — just an input glyph, a compact live preview, an output glyph. Doesn't support `Note` or `Data`, same scope `view.scope`/`view.meter` already have.
+#### `view.cycle` — Cycle ✅ *(2026-10-04 — replaces `view.scope` and `view.glance`, both removed)*
+The placeable **phase-locked** viewer. A polymorphic pass-through (Audio or
+Control — the same node watches an audio path or an LFO) whose horizontal axis
+is the phase of the nearest phase source upstream, over a fixed 4 cycles: a saw
+through a filter reads as the filtered saw, standing still, at any rate. No
+trigger, no time window — the engine already knows the phase
+(`ExecutionPlan::resolvePhaseSources`, "phase follows the cable"); the cable's
+real samples are folded into phase bins (equivalent-time sampling for fast
+signals, drawn in behind the playhead for slow ones). Fixed ±1 scale with
+headroom; Auto/On/Off playhead. Empty when nothing upstream has a phase.
+Patches with the old nodes load with scopes dropped and glances spliced out of
+their cables (`PatchSerializer` v8 → v9).
+
+### Per-type viewers — pass-through, one per signal type
+
+Each splices into a cable (real `in` → `out`, value unchanged), has no title,
+and is the **Ctrl/Cmd-click default viewer** for its port type — one table,
+`graphStore.ts`'s `DEFAULT_VIEWER_BY_PORT_KIND`, keyed by the same
+classification that colours the port.
+
+#### `view.ripple` — Ripple ✅ *(design/Visualization/Ripple.png)*
+**In/Out:** `Event`. Expanding rings, one per event.
+
+#### `view.tune` — Tune ✅ *(design/Visualization/Tune.png)*
+The default viewer for Pitch — Ctrl/Cmd-click any Pitch-quantity Control output to spawn it already wired. **In:** `in` — `Control` (Pitch, semitones). **Out:** `out` — the same value, passed through unchanged. **Visual:** no title; ports at the top corners; a centre-zero deviation meter (tick = the nearest note, the band grows toward the deviation, ±50 cents to the strip's end); the nearest note and octave large (`C#2`, MIDI 60 = C4) with signed cents beside it (`+38`, `-4`); a muted monospace footer with the raw semitones (`60st`, `60.38st`) and the frequency (`69.30 Hz`). Within ±5 cents the readout and meter are white, outside red. **Behavior:** reads the newest Oscilloscope bucket (the same tap view.count uses) every frame, straight into the DOM, so bends and glides move smoothly; note, cents and Hz all derive from that one value (`ui/src/nodes/pitchReadout.ts`), never from each other after rounding.
+
+#### `view.count` — Count ✅ *(design/Visualization/Count.png)*
+**In/Out:** integer `Control`. The current value as a number, editable Min/Max footer.
+
+#### The three scrolling-history viewers
+One shared panel (`ScopeHistoryBody.tsx`) and one shared engine setting
+(`ViewHistoryWindow.h`: a structural `timeWindow`, 0.01–30 s, auto-chosen on
+connection from the signal's observed period, `PreviewKind::RollingHistory`
+min/max-decimated columns that never drop a peak). They differ only in vertical
+scale and trace style:
+
+#### `view.scope.control` — Scope ✅ *(design/Visualization/Scope1.png)*
+**In/Out:** plain (real-quantity) `Control`. White line; editable Min/Max
+range seeded from the source's declared bounds, else observed then frozen.
+**Structural:** `view.scope.control.timeWindow`.
+
+#### `view.scope.modulation` — Scope (Modulation) ✅ *(design/Visualization/ScopeMod.png)*
+**In/Out:** `Control`, adopting the source's *quantity* (polymorphic, so a
+Unipolar source splices in without an adapter; Bipolar when unconnected).
+Everything orange. The range autofills from the source's polarity (bipolar
+−1…1, unipolar 0…1), still editable. A horizontal **centre line**
+(`properties["viewer.center"]`, editable; defaults to the middle of the range —
+0 for bipolar, 0.5 for unipolar) and the area between trace and centre filled
+dim orange under a brighter line: a signed value, not a level.
+**Structural:** `view.scope.modulation.timeWindow`.
+
+#### `view.gate` — Gate ✅ *(design/Visualization/Gate.png)*
+**In/Out:** `Boolean`. Everything blue, `?` glyphs. Fixed, non-editable
+TRUE/FALSE scale; a square-edged region filled from FALSE up to TRUE wherever
+the value was true. **A brief true state is never dropped:** the engine folds
+every sample into its column's (lo, hi), and the UI draws on the real
+screen-pixel grid — any pixel column holding a true sample is filled, at every
+canvas zoom — so a single-sample pulse is always a visible sliver.
+**Structural:** `view.gate.timeWindow`.
 
 ## factory — content-owning nodes 📋 (all — Correction 2, none built)
 
@@ -775,7 +880,7 @@ A multi-band parametric EQ with its own editor, that unwraps into ordinary
 
 #### `factory.curve` — Curve Factory
 A drawn-curve editor that publishes a `Data(curve)` and unwraps into
-`data.table` plus whatever reads it. **Content:** points + per-segment tension, loop/polarity, optional morph-target shape. **In:** `morph [audio]`. **Out:** `data` — `Data(curve)`. **Structural:** `resolution`. **Unwrap:** → `data.table` + the implied consumer (`lfo.shape`/`env.curve`/`adapt.remap`/`shape.waveshaper`).
+`data.table` plus whatever reads it. **Content:** points + per-segment tension, loop/polarity, optional morph-target shape. **In:** `morph [audio]`. **Out:** `data` — `Data(curve)`. **Structural:** `resolution`. **Unwrap:** → `data.table` + the implied consumer (`lfo.shape`/`env.curve`/`adapt.map`/`shape.waveshaper`).
 
 #### `factory.wave` — Wave Factory
 A single-cycle waveform/harmonic editor for building a wavetable, unwrapping

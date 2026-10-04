@@ -2,39 +2,37 @@
 
 #include "bazalt/engine/graph/Node.h"
 #include "bazalt/engine/graph/ValueTypes.h"
-#include "bazalt/engine/SvfFilter.h"
 #include <cmath>
 
 namespace bazalt::engine::nodes
 {
-    /** Stable type id: "filter.svf". One Audio input, one Audio output.
-        `type` (lowpass/bandpass/highpass) stays host-only (setType(), no
-        descriptor at all yet — not asked for, and it's a discrete
-        algorithmic switch like osc.analog's shape, not a continuous
-        value). Cutoff/resonance were plain parameters until M20 (direct
-        feedback: "there is no reason why ... Oscillator Frequency
-        wouldn't be modulatable" — the same reasoning applies here);
-        they're real Control-type input ports now, same dotted ids the old
-        parameters used, same `hasFallbackWhenUnconnected` NaN-sentinel
-        pattern as everywhere else. `juce::dsp::StateVariableTPTFilter`
-        (SvfFilter.h) is a topology-preserving-transform filter
-        specifically chosen for staying stable under audio-rate
-        cutoff/resonance modulation (ARCHITECTURE.md §5) — calling
-        setCutoffFrequency()/setResonance() every sample while modulated is
-        exactly the case it's designed for, not a new risk.
+    /** Stable type id: "filter.svf". A state-variable filter with all five
+        responses out at once — `out` (lowpass, primary), `bandpass`,
+        `highpass`, `notch`, `peak` — rather than a mode switch: wire the one
+        you want, or several (a crossover, a morph via mix.crossfade). The
+        lowpass keeps the id `out` it always had, so existing patches are
+        unchanged.
+
+        Zavalishin's topology-preserving transform in Andy Simper's
+        formulation: stable under audio-rate cutoff/resonance modulation,
+        coefficients recomputed only when cutoff or resonance actually
+        change. `resonance` is Q (0.707 = Butterworth). Per channel (each
+        lane its own state).
     */
     class SvfFilterNode : public Node
     {
     public:
-        static constexpr int numInputs = 3; // in, cutoff, resonance
-        static constexpr int numOutputs = 1;
+        static constexpr int numInputs = 3;  // in, cutoff, resonance
+        static constexpr int numOutputs = 5; // lowpass (out), bandpass, highpass, notch, peak
 
         void prepare (const NodePrepareInfo& info) override
         {
-            filter.prepare (info.sampleRate, (uint32_t) info.maxBlockSize, 1);
+            sampleRate = info.sampleRate;
+            cachedCutoff = cachedResonance = -1.0f;
+            reset();
         }
 
-        void reset() override { filter.reset(); }
+        void reset() override { ic1 = ic2 = 0.0; }
 
         int getNumInputPorts() const noexcept override { return numInputs; }
         int getNumOutputPorts() const noexcept override { return numOutputs; }
@@ -45,7 +43,7 @@ namespace bazalt::engine::nodes
         std::vector<PortDescriptor> getInputPorts() const override
         {
             return {
-                { "in", SignalType::Audio },
+                perChannel ({ "in", SignalType::Audio }),
                 ValueTypes::frequencyPort ("filter.svf.cutoff", "Cutoff", 1000.0f),
                 PortDescriptor { .id = "filter.svf.resonance", .type = SignalType::Control, .label = "Resonance",
                                   .minValue = 0.01f, .maxValue = 10.0f, .defaultValue = 0.70710678f,
@@ -55,7 +53,12 @@ namespace bazalt::engine::nodes
 
         std::vector<PortDescriptor> getOutputPorts() const override
         {
-            return { { "out", SignalType::Audio } };
+            const auto output = [] (const char* id, const char* label, bool primary = false)
+            {
+                return perChannel (PortDescriptor { .id = id, .type = SignalType::Audio, .label = label, .isPrimaryOutput = primary });
+            };
+            return { output ("out", "Lowpass", true), output ("bandpass", "Bandpass"), output ("highpass", "Highpass"),
+                     output ("notch", "Notch"), output ("peak", "Peak") };
         }
 
         std::vector<ParameterDescriptor> getParameters() const override { return {}; }
@@ -63,24 +66,49 @@ namespace bazalt::engine::nodes
         void setParameter (const juce::String& parameterId, float value) override
         {
             if (parameterId == "filter.svf.cutoff")
-                filter.setCutoffFrequency (value);
+                storedCutoff = value;
             else if (parameterId == "filter.svf.resonance")
-                filter.setResonance (value);
+                storedResonance = value;
         }
-
-        void setType (SvfFilterType newType) noexcept { filter.setType (newType); }
 
         void processSample (const float* inputs, float* outputs) noexcept override
         {
-            if (! std::isnan (inputs[1]))
-                filter.setCutoffFrequency (inputs[1]);
-            if (! std::isnan (inputs[2]))
-                filter.setResonance (inputs[2]);
+            const auto cutoff = std::isnan (inputs[1]) ? storedCutoff : inputs[1];
+            const auto resonance = std::isnan (inputs[2]) ? storedResonance : inputs[2];
+            if (cutoff != cachedCutoff || resonance != cachedResonance)
+                updateCoefficients (cutoff, resonance);
 
-            outputs[0] = filter.processSample (0, inputs[0]);
+            const auto x = (double) inputs[0];
+            const auto v3 = x - ic2;
+            const auto v1 = a1 * ic1 + a2 * v3;
+            const auto v2 = ic2 + a2 * ic1 + a3 * v3;
+            ic1 = 2.0 * v1 - ic1;
+            ic2 = 2.0 * v2 - ic2;
+
+            const auto low = v2, band = v1, high = x - k * v1 - v2;
+            outputs[0] = (float) low;
+            outputs[1] = (float) band;
+            outputs[2] = (float) high;
+            outputs[3] = (float) (low + high);
+            outputs[4] = (float) (low - high);
         }
 
     private:
-        SvfFilter filter;
+        void updateCoefficients (float cutoff, float resonance) noexcept
+        {
+            cachedCutoff = cutoff;
+            cachedResonance = resonance;
+            const auto fc = juce::jlimit (1.0, sampleRate * 0.49, (double) cutoff);
+            const auto g = std::tan (juce::MathConstants<double>::pi * fc / sampleRate);
+            k = 1.0 / juce::jlimit (0.01, 100.0, (double) resonance);
+            a1 = 1.0 / (1.0 + g * (g + k));
+            a2 = g * a1;
+            a3 = g * a2;
+        }
+
+        double sampleRate = 48000.0;
+        double ic1 = 0.0, ic2 = 0.0, a1 = 1.0, a2 = 0.0, a3 = 0.0, k = 1.414;
+        float storedCutoff = 1000.0f, storedResonance = 0.70710678f;
+        float cachedCutoff = -1.0f, cachedResonance = -1.0f;
     };
 }

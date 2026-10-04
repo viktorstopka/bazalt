@@ -16,10 +16,10 @@
 //    widget's edge for continued fine control, which is also why this
 //    needed to become delta-based rather than position-based in the first
 //    place.
-//  - Scroll wheel: each tick nudges the value by a fixed step of the range;
-//    a burst of ticks previews live and commits once after a short pause,
-//    the same "one undo step per gesture" idea commitNodeMoves already
-//    uses for dragging, applied to a gesture that has no natural mouseup.
+//  - Scroll wheel: does NOT change the value (direct instruction,
+//    2026-10-04: "scrolling over a prop should NOT change its value. Only
+//    dragging"). A wheel over a slider is left to the canvas, which zooms,
+//    so sweeping the view across a node can never nudge a value by accident.
 //  - Click without moving: enters type-to-edit mode IMMEDIATELY, no
 //    artificial delay. Direct feedback: "there is maybe a conflict of the
 //    double click to reset and click to edit — the edit has priority."
@@ -47,9 +47,9 @@
 // listener below. Deliberately scoped to ValueSlider rows only (not
 // TriggerSelect's dropdowns, which have no typed value to Tab out of).
 //
-// Holding Shift during a drag or a wheel tick drops the effective speed to
+// Holding Shift during a drag drops the effective speed to
 // PRECISION_FACTOR (direct feedback: "holding shift should slow the
-// progress/make it more precise") — checked live on every move/wheel event
+// progress/make it more precise") — checked live on every move event
 // rather than once at gesture start, and applied only to each *incremental*
 // step (not the whole gesture retroactively), so toggling Shift mid-drag
 // changes speed smoothly instead of causing the value to jump.
@@ -63,9 +63,9 @@
 // gap wasn't "no data," it was this component never reading it) — direct
 // feedback caught an integer-only value accepting fractional input, which
 // is what `isInteger` below fixes: 0 decimals and whole-number rounding on
-// every path (drag, wheel, typed edit) instead of a hardcoded 2 decimals
+// every path (drag, typed edit) instead of a hardcoded 2 decimals
 // for everything regardless of what the descriptor actually says.
-import { useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, type WheelEvent as ReactWheelEvent } from 'react'
+import { useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent } from 'react'
 import './ValueSlider.css'
 import { fromNormalizedPosition, toNormalizedPosition } from './sliderCurve'
 import { tokens, withAlpha } from '../theme/tokens'
@@ -90,7 +90,7 @@ export interface ValueSliderProps {
       past these, because doing so would be physically/semantically
       meaningless for this specific quantity (a filter cutoff can't go
       negative, a pitch can't exceed 127). Omitted entirely means
-      unbounded: no real limit exists (e.g. a Remap node's own inMin/
+      unbounded: no real limit exists (e.g. a Map node's own inMin/
       inMax/outMin/outMax), so nothing here should invent one — this is
       NOT the same as `min`/`max` above being absent, which still fall
       back to a generic 0-10 visual range at the call site.
@@ -105,7 +105,7 @@ export interface ValueSliderProps {
   isInteger: boolean
   unit: string
   color: string
-  /** Pre-resolved drag/wheel/fill curve exponent (sliderCurve.ts's
+  /** Pre-resolved drag/fill curve exponent (sliderCurve.ts's
       resolveSkew — ValueSlider itself stays agnostic of Curve/Quantity
       vocabulary, matching its existing "range is the caller's choice"
       philosophy). 1 (the default) is plain linear, unchanged from before
@@ -127,11 +127,13 @@ export interface ValueSliderProps {
       anywhere — see the internal `uncontrolledValue` fallback below.
   */
   onCommit?: (value: number) => void
+  /** Called with the in-progress value while a drag is live,
+      and with null when it ends — for a readout that must follow the drag
+      before anything is committed (design/Map.png's diagram). */
+  onLiveChange?: (value: number | null) => void
 }
 
 const DRAG_THRESHOLD_PX = 3
-const WHEEL_COMMIT_DEBOUNCE_MS = 400
-const WHEEL_STEP_FRACTION = 0.02 // one wheel "tick" ~= 2% of the full range
 const PRECISION_FACTOR = 0.15 // holding Shift: drag/scroll move the value at ~15% of normal speed
 
 function clamp(value: number, min: number, max: number): number {
@@ -152,7 +154,7 @@ function formatForEditing(value: number, isInteger: boolean, decimals: number): 
   return isInteger ? formatValue(value, decimals) : String(value)
 }
 
-export function ValueSlider({ label, value, min, max, hardMin, hardMax, defaultValue, isInteger, unit, color, skew, decimals: decimalsProp, onCommit }: ValueSliderProps) {
+export function ValueSlider({ label, value, min, max, hardMin, hardMax, defaultValue, isInteger, unit, color, skew, decimals: decimalsProp, onCommit, onLiveChange }: ValueSliderProps) {
   const decimals = decimalsProp ?? (isInteger ? 0 : 2)
   const curveSkew = skew ?? 1
   const clampMin = hardMin ?? -Infinity
@@ -161,7 +163,7 @@ export function ValueSlider({ label, value, min, max, hardMin, hardMax, defaultV
   // 2-decimal display]" — a real hard bound (hardMin/hardMax both declared)
   // still clamps the stored value fully, this only gates whether the fill
   // bar renders at all (Batch A4 — a genuinely unbounded port, e.g.
-  // adapt.remap's own in/out, shouldn't imply a range that doesn't exist).
+  // adapt.map's own in/out, shouldn't imply a range that doesn't exist).
   const hasBounds = hardMin !== undefined && hardMax !== undefined
 
   // No onCommit (gallery demo context): the slider becomes its own
@@ -186,20 +188,19 @@ export function ValueSlider({ label, value, min, max, hardMin, hardMax, defaultV
   const [editing, setEditing] = useState(false)
   const rootRef = useRef<HTMLDivElement | null>(null)
   const dragRef = useRef<{ startX: number; startY: number; lastX: number; lastY: number; moved: boolean } | null>(null)
-  const wheelTimeoutRef = useRef<number | null>(null)
   const editResolvedRef = useRef(false)
 
+  // Read through a ref: the drag listeners capture updateLiveValue once at
+  // mousedown, but must always report to the current callback.
+  const onLiveChangeRef = useRef(onLiveChange)
+  useEffect(() => {
+    onLiveChangeRef.current = onLiveChange
+  })
   const updateLiveValue = (next: number | null): void => {
     liveValueRef.current = next
     setLiveValue(next)
+    onLiveChangeRef.current?.(next)
   }
-
-  useEffect(
-    () => () => {
-      if (wheelTimeoutRef.current !== null) window.clearTimeout(wheelTimeoutRef.current)
-    },
-    [],
-  )
 
   // Tab/Shift+Tab lands here from a SIBLING ValueSlider's own onKeyDown
   // (below) — there's no shared parent state tracking "which field is
@@ -221,7 +222,7 @@ export function ValueSlider({ label, value, min, max, hardMin, hardMax, defaultV
   // Curve-aware (sliderCurve.ts) — skew===1 (everything that doesn't
   // declare a real curve) reduces to the old plain-linear fraction exactly.
   // toNormalizedPosition itself stays unclamped past [0,1] for a linear
-  // slider (so drag/wheel can keep moving an unbounded value past its
+  // slider (so a drag can keep moving an unbounded value past its
   // visual range — see that function's own comment); the fill width is the
   // one place that must still cap at 0%/100%, same as before this change.
   const fraction = clamp(toNormalizedPosition(displayValue, min, max, curveSkew), 0, 1)
@@ -241,7 +242,7 @@ export function ValueSlider({ label, value, min, max, hardMin, hardMax, defaultV
   }
 
   // Distance (px) the drag needs to cover, on either axis, to sweep the
-  // full 0..1 drag/wheel POSITION (not the raw value range — see
+  // full 0..1 drag POSITION (not the raw value range — see
   // sliderCurve.ts: a curved slider's drag feel stays constant-per-pixel in
   // position-space, only the position->value warp is curved) — the
   // slider's own current width, so a wider/taller instance naturally gets
@@ -255,15 +256,6 @@ export function ValueSlider({ label, value, min, max, hardMin, hardMax, defaultV
   const onMouseDown = (e: ReactMouseEvent<HTMLDivElement>): void => {
     if (editing || e.button !== 0) return
     e.preventDefault()
-    // Read the ref, not the `committedValue` prop: if a wheel gesture's
-    // debounce commit hasn't fired yet, this resumes from its live value
-    // instead of snapping back to the last actually-committed one — and
-    // cancel that pending commit, since the drag's own mouseup now owns
-    // committing whatever value it ends on.
-    if (wheelTimeoutRef.current !== null) {
-      window.clearTimeout(wheelTimeoutRef.current)
-      wheelTimeoutRef.current = null
-    }
     const startValue = liveValueRef.current ?? committedValue
     dragRef.current = { startX: e.clientX, startY: e.clientY, lastX: e.clientX, lastY: e.clientY, moved: false }
     updateLiveValue(startValue)
@@ -321,23 +313,6 @@ export function ValueSlider({ label, value, min, max, hardMin, hardMax, defaultV
     window.addEventListener('mouseup', onUp)
   }
 
-  const onWheel = (e: ReactWheelEvent<HTMLDivElement>): void => {
-    e.preventDefault()
-    e.stopPropagation()
-    const factor = e.shiftKey ? PRECISION_FACTOR : 1
-    const step = WHEEL_STEP_FRACTION * factor // a position-space fraction now, not a value-space one — see sliderCurve.ts
-    const direction = e.deltaY < 0 ? 1 : -1 // scrolling "up"/away increases, matching most DAW conventions
-    const currentPosition = toNormalizedPosition(liveValueRef.current ?? committedValue, min, max, curveSkew)
-    const next = quantize(fromNormalizedPosition(currentPosition + direction * step, min, max, curveSkew))
-    updateLiveValue(next)
-    if (wheelTimeoutRef.current !== null) window.clearTimeout(wheelTimeoutRef.current)
-    wheelTimeoutRef.current = window.setTimeout(() => {
-      commit(next)
-      updateLiveValue(null)
-      wheelTimeoutRef.current = null
-    }, WHEEL_COMMIT_DEBOUNCE_MS)
-  }
-
   const commitEdit = (raw: string): void => {
     if (editResolvedRef.current) return
     editResolvedRef.current = true
@@ -393,7 +368,6 @@ export function ValueSlider({ label, value, min, max, hardMin, hardMax, defaultV
       className="value-slider"
       style={{ borderColor: withAlpha(color, tokens.opacity.border), color }}
       onMouseDown={onMouseDown}
-      onWheel={onWheel}
       onClick={(e) => e.stopPropagation()}
       onDoubleClick={(e) => {
         e.stopPropagation()

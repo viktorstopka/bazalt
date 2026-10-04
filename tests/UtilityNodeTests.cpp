@@ -8,7 +8,6 @@
 #include "bazalt/engine/nodes/MultiplyNode.h"
 #include "bazalt/engine/nodes/RoundNode.h"
 #include "bazalt/engine/nodes/ClampNode.h"
-#include "bazalt/engine/nodes/RemapNode.h"
 #include "bazalt/engine/nodes/ListenNode.h"
 #include "bazalt/engine/nodes/OutputNode.h"
 #include "bazalt/engine/nodes/InstanceMixNode.h"
@@ -38,104 +37,6 @@ TEST_CASE ("RerouteNode passes its input straight through", "[engine][nodes][uti
     float out = 0.0f;
     node.processSample (&in, &out);
     CHECK (out == in);
-}
-
-TEST_CASE ("MapNode remaps a 0..1 input onto its min/max range, clamped", "[engine][nodes][util]")
-{
-    MapNode node;
-    node.setParameter ("adapt.map.min", 200.0f);
-    node.setParameter ("adapt.map.max", 8000.0f);
-
-    auto mapOf = [&] (float normalized)
-    {
-        float out = 0.0f;
-        node.processSample (&normalized, &out);
-        return out;
-    };
-
-    CHECK (mapOf (0.0f) == 200.0f);
-    CHECK (mapOf (1.0f) == 8000.0f);
-    CHECK (mapOf (0.5f) == 4100.0f);
-    CHECK (mapOf (-1.0f) == 200.0f);  // clamped
-    CHECK (mapOf (2.0f) == 8000.0f); // clamped
-}
-
-TEST_CASE ("MapNode's 'in' is polymorphic on quantity: Unipolar by default, Bipolar once resolved that way",
-           "[engine][nodes][util][AudioControlBridge]")
-{
-    // wiki/plans/AudioControlBridge.md: adapt.audioToControl's Bipolar
-    // output first caught this - CanConnect.cpp's own "Unipolar/Bipolar ->
-    // real quantity via Map" rule (M16) was silently dead for the Bipolar
-    // half until this fix, since a Bipolar source rejected outright at
-    // GraphCompiler's real re-validation of adapt.map's own "in" port.
-    MapNode node;
-    CHECK (node.hasPolymorphicPorts());
-    node.setParameter ("adapt.map.min", 0.0f);
-    node.setParameter ("adapt.map.max", 100.0f);
-
-    // Default (nothing has resolved it yet): Unipolar, unchanged behaviour.
-    REQUIRE (node.getInputPorts()[0].quantity == Quantity::Unipolar);
-    float out = 0.0f;
-    float in = -1.0f;
-    node.processSample (&in, &out);
-    CHECK (out == 0.0f); // clamped as Unipolar: -1 -> 0
-
-    // Resolved from a Bipolar source: adopts Bipolar, and rescales -1..1
-    // into 0..1 BEFORE applying min/max, instead of clamping the whole
-    // negative half away.
-    PortDescriptor bipolarSource { "out", SignalType::Control };
-    bipolarSource.quantity = Quantity::Bipolar;
-    node.resolveIncomingPort ("in", bipolarSource);
-    REQUIRE (node.getInputPorts()[0].quantity == Quantity::Bipolar);
-
-    in = -1.0f;
-    node.processSample (&in, &out);
-    CHECK (out == 0.0f); // -1 -> 0..1's 0 -> min
-
-    in = 0.0f;
-    node.processSample (&in, &out);
-    CHECK (out == 50.0f); // 0 -> 0..1's 0.5 -> midpoint
-
-    in = 1.0f;
-    node.processSample (&in, &out);
-    CHECK (out == 100.0f); // +1 -> 0..1's 1 -> max
-
-    // A source of any other SignalType (never actually reachable through a
-    // real compiled graph - canConnect only lets Control feed this port at
-    // all - but resolveIncomingPort must still ignore it defensively) leaves
-    // the already-resolved quantity untouched.
-    PortDescriptor audioSource { "out", SignalType::Audio };
-    node.resolveIncomingPort ("in", audioSource);
-    CHECK (node.getInputPorts()[0].quantity == Quantity::Bipolar);
-}
-
-TEST_CASE ("MapNode's input declares Quantity::Unipolar, so a raw real-unit value can't feed it unadapted",
-           "[engine][nodes][util][CanConnect]")
-{
-    // docs/CLEANUP.md Priority 1 #4: with an undeclared (Dimensionless) "in"
-    // port, canConnect()'s "same-or-Dimensionless is Ok" rule let a 3000 Hz
-    // Frequency straight into Map with no adapter, silently clamped to 1.0
-    // as if it were already normalised.
-    const MapNode node;
-    const auto inputs = node.getInputPorts();
-    REQUIRE (inputs.size() == 1);
-    CHECK (inputs[0].quantity == Quantity::Unipolar);
-
-    PortDescriptor frequencySource { "f", SignalType::Control };
-    frequencySource.quantity = Quantity::Frequency;
-    frequencySource.minValue = 20.0f;
-    frequencySource.maxValue = 20000.0f;
-
-    const auto raw = canConnect (frequencySource, inputs[0]);
-    REQUIRE (raw.outcome == ConnectionOutcome::NeedsAdapters);
-    REQUIRE (raw.adapterChain.size() == 1);
-    CHECK (raw.adapterChain[0].typeId == "adapt.normalise");
-
-    // The intended feeder — an already-normalised Unipolar source — is still
-    // a direct, adapter-free connection.
-    PortDescriptor unipolarSource { "u", SignalType::Control };
-    unipolarSource.quantity = Quantity::Unipolar;
-    CHECK (canConnect (unipolarSource, inputs[0]).outcome == ConnectionOutcome::Ok);
 }
 
 TEST_CASE ("RerouteNode defaults to Audio and adopts the resolved type on both ports",
@@ -173,7 +74,7 @@ TEST_CASE ("RerouteNode carries the source's quantity too, so a rerouted Frequen
 {
     // Type alone isn't enough: canConnect decides adapters from the quantity,
     // so a Reroute that dropped it would let a Frequency reach a Pitch port
-    // with no adapter, exactly the unit mix-up adapt.remap exists to prevent.
+    // with no adapter, exactly the unit mix-up adapt.map exists to prevent.
     RerouteNode node;
     CHECK (node.getOutputPorts()[0].quantity == Quantity::Dimensionless); // unresolved default
 
@@ -345,14 +246,14 @@ TEST_CASE ("ClampNode's low/high ports fall back to setParameter's static value 
     CHECK (out == 10.0f);
 }
 
-TEST_CASE ("RemapNode rescales in..inMin/inMax onto outMin/outMax, clamped, matching Normalise+Map chained",
+TEST_CASE ("MapNode rescales in..inMin/inMax onto outMin/outMax, clamped, matching Normalise+Map chained",
            "[engine][nodes][util][M20]")
 {
-    RemapNode node;
-    node.setParameter ("adapt.remap.inMin", 0.0f);
-    node.setParameter ("adapt.remap.inMax", 127.0f);
-    node.setParameter ("adapt.remap.outMin", 20.0f);
-    node.setParameter ("adapt.remap.outMax", 20000.0f);
+    MapNode node;
+    node.setParameter ("adapt.map.inMin", 0.0f);
+    node.setParameter ("adapt.map.inMax", 127.0f);
+    node.setParameter ("adapt.map.outMin", 20.0f);
+    node.setParameter ("adapt.map.outMax", 20000.0f);
 
     const auto kNaN = std::numeric_limits<float>::quiet_NaN();
     auto remapOf = [&] (float in)
@@ -370,14 +271,14 @@ TEST_CASE ("RemapNode rescales in..inMin/inMax onto outMin/outMax, clamped, matc
     CHECK (remapOf (200.0f) == 20000.0f); // clamped above inMax
 }
 
-TEST_CASE ("RemapNode's range ports live-modulate independently of setParameter's static values",
+TEST_CASE ("MapNode's range ports live-modulate independently of setParameter's static values",
            "[engine][nodes][util][M20]")
 {
-    RemapNode node;
-    node.setParameter ("adapt.remap.inMin", 0.0f);
-    node.setParameter ("adapt.remap.inMax", 1.0f);
-    node.setParameter ("adapt.remap.outMin", 0.0f);
-    node.setParameter ("adapt.remap.outMax", 1.0f);
+    MapNode node;
+    node.setParameter ("adapt.map.inMin", 0.0f);
+    node.setParameter ("adapt.map.inMax", 1.0f);
+    node.setParameter ("adapt.map.outMin", 0.0f);
+    node.setParameter ("adapt.map.outMax", 1.0f);
 
     float out = 0.0f;
     // Live-wired to a completely different range than the static config.
@@ -423,7 +324,7 @@ TEST_CASE ("canConnect auto-inserts adapt.boolToControl for Boolean -> Control",
 }
 
 // ---- adapt.pitchToFrequency / adapt.frequencyToPitch ----
-// Direct feedback: canConnect was auto-inserting adapt.remap (linear) for
+// Direct feedback: canConnect was auto-inserting adapt.map (linear) for
 // Pitch -> Frequency, which is quietly wrong - the real relationship is
 // exponential.
 
@@ -485,7 +386,7 @@ TEST_CASE ("canConnect prefers the exact converter over the generic linear remap
     timePort.quantity = Quantity::Time;
     const auto pitchToTime = canConnect (pitchPort, timePort);
     REQUIRE (pitchToTime.outcome == ConnectionOutcome::NeedsAdapters);
-    CHECK (pitchToTime.adapterChain[0].typeId == "adapt.remap");
+    CHECK (pitchToTime.adapterChain[0].typeId == "adapt.map");
 }
 
 // ---- adapt.gateLength ----

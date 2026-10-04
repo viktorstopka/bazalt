@@ -86,7 +86,7 @@ rather than waiting; every `factory.*` node still does want the real thing.
 | Node | Status | Necessity | Batch | Notes |
 |---|---|---|---|---|
 | `osc.sine` | Implemented | | | |
-| `osc.analog` | MVP | | Oscillator Expansion | Missing `fine`/`pulseWidth`/`phaseMod`/`sync` inputs — real work, catalog-specified, not started. |
+| `osc.analog` | Implemented |  | Oscillator Expansion | Done 2026-10-04 (`wiki/plans/SoundPalette.md`) — `fine`, `pulseWidth`, through-zero `phase`, `sync`, real phase-locked preview. |
 | `osc.wavetable` | To be implemented | **B2** | Oscillator Expansion | Needs `Data(wavetable)` — rides the Data pipeline once it exists. |
 | `osc.glottal` | To be implemented | **B3** | PM Voice | Correction 1; LF/Rosenberg parametric pulse model — delicate band-limiting. |
 
@@ -101,8 +101,8 @@ rather than waiting; every `factory.*` node still does want the real thing.
 
 | Node | Status | Necessity | Batch | Notes |
 |---|---|---|---|---|
-| `noise.colored` | To be implemented | **B1** | Noise & Grain | Filtered-white-noise family; straightforward. |
-| `noise.dust` | To be implemented | **B2** | Noise & Grain | Sample-accurate sparse-impulse timing. |
+| `noise.colored` | Implemented |  | Noise & Grain | Done 2026-10-04 (`wiki/plans/SoundPalette.md`) — five colours at matched level, optional stereo, seeded. |
+| `noise.dust` | Implemented |  | Noise & Grain | Done 2026-10-04 (`wiki/plans/SoundPalette.md`) — Poisson impulses + `trigger` Event. |
 
 ### `excite.*` — physical excitation — 3 Implemented, 1 MVP, 4 to build
 
@@ -111,7 +111,7 @@ rather than waiting; every `factory.*` node still does want the real thing.
 | `excite.impulse` | Implemented | | PM Core | Done, batch 1 (2026-10-02). |
 | `excite.pluck` | Implemented | | PM Core | Done, batch 3 (2026-10-02). Fixed 5ms noise burst; `position` is a fixed-window FIR comb (no pitch concept of its own, unlike `resonator.string`'s own `position`). |
 | `excite.mallet` | Implemented | | PM Core | Done, batch 4 (2026-10-02), closes the PM Core batch. A half-sine contact pulse; `feedback` genuinely couples to a resonator's own `motion`, the first real cross-node per-sample feedback cycle in production node code. |
-| `excite.burst` | MVP | | PM Core | Missing `tone`/`shape`; trigger/duration already real. |
+| `excite.burst` | Implemented |  | PM Core | Done 2026-10-04 (`wiki/plans/SoundPalette.md`) — `tone`/`shape`; generator now seeded. |
 | `excite.stickSlip` | To be implemented | **B3** | PM Friction/Breath | Delicate near-zero-speed friction. |
 | `excite.breath` | To be implemented | **B2** | PM Friction/Breath | Nonlinear noise-modulation (breath/reed/lip modes). |
 | `excite.contact` | To be implemented | **B2** | PM Friction/Breath | Scrape/grain-rate model. |
@@ -139,7 +139,7 @@ rather than waiting; every `factory.*` node still does want the real thing.
 | `filter.shelf` | Implemented | | | |
 | `filter.peak` | Implemented | | | |
 | `filter.dcBlock` | Implemented | | | |
-| `filter.svf` | MVP | | (standalone) | Needs the 5-simultaneous-output redesign (lowpass/bandpass/highpass/notch/peak port group) — currently one mode-switched `out`. Structural, not tied to a batch. |
+| `filter.svf` | Implemented |  | (standalone) | Done 2026-10-04 (`wiki/plans/SoundPalette.md`) — five simultaneous outputs (TPT/Simper), lowpass keeps `out`. |
 | `filter.formant` | To be implemented | **B2** | PM Voice | Bank of bandpass filters over `Data(modal-set)`/vowel table. |
 
 ### `shape.*` — nonlinearities — 1 Implemented, 4 to build
@@ -147,16 +147,16 @@ rather than waiting; every `factory.*` node still does want the real thing.
 | Node | Status | Necessity | Batch | Notes |
 |---|---|---|---|---|
 | `shape.clip` | Implemented | | | Done, direct feedback (2026-10-03) — pulled forward out of the Shaping batch, same "build early, useful everywhere" reasoning this row already gave it. Real hard/soft/limiter modes, a real quadratic soft-knee. |
-| `shape.rectify` | To be implemented | **B1** | Shaping | Trivial half/full rectify. |
-| `shape.crush` | To be implemented | **B1** | Shaping | Bit/sample-rate reduction. |
-| `shape.waveshaper` | To be implemented | **B2** | Shaping | Multiple curve types + oversampling. |
-| `shape.fold` | To be implemented | **B2** | Shaping | Wavefolder, oversampled. |
+| `shape.rectify` | Implemented |  | Shaping | Done 2026-10-04 (`wiki/plans/SoundPalette.md`) — ADAA. |
+| `shape.crush` | Implemented |  | Shaping | Done 2026-10-04 (`wiki/plans/SoundPalette.md`). |
+| `shape.waveshaper` | Implemented |  | Shaping | Done 2026-10-04 (`wiki/plans/SoundPalette.md`) — six curves, ADAA instead of oversampling; custom curve waits for `factory.curve`. |
+| `shape.fold` | Implemented |  | Shaping | Done 2026-10-04 (`wiki/plans/SoundPalette.md`) — triangle/sine, ADAA. |
 
 ### `delay.*` — 1/1 Implemented
 
 `delay.line` — Implemented.
 
-### `space.*` / `stereo.*` — 4 Implemented, 2 to build
+### `space.*` / `stereo.*` — 6/6 Implemented
 
 | Node | Status | Necessity | Batch | Notes |
 |---|---|---|---|---|
@@ -164,8 +164,16 @@ rather than waiting; every `factory.*` node still does want the real thing.
 | `space.width` | Implemented | | | |
 | `stereo.split` | Implemented | | | |
 | `stereo.combine` | Implemented | | | |
-| `space.diffuser` | To be implemented | **B2** | Space | Allpass chain — reuses `filter.allpass`. |
-| `space.reverb` | To be implemented | **B3** | Space | FDN reverb — the hardest effect node; cheap enough at low quality to run per-voice. |
+| `space.diffuser` | Implemented | | Space | Done 2026-10-04 (`wiki/plans/Reverb.md`) — Hadamard multichannel diffuser, shared `ReverbDsp.h` code. |
+| `space.reverb` | Implemented | | Space | Done 2026-10-04 (`wiki/plans/Reverb.md`) — 8/16-line FDN, physical controls, measured quality bar (`tests/ReverbTests.cpp`). 8 lines ≈ 25 % of a core in a Debug build for 10 s stereo; Release is far lower. |
+
+### `dyn.*` / `fx.*` — 3/3 Implemented *(new, wiki/plans/SoundPalette.md)*
+
+| Node | Status | Necessity | Batch | Notes |
+|---|---|---|---|---|
+| `dyn.compress` | Implemented | | Dynamics | Done 2026-10-04 — stereo-linked, soft knee, sidechain, `gain`/`reduction` outputs. |
+| `dyn.gate` | Implemented | | Dynamics | Done 2026-10-04 — gate/expander, sidechain, `gain`/`open` outputs. |
+| `fx.freqShift` | Implemented | | Modulation FX | Done 2026-10-04 — Hilbert SSB, up + mirror outputs. Chorus/flanger/phaser wait for `stock.*` loading (groups, not nodes). |
 
 ### `mix.*` — 3/3 Implemented
 
@@ -185,7 +193,7 @@ family below), not a fourth entry here anymore.
 
 | Node | Status | Necessity | Batch | Notes |
 |---|---|---|---|---|
-| `lfo.shape` | To be implemented | **B2** | Env/LFO Shapes | Multi-waveform + custom-shape morphing — needs `Data(curve)`. |
+| `lfo.shape` | Implemented |  | Env/LFO Shapes | Done 2026-10-04 (`wiki/plans/SoundPalette.md`) — v1: seven built-in shapes, host-locked sync; `Data(curve)` input waits for `factory.curve`. |
 
 ### `random.*` — 2/2 Implemented
 
@@ -249,7 +257,7 @@ intended use (an audio input playable as an instrument) once `analysis.pitch`/
 | `note.select` | To be implemented | **A2** | *(blocked)* | Same real engine limit as `note.hold` — pairs with `clock.counter` once buildable. |
 | `note.chord` | To be implemented | **A2** | *(blocked)* | Same real engine limit — needs to emit several simultaneous notes from one input note. |
 
-### `math.*` / `logic.*` / `adapt.*` — 26/26 Implemented
+### `math.*` / `logic.*` / `adapt.*` — all Implemented (logic grew to 10 on 2026-10-04: and/or/xor replaced boolean; eventGroup, edge, latch added; adapt.remap folded into adapt.map)
 
 All done — no rows needed (count unaffected by `wiki/plans/DomainRedesign.md` Batch 3:
 `math.add`/`math.multiply` gained real Audio/Poly polymorphism and absorbed
@@ -295,7 +303,7 @@ edit. Every later `data.*`/`osc.wavetable`/`sampler.*` node rides on this for fr
 
 | Node | Status | Necessity | Batch | Notes |
 |---|---|---|---|---|
-| `analysis.level` | To be implemented | **C1** | Analysis+Assemble | Mirrors `env.follower`'s existing ballistics — easy. |
+| `analysis.level` | Implemented |  | Analysis+Assemble | Done 2026-10-04 (`wiki/plans/SoundPalette.md`) — RMS/peak, dB output, stereo-aware. |
 | `analysis.onset` | To be implemented | **C2** | Analysis+Assemble | Energy/spectral-flux onset detection. |
 | `analysis.centroid` | To be implemented | **C2** | Analysis+Assemble | Spectral centroid — needs an FFT. |
 | `analysis.pitch` | To be implemented | **C3** | Analysis+Assemble | Hardest analysis node — autocorrelation/YIN pitch tracking. |
@@ -310,20 +318,28 @@ edit. Every later `data.*`/`osc.wavetable`/`sampler.*` node rides on this for fr
 | `instance.allocate.swarmTransient` | Implemented | **A2** | Domain Extensions | Event-triggered spawn, closest to Voice's own shape. Done 2026-10-01. |
 | `instance.allocate.trigger` | Implemented | **A2** | Domain Extensions | Event-triggered, one instance at a time. Done 2026-10-01. |
 
-### `util.*` — 5/5 Implemented
+### `util.*` — 4/4 Implemented
 
 | Node | Status | Necessity | Batch | Notes |
 |---|---|---|---|---|
 | `util.constant` | Implemented | | | |
-| `util.reroute` | Implemented | | | |
 | `util.macro` | Implemented | | | `wiki/plans/UtilMacro.md` — ADR-0030 amends ADR-0015 (the 32-fixed-slot pool stays; the macro node becomes its own mapping target with a real wireable output, instead of a side-channel poke onto a foreign node). |
 | `util.unipolarToBipolar` | Implemented | | | `wiki/plans/PropsAndMacroRedesign.md` Batch D — new, replacing `random.stepped`/`seq.steps`/`data.lookup`'s old per-node Unipolar/Bipolar selectors. Manual placement only, never auto-inserted. |
 | `util.bipolarToUnipolar` | Implemented | | | Same batch, the inverse direction. |
 
-### `view.*` — 5/5 Implemented
+### `deco.*` — 5/5 Implemented *(2026-10-04, wiki/plans/Decorations.md)*
 
-`view.listen`, `view.scope`, `view.spectrum`, `view.meter`, `view.glance` — all
-Implemented.
+`deco.reroute` (was `util.reroute` — now actually connectable, Ctrl/Cmd-click or
+double-click a wire to add one, delete reconnects), `deco.header`, `deco.comment`,
+`deco.box`, `deco.image` (compressed on import, stored once per patch, 5 MB cap) —
+all Implemented. Canvas-only except Reroute: the compiler never sees them.
+
+### `view.*` — 10/10 Implemented
+
+`view.listen`, `view.spectrum`, `view.meter`, `view.ripple`, `view.count`,
+`view.scope.control`, `view.scope.modulation`, `view.gate`, `view.cycle`,
+`view.tune` (2026-10-04, design/Visualization/Tune.png) — all Implemented. `view.scope` and `view.glance` were removed 2026-10-04, replaced
+by the phase-locked `view.cycle` (old patches migrate on load).
 
 ### `factory.*` — content-owning nodes — 6 to build (none started)
 
@@ -348,7 +364,7 @@ building for real, not simplified.
 | Status | Count |
 |---|---|
 | Implemented | 84 |
-| MVP | 4 (`osc.analog`, `filter.svf`, `excite.burst`, `seq.steps`) |
+| MVP | 1 (`seq.steps`) |
 | To be implemented | 40 |
 | **Total native node types** | **128** |
 
@@ -564,7 +580,7 @@ not with the A/B/C/D/Batch treatment above.
 | **Chord** | 📋 — blocked | `data.scale` Implemented, but `note.chord` hits the same real engine limit as `note.hold`/`note.select`. |
 | **Bubble** | 📋 | `env.curve` (Env/LFO Shapes). |
 | **Water** | 📋 | `noise.dust`, `instance.allocate.swarmTransient` (step 4), Bubble. |
-| **Crackle** | 📋 — only `noise.dust` missing | `resonator.modal`/`data.material`/`excite.burst` all Implemented now (PM Core done); just `noise.dust` (Noise & Grain) left. |
+| **Crackle** | ✅ buildable now (`noise.dust` built 2026-10-04) | `resonator.modal`/`data.material`/`excite.burst` all Implemented now (PM Core done); just `noise.dust` (Noise & Grain) left. |
 | **Scrape** | 📋 | `excite.contact` (PM Friction/Breath), `space.reverb` — `resonator.modal`/`data.material` now Implemented (PM Core done). |
 | **Cicada** | 📋 | `clock.pulse`/`resonator.modal` now Implemented — `excite.burst` already MVP-usable; still needs `filter.formant` (PM Voice). |
 | **Cicada Field** | 📋 | `instance.allocate.swarmPopulation` (step 4), `random.drift` (already Implemented), Cicada. |

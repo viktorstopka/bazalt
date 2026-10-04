@@ -4,10 +4,12 @@ import { AnalysisPanel } from './analysis/AnalysisPanel'
 import { redo, undo, loadPatch, quantityFromOrdinal, type GraphNode } from './graph/graphStore'
 import { graphExportSnapshot } from './graph/graphCommands'
 import { useGraphSnapshot } from './graph/useGraphSnapshot'
+import { ConnectionChoiceMenu } from './graph/ConnectionChoiceMenu'
 import { MacroKnob } from './controls/MacroKnob'
 import { classifyPortUiKind, PORT_UI_STYLE } from './graph/portUiKind'
 import type { Quantity } from './graph/descriptorTypes'
-import { PatchMenu, PREMADE_PATCHES, type PatchOption } from './PatchMenu'
+import { PatchMenu, PREMADE_PATCHES, type CurrentPatch, type PatchOption } from './PatchMenu'
+import { loadUserPatchJson, type UserPatchEntry } from './graph/patchLibrary'
 import './App.css'
 
 /** A plain curved-arrow pair, not an icon font/library — small enough not
@@ -176,7 +178,7 @@ function App() {
   // Undo/Redo is the one keyboard-only action (Ctrl+Z/Shift+Z/Y) that never
   // got a visible UI fallback (M10_REVIEW.md §16/§23's retrospective) — the
   // most likely shortcut to be intercepted by a host DAW's own accelerators.
-  const { canUndo, canRedo, lastError, nodes } = useGraphSnapshot()
+  const { canUndo, canRedo, lastError, nodes, pendingConnectionChoice } = useGraphSnapshot()
 
   // Dev-convenience export (direct instruction — see graphCommands.ts's
   // graphExportSnapshot doc comment for the full scope). Purely local,
@@ -199,9 +201,17 @@ function App() {
   // follows — not part of graphStore.ts's mirrored state, since nothing
   // tracks "which premade patch (if any) the live graph still matches"
   // once the user starts editing it.
-  const [currentPatchName, setCurrentPatchName] = useState(PREMADE_PATCHES[0].name)
+  const [currentPatch, setCurrentPatch] = useState<CurrentPatch>({ name: PREMADE_PATCHES[0].name, source: 'factory' })
+  const loadAndFrame = (json: string) => void loadPatch(json).then(() => requestAnimationFrame(() => canvasHandleRef.current?.fitView()))
+  const handleLoadUserPatch = (entry: UserPatchEntry) => {
+    void loadUserPatchJson(entry.fileName).then((json) => {
+      if (!json) return
+      setCurrentPatch({ name: entry.name, source: 'user', fileName: entry.fileName })
+      loadAndFrame(json)
+    })
+  }
   const handleChoosePatch = (patch: PatchOption) => {
-    setCurrentPatchName(patch.name)
+    setCurrentPatch({ name: patch.name, source: 'factory' })
     // Direct feedback: "When i pick a patch, no node appears." — loading a
     // patch wholesale-REPLACES the graph, and unlike an incremental edit,
     // the new nodes' positions (hardcoded in PatchMenu.tsx, matching
@@ -217,12 +227,13 @@ function App() {
     // waits one more frame (same defensive pattern InfiniteCanvas.tsx's
     // own auto-recentre effect already uses) so the DOM has actually
     // re-rendered the new nodes before fitView measures their bounds.
-    void loadPatch(patch.json).then(() => requestAnimationFrame(() => canvasHandleRef.current?.fitView()))
+    loadAndFrame(patch.json)
   }
 
   return (
     <div id="app-root">
       <InfiniteCanvas ref={canvasHandleRef} snapSettings={snapSettings}>
+        {pendingConnectionChoice && <ConnectionChoiceMenu pending={pendingConnectionChoice} />}
         <div className="top-bar">
           <span className="top-bar-title">Bazalt</span>
           {/* M19 (NODE_EDITOR.md §6): "a rejected command surfaces as an
@@ -231,7 +242,7 @@ function App() {
           {lastError && <span className="top-bar-error">{lastError}</span>}
           {exportStatus && <span className="top-bar-status">{exportStatus}</span>}
           <div className="top-bar-spacer" />
-          <PatchMenu patches={PREMADE_PATCHES} value={currentPatchName} onChoose={handleChoosePatch} />
+          <PatchMenu current={currentPatch} onLoadFactory={handleChoosePatch} onLoadUser={handleLoadUserPatch} onSaved={setCurrentPatch} />
           <button className="top-bar-icon-button" onClick={handleExport} title="Export patch to exported-patch.json" aria-label="Export patch">
             <ExportIcon />
           </button>

@@ -187,6 +187,10 @@ export type PreviewKind =
   | 'eventImpulse'
   | 'spectrogram'
   | 'goniometer'
+  /** Horizontal axis is phase, not time (PreviewDescriptor.h): a generator's
+      own waveform, or (foldSamples) a cable's samples folded by the upstream
+      phase. Drawn by PhaseLockedPreview.tsx. */
+  | 'phaseLocked'
 
 export type ScopeTriggerMode = 'free' | 'risingEdge' | 'perNote'
 export type MeterMode = 'peak' | 'rms' | 'truePeak' | 'histogram'
@@ -200,6 +204,9 @@ export interface PreviewDescriptor {
   tiltDbPerOctave: number
   averaging: number
   meterMode: MeterMode
+  /** 'phaseLocked' only: fold real samples (view.cycle) rather than draw the
+      phase source's own waveform. */
+  foldSamples?: boolean
 }
 
 export interface NodeDescriptor {
@@ -217,12 +224,16 @@ export interface NodeDescriptor {
       read, same convention as isMock below.
   */
   previews?: PreviewDescriptor[]
-  /** Node::hasPolymorphicPorts() (util.reroute): the ports declared above are only
+  /** Node::hasPolymorphicPorts() (deco.reroute): the ports declared above are only
       the unconnected defaults; a placed node's real port types follow what's
       wired to it. Absent on mock descriptors (none are polymorphic). See
       graphStore.getEndpoint() for how the UI resolves them.
   */
   hasPolymorphicPorts?: boolean
+  /** Node::isDeprecated(): superseded, hidden from the Add menu, but still
+      loads and runs wherever an existing patch already uses it. Absent on
+      mock descriptors. */
+  deprecated?: boolean
   /** UI-only flag, not part of the C++ schema (NODE_EDITOR.md §3's "mock
       (UI-only) descriptors... marked as mocks") — true for every entry in
       mockDescriptors.ts, absent/false for anything NodeFactory::describeAll()

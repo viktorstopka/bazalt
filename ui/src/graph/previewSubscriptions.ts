@@ -38,6 +38,8 @@ export function frameTypeForPreviewKind(kind: PreviewKind): TelemetryFrameType |
       return TelemetryFrameType.EventImpulse
     case 'rollingHistory':
       return TelemetryFrameType.RollingHistory
+    case 'phaseLocked':
+      return TelemetryFrameType.PhaseLocked
     default:
       return undefined
   }

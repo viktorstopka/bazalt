@@ -53,6 +53,10 @@ namespace bazalt::engine
         // ---- Meter ----
         MeterMode meterMode = MeterMode::Peak;
 
+        /** PreviewKind::PhaseLocked: fold real samples by phase (true) or
+            draw the phase source's own snapshot (false). */
+        bool phaseLockedFold = false;
+
         /** What a node's declared preview asks for. `Histogram` and `PerNote`
             (ADR-0029, Q2) have no analysis behind them yet, so they fall back
             to the nearest thing that does, rather than being silently
@@ -82,6 +86,7 @@ namespace bazalt::engine
             settings.spectrumTiltDbPerOctave = preview.tiltDbPerOctave;
             settings.spectrumAveraging = std::clamp (preview.averaging, 0.0f, 0.99f);
             settings.meterMode = preview.meterMode == MeterMode::Histogram ? MeterMode::Peak : preview.meterMode;
+            settings.phaseLockedFold = preview.foldSamples;
             return settings;
         }
     };

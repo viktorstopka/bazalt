@@ -40,7 +40,18 @@ namespace bazalt::engine
         RollingHistory,
         EventImpulse,
         Spectrogram,
-        Goniometer
+        Goniometer,
+        /** A phase-locked waveform: the horizontal axis is PHASE, not time —
+            a fixed telemetry::phaseLockedCycles cycles, aligned to phase
+            zero, so a 0.3 Hz and a 440 Hz square look identical and the
+            shape stands still. Only meaningful on a buffer that has a phase
+            source (Node::isPhaseSource(), resolved per buffer by
+            ExecutionPlan::resolvePhaseSources()). Two ways to fill it —
+            PreviewDescriptor::foldSamples picks: the phase source's own
+            waveform evaluated at its current parameters (a generator's own
+            preview), or real samples folded by that phase (view.cycle, for
+            a processed signal downstream of a generator). */
+        PhaseLocked
     };
 
     /** view.scope's own spec (NODE_CATALOG.md): free-running, or
@@ -107,5 +118,10 @@ namespace bazalt::engine
 
         // ---- Meter ----
         MeterMode meterMode = MeterMode::Peak;
+
+        /** PhaseLocked only: false = draw the phase source's own waveform
+            from its parameter snapshot (exact, current, any rate); true =
+            fold this buffer's actual samples into phase bins. */
+        bool foldSamples = false;
     };
 }

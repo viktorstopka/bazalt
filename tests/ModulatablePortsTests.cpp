@@ -93,14 +93,14 @@ TEST_CASE ("OscillatorNode's frequency port drives pitch directly when pitch its
 
     OscillatorNode lowFreq;
     lowFreq.prepare (info);
-    float lowInputs[2] = { kNaN, 100.0f }; // pitch unconnected, frequency live-wired to 100 Hz
+    float lowInputs[6] = { kNaN, 100.0f, kNaN, kNaN, kNaN, 0.0f }; // pitch unconnected, frequency live-wired to 100 Hz
     float lowOut = 0.0f;
     for (int i = 0; i < 4; ++i)
         lowFreq.processSample (lowInputs, &lowOut);
 
     OscillatorNode highFreq;
     highFreq.prepare (info);
-    float highInputs[2] = { kNaN, 8000.0f }; // pitch unconnected, frequency live-wired to 8kHz
+    float highInputs[6] = { kNaN, 8000.0f, kNaN, kNaN, kNaN, 0.0f }; // pitch unconnected, frequency live-wired to 8kHz
     float highOut = 0.0f;
     for (int i = 0; i < 4; ++i)
         highFreq.processSample (highInputs, &highOut);
@@ -119,14 +119,14 @@ TEST_CASE ("OscillatorNode's pitch port still wins over frequency when both are 
 
     OscillatorNode viaPitch;
     viaPitch.prepare (info);
-    float pitchInputs[2] = { 69.0f, 100.0f }; // pitch=69 -> 440Hz, frequency=100Hz (should be ignored)
+    float pitchInputs[6] = { 69.0f, 100.0f, kNaN, kNaN, kNaN, 0.0f }; // pitch=69 -> 440Hz, frequency=100Hz (should be ignored)
     float pitchOut = 0.0f;
     for (int i = 0; i < 4; ++i)
         viaPitch.processSample (pitchInputs, &pitchOut);
 
     OscillatorNode viaFrequency;
     viaFrequency.prepare (info);
-    float freqInputs[2] = { kNaN, 440.0f }; // pitch unconnected, frequency=440Hz directly
+    float freqInputs[6] = { kNaN, 440.0f, kNaN, kNaN, kNaN, 0.0f }; // pitch unconnected, frequency=440Hz directly
     float freqOut = 0.0f;
     for (int i = 0; i < 4; ++i)
         viaFrequency.processSample (freqInputs, &freqOut);

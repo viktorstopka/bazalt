@@ -33,7 +33,7 @@ namespace
         float constantValue = 0.0f;
     };
 
-    // A Boolean-typed constant — logic.boolean's own inputs are fixed
+    // A Boolean-typed constant — logic.and/or/xor's own inputs are fixed
     // Boolean (never polymorphic, unlike math.add/math.multiply since
     // DomainRedesign.md Batch 3), so it needs a plain source of that type.
     class BoolConstantNode : public Node
@@ -119,7 +119,7 @@ TEST_CASE ("Growable nodes start at their minimum and describe their group on ev
 {
     const auto factory = makeFactory();
 
-    for (const auto* typeId : { "math.add", "math.multiply", "logic.boolean" })
+    for (const auto* typeId : { "math.add", "math.multiply", "logic.and", "logic.or", "logic.xor", "logic.eventGroup" })
     {
         DYNAMIC_SECTION (typeId)
         {
@@ -276,7 +276,7 @@ TEST_CASE ("math.add sums a growable group of Audio inputs, holes and all - Doma
 }
 
 TEST_CASE ("math.add's ports report Audio + the source's quantity once an Audio source resolves them, "
-           "the same PortPolymorphism::SignalAndQuantity mechanism util.reroute already uses",
+           "the same PortPolymorphism::SignalAndQuantity mechanism deco.reroute already uses",
            "[engine][PortGroups][inheriting][DomainRedesign]")
 {
     const auto factory = makeFactory();
@@ -419,14 +419,14 @@ TEST_CASE ("math.multiply resolves Audio dynamically too - the real ring-mod cas
 TEST_CASE ("Recompiling reuses a growable node while its size is unchanged and replaces it once it grows",
            "[engine][PortGroups][GraphCompiler]")
 {
-    // logic.boolean, not math.add: DomainRedesign.md Batch 3 made math.add
+    // logic.or, not math.add: DomainRedesign.md Batch 3 made math.add
     // genuinely polymorphic (PortPolymorphism::SignalAndQuantity), and
     // GraphCompiler's own reuse check already excludes ANY
     // hasPolymorphicPorts() node from reuse outright, regardless of group
     // size (GraphCompiler.cpp's own comment: "such a node holds no DSP
-    // state worth carrying forward") — the exact same rule util.reroute's
+    // state worth carrying forward") — the exact same rule deco.reroute's
     // node has always lived under. math.add now lives under it too; a
-    // dedicated test for that is below. logic.boolean is a growable node
+    // dedicated test for that is below. logic.or is a growable node
     // that stays fixed-Boolean (never polymorphic), so it's what still
     // demonstrates the group-size-driven half of this rule in isolation.
     const auto factory = makeFactory();
@@ -435,7 +435,7 @@ TEST_CASE ("Recompiling reuses a growable node while its size is unchanged and r
     graph.addNode ({ "c0", "test.boolConstant", {}, { { "value", 1.0f } }, {} });
     graph.addNode ({ "c1", "test.boolConstant", {}, { { "value", 1.0f } }, {} });
     graph.addNode ({ "c2", "test.boolConstant", {}, { { "value", 1.0f } }, {} });
-    graph.addNode ({ "add", "logic.boolean", {}, {}, {} });
+    graph.addNode ({ "add", "logic.or", {}, {}, {} });
     graph.addConnection ({ "c0", "out", "add", "in.0" });
     graph.addConnection ({ "c1", "out", "add", "in.1" });
     graph.setOutput ("add", "out");
@@ -459,7 +459,7 @@ TEST_CASE ("Recompiling reuses a growable node while its size is unchanged and r
 }
 
 TEST_CASE ("math.add is never reused across a recompile, even at an unchanged group size - "
-           "PortPolymorphism::SignalAndQuantity makes it a polymorphic node like util.reroute",
+           "PortPolymorphism::SignalAndQuantity makes it a polymorphic node like deco.reroute",
            "[engine][PortGroups][GraphCompiler][DomainRedesign]")
 {
     const auto factory = makeFactory();

@@ -567,7 +567,7 @@ TEST_CASE ("A Reroute accepts a non-Audio cable through the controller, and forw
     REQUIRE (controller.setGraph (bazalt::engine::buildVoiceProofGraph()).success);
 
     REQUIRE (controller.addNode ("util.constant", "k", 0.0f, 0.0f).success);
-    REQUIRE (controller.addNode ("util.reroute", "rr", 0.0f, 0.0f).success);
+    REQUIRE (controller.addNode ("deco.reroute", "rr", 0.0f, 0.0f).success);
     REQUIRE (controller.addNode ("math.subtract", "sub", 0.0f, 0.0f).success);
 
     const auto intoReroute = controller.connectWithAutoAdapt ("k", "out", "rr", "in");
@@ -592,7 +592,7 @@ TEST_CASE ("A Reroute still rejects, through the controller, a downstream port i
     REQUIRE (controller.setGraph (bazalt::engine::buildVoiceProofGraph()).success);
 
     REQUIRE (controller.addNode ("io.noteIn", "notes", 0.0f, 0.0f).success);
-    REQUIRE (controller.addNode ("util.reroute", "rr", 0.0f, 0.0f).success);
+    REQUIRE (controller.addNode ("deco.reroute", "rr", 0.0f, 0.0f).success);
     REQUIRE (controller.addNode ("math.subtract", "sub", 0.0f, 0.0f).success);
 
     REQUIRE (controller.connectWithAutoAdapt ("notes", "notes", "rr", "in").success); // a Note cable into a Reroute

@@ -80,6 +80,9 @@ export function macroTypeChipText(type: MacroValueType, isInteger: boolean, isEn
   // Unipolar" carries no numbers — min/max are implicit for this subtype,
   // see TypedValueNodeBase.h's own effectiveMinMax).
   if (quantity === 'unipolar' || quantity === 'bipolar') return `Ctrl Mod ${capitalize(quantity)}`
-  if (quantity === 'dimensionless') return `Ctrl ${formatRange(min, max)}`
-  return `Ctrl ${capitalize(quantity)} ${formatRange(min, max)}`
+  // The ±100000 "no real limit" default (util.constant's own, ConstantNode.h)
+  // is not a range worth reading: say nothing rather than "-100000-100000".
+  const range = min <= -100000 && max >= 100000 ? '' : ` ${formatRange(min, max)}`
+  if (quantity === 'dimensionless') return `Ctrl${range}`
+  return `Ctrl ${capitalize(quantity)}${range}`
 }

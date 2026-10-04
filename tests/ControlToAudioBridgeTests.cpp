@@ -141,7 +141,7 @@ TEST_CASE ("A real-quantity modulation source reaches Master Out through Normali
 
     NodeGraph graph;
     graph.addNode ({ "random", "random.stepped", {}, { { "random.stepped.rate", 5000.0f } }, {} });
-    graph.addNode ({ "toFrequency", "adapt.map", {}, { { "adapt.map.min", 100.0f }, { "adapt.map.max", 2000.0f } }, {} });
+    graph.addNode ({ "toFrequency", "adapt.map", {}, { { "adapt.map.inMin", -1.0f }, { "adapt.map.inMax", 1.0f }, { "adapt.map.outMin", 100.0f }, { "adapt.map.outMax", 2000.0f } }, {} });
     graph.addNode ({ "normalise", "adapt.normalise", {}, { { "adapt.normalise.min", 100.0f }, { "adapt.normalise.max", 2000.0f } }, {} });
     graph.addNode ({ "bridge", "adapt.controlToAudio", {}, {}, {} });
     graph.addNode ({ "out", "io.output", {}, {}, {} });

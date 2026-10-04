@@ -86,7 +86,7 @@ namespace bazalt::engine::nodes
         std::vector<PortDescriptor> getInputPorts() const override
         {
             return {
-                { "in", SignalType::Audio },
+                perChannel ({ "in", SignalType::Audio }),
                 ValueTypes::frequencyPort ("resonator.comb.frequency", "Frequency", 220.0f),
                 PortDescriptor { .id = "resonator.comb.feedback", .type = SignalType::Control, .label = "Feedback",
                                   .minValue = -1.0f, .maxValue = 1.0f, .defaultValue = 0.5f,
@@ -101,7 +101,7 @@ namespace bazalt::engine::nodes
 
         std::vector<PortDescriptor> getOutputPorts() const override
         {
-            return { { "out", SignalType::Audio } };
+            return { perChannel ({ "out", SignalType::Audio }) };
         }
 
         std::vector<ParameterDescriptor> getParameters() const override

@@ -5,6 +5,7 @@
 #include <functional>
 #include <memory>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 namespace bazalt::engine
@@ -22,6 +23,17 @@ namespace bazalt::engine
         {
             creators[typeId] = std::move (createFn);
         }
+
+        /** A decoration (wiki/plans/Decorations.md): a node that exists on the
+            canvas only — headers, comments, boxes, images. GraphCompiler skips
+            it entirely, so it costs nothing at runtime. */
+        void registerDecoration (const juce::String& typeId, NodeCreateFn createFn)
+        {
+            registerType (typeId, std::move (createFn));
+            decorationTypes.insert (typeId);
+        }
+
+        bool isDecoration (const juce::String& typeId) const { return decorationTypes.count (typeId) > 0; }
 
         std::unique_ptr<Node> create (const juce::String& typeId) const
         {
@@ -52,5 +64,6 @@ namespace bazalt::engine
 
     private:
         std::unordered_map<juce::String, NodeCreateFn> creators;
+        std::unordered_set<juce::String> decorationTypes;
     };
 }

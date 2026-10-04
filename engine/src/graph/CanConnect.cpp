@@ -55,18 +55,17 @@ namespace bazalt::engine
 
             if (from.channels == Channels::Stereo && to.channels == Channels::Mono)
             {
-                // Real stereo cable redesign (wiki/NODES.System.md §9):
-                // `mix.downmix` is now a genuine 1-in-1-out node (one real
-                // `Channels::Stereo` "in" port, one mono "out"), so this
-                // fits the same single-`AdapterStep` splice mechanism
-                // `adapt.map`/`adapt.normalise`/`adapt.threshold` already
-                // use — `GraphEditController::connectWithAutoAdapt` auto-
-                // inserts it now, closing the gap this comment used to flag
-                // (downmix used to be 2-in-1-out, which never fit).
+                // wiki/plans/StereoChannels.md §3: per-channel processors are
+                // Inherited now, so this only happens for a port that is
+                // genuinely one signal (a detector, an exciter, a bridge).
+                // Reducing stereo loses information, so it is never silent:
+                // the user picks how, and the choice becomes a visible
+                // mix.downmix node in that mode.
                 CanConnectResult result;
                 result.outcome = ConnectionOutcome::NeedsAdapters;
                 result.adapterChain = { AdapterStep { "mix.downmix", "in" } };
-                result.reason = "Stereo source into a mono-only port needs mix.downmix";
+                result.reason = "Stereo into a mono-only port: choose Mid, Left, Right or Side";
+                result.choices = { "mid", "left", "right", "side" };
                 return result;
             }
 
@@ -88,7 +87,8 @@ namespace bazalt::engine
             if (isNormalisedQuantity (from.quantity) && isRealQuantity (to.quantity))
             {
                 AdapterStep step { "adapt.map", "in" };
-                step.seedFromDestinationRange = true;
+                step.seedFromSourceRange = true;      // input range: the source's own bounds, else its polarity
+                step.seedFromDestinationRange = true; // output range: the destination's
                 return needsAdapter (step, "Modulation-range value into a real-quantity port needs a Map");
             }
 
@@ -124,7 +124,7 @@ namespace bazalt::engine
 
             // Two different real quantities (e.g. Frequency and Time) — not
             // in SIGNAL_TYPES.md §5's original ten-pair table, but both
-            // sides are still real numeric ranges, so insert `adapt.remap`
+            // sides are still real numeric ranges, so insert `adapt.map`
             // (NODE_CATALOG.md's own node — this is its MVP linear form,
             // curve support grows it later rather than replacing it),
             // seeded from BOTH ends at once: inMin/inMax from the source's
@@ -137,7 +137,7 @@ namespace bazalt::engine
             // rejecting this pair outright was an unfinished case, not a
             // deliberate design choice — Pitch<->Frequency specifically no
             // longer falls through to here, see above.
-            AdapterStep step { "adapt.remap", "in" };
+            AdapterStep step { "adapt.map", "in" };
             step.seedFromSourceRange = true;
             step.seedFromDestinationRange = true;
             return needsAdapter (step, "Different real quantities — remapped via Remap");
@@ -214,6 +214,7 @@ namespace bazalt::engine
                 // case above, just reached from Audio instead of from an
                 // existing Control source.
                 AdapterStep second { "adapt.map", "in" };
+                second.seedFromSourceRange = true; // from adapt.audioToControl's own Bipolar output, not the Audio source
                 second.seedFromDestinationRange = true;
 
                 CanConnectResult result;

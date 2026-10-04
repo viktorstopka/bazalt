@@ -5,9 +5,9 @@
 // WebGL-background + DOM-overlay" node body approach is deliberately
 // deferred; see ADR-0008's Amendment (M10) for why DOM stays the layout
 // source of truth.
-import { useMemo } from 'react'
+import { Fragment, useMemo, useState, type ReactNode } from 'react'
 import type { NodeDescriptor, ParameterDescriptor, PortDescriptor, Quantity } from '../graph/descriptorTypes'
-import { classifyPortUiKind, portUiStyle, portUiStyleForEndpoint, parameterUiColor, resolvePortIsPoly } from '../graph/portUiKind'
+import { classifyPortUiKind, portUiStyle, portUiStyleForEndpoint, parameterUiColor, resolvePortIsPoly, type PortUiStyle } from '../graph/portUiKind'
 import { getEndpoint } from '../graph/graphStore'
 import type { NodeMultiplicityBadge, PortMultiplicityInfo } from '../graph/graphCommands'
 import { tokens } from '../theme/tokens'
@@ -18,10 +18,15 @@ import { ToggleSwitch } from '../controls/ToggleSwitch'
 import { NodePreview } from './NodePreview'
 import { frameTypeForPreviewKind } from '../graph/previewSubscriptions'
 import { withRevealedGroupPorts } from '../graph/portGroups'
-import { MacroBody } from './MacroBody'
+import { MacroBody, ConstantBody } from './MacroBody'
 import { RippleBody } from './RippleBody'
 import { CountBody } from './CountBody'
+import { TuneBody } from './TuneBody'
 import { ScopeControlBody } from './ScopeControlBody'
+import { ScopeModulationBody } from './ScopeModulationBody'
+import { GateBody } from './GateBody'
+import { MapDiagram } from './MapDiagram'
+import { CycleBody } from './CycleBody'
 import './NodeCard.css'
 
 /** PortDescriptor.h's own contract: "falls back to id in the UI if empty" —
@@ -110,7 +115,7 @@ export interface NodeCardState {
   /** design/Visualization/Scope1.png's editable vertical-range footer —
       the generic equivalent of countMinOverride/onSetCountMin above, for
       ANY viewer with an auto-ranging display scale (ScopeHistoryBody.tsx,
-      shared across every view.scope.* variant and a future view.gate).
+      shared across every view.scope.* variant and view.gate).
       A single, type-id-agnostic property key pair rather than one bespoke
       pair per viewer type — see graphStore.ts's setViewerRangeMin/Max.
       Undefined for every other node type, and for a viewer whose range has
@@ -120,6 +125,16 @@ export interface NodeCardState {
   viewerRangeMaxOverride?: number
   onSetViewerRangeMin?: (value: number) => void
   onSetViewerRangeMax?: (value: number) => void
+  /** design/Visualization/ScopeMod.png's editable centre line — see
+      graphStore.ts's GraphNode.viewerCenterOverride. */
+  viewerCenterOverride?: number
+  onSetViewerCenter?: (value: number) => void
+  /** Phase-locked preview playhead mode: 0 Auto (default), 1 On, 2 Off. */
+  /** A slider mid-drag (value) or released (null) — streamed to the engine
+      live, smoothed, without a recompile (graphStore.ts's setParameterLive). */
+  onParameterLive?: (id: string, value: number | null) => void
+  previewPlayheadMode?: number
+  onSetPreviewPlayheadMode?: (mode: number) => void
   /** MacroEditTypeModal's own portal target (GraphSurface.tsx's
       `overlayTarget`, the screen-space `.infinite-canvas-overlay` div) —
       see MacroBody.tsx's own comment on why this can't just render inline:
@@ -303,17 +318,23 @@ export function PortGlyph({
   instanceId,
   connected,
   isPoly,
+  styleOverride,
 }: {
   port: PortDescriptor
   side: 'left' | 'right'
   instanceId?: string
   connected: boolean
   isPoly?: boolean
+  /** A viewer body whose whole panel is drawn in one type's colour
+      (design/Visualization/ScopeMod.png: "Everything is orange") fixes its
+      glyph to that style instead of the live-resolved one — a quantity-
+      polymorphic port would otherwise read white while nothing is wired. */
+  styleOverride?: PortUiStyle
 }) {
   // "side" is a 1:1 proxy for direction at every call site in this file
   // (input always renders left, output always right).
   const direction = side === 'left' ? 'input' : 'output'
-  const style = resolvedPortStyle(port, instanceId, direction, isPoly)
+  const style = styleOverride ?? resolvedPortStyle(port, instanceId, direction, isPoly)
   const color = style.color
   const showDot = direction === 'input' && !connected && isEditableInNode(port)
   // Every port glyph is the SAME size everywhere, full stop — no per-row
@@ -370,7 +391,7 @@ function PortLabel({
     default drag range — passed as ValueSlider's plain min/max, which only
     drives the fill bar and drag sensitivity, never clamps. A port with no
     declared bounds at all (common for a mock/demo port, or a real one like
-    adapt.remap's own range ports, which are genuinely unbounded) falls
+    adapt.map's own range ports, which are genuinely unbounded) falls
     back to a plain 0-10 *visual* range and no hard clamp at all — direct
     feedback, citing Blender: a value should still be enterable past
     whatever the slider visually shows as its typical range.
@@ -383,6 +404,7 @@ function PortRow({
   instanceId,
   value,
   onCommit,
+  onLiveChange,
   isPoly,
 }: {
   direction: 'input' | 'output'
@@ -392,6 +414,7 @@ function PortRow({
   instanceId?: string
   value?: number
   onCommit?: (value: number) => void
+  onLiveChange?: (value: number | null) => void
   isPoly?: boolean
 }) {
   // Only an unconnected, editable-in-node INPUT falls back to a shown
@@ -429,6 +452,7 @@ function PortRow({
           skew={resolveSkew(port.curve, port.quantity)}
           color={portUiStyle(port, isPoly).color}
           onCommit={onCommit}
+          onLiveChange={onLiveChange}
         />
       ) : showToggle ? (
         <ToggleSwitch
@@ -514,6 +538,7 @@ function ParameterRow({
   isBool,
   options,
   onCommit,
+  onLiveChange,
 }: {
   id: string
   displayName: string
@@ -544,6 +569,7 @@ function ParameterRow({
   isBool?: boolean
   options?: string[]
   onCommit?: (value: number) => void
+  onLiveChange?: (value: number | null) => void
 }) {
   const color = parameterUiColor({ isBool: isBool ?? false, isInteger, quantity })
   return (
@@ -566,6 +592,7 @@ function ParameterRow({
           skew={skew}
           color={color}
           onCommit={onCommit}
+          onLiveChange={onLiveChange}
         />
       )}
     </div>
@@ -668,25 +695,58 @@ function parameterRowCommit(descriptor: NodeDescriptor, state: NodeCardState, id
   return paramCommit(state, id)
 }
 
+/** A live diagram drawn between two of a standard node's own rows — the
+    one thing a few nodes add to the ordinary row layout (design/Map.png's
+    mapping diagram between "In Max" and "Out Min"), keyed by typeId the same
+    way the bespoke bodies above are, but keeping every row, title and port
+    exactly as StandardBody already renders them. `liveValues` carries a
+    range slider's in-progress value mid-drag, before anything is committed,
+    so the diagram follows the drag rather than jumping on release. */
+interface InlineDiagram {
+  afterPortId: string
+  render: (props: { descriptor: NodeDescriptor; state: NodeCardState; instanceId?: string; liveValues: Readonly<Record<string, number>> }) => ReactNode
+}
+
+const INLINE_DIAGRAMS: Readonly<Record<string, InlineDiagram>> = {
+  'adapt.map': { afterPortId: 'adapt.map.inMax', render: (props) => <MapDiagram {...props} /> },
+}
+
 function StandardBody({ descriptor, state, instanceId }: { descriptor: NodeDescriptor; state: NodeCardState; instanceId?: string }) {
   const { merged, inputs, outputs } = useMemo(() => splitPorts(descriptor), [descriptor])
   const connected = state.connectedPortIds ?? new Set<string>()
+  const diagram = INLINE_DIAGRAMS[descriptor.typeId]
+  const [liveValues, setLiveValues] = useState<Readonly<Record<string, number>>>({})
+  // Every slider streams its in-progress value to the engine while dragged
+  // (heard live, smoothed); a node with an inline diagram also redraws it.
+  const liveChangeFor = (portId: string) => (value: number | null) => {
+    state.onParameterLive?.(portId, value)
+    if (diagram)
+      setLiveValues((previous) => {
+        const next = { ...previous }
+        if (value === null) delete next[portId]
+        else next[portId] = value
+        return next
+      })
+  }
 
   return (
     <>
       {merged && <MergedRowView row={merged} instanceId={instanceId} connected={connected.has(merged.id)} multiplicity={state.portMultiplicity} />}
       {inputs.map((row) => (
-        <PortRow
-          key={row.port.id}
-          direction="input"
-          port={row.port}
-          connected={connected.has(row.port.id)}
-          demoValue={state.demoConnectedValue}
-          instanceId={instanceId}
-          value={paramValue(state, row.port.id, row.port.defaultValue)}
-          onCommit={paramCommit(state, row.port.id)}
-          isPoly={resolvePortIsPoly(row.port, state.portMultiplicity)}
-        />
+        <Fragment key={row.port.id}>
+          <PortRow
+            direction="input"
+            port={row.port}
+            connected={connected.has(row.port.id)}
+            demoValue={state.demoConnectedValue}
+            instanceId={instanceId}
+            value={paramValue(state, row.port.id, row.port.defaultValue)}
+            onCommit={paramCommit(state, row.port.id)}
+            onLiveChange={liveChangeFor(row.port.id)}
+            isPoly={resolvePortIsPoly(row.port, state.portMultiplicity)}
+          />
+          {diagram?.afterPortId === row.port.id && diagram.render({ descriptor, state, instanceId, liveValues })}
+        </Fragment>
       ))}
       {descriptor.parameters.map((p) => (
         <ParameterRow
@@ -706,6 +766,7 @@ function StandardBody({ descriptor, state, instanceId }: { descriptor: NodeDescr
           isBool={p.kind === 'bool'}
           options={parameterOptions(p)}
           onCommit={parameterRowCommit(descriptor, state, p.id)}
+          onLiveChange={p.isStructural ? undefined : liveChangeFor(p.id)}
         />
       ))}
       {outputs.map((row) => (
@@ -720,7 +781,7 @@ function StandardBody({ descriptor, state, instanceId }: { descriptor: NodeDescr
         />
       ))}
       {instanceId && descriptor.previews?.map((preview) => (
-        <NodePreview key={preview.portId} nodeId={instanceId} preview={preview} />
+        <NodePreview key={preview.portId} nodeId={instanceId} preview={preview} state={state} />
       ))}
     </>
   )
@@ -921,7 +982,7 @@ function GlanceBody({ descriptor, state, instanceId }: { descriptor: NodeDescrip
 }
 
 function DecorationBody({ descriptor }: { descriptor: NodeDescriptor }) {
-  if (descriptor.typeId === 'util.reroute') return <div className="node-knob" title="Reroute" />
+  if (descriptor.typeId === 'deco.reroute') return <div className="node-knob" title="Reroute" />
   if (descriptor.icon === 'header') return <span className="node-header-label node-title">{descriptor.title}</span>
   if (descriptor.icon === 'image')
     return (
@@ -948,10 +1009,13 @@ export function NodeCard({ descriptor: declaredDescriptor, state = {}, instanceI
   if (descriptor.icon === 'ear') return <EarIcon title={descriptor.title} />
   // design/Macro.png / wiki/plans/PropsAndMacroRedesign.md Batch E: a
   // bespoke body, keyed by typeId exactly like DecorationBody's own
-  // util.reroute special-case below — util.macro's REAL engine descriptor
+  // deco.reroute special-case below — util.macro's REAL engine descriptor
   // still reports an ordinary layoutVariant ('standard'); this is a
   // client-side-only visual replacement, no engine change needed or made.
   if (descriptor.typeId === 'util.macro') return <MacroBody descriptor={descriptor} state={state} instanceId={instanceId} />
+  // util.constant: the same design/Macro.png card without the macro-only
+  // parts (MacroBody.tsx's ConstantBody).
+  if (descriptor.typeId === 'util.constant') return <ConstantBody descriptor={descriptor} state={state} instanceId={instanceId} />
   // design/Visualization/Ripple.png: same client-side-only typeId dispatch
   // as util.macro above — view.ripple's real engine descriptor reports an
   // ordinary Glance layoutVariant; this is a visual swap only.
@@ -961,9 +1025,17 @@ export function NodeCard({ descriptor: declaredDescriptor, state = {}, instanceI
   // reports an ordinary Glance layoutVariant too; this is a visual swap
   // only.
   if (descriptor.typeId === 'view.count') return <CountBody descriptor={descriptor} state={state} instanceId={instanceId} />
+  // design/Visualization/Tune.png: the Pitch viewer, same dispatch.
+  if (descriptor.typeId === 'view.tune') return <TuneBody descriptor={descriptor} state={state} instanceId={instanceId} />
   // design/Visualization/Scope1.png: same client-side-only typeId dispatch
   // as view.ripple/view.count just above.
   if (descriptor.typeId === 'view.scope.control') return <ScopeControlBody descriptor={descriptor} state={state} instanceId={instanceId} />
+  // design/Visualization/ScopeMod.png and Gate.png: the other two variants
+  // of the same scrolling-history panel (ScopeHistoryBody.tsx).
+  if (descriptor.typeId === 'view.scope.modulation') return <ScopeModulationBody descriptor={descriptor} state={state} instanceId={instanceId} />
+  if (descriptor.typeId === 'view.gate') return <GateBody descriptor={descriptor} state={state} instanceId={instanceId} />
+  // The placeable phase-locked viewer (replaces view.scope/view.glance).
+  if (descriptor.typeId === 'view.cycle') return <CycleBody descriptor={descriptor} state={state} instanceId={instanceId} />
   if (descriptor.layoutVariant === 'decoration') return <DecorationBody descriptor={descriptor} />
   if (descriptor.layoutVariant === 'singleton') return <SingletonBody descriptor={descriptor} state={state} instanceId={instanceId} />
   if (descriptor.layoutVariant === 'glance') return <GlanceBody descriptor={descriptor} state={state} instanceId={instanceId} />

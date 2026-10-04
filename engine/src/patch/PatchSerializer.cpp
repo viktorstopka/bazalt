@@ -534,6 +534,195 @@ namespace bazalt::engine
             return root;
         }
 
+        // 2026-10-04, design/Map.png: `adapt.remap` became `adapt.map` and the
+        // old two-parameter `adapt.map` stopped existing (MapNode.h). Unlike
+        // the bump-only migrations above, this one rewrites ids, because the
+        // user's own saved patches (patches/CatPurr.json among them) use
+        // both nodes:
+        //   - old adapt.map {min, max} -> new adapt.map with inMin/inMax 0..1
+        //     and outMin/outMax = min/max. The old node also rescaled a
+        //     Bipolar source from -1..1; a migrated one fed by a Bipolar
+        //     source needs its In Min edited to -1 by hand (the polarity of
+        //     the source isn't knowable from the document alone).
+        //   - adapt.remap -> adapt.map, every "adapt.remap.*" parameter and
+        //     connection port id renamed to "adapt.map.*".
+        // Old adapt.map nodes are rewritten FIRST, so a renamed remap is never
+        // mistaken for one.
+        juce::var migrateV7ToV8 (juce::var v7Root)
+        {
+            auto root = v7Root.clone();
+
+            auto renameKeys = [] (juce::DynamicObject& object, const juce::String& from, const juce::String& to)
+            {
+                juce::NamedValueSet renamed;
+                for (const auto& property : object.getProperties())
+                {
+                    const auto name = property.name.toString();
+                    renamed.set (name.startsWith (from) ? to + name.substring (from.length()) : name, property.value);
+                }
+                object.clear();
+                for (const auto& property : renamed)
+                    object.setProperty (property.name, property.value);
+            };
+
+            if (auto* nodes = root["nodes"].getArray())
+            {
+                for (auto& node : *nodes)
+                {
+                    auto* object = node.getDynamicObject();
+                    if (object == nullptr)
+                        continue;
+
+                    const auto type = object->getProperty ("type").toString();
+                    auto* parameters = object->getProperty ("parameters").getDynamicObject();
+
+                    if (type == "adapt.map" && parameters != nullptr)
+                    {
+                        const auto min = parameters->hasProperty ("adapt.map.min") ? parameters->getProperty ("adapt.map.min") : juce::var (0.0f);
+                        const auto max = parameters->hasProperty ("adapt.map.max") ? parameters->getProperty ("adapt.map.max") : juce::var (1.0f);
+                        parameters->removeProperty ("adapt.map.min");
+                        parameters->removeProperty ("adapt.map.max");
+                        parameters->setProperty ("adapt.map.inMin", 0.0f);
+                        parameters->setProperty ("adapt.map.inMax", 1.0f);
+                        parameters->setProperty ("adapt.map.outMin", min);
+                        parameters->setProperty ("adapt.map.outMax", max);
+                    }
+                    else if (type == "adapt.remap")
+                    {
+                        object->setProperty ("type", "adapt.map");
+                        if (parameters != nullptr)
+                            renameKeys (*parameters, "adapt.remap.", "adapt.map.");
+                    }
+                }
+            }
+
+            if (auto* connections = root["connections"].getArray())
+                for (auto& connection : *connections)
+                    if (auto* object = connection.getDynamicObject())
+                        for (const auto* key : { "fromPortId", "toPortId" })
+                        {
+                            const auto portId = object->getProperty (key).toString();
+                            if (portId.startsWith ("adapt.remap."))
+                                object->setProperty (key, "adapt.map." + portId.fromFirstOccurrenceOf ("adapt.remap.", false, false));
+                        }
+
+            root.getDynamicObject()->setProperty ("schemaVersion", 8);
+            return root;
+        }
+
+        // 2026-10-04: view.scope and view.glance were removed outright (the
+        // phase-locked view.cycle replaces both). A view.scope was a dead end,
+        // so it and its connections simply go. A view.glance was a pass-
+        // through, so it is spliced OUT: whatever fed it now feeds everything
+        // it fed (and the graph output, if it was that), so the patch still
+        // sounds the same.
+        juce::var migrateV8ToV9 (juce::var v8Root)
+        {
+            auto root = v8Root.clone();
+            auto* nodes = root["nodes"].getArray();
+            auto* connections = root["connections"].getArray();
+
+            juce::StringArray removed, glances;
+            if (nodes != nullptr)
+            {
+                for (int i = nodes->size(); --i >= 0;)
+                {
+                    const auto type = (*nodes)[i]["type"].toString();
+                    if (type == "view.scope" || type == "view.glance")
+                    {
+                        removed.add ((*nodes)[i]["id"].toString());
+                        if (type == "view.glance")
+                            glances.add ((*nodes)[i]["id"].toString());
+                        nodes->remove (i);
+                    }
+                }
+            }
+
+            if (connections != nullptr && ! removed.isEmpty())
+            {
+                for (const auto& glance : glances)
+                {
+                    juce::var feeder;
+                    for (const auto& c : *connections)
+                        if (c["toNodeId"].toString() == glance)
+                            feeder = c;
+                    if (feeder.isVoid())
+                        continue;
+
+                    juce::Array<juce::var> bridged;
+                    for (const auto& c : *connections)
+                    {
+                        if (c["fromNodeId"].toString() != glance)
+                            continue;
+                        auto* bridge = new juce::DynamicObject();
+                        bridge->setProperty ("fromNodeId", feeder["fromNodeId"]);
+                        bridge->setProperty ("fromPortId", feeder["fromPortId"]);
+                        bridge->setProperty ("toNodeId", c["toNodeId"]);
+                        bridge->setProperty ("toPortId", c["toPortId"]);
+                        bridged.add (juce::var (bridge));
+                    }
+                    connections->addArray (bridged);
+
+                    if (root["outputNodeId"].toString() == glance)
+                    {
+                        root.getDynamicObject()->setProperty ("outputNodeId", feeder["fromNodeId"]);
+                        root.getDynamicObject()->setProperty ("outputPortId", feeder["fromPortId"]);
+                    }
+                }
+
+                for (int i = connections->size(); --i >= 0;)
+                    if (removed.contains ((*connections)[i]["fromNodeId"].toString()) || removed.contains ((*connections)[i]["toNodeId"].toString()))
+                        connections->remove (i);
+            }
+
+            root.getDynamicObject()->setProperty ("schemaVersion", 9);
+            return root;
+        }
+
+        // 2026-10-04: logic.boolean (one node, an Op menu AND/OR/XOR/NAND/NOR)
+        // became separate logic.and / logic.or / logic.xor nodes with an
+        // Invert switch (LogicGateNodes.h). Ports (in.N, out) are unchanged.
+        juce::var migrateV9ToV10 (juce::var v9Root)
+        {
+            auto root = v9Root.clone();
+            if (auto* nodes = root["nodes"].getArray())
+            {
+                for (auto& node : *nodes)
+                {
+                    auto* object = node.getDynamicObject();
+                    if (object == nullptr || object->getProperty ("type").toString() != "logic.boolean")
+                        continue;
+
+                    auto* parameters = object->getProperty ("parameters").getDynamicObject();
+                    const auto op = parameters != nullptr && parameters->hasProperty ("logic.boolean.op")
+                                        ? juce::roundToInt ((float) parameters->getProperty ("logic.boolean.op")) : 0;
+                    // 0 AND, 1 OR, 2 XOR, 3 NAND, 4 NOR
+                    const juce::String type = (op == 1 || op == 4) ? "logic.or" : op == 2 ? "logic.xor" : "logic.and";
+                    object->setProperty ("type", type);
+
+                    auto* fresh = new juce::DynamicObject();
+                    if (op >= 3)
+                        fresh->setProperty (type + ".invert", 1.0f);
+                    object->setProperty ("parameters", juce::var (fresh));
+                }
+            }
+            root.getDynamicObject()->setProperty ("schemaVersion", 10);
+            return root;
+        }
+
+        // wiki/plans/Decorations.md: util.reroute moved to the Decorations
+        // family as deco.reroute. Ports (in/out) are unchanged.
+        juce::var migrateV10ToV11 (juce::var v10Root)
+        {
+            auto root = v10Root.clone();
+            if (auto* nodes = root["nodes"].getArray())
+                for (auto& node : *nodes)
+                    if (auto* object = node.getDynamicObject(); object != nullptr && object->getProperty ("type").toString() == "util.reroute")
+                        object->setProperty ("type", "deco.reroute");
+            root.getDynamicObject()->setProperty ("schemaVersion", 11);
+            return root;
+        }
+
         // vN -> vN+1 migrations, keyed by the version they migrate FROM.
         using Migration = std::function<juce::var (juce::var)>;
 
@@ -546,6 +735,10 @@ namespace bazalt::engine
                 { 4, migrateV4ToV5 },
                 { 5, migrateV5ToV6 },
                 { 6, migrateV6ToV7 },
+                { 7, migrateV7ToV8 },
+                { 8, migrateV8ToV9 },
+                { 9, migrateV9ToV10 },
+                { 10, migrateV10ToV11 },
             };
             return migrations;
         }
@@ -565,6 +758,10 @@ namespace bazalt::engine
 
             doc.view = viewFromVar (root["view"]);
             doc.meta = metaFromVar (root["meta"]);
+
+            if (auto* assets = root["assets"].getDynamicObject())
+                for (const auto& property : assets->getProperties())
+                    doc.assets[property.name.toString()] = PatchAsset { property.value["type"].toString(), property.value["data"].toString() };
             return doc;
         }
     }
@@ -585,6 +782,16 @@ namespace bazalt::engine
 
         obj->setProperty ("view", viewToVar (doc.view));
         obj->setProperty ("meta", metaToVar (doc.meta));
+
+        auto* assets = new juce::DynamicObject();
+        for (const auto& [id, asset] : doc.assets)
+        {
+            auto* entry = new juce::DynamicObject();
+            entry->setProperty ("type", asset.mimeType);
+            entry->setProperty ("data", asset.data);
+            assets->setProperty (id, juce::var (entry));
+        }
+        obj->setProperty ("assets", juce::var (assets));
 
         return juce::JSON::toString (juce::var (obj), ! prettyPrint);
     }

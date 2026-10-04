@@ -90,6 +90,8 @@ namespace bazalt::engine
         void publishMeter (size_t slotIndex, const float* samples, int numSamples, double elapsedSeconds, const TapSettings& settings);
         void publishEventImpulse (size_t slotIndex, const float* samples, int numSamples, uint64_t totalPushed);
         void publishRollingHistory (size_t slotIndex, const float* samples, int numSamples, uint64_t totalPushed, const TapSettings& settings);
+        void publishPhaseLocked (size_t slotIndex, const Tap& tap, const float* samples, const float* phases, int numSamples,
+                                 uint64_t totalPushed, const TapSettings& settings);
 
         TelemetryHub& hub;
         double sampleRate = 44100.0;
@@ -100,6 +102,16 @@ namespace bazalt::engine
         double maxProcessingMsPerCycle = defaultMaxProcessingMsPerCycle;
 
         std::vector<float> scratchSamples;
+        std::vector<float> scratchPhases; // the phase track read alongside scratchSamples (Tap::readLatest)
+
+        // PreviewKind::PhaseLocked fold mode: per tap, the latest sample seen
+        // at each of phaseLockedPoints phase bins (flat, slot * points + bin;
+        // NaN = nothing landed there yet), and how far into the tap it has
+        // scanned — the same "only the NEW samples" bookkeeping
+        // publishRollingHistory uses.
+        std::vector<float> phaseBins;
+        std::array<uint64_t, TelemetryHub::maxTaps> phaseLastScannedTotalBySlot {};
+        std::vector<float> phaseLockedPayload; // [playhead, frequencyHz, phaseLockedPoints values]
         std::vector<float> oscilloscopePayload;
         std::vector<float> fftData;
         std::vector<float> eventImpulsePayload; // reused across publishEventImpulse() calls, sized to maxEventsPerPublish in prepare()

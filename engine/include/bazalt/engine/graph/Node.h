@@ -1,5 +1,7 @@
 #pragma once
 
+#include "bazalt/engine/telemetry/PhaseSnapshot.h"
+
 #include "bazalt/engine/graph/Data.h"
 #include "bazalt/engine/graph/HostInputs.h"
 #include "bazalt/engine/graph/PortDescriptor.h"
@@ -22,7 +24,7 @@ namespace bazalt::engine
         `Glance` (Milestone 0.6, wiki/NODES.md): the minimal inline preview
         variant — no title, no parameter list, just an input glyph, a
         compact live preview, and an output glyph (NodeCard.tsx's
-        `GlanceBody`) — see `ViewGlanceNode.h`.
+        `GlanceBody`) — see `ViewCycleNode.h` (view.glance, the first user, was removed 2026-10-04).
     */
     enum class NodeLayoutVariant
     {
@@ -79,6 +81,30 @@ namespace bazalt::engine
         */
         virtual bool hasPolymorphicPorts() const noexcept { return false; }
 
+        /** True for a node type that has been superseded and is no longer
+            offered for placement (the Add menu hides it), but still loads,
+            compiles and runs exactly as before wherever an existing patch
+            already uses it — so retiring a node never breaks a saved graph.
+            Deprecation is a catalog fact, not a runtime one: nothing on the
+            audio path reads it. The node's own doc comment says what
+            replaced it.
+        */
+        virtual bool isDeprecated() const noexcept { return false; }
+
+        /** A node built on a phase accumulator (the oscillators, a future
+            LFO) — PreviewKind::PhaseLocked's time base. Such a node:
+            - fills getPhaseTrack() during processBlock with its accumulator
+              position per sample, as 0..phaseLockedCycles (cycle count mod
+              phaseLockedCycles plus the fraction), so samples anywhere
+              downstream can be folded by it;
+            - fills a PhaseSnapshot in capturePhaseSnapshot() (audio thread,
+              once per block, no allocation) so its own waveform can be drawn
+              at its current, fully modulated parameters.
+            Both are only read when a phase-locked preview is subscribed. */
+        virtual bool isPhaseSource() const noexcept { return false; }
+        virtual const float* getPhaseTrack() const noexcept { return nullptr; }
+        virtual void capturePhaseSnapshot (PhaseSnapshot&) const noexcept {}
+
         /** Growable port groups (SIGNAL_TYPES.md §6; PortGroups.h has the
             whole mechanism). -1 (the default) means this node has no
             growable group. Otherwise: how many members of the group the
@@ -97,7 +123,7 @@ namespace bazalt::engine
             output feeding it — before that connection (or any connection
             from this node's own outputs) is validated. Only meaningful when
             hasPolymorphicPorts() is true. The node adopts whatever it wants
-            from `source` (its SignalType, its Quantity — util.reroute takes
+            from `source` (its SignalType, its Quantity — deco.reroute takes
             both; logic.select ignores its own `condition` port and adopts
             only for the two data inputs). The compiler calls this repeatedly,
             to a fixed point, so a source that is itself an unresolved

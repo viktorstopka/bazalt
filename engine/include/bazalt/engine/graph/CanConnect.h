@@ -45,6 +45,14 @@ namespace bazalt::engine
             surfaces. Empty iff `outcome == Ok`.
         */
         juce::String reason;
+
+        /** Non-empty when the adapter chain throws information away and the
+            user must say how (wiki/plans/StereoChannels.md §3 — stereo into a
+            genuinely mono port: Mid, Left, Right or Side). Each entry is an
+            enum option id of the first adapter's mode parameter; nothing is
+            ever auto-inserted for such a connection without one of them.
+        */
+        std::vector<juce::String> choices;
     };
 
     /** SIGNAL_TYPES.md §4: "the engine is the authority, and there is

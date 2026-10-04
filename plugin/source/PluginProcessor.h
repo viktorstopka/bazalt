@@ -14,6 +14,7 @@
 #include "bazalt/engine/telemetry/TelemetryHub.h"
 #include "bazalt/engine/telemetry/AnalysisThread.h"
 #include "MacroParameters.h"
+#include "LiveParameterEdits.h"
 #include "GraphEditController.h"
 #include <array>
 #include <atomic>
@@ -186,6 +187,7 @@ namespace bazalt
             Message-thread only.
         */
         GraphEditController& getGraphEditController() noexcept { return graphEditController; }
+        LiveParameterEdits& getLiveParameterEdits() noexcept { return liveParameterEdits; }
 
         // The handful of accessors GraphEditController needs to compile
         // and publish plans without reaching into private members
@@ -461,6 +463,7 @@ namespace bazalt
         std::atomic<int> outputOriginBundleIndex { -1 };
 
         MacroParameters macroParameters;
+        LiveParameterEdits liveParameterEdits; // values moving while a slider is dragged
         bazalt::engine::NanGuard outputGuard;
         bazalt::engine::OutputLimiter outputLimiter; // real safety ceiling — see OutputLimiter.h's own doc comment
         bool outputLimiterEnabled = true; // see setOutputLimiterEnabledForTesting()'s own doc comment

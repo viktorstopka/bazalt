@@ -38,6 +38,10 @@ namespace bazalt
         {
             bool success = false;
             juce::String errorMessage;
+            // connectWithAutoAdapt only: the connection needs the user to pick
+            // how information is reduced (CanConnectResult::choices) — call
+            // again with one of these.
+            juce::StringArray choices {};
         };
 
         /** Called once prepareToPlay knows the sample rate/block size (and
@@ -67,16 +71,23 @@ namespace bazalt
             wired source -> adapter(s) -> destination) via `applyBatch` —
             one recompile, one undo step, per SIGNAL_TYPES.md §5. A chain
             this milestone can't actually realize as a single-input splice
-            (currently only `mix.downmix`'s 2-in-1-out channels case,
-            `CanConnect.cpp`'s own comment has the full reasoning) is
-            rejected with a message pointing at manual insertion, not
-            silently attempted wrong.
+            is rejected with a message pointing at manual insertion, not
+            silently attempted wrong. A chain that loses information (stereo
+            into a mono-only port, CanConnectResult::choices) needs `choice`:
+            without one this returns failure carrying the choices, so the UI
+            can ask; with one, the adapter's mode is set to it.
         */
         CommandResult connectWithAutoAdapt (const juce::String& fromNodeId, const juce::String& fromPortId,
-                                             const juce::String& toNodeId, const juce::String& toPortId);
+                                             const juce::String& toNodeId, const juce::String& toPortId,
+                                             const juce::String& choice = {});
 
         CommandResult disconnect (const juce::String& fromNodeId, const juce::String& fromPortId,
                                    const juce::String& toNodeId, const juce::String& toPortId);
+        /** Whether a running node can take this value live (a port's
+            fallback value or a non-structural parameter) — see
+            LiveParameterEdits.h. Message thread. */
+        bool isLiveEditable (const juce::String& nodeId, const juce::String& parameterId) const;
+
         CommandResult setParameterValue (const juce::String& nodeId, const juce::String& parameterId, float value);
 
         /** Adds one fully-configured `util.macro` node (id/position/every
@@ -132,6 +143,16 @@ namespace bazalt
             documented gap, not silently assumed solved.
         */
         CommandResult setProperty (const juce::String& nodeId, const juce::String& propertyKey, juce::var value);
+
+        /** The most image data one patch may carry (wiki/plans/Decorations.md
+            §4): an image that would take it past this is refused. */
+        static constexpr size_t maxPatchAssetBytes = 5 * 1024 * 1024;
+
+        /** Adds a deco.image node at (x, y) showing `base64` (already
+            compressed by the UI), `width` x `height` world units, in one
+            undo step. The image is stored once per patch, by content. */
+        CommandResult addImage (const juce::String& nodeId, float x, float y, const juce::String& mimeType,
+                                const juce::String& base64, float width, float height);
 
         /** Replaces the whole graph in one step (patch load) — rolled back
             to the previous graph, same as any other command, if the new
@@ -225,6 +246,11 @@ namespace bazalt
         */
         const std::unordered_map<juce::String, int>& getOriginBundleIndices() const noexcept { return originBundleIndexByNodeId; }
 
+        /** Node id -> its output ports that carry stereo, as of the last
+            successful recompile (wiki/plans/StereoChannels.md) — what the
+            editor draws as a stereo cable. */
+        const std::unordered_map<juce::String, std::vector<juce::String>>& getStereoOutputs() const noexcept { return stereoOutputs; }
+
     private:
         CommandResult recompileAndPublish();
         uint64_t nextGeneration() noexcept { return generationCounter++; }
@@ -239,6 +265,7 @@ namespace bazalt
         std::unordered_map<juce::String, juce::String> nodeDomains;
         std::unordered_map<juce::String, std::unordered_map<juce::String, PortMultiplicityInfo>> portMultiplicity;
         std::unordered_map<juce::String, int> originBundleIndexByNodeId;
+        std::unordered_map<juce::String, std::vector<juce::String>> stereoOutputs;
         uint64_t generationCounter = 1;
     };
 }

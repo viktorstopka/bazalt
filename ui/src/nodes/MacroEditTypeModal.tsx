@@ -109,6 +109,13 @@ export function MacroEditTypeModal({
   const showEnumOptions = showEnumToggle && draftIsEnum
 
   const hasParamId = (id: string): boolean => descriptor.parameters.some((p) => p.id === id)
+  // Shared by every TypedValueNodeBase node (util.macro, util.constant): their
+  // parameters are "<typeId>.type", "<typeId>.min", ... (TypedValueNodeBase.h's
+  // commonParameters). A node whose `type` enum stops before Trigger
+  // (util.constant) doesn't offer it.
+  const idOf = (suffix: string): string => `${descriptor.typeId}.${suffix}`
+  const typeParameter = descriptor.parameters.find((p) => p.id === idOf('type'))
+  const allowTrigger = (typeParameter?.maxValue ?? 2) >= 2
 
   const changeSubtype = (next: MacroControlSubtype) => {
     setDraftSubtype(next)
@@ -123,16 +130,16 @@ export function MacroEditTypeModal({
   const apply = () => {
     const commit = state.onParameterCommit
     if (commit) {
-      if (hasParamId('util.macro.type')) commit('util.macro.type', macroTypeOrdinal(draftType))
+      if (hasParamId(idOf('type'))) commit(idOf('type'), macroTypeOrdinal(draftType))
       if (isControl) {
-        if (hasParamId('util.macro.isInteger')) commit('util.macro.isInteger', draftSubtype === 'int' ? 1 : 0)
-        if (hasParamId('util.macro.isEnum')) commit('util.macro.isEnum', showEnumToggle && draftIsEnum ? 1 : 0)
-        if (hasParamId('util.macro.quantity')) commit('util.macro.quantity', quantityOrdinal(draftQuantity))
+        if (hasParamId(idOf('isInteger'))) commit(idOf('isInteger'), draftSubtype === 'int' ? 1 : 0)
+        if (hasParamId(idOf('isEnum'))) commit(idOf('isEnum'), showEnumToggle && draftIsEnum ? 1 : 0)
+        if (hasParamId(idOf('quantity'))) commit(idOf('quantity'), quantityOrdinal(draftQuantity))
         if (showRange) {
           const parsedMin = Number.parseFloat(draftMin)
           const parsedMax = Number.parseFloat(draftMax)
-          if (hasParamId('util.macro.min') && Number.isFinite(parsedMin)) commit('util.macro.min', parsedMin)
-          if (hasParamId('util.macro.max') && Number.isFinite(parsedMax)) commit('util.macro.max', parsedMax)
+          if (hasParamId(idOf('min')) && Number.isFinite(parsedMin)) commit(idOf('min'), parsedMin)
+          if (hasParamId(idOf('max')) && Number.isFinite(parsedMax)) commit(idOf('max'), parsedMax)
         }
       }
     }
@@ -153,7 +160,7 @@ export function MacroEditTypeModal({
         <label className="macro-edit-field">
           <span>Type</span>
           <select value={draftType} onChange={(e) => setDraftType(e.target.value as MacroValueType)}>
-            {MACRO_TYPE_ORDER.map((t) => (
+            {MACRO_TYPE_ORDER.filter((t) => t !== 'trigger' || allowTrigger).map((t) => (
               <option key={t} value={t}>
                 {TYPE_LABELS[t]}
               </option>

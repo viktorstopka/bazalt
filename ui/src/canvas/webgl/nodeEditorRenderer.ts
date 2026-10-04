@@ -50,6 +50,10 @@ export interface CableSpec {
   color: readonly [number, number, number]
   alpha: number
   dashed: boolean
+  /** Two channels (wiki/plans/StereoChannels.md): drawn as two thin
+      parallel strokes, so where a stereo image lives — and where it ends —
+      is visible on the canvas. */
+  stereo?: boolean
 }
 
 export interface RenderParams {
@@ -123,32 +127,47 @@ export function createNodeEditorRenderer(gl: WebGL2RenderingContext): NodeEditor
       let dist = 0
       const dashFlag = cable.dashed ? 1 : 0
       const [r, g, b, a] = [cable.color[0], cable.color[1], cable.color[2], cable.alpha]
+      // [centre offset, half width] per stroke: a stereo cable is two strokes,
+      // each a little thinner than a mono one, with a gap between them.
+      const strokes: ReadonlyArray<readonly [number, number]> = cable.stereo
+        ? [
+            [-halfWidth * 1.4, halfWidth * 0.6],
+            [halfWidth * 1.4, halfWidth * 0.6],
+          ]
+        : [[0, halfWidth]]
 
-      for (let i = 0; i < points.length - 1; i++) {
-        const p0 = points[i]
-        const p1 = points[i + 1]
-        const dx = p1.x - p0.x
-        const dy = p1.y - p0.y
-        const segLen = Math.hypot(dx, dy) || 1
-        // Perpendicular unit vector, scaled to half the desired width —
-        // real quad geometry (two triangles) instead of a native GL line,
-        // since gl.lineWidth() can't be trusted to draw anything wider
-        // than 1px (see CABLE_WIDTH_PX's own comment).
-        const nx = (-dy / segLen) * halfWidth
-        const ny = (dx / segLen) * halfWidth
+      for (const [offset, strokeHalfWidth] of strokes) {
+        dist = 0
+        for (let i = 0; i < points.length - 1; i++) {
+          const p0 = points[i]
+          const p1 = points[i + 1]
+          const dx = p1.x - p0.x
+          const dy = p1.y - p0.y
+          const segLen = Math.hypot(dx, dy) || 1
+          // Perpendicular unit vector, scaled to half the desired width —
+          // real quad geometry (two triangles) instead of a native GL line,
+          // since gl.lineWidth() can't be trusted to draw anything wider
+          // than 1px (see CABLE_WIDTH_PX's own comment).
+          const ux = -dy / segLen
+          const uy = dx / segLen
+          const nx = ux * strokeHalfWidth
+          const ny = uy * strokeHalfWidth
+          const c0 = { x: p0.x + ux * offset, y: p0.y + uy * offset }
+          const c1 = { x: p1.x + ux * offset, y: p1.y + uy * offset }
 
-        const aL = { x: p0.x + nx, y: p0.y + ny }
-        const aR = { x: p0.x - nx, y: p0.y - ny }
-        const bL = { x: p1.x + nx, y: p1.y + ny }
-        const bR = { x: p1.x - nx, y: p1.y - ny }
+          const aL = { x: c0.x + nx, y: c0.y + ny }
+          const aR = { x: c0.x - nx, y: c0.y - ny }
+          const bL = { x: c1.x + nx, y: c1.y + ny }
+          const bR = { x: c1.x - nx, y: c1.y - ny }
 
-        // Two triangles: (aL, aR, bL) and (aR, bR, bL).
-        positions.push(aL.x, aL.y, aR.x, aR.y, bL.x, bL.y, aR.x, aR.y, bR.x, bR.y, bL.x, bL.y)
-        for (let v = 0; v < 6; v++) colors.push(r, g, b, a)
-        const distEnd = dist + segLen
-        dists.push(dist, dist, distEnd, dist, distEnd, distEnd)
-        for (let v = 0; v < 6; v++) dashes.push(dashFlag)
-        dist = distEnd
+          // Two triangles: (aL, aR, bL) and (aR, bR, bL).
+          positions.push(aL.x, aL.y, aR.x, aR.y, bL.x, bL.y, aR.x, aR.y, bR.x, bR.y, bL.x, bL.y)
+          for (let v = 0; v < 6; v++) colors.push(r, g, b, a)
+          const distEnd = dist + segLen
+          dists.push(dist, dist, distEnd, dist, distEnd, distEnd)
+          for (let v = 0; v < 6; v++) dashes.push(dashFlag)
+          dist = distEnd
+        }
       }
     }
 
