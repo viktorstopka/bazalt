@@ -55,7 +55,7 @@ namespace bazalt::engine::nodes
         int getNumOutputPorts() const noexcept override { return numOutputs; }
 
         juce::String getTitle() const override { return "Add"; }
-        juce::String getCategory() const override { return "Utility"; }
+        juce::String getCategory() const override { return "Math"; }
 
         bool hasPolymorphicPorts() const noexcept override { return true; }
 

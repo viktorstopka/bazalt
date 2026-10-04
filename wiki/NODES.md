@@ -65,7 +65,7 @@ are telemetry outputs for live visualization, not ports.
 | `analysis.*` | onset, pitch, level, centroid | 📋 all 4 |
 | `instance.*` | allocate.voice, allocate.swarmPopulation, allocate.swarmTransient, allocate.trigger, sum | ✅ all five — Domain Extensions batch done 2026-10-01 |
 | `util.*` | constant, macro, reroute | ✅ all 3 (`macro` real as of `wiki/plans/UtilMacro.md` — ADR-0030 amends ADR-0015, doesn't reverse it) |
-| `view.*` | listen, scope, spectrum, meter, **glance** (new, 0.6) | ✅ all 5 |
+| `view.*` | listen, spectrum, meter, ripple, count, scope.control, scope.modulation, gate — scope, glance deprecated | ✅ all 10 |
 | `factory.*` | eq, curve, wave, sample, notes, material (Correction 2) | 📋 all 6 |
 
 ---
@@ -436,6 +436,13 @@ input instead of two Events; `adapt.gateLength` (new, below) turns a bare trigge
 a timed gate for whoever needs one. **In:** `gate : bool`; `pitch [audio]`; `velocity`; `confidence`; `confidenceGate`. **Out:** `notes` — `Note`. **Behavior — this node's own concrete design** (the catalog names the ports, not their exact contract): a note starts on `gate`'s rising edge, re-checked every sample the gate stays high (not just once, at the edge) — so a note whose confidence hasn't stabilized yet still starts the moment it becomes confident, without needing the gate to re-open — suppressed entirely while `confidence < confidenceGate`, so a low-confidence pitch-tracker reading can't spawn a bogus note. `pitch` is tracked continuously while held (vibrato/bend, or an algorithmically modulated pitch), `velocity` is captured once at the start instant. A note ends on `gate`'s falling edge, or — since a monophonic pitch tracker has no discrete note-off of its own — automatically once `confidence` drops back below `confidenceGate` while `gate` is still high; with neither wired (the plain generative case), `confidence`'s own unconnected fallback (1.0) never drops, so `gate` alone drives everything — ordinary MIDI semantics, no invented auto-timeout.
 
 ## math — all ✅
+
+**Add-menu category: Math** (top level). Until 2026-10-04 every `math.*` node
+reported `getCategory() == "Utility"`, so they were buried under Utility
+despite their own ids; the same sweep also moved `excite.burst` (was
+Generators) to Excite, `adapt.map` (was Utility) to Adapters, `view.listen`
+(was Utility) to View and `io.output` (was Utility) to IO. Rule: a node's
+Add-menu category follows its id family unless there's a stated reason not to.
 
 Every node here is Control-typed and quantity-inherits from its first connected
 input, EXCEPT `math.add`/`math.multiply` — see their own rows below,

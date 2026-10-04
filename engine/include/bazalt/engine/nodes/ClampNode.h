@@ -43,7 +43,7 @@ namespace bazalt::engine::nodes
         int getNumOutputPorts() const noexcept override { return numOutputs; }
 
         juce::String getTitle() const override { return "Clamp"; }
-        juce::String getCategory() const override { return "Utility"; }
+        juce::String getCategory() const override { return "Math"; }
 
         // Priority order in/low/high: "in" is the value actually being
         // bounded, so it wins when more than one of the three is wired —
