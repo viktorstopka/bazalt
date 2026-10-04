@@ -62,7 +62,7 @@ export const tokens = {
     portAudio: '#e0339e',
     portModulation: '#FFB094',
     portValue: '#e8e8ea',
-    portInteger: '#FFFFA8',
+    portInteger: '#FFFF4D',
     portTrigger: '#8c7fff',
     portBoolean: '#7cc6f7',
     // wiki/plans/DomainRedesign.md §5.6/Batch 4: a direct, explicit user
