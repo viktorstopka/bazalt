@@ -24,12 +24,23 @@ namespace bazalt::engine
         juce::String originId;
         NodeGraph voiceGraph;
 
-        /** This origin's own "instance.sum" node id, or empty when no
-            instance.sum reduces it (yet) — the 09-28-InstanceAllocator.1
-            "independent, unbridged region" case, now per-origin rather than
-            whole-graph.
+        /** One "instance.sum" reducing this origin: the sum node and the
+            voice-side port that feeds it. */
+        struct Sum
+        {
+            juce::String sumNodeId;
+            juce::String fromNodeId;
+            juce::String fromPortId;
+        };
+
+        /** Every instance.sum reducing this origin, in graph order — empty
+            when none does (yet), the 09-28-InstanceAllocator.1 "independent,
+            unbridged region" case. Several are allowed (up to
+            MultiplicityResolver::maxSumsPerOrigin): one voice can feed a main
+            chain AND a separate layer, each summed on its own. The first
+            one's feeder is also voiceGraph's designated output.
         */
-        juce::String instanceSumNodeId;
+        std::vector<Sum> sums;
     };
 
     /** Replaces DomainSplitResult — same job (split one editable NodeGraph
@@ -107,10 +118,11 @@ namespace bazalt::engine
         3. Every "instance.sum" node's "in" port is REQUIRED to resolve
            Poly — resolving Scalar (including "nothing wired yet") past the
            freshly-placed carve-out is a compile error ("nothing to
-           reduce"). At most one instance.sum per ORIGIN (not per graph,
-           unlike the old ceiling) — two instance.sum nodes reducing two
-           DIFFERENT origins is legitimate (DomainRedesign.md §4's multiple
-           independent voice regions).
+           reduce"). Up to `maxSumsPerOrigin` instance.sum nodes per origin
+           — each reduces its own voice-side signal, so one voice can feed a
+           main chain and a separate layer that are summed independently —
+           and instance.sum nodes reducing DIFFERENT origins are legitimate
+           too (DomainRedesign.md §4's multiple independent voice regions).
         4. Backward inclusion: for each origin, every Scalar node
            transitively upstream of anything already resolved to that origin
            gets DUPLICATED into that origin's own voiceGraph too (an origin's
@@ -150,6 +162,10 @@ namespace bazalt::engine
             handful of these would need real UI/perf design first."
         */
         static constexpr int maxOrigins = 4;
+
+        /** How many instance.sum nodes may reduce one origin. Each is one
+            more summed output per voice, with its own preallocated buffer. */
+        static constexpr int maxSumsPerOrigin = 4;
 
         static MultiplicityResult split (const NodeGraph& graph);
     };

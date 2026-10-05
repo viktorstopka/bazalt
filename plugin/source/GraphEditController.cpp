@@ -1101,6 +1101,25 @@ namespace bazalt
                 newVoicePlansBySlot[(size_t) slot][(size_t) i] =
                     std::make_unique<bazalt::engine::ExecutionPlan> (std::move (compileResult.plan));
 
+                // One summed output per instance.sum reducing this origin:
+                // the first is the plan's own final output, every further
+                // one is read straight off its feeding port's buffer.
+                {
+                    auto& plan = *newVoicePlansBySlot[(size_t) slot][(size_t) i];
+                    plan.sumOutputs[0] = { plan.finalOutputBufferIndex, plan.finalOutputBufferIndexRight };
+                    plan.numSumOutputs = 1;
+                    for (size_t s = 1; s < origin.sums.size(); ++s)
+                    {
+                        const auto& sum = origin.sums[s];
+                        const auto left = plan.findOutputBufferIndex (sum.fromNodeId, sum.fromPortId);
+                        if (left < 0)
+                            return { false, "Voice Sum '" + sum.sumNodeId + "' is fed from inside a feedback loop — "
+                                                "take its input from outside the loop" };
+                        plan.sumOutputs[s] = { left, plan.findRightOutputBufferIndex (sum.fromNodeId, sum.fromPortId) };
+                        plan.numSumOutputs = (int) s + 1;
+                    }
+                }
+
                 // Domain Extensions batch: InstanceOriginNode*, not the
                 // concrete InstanceVoiceNode* this used to be — Swarm-
                 // transient/Trigger need this same maxInstances capture +
@@ -1166,15 +1185,16 @@ namespace bazalt
         // the voice plans are compiled.
         for (const auto& origin : split.origins)
         {
-            if (origin.instanceSumNodeId.isEmpty())
-                continue;
             const auto slot = bundleSlotOf (slotForOrigin, origin.originId);
             if (slot < 0)
                 continue;
             const auto& voicePlan = newVoicePlansBySlot[(size_t) slot][0];
-            if (auto* sumNode = split.globalGraph.findNode (origin.instanceSumNodeId); sumNode != nullptr && voicePlan != nullptr)
-                sumNode->parameters[bazalt::engine::nodes::InstanceMixNode::channelsParameterId] =
-                    voicePlan->finalOutputBufferIndexRight >= 0 ? 2.0f : 1.0f;
+            if (voicePlan == nullptr)
+                continue;
+            for (size_t s = 0; s < origin.sums.size(); ++s)
+                if (auto* sumNode = split.globalGraph.findNode (origin.sums[s].sumNodeId))
+                    sumNode->parameters[bazalt::engine::nodes::InstanceMixNode::channelsParameterId] =
+                        voicePlan->sumOutputs[s].right >= 0 ? 2.0f : 1.0f;
         }
 
         if (! split.globalGraph.getNodes().empty())
@@ -1207,12 +1227,12 @@ namespace bazalt
             // thread already has for that origin's own scratch buffer.
             for (const auto& origin : split.origins)
             {
-                if (origin.instanceSumNodeId.isEmpty())
+                const auto slot = bundleSlotOf (slotForOrigin, origin.originId);
+                if (slot < 0)
                     continue;
 
-                const auto slot = bundleSlotOf (slotForOrigin, origin.originId);
-                if (slot >= 0)
-                    newGlobalPlan->externalInputNodeIds[(size_t) slot] = origin.instanceSumNodeId;
+                for (size_t s = 0; s < origin.sums.size(); ++s)
+                    newGlobalPlan->externalInputNodeIds[(size_t) slot][s] = origin.sums[s].sumNodeId;
             }
         }
 
@@ -1327,8 +1347,8 @@ namespace bazalt
             // instance.sum's own "in" port is the one fixed exception: the
             // NODE lives in globalGraph (marked scalar above), but this ONE
             // port specifically reduces a real Poly signal.
-            if (origin.instanceSumNodeId.isNotEmpty())
-                newPortMultiplicity[origin.instanceSumNodeId]["in"] = { "poly", origin.originId };
+            for (const auto& sum : origin.sums)
+                newPortMultiplicity[sum.sumNodeId]["in"] = { "poly", origin.originId };
         }
 
         portMultiplicity = std::move (newPortMultiplicity);

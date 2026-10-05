@@ -140,21 +140,21 @@ namespace bazalt::engine
         }
 
         // Step 3: every instance.sum's "in" port must resolve Poly. Also
-        // collects, per origin, which single instance.sum reduces it (a
-        // second one for the SAME origin is an error; two DIFFERENT
-        // origins each with their own is not — DomainRedesign.md §4).
-        std::unordered_map<juce::String, juce::String> sumForOrigin; // originId -> its one instance.sum node id
+        // collects, per origin, which instance.sum nodes reduce it — several
+        // may (one voice feeding a main chain and a separate layer), up to
+        // maxSumsPerOrigin; each gets its own summed voice output.
+        std::unordered_map<juce::String, std::vector<MultiplicityOrigin::Sum>> sumsForOrigin;
         std::unordered_map<juce::String, juce::String> originForSum; // instance.sum node id -> the origin it reduces
 
         for (const auto& sumId : sumIds)
         {
-            juce::String feedingNodeId;
+            const Connection* feeding = nullptr;
             int incomingCount = 0;
             for (const auto& connection : connections)
             {
                 if (connection.toNodeId == sumId && connection.toPortId == instanceSumInputPortId)
                 {
-                    feedingNodeId = connection.fromNodeId;
+                    feeding = &connection;
                     ++incomingCount;
                 }
             }
@@ -169,7 +169,7 @@ namespace bazalt::engine
                 return result;
             }
 
-            const auto originIt = resolvedOrigin.find (feedingNodeId);
+            const auto originIt = resolvedOrigin.find (feeding->fromNodeId);
             if (originIt == resolvedOrigin.end())
             {
                 result.errorMessage = "instance.sum '" + sumId + "'s input must be a Poly signal — nothing to reduce";
@@ -179,15 +179,15 @@ namespace bazalt::engine
             const auto originId = originIt->second;
             originForSum[sumId] = originId;
 
-            const auto existing = sumForOrigin.find (originId);
-            if (existing != sumForOrigin.end())
+            auto& sums = sumsForOrigin[originId];
+            if ((int) sums.size() >= maxSumsPerOrigin)
             {
-                result.errorMessage = "Only one instance.sum is supported per origin — origin '" + originId
-                                       + "' is already reduced by '" + existing->second + "', found a second: '" + sumId + "'";
+                result.errorMessage = "Only up to " + juce::String (maxSumsPerOrigin) + " Voice Sums can reduce one voice allocator ('"
+                                       + originId + "') — found another: '" + sumId + "'";
                 return result;
             }
 
-            sumForOrigin[originId] = sumId;
+            sums.push_back ({ sumId, feeding->fromNodeId, feeding->fromPortId });
         }
 
         // Step 4: backward inclusion. For each origin, walk predecessors
@@ -250,24 +250,17 @@ namespace bazalt::engine
                 if (members.count (connection.fromNodeId) > 0 && members.count (connection.toNodeId) > 0)
                     origin.voiceGraph.addConnection (connection);
 
-            const auto sumIt = sumForOrigin.find (originId);
-            if (sumIt != sumForOrigin.end())
+            const auto sumIt = sumsForOrigin.find (originId);
+            if (sumIt != sumsForOrigin.end() && ! sumIt->second.empty())
             {
-                origin.instanceSumNodeId = sumIt->second;
+                origin.sums = sumIt->second;
 
                 // Retarget voiceGraph's own designated output to whatever
-                // feeds the instance.sum's "in" — GraphCompiler still needs
-                // a real output port to compile against; the actual final
-                // value reaches the outside world via setExternalBlock(),
-                // never through this designation.
-                for (const auto& connection : connections)
-                {
-                    if (connection.toNodeId == origin.instanceSumNodeId && connection.toPortId == instanceSumInputPortId)
-                    {
-                        origin.voiceGraph.setOutput (connection.fromNodeId, connection.fromPortId);
-                        break;
-                    }
-                }
+                // feeds the first instance.sum's "in" — GraphCompiler still
+                // needs a real output port to compile against; the summed
+                // values reach the outside world via setExternalBlock(), and
+                // every further sum's feeder is read off the plan by port.
+                origin.voiceGraph.setOutput (origin.sums.front().fromNodeId, origin.sums.front().fromPortId);
             }
             else if (members.count (graph.getOutputNodeId()) > 0)
             {

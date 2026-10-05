@@ -471,9 +471,13 @@ nothing Poly feeds it, rather than treating a Scalar input as a harmless no-op
 passthrough. Its `out` port is ordinary Scalar, ordinary priority resolution, nothing
 special. `DomainSplitter`'s old **exactly one allocator, exactly one mix, full stop**
 ceiling is gone — up to `maxOrigins` (4) allocator/sum pairs now coexist in one
-graph, each independent, each still individually capped at one `instance.sum` per
-origin (a *second* sum reducing the SAME origin's Poly signal is still rejected —
-that part of the old rule was never the bug).
+graph, each independent. One origin may also be reduced by several `instance.sum`
+nodes (up to `maxSumsPerOrigin`, 4 — 2026-10-05): one voice can feed a main chain
+and a separate layer (a resonator, say) that are summed independently and only
+combined afterwards, in the Scalar domain — so the layer skips the main chain's
+effects, and adding it at the end doesn't turn that chain back into Poly. Each sum
+is its own summed voice output (`ExecutionPlan::sumOutputs`), with its own
+accumulator per origin; a voice keeps sounding while any of its sums still hears it.
 
 ### Nested allocators
 

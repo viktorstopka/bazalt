@@ -86,7 +86,7 @@ TEST_CASE ("MultiplicityResolver treats a graph with no instance.sum as entirely
     CHECK (result.outputOriginId == "allocator");
     REQUIRE (result.origins.size() == 1);
     CHECK (result.origins[0].originId == "allocator");
-    CHECK (result.origins[0].instanceSumNodeId.isEmpty());
+    CHECK (result.origins[0].sums.empty());
     // Every node in this graph traces back to the allocator (noteIn feeds
     // it directly; osc/env/svf/amp all read its outputs) — the whole thing
     // is one origin's voice region, exactly DomainSplitter's own equivalent
@@ -109,7 +109,8 @@ TEST_CASE ("MultiplicityResolver correctly partitions a graph with one instance.
     REQUIRE (result.origins.size() == 1);
     const auto& origin = result.origins[0];
     CHECK (origin.originId == "allocator");
-    CHECK (origin.instanceSumNodeId == "instancesum");
+    REQUIRE (origin.sums.size() == 1);
+    CHECK (origin.sums[0].sumNodeId == "instancesum");
 
     // Voice region: noteIn, allocator, osc, svf — output retargeted to
     // whatever fed instancesum.in (svf.out).
@@ -237,8 +238,10 @@ TEST_CASE ("Two independent origin/instance.sum pairs partition independently - 
     const auto* originB = findOrigin (result, "allocB");
     REQUIRE (originA != nullptr);
     REQUIRE (originB != nullptr);
-    CHECK (originA->instanceSumNodeId == "sumA");
-    CHECK (originB->instanceSumNodeId == "sumB");
+    REQUIRE (originA->sums.size() == 1);
+    CHECK (originA->sums[0].sumNodeId == "sumA");
+    REQUIRE (originB->sums.size() == 1);
+    CHECK (originB->sums[0].sumNodeId == "sumB");
     CHECK (containsNode (originA->voiceGraph, "oscA"));
     CHECK_FALSE (containsNode (originA->voiceGraph, "oscB"));
     CHECK (containsNode (originB->voiceGraph, "oscB"));
@@ -250,24 +253,65 @@ TEST_CASE ("Two independent origin/instance.sum pairs partition independently - 
     CHECK (containsNode (result.globalGraph, "masterout"));
 }
 
-TEST_CASE ("Two instance.sum nodes reducing the SAME origin is rejected", "[engine][MultiplicityResolver]")
+TEST_CASE ("Several instance.sum nodes may reduce the SAME origin, each from its own voice-side signal",
+           "[engine][MultiplicityResolver]")
 {
+    // One voice feeding a main chain (osc -> sum1) and a separate layer
+    // (osc -> svf -> sum2), each summed on its own, then added after.
     NodeGraph graph;
     graph.addNode ({ "alloc", "instance.allocate.voice", {}, {}, {} });
     graph.addNode ({ "osc", "osc.analog", {}, {}, {} });
+    graph.addNode ({ "svf", "filter.svf", {}, {}, {} });
     graph.addNode ({ "sum1", "instance.sum", {}, {}, {} });
     graph.addNode ({ "sum2", "instance.sum", {}, {}, {} });
+    graph.addNode ({ "add", "math.add", {}, {}, {} });
     graph.addNode ({ "masterout", "io.output", {}, {}, {} });
 
     graph.addConnection ({ "alloc", "pitch", "osc", "pitch" });
     graph.addConnection ({ "osc", "out", "sum1", "in" });
-    graph.addConnection ({ "osc", "out", "sum2", "in" });
-    graph.addConnection ({ "sum1", "out", "masterout", "in" });
+    graph.addConnection ({ "osc", "out", "svf", "in" });
+    graph.addConnection ({ "svf", "out", "sum2", "in" });
+    graph.addConnection ({ "sum1", "out", "add", "in.0" });
+    graph.addConnection ({ "sum2", "out", "add", "in.1" });
+    graph.addConnection ({ "add", "out", "masterout", "in" });
+    graph.setOutput ("masterout", "out");
+
+    const auto result = MultiplicityResolver::split (graph);
+    REQUIRE (result.success);
+    REQUIRE (result.origins.size() == 1);
+
+    const auto& origin = result.origins[0];
+    REQUIRE (origin.sums.size() == 2);
+    CHECK (origin.sums[0].sumNodeId == "sum1");
+    CHECK (origin.sums[0].fromNodeId == "osc");
+    CHECK (origin.sums[1].sumNodeId == "sum2");
+    CHECK (origin.sums[1].fromNodeId == "svf");
+    CHECK (origin.voiceGraph.getOutputNodeId() == "osc");
+    CHECK (containsNode (origin.voiceGraph, "svf"));
+    CHECK (containsNode (result.globalGraph, "sum1"));
+    CHECK (containsNode (result.globalGraph, "sum2"));
+    CHECK (containsNode (result.globalGraph, "add"));
+}
+
+TEST_CASE ("More than maxSumsPerOrigin instance.sum nodes on one origin is rejected", "[engine][MultiplicityResolver]")
+{
+    NodeGraph graph;
+    graph.addNode ({ "alloc", "instance.allocate.voice", {}, {}, {} });
+    graph.addNode ({ "osc", "osc.analog", {}, {}, {} });
+    graph.addNode ({ "masterout", "io.output", {}, {}, {} });
+    graph.addConnection ({ "alloc", "pitch", "osc", "pitch" });
+    for (int i = 0; i <= MultiplicityResolver::maxSumsPerOrigin; ++i)
+    {
+        const auto id = "sum" + juce::String (i);
+        graph.addNode ({ id, "instance.sum", {}, {}, {} });
+        graph.addConnection ({ "osc", "out", id, "in" });
+    }
+    graph.addConnection ({ "sum0", "out", "masterout", "in" });
     graph.setOutput ("masterout", "out");
 
     const auto result = MultiplicityResolver::split (graph);
     CHECK_FALSE (result.success);
-    CHECK (result.errorMessage.contains ("one instance.sum is supported per origin"));
+    CHECK (result.errorMessage.contains ("Voice Sums"));
 }
 
 TEST_CASE ("instance.sum's input must resolve Poly - Scalar (nothing to reduce) is rejected",
@@ -468,7 +512,7 @@ TEST_CASE ("An instance.allocate.voice not reachable from the output still runs 
     REQUIRE (result.hasGlobalDomain);
     REQUIRE (result.origins.size() == 1);
     CHECK (result.origins[0].originId == "alloc");
-    CHECK (result.origins[0].instanceSumNodeId.isEmpty());
+    CHECK (result.origins[0].sums.empty());
     REQUIRE (result.origins[0].voiceGraph.getNodes().size() == 1);
     CHECK (result.origins[0].voiceGraph.getNodes()[0].id == "alloc");
 

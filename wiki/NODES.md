@@ -739,7 +739,9 @@ allocator/one mix region per graph, full stop) is gone — `MultiplicityResolver
 (DomainRedesign.md) supports up to `maxOrigins` (4) simultaneous, independent
 allocator/sum pairs per graph, each its own physical `ExecutionPlan`, each either
 driven by real MIDI (`io.noteIn`) or an internal `clock`→`seq`→`note.assemble` chain
-with no MIDI involved at all — never both at once for the same origin.
+with no MIDI involved at all — never both at once for the same origin. Several Voice
+Sums may reduce the same allocator (up to 4): each sums its own voice-side signal,
+so a separate per-voice layer can skip the main chain and be added after it.
 
 ## util
 
