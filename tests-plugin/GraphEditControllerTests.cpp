@@ -1058,3 +1058,70 @@ TEST_CASE ("connectWithAutoAdapt resolves a polymorphic source before choosing a
     const auto& nodes = controller.getGraph().getNodes();
     CHECK (std::any_of (nodes.begin(), nodes.end(), [] (const auto& n) { return n.type == "adapt.map"; }));
 }
+
+// One voice allocator feeding two Voice Sums: a main chain and a separate
+// layer, each summed on its own and added only after both (the Plate layer
+// case — it must not run through the main chain's effects, and summing it
+// into the mono chain later must not turn that chain back into Poly).
+TEST_CASE ("Two instance.sum nodes reducing one origin each carry that origin's voices",
+           "[plugin][GraphEditController][instanceSum]")
+{
+    auto buildGraph = [] (float mainGain, float layerGain)
+    {
+        bazalt::engine::NodeGraph graph;
+        graph.addNode ({ "noteIn", "io.noteIn", {}, {}, {} });
+        graph.addNode ({ "alloc", "instance.allocate.voice", {}, {}, {} });
+        graph.addNode ({ "osc", "osc.analog", {}, {}, {} });
+        graph.addNode ({ "sumMain", "instance.sum", {}, {}, {} });
+        graph.addNode ({ "sumLayer", "instance.sum", {}, {}, {} });
+        graph.addNode ({ "gainMain", "mix.gain", {}, { { "gain", mainGain } }, {} });
+        graph.addNode ({ "gainLayer", "mix.gain", {}, { { "gain", layerGain } }, {} });
+        graph.addNode ({ "add", "math.add", {}, {}, {} });
+        graph.addNode ({ "masterOut", "io.output", {}, {}, {} });
+
+        graph.addConnection ({ "noteIn", "notes", "alloc", "spawn" });
+        graph.addConnection ({ "alloc", "pitch", "osc", "pitch" });
+        graph.addConnection ({ "osc", "out", "sumMain", "in" });
+        graph.addConnection ({ "osc", "out", "sumLayer", "in" });
+        graph.addConnection ({ "sumMain", "out", "gainMain", "audio" });
+        graph.addConnection ({ "sumLayer", "out", "gainLayer", "audio" });
+        graph.addConnection ({ "gainMain", "out", "add", "in.0" });
+        graph.addConnection ({ "gainLayer", "out", "add", "in.1" });
+        graph.addConnection ({ "add", "out", "masterOut", "in" });
+        graph.setOutput ("masterOut", "out");
+        return graph;
+    };
+
+    auto render = [&] (float mainGain, float layerGain)
+    {
+        BazaltAudioProcessor processor;
+        processor.prepareToPlay (44100.0, 512);
+        const auto result = processor.getGraphEditController().setGraph (buildGraph (mainGain, layerGain));
+        INFO (result.errorMessage);
+        REQUIRE (result.success);
+
+        juce::MidiBuffer noteOn;
+        noteOn.addEvent (juce::MidiMessage::noteOn (1, 60, (juce::uint8) 100), 0);
+        juce::AudioBuffer<float> buffer (2, 512);
+        buffer.clear();
+        processor.processBlock (buffer, noteOn);
+        for (int block = 0; block < 9; ++block)
+        {
+            buffer.clear();
+            juce::MidiBuffer empty;
+            processor.processBlock (buffer, empty);
+        }
+        return rms (buffer, 0);
+    };
+
+    // Quiet enough that both together stay clear of the output limiter.
+    const auto mainOnly = render (0.2f, 0.0f);
+    const auto layerOnly = render (0.0f, 0.2f);
+    const auto both = render (0.2f, 0.2f);
+
+    CHECK (mainOnly > 0.01f);
+    CHECK (layerOnly > 0.01f);
+    CHECK (std::abs (mainOnly - layerOnly) < 0.01f * mainOnly);
+    // The same voice through both sums adds coherently: twice the level.
+    CHECK (std::abs (both - 2.0f * mainOnly) < 0.05f * mainOnly);
+}

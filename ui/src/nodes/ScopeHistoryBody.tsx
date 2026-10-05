@@ -76,6 +76,14 @@ const OBSERVATION_MS = 1000
 // the panel into either a single flat segment or a illegibly dense scribble.
 // A deliberately chosen constant, not derived from anything else.
 const CYCLES_TO_SHOW = 6
+// What the auto window falls back to when the observation saw no full cycle
+// (a held value, a gate nobody pressed yet, an LFO slower than the 1 s
+// look) — and the most it ever picks on its own. A period longer than the
+// observation can't be measured, so jumping to the parameter's 30 s maximum
+// on "saw nothing" (what this used to do) mostly just showed a flat line
+// crawling; the user can still type any window up to that maximum.
+const UNKNOWN_PERIOD_WINDOW_SECONDS = 5
+const MAX_AUTO_WINDOW_SECONDS = 10
 
 /** `(lo+hi)/2` midpoint-crossing counting estimates the observed signal's
     period from a short real sample, the same technique
@@ -86,8 +94,7 @@ const CYCLES_TO_SHOW = 6
     skipped. Returns null if fewer than 2 real columns exist yet (nothing
     to estimate a period from) or if genuinely nothing crossed the
     midpoint (a flat/DC signal, or one that hasn't started moving) — the
-    caller treats either as "assume slow", matching the stated problem's
-    own bias (the wrong default being too SHORT, not too long).
+    caller falls back to UNKNOWN_PERIOD_WINDOW_SECONDS for either.
 */
 function estimatePeriodSeconds(payload: Float32Array, columnDurationSeconds: number): number | null {
   const numColumns = payload.length / 2
@@ -362,10 +369,11 @@ export function ScopeHistoryBody({
               windowCommittedRef.current = true
               const columnDuration = latest.currentTimeWindow / numColumns
               const period = estimatePeriodSeconds(raw.payload, columnDuration)
+              const autoMax = Math.min(latest.maxTimeWindowSeconds, MAX_AUTO_WINDOW_SECONDS)
               const defaultWindow =
                 period === null
-                  ? latest.maxTimeWindowSeconds // no crossings observed: assume slow, per the spec's own stated bias
-                  : Math.min(latest.maxTimeWindowSeconds, Math.max(latest.minTimeWindowSeconds, period * CYCLES_TO_SHOW))
+                  ? Math.min(autoMax, UNKNOWN_PERIOD_WINDOW_SECONDS) // no cycle observed: slow or still — a readable middle, not the maximum
+                  : Math.min(autoMax, Math.max(latest.minTimeWindowSeconds, period * CYCLES_TO_SHOW))
               latest.state.onParameterCommit?.(latest.timeWindowParameterId, defaultWindow)
             }
           }

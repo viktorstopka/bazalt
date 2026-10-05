@@ -224,8 +224,28 @@ namespace bazalt::engine
         // than by including that header here — ExecutionPlan is GraphCompiler's
         // OWN output type and shouldn't need to know about the resolver that
         // runs before it; keep the two numbers in sync if either changes.
+        //
+        // Several instance.sum nodes may reduce one origin (a voice feeding a
+        // main chain AND a separate layer), so each origin slot holds up to
+        // maxSumsPerOrigin ids, in the same order as that origin's voice
+        // plans' `sumOutputs` (MultiplicityResolver::maxSumsPerOrigin — keep
+        // in sync, same reasoning as maxOrigins).
         static constexpr int maxOrigins = 4;
-        std::array<juce::String, maxOrigins> externalInputNodeIds;
+        static constexpr int maxSumsPerOrigin = 4;
+        std::array<std::array<juce::String, maxSumsPerOrigin>, maxOrigins> externalInputNodeIds;
+
+        // Voice plans only: which buffers each of this origin's instance.sum
+        // nodes reads, in externalInputNodeIds' order (entry 0 is always the
+        // plan's own final output). `right` is -1 for a mono signal. Set once
+        // before publish, like externalInputNodeIds; `numSumOutputs` is 1
+        // for a plan with no instance.sum (the final output alone).
+        struct SumOutput
+        {
+            int left = -1;
+            int right = -1;
+        };
+        std::array<SumOutput, maxSumsPerOrigin> sumOutputs {};
+        int numSumOutputs = 0;
 
         // Real bug found live (09-28-InstanceAllocator arc): PluginProcessor
         // used to find the plan's io.noteIn node by a HARDCODED instance id
@@ -260,6 +280,10 @@ namespace bazalt::engine
         // (GraphEditController, resolving a tap-subscribe request) — never
         // read on the audio thread.
         std::unordered_map<juce::String, std::unordered_map<juce::String, int>> outputBufferIndexByNodeAndPort;
+
+        // The second (right) channel's buffer, only for an output port that
+        // carries two channels in this compile — same lookup, message thread.
+        std::unordered_map<juce::String, std::unordered_map<juce::String, int>> rightOutputBufferIndexByNodeAndPort;
 
         // ADR-0029: the same, for INPUT ports: (nodeId, inputPortId) -> the
         // blockBuffers index of whatever is wired into that input. A view
@@ -349,6 +373,17 @@ namespace bazalt::engine
         {
             const auto nodeIt = outputBufferIndexByNodeAndPort.find (nodeId);
             if (nodeIt == outputBufferIndexByNodeAndPort.end())
+                return -1;
+
+            const auto portIt = nodeIt->second.find (portId);
+            return portIt == nodeIt->second.end() ? -1 : portIt->second;
+        }
+
+        /** findOutputBufferIndex's right-channel twin: -1 for a mono port. */
+        int findRightOutputBufferIndex (const juce::String& nodeId, const juce::String& portId) const
+        {
+            const auto nodeIt = rightOutputBufferIndexByNodeAndPort.find (nodeId);
+            if (nodeIt == rightOutputBufferIndexByNodeAndPort.end())
                 return -1;
 
             const auto portIt = nodeIt->second.find (portId);

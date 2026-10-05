@@ -64,6 +64,9 @@ namespace bazalt
             just to size an array).
         */
         static constexpr int maxOrigins = bazalt::engine::MultiplicityResolver::maxOrigins;
+        static constexpr int maxSumsPerOrigin = bazalt::engine::MultiplicityResolver::maxSumsPerOrigin;
+        static_assert (maxOrigins == bazalt::engine::ExecutionPlan::maxOrigins
+                       && maxSumsPerOrigin == bazalt::engine::ExecutionPlan::maxSumsPerOrigin);
 
         /** One "instance.allocate.voice" origin's own runtime state — a
             fully independent VoiceManager + 8 PlanSwappers, exactly what a
@@ -96,7 +99,11 @@ namespace bazalt
             // buffer. Sized once in prepareToPlay() for every bundle,
             // regardless of whether it's active yet (so activating one
             // mid-session never needs an audio-thread allocation).
-            juce::AudioBuffer<float> instanceMixScratchBuffer;
+            //
+            // One accumulator per instance.sum reducing this origin (a voice
+            // may feed a main chain and a separate layer, each summed on its
+            // own) — entry 0 is the voices' own final output.
+            std::array<juce::AudioBuffer<float>, maxSumsPerOrigin> instanceMixScratchBuffers;
 
             // For this origin's own instance.sum "average" mode — was a
             // single processor-level field before Batch 2; each origin's

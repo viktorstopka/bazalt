@@ -1274,6 +1274,13 @@ namespace bazalt::engine
                     continue;
 
                 plan.outputBufferIndexByNodeAndPort[nodeId][outputs[(size_t) p].id] = locIt->second.index;
+
+                if (widthOf (slot, outputs[(size_t) p]) == 2)
+                {
+                    const auto rightIt = outputLocation.find ({ slot, outputStarts[(size_t) p] + 1 });
+                    if (rightIt != outputLocation.end() && rightIt->second.kind == ExecutionPlan::InputRef::Kind::BlockBuffer)
+                        plan.rightOutputBufferIndexByNodeAndPort[nodeId][outputs[(size_t) p].id] = rightIt->second.index;
+                }
             }
         }
 

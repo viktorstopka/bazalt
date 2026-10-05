@@ -16,54 +16,68 @@
 //
 // ValueSlider itself stays a dumb, generic numeric widget (matching its
 // own "range is the caller's choice" philosophy already documented there):
-// it takes one resolved `skew` exponent, not the Curve/Quantity vocabulary.
-// This module is where a descriptor's curve/quantity/skew fields become
-// that one number - NodeCard.tsx calls resolveSkew() once per row.
-import type { Curve, Quantity } from '../graph/descriptorTypes'
+// it takes one resolved `logarithmic` flag, not the Curve/Quantity
+// vocabulary - NodeCard.tsx calls isLogarithmicCurve() once per row.
+//
+// 2026-10-05: the old power curve here, value = pos^skew with skew < 1,
+// pushed resolution toward the TOP of the range (half the travel already
+// reached ~16 kHz) - JUCE's convention is pos^(1/skew). Replaced with a
+// real exponential mapping derived from the range itself.
+import type { Curve } from '../graph/descriptorTypes'
 
-/** JUCE's own NormalisableRange power-curve convention (skew < 1 biases
-    resolution toward the low end of the range - more drag travel spent on
-    short attack times or low frequencies, where it's perceptually needed)
-    - the same `skew` field ParameterDescriptor already carries. Prefers a
-    genuinely-declared, non-1 `skew` (real per-node tuning:
-    frequencyParameter's 0.3 vs. timeSecondsParameter's 0.5) over a generic
-    per-Quantity fallback, since a flat single exponent for every curved
-    parameter would throw that tuning away.
+/** Whether a descriptor's slider moves exponentially rather than
+    linearly. The engine's Value Contract marks it with
+    `curve: 'logarithmic'` (frequencies, times); a declared `skew` is the
+    host parameter's own JUCE tuning and isn't needed here — the
+    exponential mapping below is derived from the range itself.
 */
-export function resolveSkew(curve: Curve, quantity: Quantity, declaredSkew?: number): number {
-  if (curve === 'linear' || curve === 'custom-ref') return 1
-  if (declaredSkew !== undefined && declaredSkew !== 1) return declaredSkew
-  if (quantity === 'frequency') return 0.3
-  if (quantity === 'time') return 0.45
-  return 0.4
+export function isLogarithmicCurve(curve: Curve): boolean {
+  return curve === 'logarithmic'
+}
+
+// A range that starts at zero (attack 0-10 s) has no ratio of its own: its
+// curve spans this many decades below the maximum (10 s -> ~1 ms reaches
+// the first tenth of the slider), with the very start still exactly 0.
+const ZERO_BASED_DECADES = 4
+
+/** The value ratio the curve spans: max/min for a positive range — a true
+    logarithmic slider, every decade the same drag travel (0.01-20000 Hz:
+    20 Hz sits around the middle, not in the first pixel) — otherwise
+    ZERO_BASED_DECADES. 1 means linear. */
+function curveRatio(min: number, max: number): number {
+  if (!(max > min)) return 1
+  if (min > 0) return max / min
+  return Math.pow(10, ZERO_BASED_DECADES)
 }
 
 /** value -> 0..1(ish) drag/wheel position, inverse of fromNormalizedPosition.
-    skew === 1 (the overwhelmingly common case - everything that doesn't
-    declare a real curve) reduces to plain, UNCLAMPED linear - ValueSlider's
-    own prop doc comment is explicit that dragging/scrolling past either
-    edge must keep moving the value at the same rate for an unbounded port
-    (Remap's own in/out ports; "the slider has max at 10... but you can,
-    even via dragging, move it higher"). Only a genuinely curved slider
-    clamps to [0,1] first - `Math.pow` with a fractional exponent on a
-    negative or >1 base isn't the inverse this function wants, so going
-    past a curved slider's own declared range just pins at the nearest end
-    instead (a curved range only ever appears on a hard-bounded quantity
-    today - Frequency/Time - so this is never user-visible in practice).
+    Linear (the overwhelmingly common case) stays plain and UNCLAMPED —
+    ValueSlider's own prop doc comment is explicit that dragging past
+    either edge must keep moving the value for an unbounded port (Map's
+    in/out ranges). A logarithmic slider clamps to its range: it only ever
+    appears on a hard-bounded quantity (Frequency/Time).
+
+    The curve is v = min + (max - min) * (r^p - 1) / (r - 1): for a
+    positive range with r = max/min that is exactly min * r^p (true log);
+    for a zero-based one it is the same exponential, offset so p = 0 is 0.
 */
-export function toNormalizedPosition(value: number, min: number, max: number, skew: number): number {
+export function toNormalizedPosition(value: number, min: number, max: number, logarithmic: boolean): number {
   const range = max - min || 1
   const linear = (value - min) / range
-  if (skew === 1) return linear
-  return Math.pow(Math.min(1, Math.max(0, linear)), 1 / skew)
+  if (!logarithmic) return linear
+  const r = curveRatio(min, max)
+  if (r <= 1) return Math.min(1, Math.max(0, linear))
+  const clamped = Math.min(1, Math.max(0, linear))
+  return Math.log(1 + clamped * (r - 1)) / Math.log(r)
 }
 
 /** 0..1(ish) drag/wheel position -> value. Drag/wheel deltas move this
-    position linearly (constant feel per pixel/tick, matching every other
-    slider in this app); only the position->value warp is curved. See
-    toNormalizedPosition's own comment on why only skew!==1 clamps first. */
-export function fromNormalizedPosition(position: number, min: number, max: number, skew: number): number {
-  if (skew === 1) return min + (max - min) * position
-  const warped = Math.pow(Math.min(1, Math.max(0, position)), skew)
-  return min + (max - min) * warped
+    position linearly (constant feel per pixel/tick); only the
+    position->value mapping is curved. */
+export function fromNormalizedPosition(position: number, min: number, max: number, logarithmic: boolean): number {
+  if (!logarithmic) return min + (max - min) * position
+  const p = Math.min(1, Math.max(0, position))
+  const r = curveRatio(min, max)
+  if (r <= 1) return min + (max - min) * p
+  return min + ((max - min) * (Math.pow(r, p) - 1)) / (r - 1)
 }

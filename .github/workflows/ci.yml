@@ -13,7 +13,9 @@ on:
 
 jobs:
   build-and-test:
-    runs-on: windows-latest
+    # Pinned: the project generates for "Visual Studio 17 2022", which
+    # windows-latest no longer carries.
+    runs-on: windows-2022
 
     steps:
       - uses: actions/checkout@v4

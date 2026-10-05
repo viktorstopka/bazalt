@@ -380,9 +380,12 @@ ctest --test-dir build -C Debug -R PluginTests --output-on-failure
   `ExecutionPlan` bundle, each either MIDI-dispatched (`io.noteIn`) or
   internally triggered, never both for the same origin. `instance.sum` was
   renamed from `instance.mix` in the same redesign (Batch 1b, C++ class
-  name `InstanceMixNode` unchanged) — a second `instance.sum` reducing the
-  SAME origin's Poly signal is still rejected, the one part of the old
-  ceiling that was never the bug.
+  name `InstanceMixNode` unchanged). Up to `maxSumsPerOrigin` (4)
+  `instance.sum` nodes may reduce the SAME origin as of 2026-10-05 (direct
+  request: a Plate layer summed on its own, added after the main chain's
+  effects): each voice plan exposes one summed output per sum
+  (`ExecutionPlan::sumOutputs`, the first being its final output), and each
+  `OriginBundle` has one accumulator per sum (`instanceMixScratchBuffers`).
 - `GraphEditController::recompileAndPublish()` does a full recompile (8
   voice plans + up to 1 global plan) on **every single command**, even ones
   that are conceptually one user gesture made of several calls (e.g. a

@@ -20,7 +20,8 @@ TEST_CASE ("buildInitPatchGraph() has a real global domain - instance.sum genuin
     CHECK (split.hasGlobalDomain); // instance.sum is really in this graph
     CHECK_FALSE (split.monoOnly);  // instance.allocate.voice is really in this graph too
     REQUIRE (split.origins.size() == 1);
-    CHECK (split.origins[0].instanceSumNodeId == "voiceMix");
+    REQUIRE (split.origins[0].sums.size() == 1);
+    CHECK (split.origins[0].sums[0].sumNodeId == "voiceMix");
 }
 
 TEST_CASE ("buildInitPatchGraph() compiles, voice domain and global domain both", "[engine][InitPatch][M22]")

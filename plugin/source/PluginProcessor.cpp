@@ -181,7 +181,8 @@ namespace bazalt
 
         for (auto& bundle : originBundles)
         {
-            bundle.instanceMixScratchBuffer.setSize (2, samplesPerBlock);
+            for (auto& sumBuffer : bundle.instanceMixScratchBuffers)
+                sumBuffer.setSize (2, samplesPerBlock);
             bundle.voiceManager.prepare (numVoices);
             bundle.active = false;
             bundle.originNodeId = {};
@@ -696,6 +697,84 @@ namespace bazalt
                        ? plan.blockBuffers[(size_t) plan.finalOutputBufferIndexRight].getBlock().getChannelPointer (0)
                        : left;
         }
+
+        const float* bufferOf (const bazalt::engine::ExecutionPlan& plan, int index) noexcept
+        {
+            return plan.blockBuffers[(size_t) index].getBlock().getChannelPointer (0);
+        }
+
+        // A plan nobody set sum outputs on (numSumOutputs 0) sums its final
+        // output alone, exactly as before several sums per origin existed.
+        int sumOutputCount (const bazalt::engine::ExecutionPlan& plan) noexcept
+        {
+            return juce::jmax (1, plan.numSumOutputs);
+        }
+
+        bazalt::engine::ExecutionPlan::SumOutput sumOutputAt (const bazalt::engine::ExecutionPlan& plan, int s) noexcept
+        {
+            if (plan.numSumOutputs == 0)
+                return { plan.finalOutputBufferIndex, plan.finalOutputBufferIndexRight };
+            return plan.sumOutputs[(size_t) s];
+        }
+
+        /** Adds a voice plan's just-rendered summed outputs (one per
+            instance.sum reducing its origin) into the origin's accumulators,
+            from sample `writeStart`. The gain ramps linearly from `startGain`
+            to `endGain` across the `numSamples` (a steal fade); 1 -> 1 is a
+            plain add. */
+        template <typename SumBuffers>
+        void addVoiceToSums (SumBuffers& sums, const bazalt::engine::ExecutionPlan& plan, int writeStart, int numSamples,
+                             float startGain = 1.0f, float endGain = 1.0f) noexcept
+        {
+            const auto count = juce::jmin ((int) sums.size(), sumOutputCount (plan));
+            for (int s = 0; s < count; ++s)
+            {
+                const auto output = sumOutputAt (plan, s);
+                if (output.left < 0)
+                    continue;
+
+                const auto* left = bufferOf (plan, output.left);
+                const auto* right = output.right >= 0 ? bufferOf (plan, output.right) : left;
+                auto* sum = sums[(size_t) s].getWritePointer (0) + writeStart;
+                auto* sumRight = sums[(size_t) s].getWritePointer (1) + writeStart;
+
+                if (startGain == 1.0f && endGain == 1.0f)
+                {
+                    for (int i = 0; i < numSamples; ++i)
+                    {
+                        sum[i] += left[i];
+                        sumRight[i] += right[i];
+                    }
+                    continue;
+                }
+
+                for (int i = 0; i < numSamples; ++i)
+                {
+                    const auto t = numSamples > 1 ? (float) i / (float) (numSamples - 1) : 1.0f;
+                    const auto gain = startGain + (endGain - startGain) * t;
+                    sum[i] += left[i] * gain;
+                    sumRight[i] += right[i] * gain;
+                }
+            }
+        }
+
+        /** The loudest sample across every summed output of a voice plan —
+            a voice is still sounding if ANY of its sums still hears it. */
+        float voicePeak (const bazalt::engine::ExecutionPlan& plan, int numSamples) noexcept
+        {
+            float peak = 0.0f;
+            for (int s = 0; s < sumOutputCount (plan); ++s)
+            {
+                const auto output = sumOutputAt (plan, s);
+                if (output.left < 0)
+                    continue;
+                const auto* left = bufferOf (plan, output.left);
+                const auto* right = output.right >= 0 ? bufferOf (plan, output.right) : left;
+                for (int i = 0; i < numSamples; ++i)
+                    peak = juce::jmax (peak, std::abs (left[i]), std::abs (right[i]));
+            }
+            return peak;
+        }
     }
 
     void BazaltAudioProcessor::renderOriginVoiceRange (OriginBundle& bundle, int startSample, int numSamples, const VoicePlanPtrs& voicePlans) noexcept
@@ -712,8 +791,6 @@ namespace bazalt
         // for why this is a plain atomic int, not a VoiceManager concept.
         if (const auto populationSize = bundle.swarmPopulationSize.load (std::memory_order_relaxed); populationSize >= 0)
         {
-            auto* sum = bundle.instanceMixScratchBuffer.getWritePointer (0) + startSample;
-            auto* sumRight = bundle.instanceMixScratchBuffer.getWritePointer (1) + startSample;
             int activeCount = 0;
             const auto liveCount = juce::jmin (populationSize, numVoices);
 
@@ -724,13 +801,7 @@ namespace bazalt
                     continue;
 
                 processPlanRange (plan, startSample, numSamples);
-                const auto* voiceOut = plan->blockBuffers[(size_t) plan->finalOutputBufferIndex].getBlock().getChannelPointer (0);
-                const auto* voiceRight = rightOutputOf (*plan, voiceOut);
-                for (int i = 0; i < numSamples; ++i)
-                {
-                    sum[i] += voiceOut[i];
-                    sumRight[i] += voiceRight[i];
-                }
+                addVoiceToSums (bundle.instanceMixScratchBuffers, *plan, startSample, numSamples);
                 ++activeCount;
             }
 
@@ -799,8 +870,6 @@ namespace bazalt
         if (bundle.voiceManager.getStage (0) == bazalt::engine::VoiceStage::Idle && voicePlans[0] != nullptr)
             processPlanRange (voicePlans[0], startSample, numSamples);
 
-        auto* sum = bundle.instanceMixScratchBuffer.getWritePointer (0) + startSample;
-        auto* sumRight = bundle.instanceMixScratchBuffer.getWritePointer (1) + startSample;
         int activeCount = 0;
 
         for (int voiceIndex = 0; voiceIndex < numVoices; ++voiceIndex)
@@ -825,20 +894,12 @@ namespace bazalt
                 const auto fadingSamples = juce::jmin (numSamples, fadeSamplesRemainingBefore);
 
                 processPlanRange (plan, startSample, numSamples);
-                const auto* voiceOut = plan->blockBuffers[(size_t) plan->finalOutputBufferIndex].getBlock().getChannelPointer (0);
-                const auto* voiceRight = rightOutputOf (*plan, voiceOut);
 
                 const auto startGain = bundle.voiceManager.getStealFadeGain (voiceIndex);
                 const auto completed = bundle.voiceManager.advanceStealFade (voiceIndex, numSamples);
                 const auto endGain = bundle.voiceManager.getStealFadeGain (voiceIndex);
 
-                for (int i = 0; i < fadingSamples; ++i)
-                {
-                    const auto t = fadingSamples > 1 ? (float) i / (float) (fadingSamples - 1) : 1.0f;
-                    const auto gain = startGain + (endGain - startGain) * t;
-                    sum[i] += voiceOut[i] * gain;
-                    sumRight[i] += voiceRight[i] * gain;
-                }
+                addVoiceToSums (bundle.instanceMixScratchBuffers, *plan, startSample, fadingSamples, startGain, endGain);
                 // Samples at/after fadingSamples: gain is 0 — nothing to add.
 
                 ++activeCount;
@@ -860,13 +921,7 @@ namespace bazalt
                     if (remainingSamples > 0)
                     {
                         processPlanRange (plan, startSample + fadingSamples, remainingSamples);
-                        const auto* newVoiceOut = plan->blockBuffers[(size_t) plan->finalOutputBufferIndex].getBlock().getChannelPointer (0);
-                        const auto* newVoiceRight = rightOutputOf (*plan, newVoiceOut);
-                        for (int i = 0; i < remainingSamples; ++i)
-                        {
-                            sum[fadingSamples + i] += newVoiceOut[i];
-                            sumRight[fadingSamples + i] += newVoiceRight[i];
-                        }
+                        addVoiceToSums (bundle.instanceMixScratchBuffers, *plan, startSample + fadingSamples, remainingSamples);
                     }
                 }
 
@@ -875,14 +930,7 @@ namespace bazalt
 
             // Active or Releasing.
             processPlanRange (plan, startSample, numSamples);
-            const auto* voiceOut = plan->blockBuffers[(size_t) plan->finalOutputBufferIndex].getBlock().getChannelPointer (0);
-            const auto* voiceRight = rightOutputOf (*plan, voiceOut);
-
-            for (int i = 0; i < numSamples; ++i)
-            {
-                sum[i] += voiceOut[i];
-                sumRight[i] += voiceRight[i];
-            }
+            addVoiceToSums (bundle.instanceMixScratchBuffers, *plan, startSample, numSamples);
 
             ++activeCount;
 
@@ -893,9 +941,7 @@ namespace bazalt
                 // dynamic_cast<AdsrNode*>("env")->isActive() check, so a
                 // per-voice delay/reverb tail correctly keeps the instance
                 // alive past its envelope's own release.
-                float peak = 0.0f;
-                for (int i = 0; i < numSamples; ++i)
-                    peak = juce::jmax (peak, std::abs (voiceOut[i]), std::abs (voiceRight[i]));
+                const auto peak = voicePeak (*plan, numSamples);
 
                 if (bundle.voiceManager.updateSilenceAndCheckFinished (voiceIndex, peak, numSamples,
                                                                         silenceThresholdLinear, silenceHoldTimeSamples))
@@ -1071,8 +1117,8 @@ namespace bazalt
             const auto index = outputOriginBundleIndex.load (std::memory_order_acquire);
             if (index >= 0 && index < maxOrigins)
             {
-                finalMono = originBundles[(size_t) index].instanceMixScratchBuffer.getReadPointer (0);
-                finalRight = originBundles[(size_t) index].instanceMixScratchBuffer.getReadPointer (1);
+                finalMono = originBundles[(size_t) index].instanceMixScratchBuffers[0].getReadPointer (0);
+                finalRight = originBundles[(size_t) index].instanceMixScratchBuffers[0].getReadPointer (1);
             }
         }
         else if (globalPlan != nullptr)
@@ -1086,23 +1132,28 @@ namespace bazalt
                 if (! bundle.active)
                     continue;
 
-                const auto& sumNodeId = globalPlan->externalInputNodeIds[(size_t) b];
-                if (sumNodeId.isEmpty())
-                    continue; // 09-28-InstanceAllocator.1's independent-region case: this origin runs, unbridged
-
-                auto* instanceSumNode = dynamic_cast<bazalt::engine::nodes::InstanceMixNode*> (globalPlan->getNodeById (sumNodeId));
-                if (instanceSumNode == nullptr)
-                    continue;
-
-                if (instanceSumNode->getMode() == bazalt::engine::nodes::InstanceMixNode::Mode::Average
-                    && bundle.activeVoiceCountThisBlock > 1)
+                // One hand-off per instance.sum reducing this origin, each
+                // from its own accumulator.
+                for (int s = 0; s < maxSumsPerOrigin; ++s)
                 {
-                    const auto scale = 1.0f / (float) bundle.activeVoiceCountThisBlock;
-                    bundle.instanceMixScratchBuffer.applyGain (0, numSamples, scale);
-                }
+                    const auto& sumNodeId = globalPlan->externalInputNodeIds[(size_t) b][(size_t) s];
+                    if (sumNodeId.isEmpty())
+                        continue; // 09-28-InstanceAllocator.1's independent-region case: this origin runs, unbridged
 
-                instanceSumNode->setExternalBlock (bundle.instanceMixScratchBuffer.getReadPointer (0), numSamples,
-                                                   bundle.instanceMixScratchBuffer.getReadPointer (1));
+                    auto* instanceSumNode = dynamic_cast<bazalt::engine::nodes::InstanceMixNode*> (globalPlan->getNodeById (sumNodeId));
+                    if (instanceSumNode == nullptr)
+                        continue;
+
+                    auto& sumBuffer = bundle.instanceMixScratchBuffers[(size_t) s];
+                    if (instanceSumNode->getMode() == bazalt::engine::nodes::InstanceMixNode::Mode::Average
+                        && bundle.activeVoiceCountThisBlock > 1)
+                    {
+                        const auto scale = 1.0f / (float) bundle.activeVoiceCountThisBlock;
+                        sumBuffer.applyGain (0, numSamples, scale);
+                    }
+
+                    instanceSumNode->setExternalBlock (sumBuffer.getReadPointer (0), numSamples, sumBuffer.getReadPointer (1));
+                }
             }
 
             processPlanRange (globalPlan, 0, numSamples); // the global plan runs once over the whole block
@@ -1230,7 +1281,8 @@ namespace bazalt
             for (int b = 0; b < maxOrigins; ++b)
             {
                 auto& bundle = originBundles[(size_t) b];
-                bundle.instanceMixScratchBuffer.clear (0, numSamples); // both channels
+                for (auto& sumBuffer : bundle.instanceMixScratchBuffers)
+                    sumBuffer.clear (0, numSamples); // both channels
 
                 if (! bundle.active)
                     continue;

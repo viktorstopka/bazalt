@@ -105,15 +105,13 @@ export interface ValueSliderProps {
   isInteger: boolean
   unit: string
   color: string
-  /** Pre-resolved drag/fill curve exponent (sliderCurve.ts's
-      resolveSkew — ValueSlider itself stays agnostic of Curve/Quantity
-      vocabulary, matching its existing "range is the caller's choice"
-      philosophy). 1 (the default) is plain linear, unchanged from before
-      this existed. Direct feedback: attack/decay/release etc. already
-      declare Curve::Logarithmic engine-side (ValueTypes::timeSecondsPort)
-      and had since M14 — this was a wiring gap, not a missing feature.
+  /** Exponential drag/fill (sliderCurve.ts — the caller resolves it with
+      isLogarithmicCurve, ValueSlider itself stays agnostic of Curve
+      vocabulary, matching its "range is the caller's choice" philosophy).
+      Off (the default) is plain linear. Frequencies and times declare
+      Curve::Logarithmic engine-side (ValueTypes.h).
   */
-  skew?: number
+  logarithmic?: boolean
   /** Display-only decimal count override (wiki/plans/PropsAndMacroRedesign.md
       Batch A2/A3) — defaults to the existing `isInteger ? 0 : 2` when
       omitted, so every call site that doesn't pass one keeps today's
@@ -154,9 +152,9 @@ function formatForEditing(value: number, isInteger: boolean, decimals: number): 
   return isInteger ? formatValue(value, decimals) : String(value)
 }
 
-export function ValueSlider({ label, value, min, max, hardMin, hardMax, defaultValue, isInteger, unit, color, skew, decimals: decimalsProp, onCommit, onLiveChange }: ValueSliderProps) {
+export function ValueSlider({ label, value, min, max, hardMin, hardMax, defaultValue, isInteger, unit, color, logarithmic, decimals: decimalsProp, onCommit, onLiveChange }: ValueSliderProps) {
   const decimals = decimalsProp ?? (isInteger ? 0 : 2)
-  const curveSkew = skew ?? 1
+  const curveLogarithmic = logarithmic ?? false
   const clampMin = hardMin ?? -Infinity
   const clampMax = hardMax ?? Infinity
   // Direct feedback: "the prop is saved in much more [precision than the
@@ -219,13 +217,13 @@ export function ValueSlider({ label, value, min, max, hardMin, hardMax, defaultV
   }, [])
 
   const displayValue = liveValue ?? committedValue
-  // Curve-aware (sliderCurve.ts) — skew===1 (everything that doesn't
-  // declare a real curve) reduces to the old plain-linear fraction exactly.
+  // Curve-aware (sliderCurve.ts) — a linear slider (everything that doesn't
+  // declare a real curve) is the plain fraction.
   // toNormalizedPosition itself stays unclamped past [0,1] for a linear
   // slider (so a drag can keep moving an unbounded value past its
   // visual range — see that function's own comment); the fill width is the
   // one place that must still cap at 0%/100%, same as before this change.
-  const fraction = clamp(toNormalizedPosition(displayValue, min, max, curveSkew), 0, 1)
+  const fraction = clamp(toNormalizedPosition(displayValue, min, max, curveLogarithmic), 0, 1)
 
   // Direct feedback: "the prop is saved in much more [precision]... the
   // display when not editing is rounded to 2 decimal places" — commit/live-
@@ -285,9 +283,9 @@ export function ValueSlider({ label, value, min, max, hardMin, hardMax, defaultV
       // precise").
       const factor = ev.shiftKey ? PRECISION_FACTOR : 1
       const current = liveValueRef.current ?? startValue
-      const currentPosition = toNormalizedPosition(current, min, max, curveSkew)
+      const currentPosition = toNormalizedPosition(current, min, max, curveLogarithmic)
       const nextPosition = currentPosition + (stepDx - stepDy) * sensitivity() * factor
-      const next = fromNormalizedPosition(nextPosition, min, max, curveSkew)
+      const next = fromNormalizedPosition(nextPosition, min, max, curveLogarithmic)
       updateLiveValue(quantize(next))
     }
     const onUp = (): void => {
