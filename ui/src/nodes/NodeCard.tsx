@@ -12,7 +12,7 @@ import { getEndpoint } from '../graph/graphStore'
 import type { NodeMultiplicityBadge, PortMultiplicityInfo } from '../graph/graphCommands'
 import { tokens } from '../theme/tokens'
 import { ValueSlider } from './ValueSlider'
-import { resolveSkew } from './sliderCurve'
+import { isLogarithmicCurve } from './sliderCurve'
 import { TriggerSelect } from './TriggerSelect'
 import { ToggleSwitch } from '../controls/ToggleSwitch'
 import { NodePreview } from './NodePreview'
@@ -449,7 +449,7 @@ function PortRow({
           defaultValue={port.defaultValue}
           isInteger={port.isInteger}
           unit={port.unit}
-          skew={resolveSkew(port.curve, port.quantity)}
+          logarithmic={isLogarithmicCurve(port.curve)}
           color={portUiStyle(port, isPoly).color}
           onCommit={onCommit}
           onLiveChange={onLiveChange}
@@ -534,7 +534,7 @@ function ParameterRow({
   isInteger,
   unit,
   quantity,
-  skew,
+  logarithmic,
   isBool,
   options,
   onCommit,
@@ -555,7 +555,7 @@ function ParameterRow({
       otherwise-plain numeric parameter, same Unipolar/Bipolar check a
       port's own colour already uses. */
   quantity: Quantity
-  skew?: number
+  logarithmic?: boolean
   /** `kind === 'bool'` (wiki/plans/PropsAndMacroRedesign.md Batch B) —
       renders a ToggleSwitch instead of a numeric ValueSlider. Closes the
       same gap PortRow's own boolean branch closes, for a structural
@@ -589,7 +589,7 @@ function ParameterRow({
           defaultValue={defaultValue}
           isInteger={isInteger}
           unit={unit}
-          skew={skew}
+          logarithmic={logarithmic}
           color={color}
           onCommit={onCommit}
           onLiveChange={onLiveChange}
@@ -762,7 +762,7 @@ function StandardBody({ descriptor, state, instanceId }: { descriptor: NodeDescr
           isInteger={p.isInteger}
           unit={p.unit}
           quantity={p.quantity}
-          skew={resolveSkew(p.curve, p.quantity, p.skew)}
+          logarithmic={isLogarithmicCurve(p.curve)}
           isBool={p.kind === 'bool'}
           options={parameterOptions(p)}
           onCommit={parameterRowCommit(descriptor, state, p.id)}
@@ -852,7 +852,7 @@ function HorizontalBody({ descriptor, state, instanceId }: { descriptor: NodeDes
             isInteger={p.isInteger}
             unit={p.unit}
             quantity={p.quantity}
-            skew={resolveSkew(p.curve, p.quantity, p.skew)}
+            logarithmic={isLogarithmicCurve(p.curve)}
             isBool={p.kind === 'bool'}
             options={parameterOptions(p)}
             onCommit={parameterRowCommit(descriptor, state, p.id)}
