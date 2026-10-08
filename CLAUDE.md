@@ -9,7 +9,9 @@ tracking: `wiki/NODES_Gaps.md`. Current per-node build status (Implemented/
 MVP/To be implemented, necessity+difficulty, build batches, build-next order):
 `wiki/NODES.Status.md`. Current milestone plan: `wiki/MILESTONES.md`
 (a `0.x`-numbered arc, separate from the `archive_docs/MILESTONES.md` M-arc
-below). Not-yet-decided new capabilities get designed in `wiki/plans/` (one
+below). The user's roadmap from 2026-10-08 on (stages 0–5) is `wiki/ROADMAP.md`;
+stage 1 is planned in `wiki/plans/DataAndWavetable.md`, stage 2's engine half in
+`wiki/plans/InstanceAxis.md`. Not-yet-decided new capabilities get designed in `wiki/plans/` (one
 file per proposal, e.g. `wiki/plans/AudioControlBridge.md`) before any code
 exists for them — distinct from `wiki/reports/` (investigative write-ups
 answering a specific question) and `wiki/NODES_Gaps.md` (found-defect
