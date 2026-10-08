@@ -7,12 +7,11 @@ namespace bazalt::engine::nodes
     /** Stable type id: "view.listen". One Audio input, no outputs — a
         legitimate dead-end the compiler schedules and runs like any other
         node (GraphCompiler doesn't prune unreachable-from-output nodes, so
-        no special compiler support is needed for a sink). NODE_EDITOR.md
-        §6.4/§6.6's actual audition behaviour (routing this point to
-        monitoring output, temporary-Listen-on-Ctrl/Cmd-click) is real
-        engine+UI work for whichever milestone builds that interaction
-        (M12) — this node just needs to exist and be a valid, harmless
-        connection target for M7's command bridge to create.
+        no special compiler support is needed for a sink). The audition
+        itself is not this node's job: while one is wired,
+        GraphEditController compiles with the graph's output redirected to
+        whatever feeds it, and leaves it out of every saved patch
+        (wiki/ROADMAP.md stage 0).
     */
     class ListenNode : public Node
     {

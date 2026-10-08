@@ -456,7 +456,7 @@ namespace bazalt
         options = options.withNativeFunction ("patchSave", [&processor] (Args args, Completion completion)
         {
             juce::String error;
-            const auto document = bazalt::engine::PatchDocument::fromNodeGraph (processor.getGraphEditController().getGraph());
+            const auto document = bazalt::engine::PatchDocument::fromNodeGraph (processor.getGraphEditController().getGraphForSaving());
             const auto fileName = bazalt::UserPatchLibrary().save (argString (args, 0), document, error);
 
             auto* obj = new juce::DynamicObject();

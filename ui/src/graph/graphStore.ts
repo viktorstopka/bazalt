@@ -1761,3 +1761,208 @@ export function createViewerFromPort(nodeId: string, portId: string, x: number, 
 
   return viewerId
 }
+
+// ---- Stage 0 gestures (wiki/ROADMAP.md) ------------------------------------
+
+/** The output a whole-node gesture (Ctrl+Y, Ctrl+drag Add) reaches for: the
+    descriptor's primary output, else its first one. */
+export function mainOutputPortId(nodeId: string): string | undefined {
+  const node = nodes.get(nodeId)
+  return node ? primaryOutputPortId(node.typeId) : undefined
+}
+
+/** Whether a node's main output is a plain value Add can take (a signal or a
+    boolean — not an Event, Note or Data stream). */
+export function canAddFromNode(nodeId: string): boolean {
+  const portId = mainOutputPortId(nodeId)
+  const endpoint = portId ? getEndpoint(nodeId, portId, 'output') : undefined
+  return !!endpoint && (endpoint.port.type === 'audio' || endpoint.port.type === 'control' || endpoint.port.type === 'boolean')
+}
+
+/** Ctrl+Y: a Map fed from the node's main output, placed at (x, y). One undo step. */
+export function addMapFromMainOutput(nodeId: string, x: number, y: number): string | undefined {
+  const portId = mainOutputPortId(nodeId)
+  if (!portId) return undefined
+  const mapId = makeId('node')
+  void withHistory(
+    async () => {
+      if (!(await fireCommand(() => graphAddNode('adapt.map', mapId, x, y)))) return
+      await fireCommand(() => graphConnectWithAutoAdapt(nodeId, portId, mapId, 'in'))
+    },
+    () => {
+      nodes.set(mapId, { id: mapId, typeId: 'adapt.map', x, y, bypassed: false })
+      selection = new Set([mapId])
+    },
+  )
+  return mapId
+}
+
+/** Ctrl+drag from one node onto another: an Add of both main outputs, placed
+    at (x, y). One undo step. */
+export function addSumOfNodes(aId: string, bId: string, x: number, y: number): string | undefined {
+  const aPort = mainOutputPortId(aId)
+  const bPort = mainOutputPortId(bId)
+  if (!aPort || !bPort || aId === bId) return undefined
+  const addId = makeId('node')
+  void withHistory(
+    async () => {
+      if (!(await fireCommand(() => graphAddNode('math.add', addId, x, y)))) return
+      if (!(await fireCommand(() => graphConnectWithAutoAdapt(aId, aPort, addId, 'in.0')))) return
+      await fireCommand(() => graphConnectWithAutoAdapt(bId, bPort, addId, 'in.1'))
+    },
+    () => {
+      nodes.set(addId, { id: addId, typeId: 'math.add', x, y, bypassed: false })
+      selection = new Set([addId])
+    },
+  )
+  return addId
+}
+
+/** Copied nodes, as the engine stores them: their own JSON, the connections
+    between them (a cable to anything outside the copy is dropped) and the
+    images they show. Positions stay absolute; `originX`/`originY` is the
+    copy's top-left, which lands on the cursor when pasted. */
+export interface NodeFragment {
+  nodes: readonly PatchNodeJson[]
+  connections: readonly PatchConnectionJson[]
+  assets: Readonly<Record<string, { type: string; data: string }>>
+  originX: number
+  originY: number
+}
+
+/** Listen is a working state, never part of what is copied or saved. */
+const UNCOPYABLE_TYPES = new Set(['view.listen'])
+
+export function copyFragment(ids: readonly string[]): NodeFragment | undefined {
+  if (engineSnapshotCache === null) return undefined
+  const doc = JSON.parse(engineSnapshotCache) as PatchDocumentJson
+  const wanted = new Set(ids)
+  const copied = (doc.nodes ?? []).filter((n) => wanted.has(n.id) && !UNCOPYABLE_TYPES.has(n.type))
+  if (copied.length === 0) return undefined
+  const copiedIds = new Set(copied.map((n) => n.id))
+  const connections = (doc.connections ?? []).filter((c) => copiedIds.has(c.fromNodeId) && copiedIds.has(c.toNodeId))
+  const assetsUsed: Record<string, { type: string; data: string }> = {}
+  for (const n of copied) {
+    const assetId = n.properties?.asset
+    if (typeof assetId === 'string') {
+      const asset = doc.assets?.[assetId] ?? assets.get(assetId)
+      if (asset) assetsUsed[assetId] = asset
+    }
+  }
+  return {
+    nodes: copied,
+    connections,
+    assets: assetsUsed,
+    originX: Math.min(...copied.map((n) => n.position?.x ?? 0)),
+    originY: Math.min(...copied.map((n) => n.position?.y ?? 0)),
+  }
+}
+
+let clipboard: NodeFragment | null = null
+export function getClipboard(): NodeFragment | null {
+  return clipboard
+}
+/** Ctrl+C. */
+export function copyNodes(ids: readonly string[]): boolean {
+  const fragment = copyFragment(ids)
+  if (fragment) clipboard = fragment
+  return !!fragment
+}
+/** Ctrl+X: copy, then delete — the delete is the one undo step. */
+export function cutNodes(ids: readonly string[]): void {
+  if (copyNodes(ids)) deleteNodes(ids)
+}
+
+/** The fragment's nodes as local mirror nodes, positioned relative to its
+    origin — what the placement ghost draws. */
+export function fragmentPreviewNodes(fragment: NodeFragment): GraphNode[] {
+  const local = patchJsonToLocalState(JSON.stringify({ nodes: fragment.nodes, connections: [], assets: fragment.assets }))
+  return [...local.nodes.values()].map((n) => ({ ...n, x: n.x - fragment.originX, y: n.y - fragment.originY }))
+}
+
+/** Places a copy of the fragment with its top-left at (x, y): fresh ids, the
+    copied cables between them, a free slot for each Macro (two Macros on one
+    slot would be rejected). Applied as one snapshot restore — the same
+    whole-graph path undo uses — so it is one recompile and one undo step;
+    the pasted nodes end up selected. */
+export function pasteFragment(fragment: NodeFragment, x: number, y: number): void {
+  if (engineSnapshotCache === null) return
+  const doc = JSON.parse(engineSnapshotCache) as PatchDocumentJson & Record<string, unknown>
+  const idMap = new Map<string, string>()
+  const claimedSlots = new Set<number>()
+  for (const node of nodes.values()) {
+    const slot = node.typeId === 'util.macro' ? node.parameterValues?.['util.macro.slot'] : undefined
+    if (slot !== undefined && slot >= 0) claimedSlots.add(Math.round(slot))
+  }
+
+  const pasted: PatchNodeJson[] = fragment.nodes.map((n) => {
+    const id = makeId('node')
+    idMap.set(n.id, id)
+    const parameters = n.parameters ? { ...n.parameters } : undefined
+    if (n.type === 'util.macro' && parameters) {
+      let slot = -1
+      for (let s = 0; s < 32; s++) {
+        if (!claimedSlots.has(s)) {
+          slot = s
+          break
+        }
+      }
+      if (slot >= 0) claimedSlots.add(slot)
+      parameters['util.macro.slot'] = slot
+    }
+    return {
+      ...n,
+      id,
+      position: { x: x + (n.position?.x ?? 0) - fragment.originX, y: y + (n.position?.y ?? 0) - fragment.originY },
+      parameters,
+      properties: n.properties ? { ...n.properties } : undefined,
+    }
+  })
+  const pastedConnections = fragment.connections.map((c) => ({
+    ...c,
+    fromNodeId: idMap.get(c.fromNodeId) ?? c.fromNodeId,
+    toNodeId: idMap.get(c.toNodeId) ?? c.toNodeId,
+  }))
+
+  doc.nodes = [...(doc.nodes ?? []), ...pasted]
+  doc.connections = [...(doc.connections ?? []), ...pastedConnections]
+  doc.assets = { ...(doc.assets ?? {}), ...fragment.assets }
+  const json = JSON.stringify(doc)
+  const newIds = pasted.map((n) => n.id)
+
+  void withHistory(async () => {
+    await fireCommand(() => graphRestoreSnapshot(json))
+  }).then(() => {
+    selection = new Set(newIds.filter((id) => nodes.has(id)))
+    notify()
+  })
+}
+
+/** Ctrl+Alt+click on an output: listens to it — every other Listen goes —
+    or, when this output is already being listened to, stops listening. One
+    undo step either way. A Listen is never saved with the patch. */
+export function toggleListenAtPort(nodeId: string, portId: string, x: number, y: number): void {
+  const listensHere = [...wires.values()]
+    .filter((w) => w.fromNodeId === nodeId && w.fromPortId === portId && nodes.get(w.toNodeId)?.typeId === 'view.listen')
+    .map((w) => w.toNodeId)
+  if (listensHere.length > 0) {
+    deleteNodes(listensHere)
+    return
+  }
+
+  const existing = [...nodes.values()].filter((n) => n.typeId === 'view.listen').map((n) => n.id)
+  const listenId = makeId('node')
+  void withHistory(
+    async () => {
+      for (const id of existing) await fireCommand(() => graphDeleteNode(id))
+      if (!(await fireCommand(() => graphAddNode('view.listen', listenId, x, y)))) return
+      await fireCommand(() => graphConnectWithAutoAdapt(nodeId, portId, listenId, 'in'))
+    },
+    () => {
+      for (const id of existing) nodes.delete(id)
+      nodes.set(listenId, { id: listenId, typeId: 'view.listen', x, y, bypassed: false })
+      const newWireId = wireId(listenId, 'in')
+      wires.set(newWireId, { id: newWireId, fromNodeId: nodeId, fromPortId: portId, toNodeId: listenId, toPortId: 'in' })
+    },
+  )
+}

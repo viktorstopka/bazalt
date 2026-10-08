@@ -100,3 +100,21 @@
   pointer-events: none;
   z-index: 50;
 }
+
+/* Ctrl+drag Add (wiki/ROADMAP.md stage 0): the "+" riding on the cursor. */
+.infinite-canvas-link-plus {
+  display: none;
+  position: fixed;
+  transform: translate(8px, -22px);
+  font-family: var(--font-primary);
+  font-size: 16px;
+  font-weight: 600;
+  line-height: 1;
+  color: var(--color-textSecondary);
+  pointer-events: none;
+  z-index: 50;
+}
+
+.infinite-canvas-link-plus-valid {
+  color: var(--color-gestureValid);
+}

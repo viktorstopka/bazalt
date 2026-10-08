@@ -181,6 +181,12 @@ namespace bazalt
         CommandResult applyBatch (const std::function<void (bazalt::engine::NodeGraph&)>& mutate);
 
         const bazalt::engine::NodeGraph& getGraph() const noexcept { return graph; }
+
+        /** The graph as it is saved — a patch file, the host's plugin state,
+            the dev export: `view.listen` nodes left out (wiki/ROADMAP.md
+            stage 0 — listening is a working state, never part of a patch).
+            Undo snapshots use getGraph() and keep them. */
+        bazalt::engine::NodeGraph getGraphForSaving() const;
         bool getHasGlobalDomain() const noexcept { return hasGlobalDomain; }
 
         /** Dev-convenience export, direct instruction ("build that", after

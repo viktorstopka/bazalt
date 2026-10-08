@@ -52,6 +52,8 @@ export const tokens = {
     meterRms: '#5b8def',
     sliderFill: '#5b8def',
     error: '#e0454f',
+    // A gesture that will succeed on release (Ctrl+drag Add over a node it can add).
+    gestureValid: '#40FF69',
 
     // Port-type palette (NODE_EDITOR.md §5, blueprint §4's table).
     // `portAudio` is Audio's colour for a Scalar-resolved port — unchanged

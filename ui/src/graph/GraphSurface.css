@@ -23,6 +23,11 @@
   pointer-events: none;
 }
 
+/* One node of a pasted/duplicated selection, at its offset in the copy. */
+.graph-node-ghost-item {
+  position: absolute;
+}
+
 /* left/top/width/height are set inline, per instance, from the actual
    rendered `.node-title` element's own geometry (NodeWrapper's
    positionRenameInput callback ref in GraphSurface.tsx) — every layout

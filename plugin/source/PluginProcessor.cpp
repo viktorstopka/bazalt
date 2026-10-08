@@ -1378,7 +1378,7 @@ namespace bazalt
 
     bazalt::engine::PatchDocument BazaltAudioProcessor::getCurrentPatchDocument() const
     {
-        auto doc = bazalt::engine::PatchDocument::fromNodeGraph (graphEditController.getGraph());
+        auto doc = bazalt::engine::PatchDocument::fromNodeGraph (graphEditController.getGraphForSaving());
 
         // wiki/plans/UtilMacro.md: macroMappings is no longer a persisted
         // field (schema v7) — it's derived from the graph's own util.macro

@@ -800,7 +800,7 @@ A decal. Drop or paste an image onto the canvas (or pick Image in the Add menu f
 
 #### `view.listen` — Listen
 Routes whatever's plugged into it straight to the monitored output, so you can
-audition one point in the graph in isolation without rewiring anything. **In:** `in` — `Audio`. **Behavior:** auditions this point in the graph, replacing normal output while active. **Taps:** `in`.
+audition one point in the graph in isolation without rewiring anything. **In:** `in` — `Audio`. **Behavior:** while wired, what feeds it replaces Master Out (`GraphEditController::recompileAndPublish` compiles with the output redirected; the edited graph keeps its own). **Gestures (`wiki/ROADMAP.md` stage 0):** Ctrl+Alt+click an Audio output to listen to it — any other Listen is removed — or, on an output already being listened to, to stop; double-click a Listen to remove it; the listened node is drawn as listening. **Never saved:** patch files, plugin state and the dev export leave it out (`GraphEditController::getGraphForSaving`); undo snapshots keep it. **Taps:** `in`.
 
 #### `view.spectrum` — Spectrum
 A live FFT display of a signal's frequency content — the standard "watch the

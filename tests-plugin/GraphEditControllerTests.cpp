@@ -1125,3 +1125,47 @@ TEST_CASE ("Two instance.sum nodes reducing one origin each carry that origin's 
     // The same voice through both sums adds coherently: twice the level.
     CHECK (std::abs (both - 2.0f * mainOnly) < 0.05f * mainOnly);
 }
+
+// wiki/ROADMAP.md stage 0: a wired Listen overrides Master Out, and is never
+// saved with the patch.
+TEST_CASE ("A Listen overrides Master Out and is left out of the saved graph",
+           "[plugin][GraphEditController][listen]")
+{
+    BazaltAudioProcessor processor;
+    processor.prepareToPlay (44100.0, 512);
+    auto& controller = processor.getGraphEditController();
+    REQUIRE (controller.setGraph (bazalt::engine::buildMasterOutOnlyGraph()).success);
+    REQUIRE (controller.addNode ("osc.sine", "sine", 0.0f, 0.0f).success);
+
+    auto renderRms = [&]
+    {
+        juce::AudioBuffer<float> buffer (2, 512);
+        for (int block = 0; block < 4; ++block)
+        {
+            buffer.clear();
+            juce::MidiBuffer empty;
+            processor.processBlock (buffer, empty);
+        }
+        return rms (buffer, 0);
+    };
+
+    // The sine feeds nothing audible yet: Master Out is unconnected.
+    CHECK (renderRms() < 1.0e-6f);
+
+    REQUIRE (controller.addNode ("view.listen", "listen", 0.0f, 0.0f).success);
+    REQUIRE (controller.connect ("sine", "out", "listen", "in").success);
+    CHECK (renderRms() > 0.1f);
+
+    // The edited graph keeps Master Out as its output; saving drops the Listen.
+    const auto masterOutId = controller.getGraph().getOutputNodeId();
+    CHECK (controller.getGraph().findNode (masterOutId)->type == "io.output");
+    const auto saved = controller.getGraphForSaving();
+    CHECK (saved.findNode ("listen") == nullptr);
+    CHECK (saved.findNode ("sine") != nullptr);
+    CHECK (std::none_of (saved.getConnections().begin(), saved.getConnections().end(),
+                         [] (const auto& c) { return c.toNodeId == "listen"; }));
+
+    // Removing the Listen goes straight back to Master Out (silent here).
+    REQUIRE (controller.deleteNode ("listen").success);
+    CHECK (renderRms() < 1.0e-6f);
+}

@@ -11,8 +11,17 @@ import { canConnect, type ConnectionEndpoint } from '../graph/canConnect'
 import { importImage } from '../graph/imageImport'
 import {
   addImageAt,
+  addMapFromMainOutput,
   addNode,
+  addSumOfNodes,
+  canAddFromNode,
   canSplice,
+  copyFragment,
+  copyNodes,
+  cutNodes,
+  getClipboard,
+  pasteFragment,
+  toggleListenAtPort,
   reportError,
   commitNodeMoves,
   commitWireDrag,
@@ -33,6 +42,7 @@ import {
 } from '../graph/graphStore'
 import { useGraphSnapshot } from '../graph/useGraphSnapshot'
 import {
+  armFragmentGhost,
   armGhost,
   clearGhost,
   getCamera,
@@ -198,6 +208,7 @@ export const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, InfiniteCanvasPro
   const worldRef = useRef<HTMLDivElement | null>(null)
   const selectionBoxRef = useRef<HTMLDivElement | null>(null)
   const hintLabelRef = useRef<HTMLDivElement | null>(null)
+  const linkPlusRef = useRef<HTMLDivElement | null>(null)
   const ghostElRef = useRef<HTMLDivElement | null>(null)
   const snapSettingsRef = useRef(snapSettings)
   const lastMouseRef = useRef({ clientX: 0, clientY: 0 })
@@ -659,7 +670,9 @@ export const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, InfiniteCanvasPro
         const worldPos = canvasToWorld(lastMouseCanvasX, lastMouseCanvasY)
         ghostElRef.current.style.left = `${snapValue(worldPos.x, snapSettingsRef.current)}px`
         ghostElRef.current.style.top = `${snapValue(worldPos.y, snapSettingsRef.current)}px`
-
+      }
+      // A pasted/duplicated selection is never spliced into a cable.
+      if (currentGhost && !currentGhost.fragment && ghostElRef.current) {
         const ghostRect = ghostElRef.current.getBoundingClientRect()
         const canvasRectNow = canvas.getBoundingClientRect()
         const box = {
@@ -760,6 +773,21 @@ export const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, InfiniteCanvasPro
         }
       }
 
+      // Ctrl+drag Add: a straight line from the press to the cursor, green
+      // over a node it can add, with a "+" riding on the cursor.
+      if (g?.kind === 'linkAdd') {
+        const color = g.hoverValid ? hexToRgb(tokens.color.gestureValid) : hexToRgb(tokens.color.textSecondary)
+        cables.push({ from: { x: g.startX, y: g.startY }, to: { x: lastMouseCanvasX, y: lastMouseCanvasY }, color, alpha: g.hoverValid ? 1 : 0.6, dashed: !g.hoverValid })
+        if (linkPlusRef.current) {
+          linkPlusRef.current.style.display = 'block'
+          linkPlusRef.current.style.left = `${lastMouseRef.current.clientX}px`
+          linkPlusRef.current.style.top = `${lastMouseRef.current.clientY}px`
+          linkPlusRef.current.classList.toggle('infinite-canvas-link-plus-valid', !!g.hoverValid)
+        }
+      } else if (linkPlusRef.current && linkPlusRef.current.style.display !== 'none') {
+        linkPlusRef.current.style.display = 'none'
+      }
+
       renderer?.render({ cssWidth: size.cssWidth, cssHeight: size.cssHeight, dpr: size.dpr, zoom: camera.zoom, cables })
 
       if (currentGhost) {
@@ -847,7 +875,7 @@ export const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, InfiniteCanvasPro
 
       if (e.key === 'Escape') {
         if (getGhost()) clearGhost()
-        else if (getGesture()?.kind === 'wireDrag' || getGesture()?.kind === 'dragToMacro') setGesture(null)
+        else if (getGesture()?.kind === 'wireDrag' || getGesture()?.kind === 'dragToMacro' || getGesture()?.kind === 'linkAdd') setGesture(null)
         setAddMenu(null)
         requestFrame()
         return
@@ -882,9 +910,81 @@ export const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, InfiniteCanvasPro
         else undo()
         return
       }
-      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'y' && !gestureActive) {
+      // ---- wiki/ROADMAP.md stage 0 shortcuts ----
+      const mod = e.ctrlKey || e.metaKey
+      const key = e.key.toLowerCase()
+      const selected = [...getGraphSnapshot().selection]
+      // Ctrl+R always: the WebView would otherwise reload the whole UI.
+      if (mod && key === 'r') {
         e.preventDefault()
-        redo()
+        if (selected.length === 1) {
+          const el = container.querySelector<HTMLElement>(`[data-node-instance="${CSS.escape(selected[0])}"]`)
+          el?.dispatchEvent(new CustomEvent('bazalt-rename'))
+        }
+        return
+      }
+      if (gestureActive) return
+      if (mod && !e.shiftKey && key === 'a') {
+        e.preventDefault()
+        setSelection(getGraphSnapshot().nodes.map((n) => n.id))
+        return
+      }
+      if (mod && !e.shiftKey && key === 'c') {
+        if (selected.length > 0) {
+          e.preventDefault()
+          copyNodes(selected)
+        }
+        return
+      }
+      if (mod && !e.shiftKey && key === 'x') {
+        if (selected.length > 0) {
+          e.preventDefault()
+          cutNodes(selected)
+        }
+        return
+      }
+      if (mod && !e.shiftKey && key === 'v') {
+        const clipboard = getClipboard()
+        if (clipboard) {
+          e.preventDefault()
+          armFragmentGhost(clipboard)
+          requestFrame()
+        }
+        return
+      }
+      if (mod && !e.shiftKey && key === 'd') {
+        // Duplicate follows the cursor like a placement; the clipboard is untouched.
+        e.preventDefault()
+        const fragment = copyFragment(selected)
+        if (fragment) {
+          armFragmentGhost(fragment)
+          requestFrame()
+        }
+        return
+      }
+      if (mod && !e.shiftKey && key === 'y') {
+        // A Map from the selected node's main output, placed to its right.
+        // (Redo stays on Ctrl+Shift+Z.)
+        e.preventDefault()
+        if (selected.length === 1) {
+          const node = getGraphSnapshot().nodes.find((n) => n.id === selected[0])
+          const el = container.querySelector<HTMLElement>(`[data-node-instance="${CSS.escape(selected[0])}"]`)
+          if (node) {
+            const x = snapValue(node.x + (el?.offsetWidth ?? 200) + 60, snapSettingsRef.current)
+            addMapFromMainOutput(node.id, x, snapValue(node.y, snapSettingsRef.current))
+          }
+        }
+        return
+      }
+      // Single keys arm a placement, exactly like picking from the Add menu.
+      if (!mod && !e.altKey && !e.shiftKey) {
+        const typeId = key === 'r' ? 'adapt.map' : key === 'a' ? 'math.add' : key === 's' || key === 'm' ? 'math.multiply' : null
+        if (typeId) {
+          e.preventDefault()
+          setAddMenu(null)
+          armGhost(typeId)
+          requestFrame()
+        }
       }
     }
     const onKeyUp = (e: KeyboardEvent): void => {
@@ -1062,6 +1162,17 @@ export const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, InfiniteCanvasPro
       if (port) {
         e.preventDefault()
         if (port.direction === 'output') {
+          // Ctrl+Alt+click on an Audio output listens to it, or stops
+          // listening if it already is (wiki/ROADMAP.md stage 0).
+          if ((e.ctrlKey || e.metaKey) && e.altKey) {
+            const endpoint = getEndpoint(port.nodeId, port.portId, 'output')
+            if (endpoint?.port.type === 'audio') {
+              const worldPos = canvasToWorld(lastMouseCanvasX, lastMouseCanvasY)
+              toggleListenAtPort(port.nodeId, port.portId, snapValue(worldPos.x + 40, snapSettingsRef.current), snapValue(worldPos.y + 40, snapSettingsRef.current))
+              requestFrame()
+            }
+            return
+          }
           // "Ctrl/Cmd-clicking an output port spawns the viewer matching
           // that port's type, already connected" (design/Visualization/*.png
           // — Ripple, Count, Scope, Scope (Modulation), Gate). A plain click
@@ -1107,6 +1218,13 @@ export const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, InfiniteCanvasPro
 
       const nodeId = closestNodeId(e.target)
       if (nodeId) {
+        // Ctrl+drag from a node's body: add it to another node (wiki/ROADMAP.md stage 0).
+        if ((e.ctrlKey || e.metaKey) && !e.altKey) {
+          e.preventDefault()
+          setGesture({ kind: 'linkAdd', fromNodeId: nodeId, startX: lastMouseCanvasX, startY: lastMouseCanvasY })
+          requestFrame()
+          return
+        }
         const current = getGraphSnapshot().selection
         if (e.shiftKey) {
           const next = new Set(current)
@@ -1202,6 +1320,14 @@ export const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, InfiniteCanvasPro
         return
       }
 
+      if (g?.kind === 'linkAdd') {
+        const hover = closestNodeId(e.target)
+        g.hoverNodeId = hover && hover !== g.fromNodeId ? hover : undefined
+        g.hoverValid = !!g.hoverNodeId && canAddFromNode(g.fromNodeId) && canAddFromNode(g.hoverNodeId)
+        requestFrame()
+        return
+      }
+
       if (g?.kind === 'boxSelect') {
         const left = Math.min(g.startX, e.clientX)
         const top = Math.min(g.startY, e.clientY)
@@ -1267,6 +1393,19 @@ export const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, InfiniteCanvasPro
         return
       }
 
+      if (g?.kind === 'linkAdd') {
+        if (g.hoverNodeId && g.hoverValid) {
+          // The new Add lands midway between the press and the release.
+          const a = canvasToWorld(g.startX, g.startY)
+          const b = canvasToWorld(lastMouseCanvasX, lastMouseCanvasY)
+          addSumOfNodes(g.fromNodeId, g.hoverNodeId, snapValue((a.x + b.x) / 2, snapSettingsRef.current), snapValue((a.y + b.y) / 2, snapSettingsRef.current))
+        }
+        setGesture(null)
+        if (linkPlusRef.current) linkPlusRef.current.style.display = 'none'
+        requestFrame()
+        return
+      }
+
       if (g?.kind === 'nodeDrag') {
         const updates: { id: string; x: number; y: number }[] = []
         let moved = false
@@ -1329,6 +1468,12 @@ export const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, InfiniteCanvasPro
       const worldPos = canvasToWorld(lastMouseCanvasX, lastMouseCanvasY)
       const x = snapValue(worldPos.x, snapSettingsRef.current)
       const y = snapValue(worldPos.y, snapSettingsRef.current)
+      if (currentGhost.fragment) {
+        // Paste / duplicate: the copy's top-left lands on the cursor.
+        pasteFragment(currentGhost.fragment, x, y)
+        clearGhost()
+        return
+      }
       if (currentGhost.typeId === 'deco.image') {
         // An image comes from a file: placing one opens the picker.
         clearGhost()
@@ -1462,6 +1607,9 @@ export const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, InfiniteCanvasPro
         {children}
         <div className="infinite-canvas-selection-box" ref={selectionBoxRef} />
         <div className="infinite-canvas-hint-label" ref={hintLabelRef} />
+        <div className="infinite-canvas-link-plus" ref={linkPlusRef}>
+          +
+        </div>
         {addMenu && (
           <AddMenu
             x={addMenu.x}

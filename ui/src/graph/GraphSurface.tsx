@@ -14,7 +14,7 @@
 // InfiniteCanvas's own listeners, which inspect the DOM target directly
 // (via data-node-instance/data-port-anchor) rather than going through
 // callback props — see GraphSurface's sibling components for that half.
-import { useMemo, useRef, useState, type RefObject } from 'react'
+import { useEffect, useMemo, useRef, useState, type RefObject } from 'react'
 import { createPortal } from 'react-dom'
 import { NodeCard, type NodeCardState } from '../nodes/NodeCard'
 import { DecorationCard } from '../nodes/DecorationCard'
@@ -41,6 +41,7 @@ import {
   type GraphNode,
   type GraphWire,
   type NodeMultiplicity,
+  fragmentPreviewNodes,
 } from './graphStore'
 import type { NodeDescriptor } from './descriptorTypes'
 import type { GhostPlacement } from '../canvas/interactionStore'
@@ -56,9 +57,11 @@ interface NodeWrapperProps {
   multiplicity: NodeMultiplicity | undefined
   overlayTarget: HTMLElement | null
   ghostActive: boolean
+  /** A Listen is fed from this node — it is what you hear. */
+  listening: boolean
 }
 
-function NodeWrapper({ node, descriptor, selected, selection, connectedPortIds, multiplicity, overlayTarget, ghostActive }: NodeWrapperProps) {
+function NodeWrapper({ node, descriptor, selected, selection, connectedPortIds, multiplicity, overlayTarget, ghostActive, listening }: NodeWrapperProps) {
   const [editing, setEditing] = useState(false)
   const [menuPos, setMenuPos] = useState<{ x: number; y: number } | null>(null)
   const wrapperRef = useRef<HTMLDivElement | null>(null)
@@ -76,6 +79,7 @@ function NodeWrapper({ node, descriptor, selected, selection, connectedPortIds, 
 
   const state: NodeCardState = {
     selected,
+    listening,
     bypassed: node.bypassed,
     error: node.error,
     connectedPortIds,
@@ -105,6 +109,20 @@ function NodeWrapper({ node, descriptor, selected, selection, connectedPortIds, 
     renameResolvedRef.current = false
     setEditing(true)
   }
+
+  // Ctrl+R (InfiniteCanvas's keyboard handler) asks the selected node to
+  // rename itself — the text field is this wrapper's own state.
+  useEffect(() => {
+    const el = wrapperRef.current
+    // Decorations edit their own text (double-click); they have no title.
+    if (!el || DECORATION_TYPES.has(node.typeId) || node.typeId === 'deco.reroute') return
+    const onRename = () => {
+      renameResolvedRef.current = false
+      setEditing(true)
+    }
+    el.addEventListener('bazalt-rename', onRename)
+    return () => el.removeEventListener('bazalt-rename', onRename)
+  }, [node.typeId])
   const commitRename = (value: string) => {
     if (renameResolvedRef.current) return
     renameResolvedRef.current = true
@@ -153,6 +171,12 @@ function NodeWrapper({ node, descriptor, selected, selection, connectedPortIds, 
         }
       }}
       onDoubleClickCapture={(e) => {
+        // A double-click anywhere on a Listen stops listening (wiki/ROADMAP.md stage 0).
+        if (node.typeId === 'view.listen') {
+          e.stopPropagation()
+          deleteNodes([node.id])
+          return
+        }
         if ((e.target as HTMLElement).closest('.node-title')) {
           e.stopPropagation()
           startEditing()
@@ -285,6 +309,12 @@ export function GraphSurface({ nodes, wires, selection, getDescriptor, multiplic
     return map
   }, [wires])
 
+  // Nodes a Listen is fed from (wiki/ROADMAP.md stage 0) — drawn as listening.
+  const listenedNodeIds = useMemo(() => {
+    const listenIds = new Set(nodes.filter((n) => n.typeId === 'view.listen').map((n) => n.id))
+    return new Set(wires.filter((w) => listenIds.has(w.toNodeId)).map((w) => w.fromNodeId))
+  }, [nodes, wires])
+
   return (
     <div className="graph-surface">
       {/* Boxes and images are backgrounds (wiki/plans/Decorations.md): drawn
@@ -308,6 +338,7 @@ export function GraphSurface({ nodes, wires, selection, getDescriptor, multiplic
             multiplicity={multiplicity.get(node.id)}
             overlayTarget={overlayTarget}
             ghostActive={ghostActive}
+            listening={listenedNodeIds.has(node.id)}
           />
         )
       })}
@@ -316,6 +347,31 @@ export function GraphSurface({ nodes, wires, selection, getDescriptor, multiplic
           <NodeCard descriptor={ghostDescriptor} />
         </div>
       )}
+      {ghost?.fragment && <FragmentGhost fragment={ghost.fragment} elementRef={ghostElementRef} />}
+    </div>
+  )
+}
+
+/** A pasted or duplicated selection following the cursor: every copied node
+    drawn at its offset from the copy's top-left, which is the point the
+    canvas positions on the cursor. */
+function FragmentGhost({ fragment, elementRef }: { fragment: NonNullable<GhostPlacement['fragment']>; elementRef?: RefObject<HTMLDivElement | null> }) {
+  const previewNodes = useMemo(() => fragmentPreviewNodes(fragment), [fragment])
+  return (
+    <div className="graph-node-ghost" ref={elementRef}>
+      {previewNodes.map((node) => {
+        const descriptor = resolveNodeDescriptor(node)
+        if (!descriptor) return null
+        return (
+          <div key={node.id} className="graph-node-ghost-item" style={{ left: node.x, top: node.y }}>
+            {DECORATION_TYPES.has(node.typeId) || node.typeId === 'deco.reroute' ? (
+              <DecorationCard node={node} descriptor={descriptor} selected={false} />
+            ) : (
+              <NodeCard descriptor={node.titleOverride ? { ...descriptor, title: node.titleOverride } : descriptor} state={{ parameterValues: node.parameterValues }} />
+            )}
+          </div>
+        )
+      })}
     </div>
   )
 }

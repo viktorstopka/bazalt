@@ -925,7 +925,30 @@ namespace bazalt
             return { false, collisionError };
 
         // Decorations never reach the resolver or a plan (wiki/plans/Decorations.md).
-        auto split = bazalt::engine::MultiplicityResolver::split (bazalt::engine::withoutDecorations (graph, processor.getNodeFactory()));
+        auto compiled = bazalt::engine::withoutDecorations (graph, processor.getNodeFactory());
+
+        // A wired Listen overrides Master Out (wiki/ROADMAP.md stage 0): the
+        // compiled graph's designated output becomes whatever feeds it. The
+        // edited graph keeps its own output, so removing the Listen goes
+        // straight back to Master Out. At most one Listen exists (the UI
+        // replaces any other); if several do, the first wired one wins.
+        for (const auto& node : compiled.getNodes())
+        {
+            if (node.type != "view.listen")
+                continue;
+            const auto& connections = compiled.getConnections();
+            const auto feed = std::find_if (connections.begin(), connections.end(),
+                                            [&node] (const bazalt::engine::Connection& c) { return c.toNodeId == node.id && c.toPortId == "in"; });
+            if (feed != connections.end())
+            {
+                const auto fromNodeId = feed->fromNodeId;
+                const auto fromPortId = feed->fromPortId;
+                compiled.setOutput (fromNodeId, fromPortId);
+                break;
+            }
+        }
+
+        auto split = bazalt::engine::MultiplicityResolver::split (compiled);
         if (! split.success)
             return { false, split.errorMessage };
 
@@ -1360,10 +1383,19 @@ namespace bazalt
         return { true, {} };
     }
 
+    bazalt::engine::NodeGraph GraphEditController::getGraphForSaving() const
+    {
+        auto saved = graph;
+        for (const auto& node : graph.getNodes())
+            if (node.type == "view.listen")
+                saved.removeNode (node.id);
+        return saved;
+    }
+
     GraphEditController::CommandResult GraphEditController::exportSnapshotToFile (const juce::File& file) const
     {
         const auto json = bazalt::engine::serializePatchToJson (
-            bazalt::engine::PatchDocument::fromNodeGraph (graph), true); // pretty-printed - a human/AI reads this file directly
+            bazalt::engine::PatchDocument::fromNodeGraph (getGraphForSaving()), true); // pretty-printed - a human/AI reads this file directly
 
         const auto parentDir = file.getParentDirectory();
         if (! parentDir.exists() && ! parentDir.createDirectory())
