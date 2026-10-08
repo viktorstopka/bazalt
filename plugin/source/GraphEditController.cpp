@@ -175,15 +175,17 @@ namespace bazalt
             return mappings;
         }
 
-        /** adapt.map's input range when auto-inserted: the feeding port's own
+        /** A port's range for seeding an auto-inserted adapt.map (input side
+            from the feeder, output side from the destination): its own
             declared bounds, else its polarity (a Modulation port that
-            declares no bounds is still -1..1 or 0..1 by definition), else
-            nothing — the node's own 0..1 default stands. */
+            declares no bounds is still -1..1 or 0..1 by definition, an audio
+            port ±1), else nothing — the node's own default stands. */
         std::optional<std::pair<float, float>> seedRangeForMapInput (const bazalt::engine::PortDescriptor& feeder)
         {
             if (feeder.minValue.has_value() && feeder.maxValue.has_value())
                 return std::make_pair (*feeder.minValue, *feeder.maxValue);
-            if (feeder.quantity == bazalt::engine::Quantity::Bipolar)
+            // An audio port is a waveform: ±1 (wiki/plans/DataAndWavetable.md D1).
+            if (feeder.quantity == bazalt::engine::Quantity::Bipolar || feeder.type == bazalt::engine::SignalType::Audio)
                 return std::make_pair (-1.0f, 1.0f);
             if (feeder.quantity == bazalt::engine::Quantity::Unipolar)
                 return std::make_pair (0.0f, 1.0f);
@@ -678,10 +680,12 @@ namespace bazalt
                         instance.parameters["adapt.map.inMin"] = range->first;
                         instance.parameters["adapt.map.inMax"] = range->second;
                     }
-                    if (toPort->minValue.has_value() && toPort->maxValue.has_value())
+                    // The same reading for the destination: its bounds, else
+                    // its polarity, else ±1 for an audio port.
+                    if (const auto range = seedRangeForMapInput (*toPort))
                     {
-                        instance.parameters["adapt.map.outMin"] = *toPort->minValue;
-                        instance.parameters["adapt.map.outMax"] = *toPort->maxValue;
+                        instance.parameters["adapt.map.outMin"] = range->first;
+                        instance.parameters["adapt.map.outMax"] = range->second;
                     }
                 }
                 else if (step.seedFromDestinationRange && toPort->minValue.has_value() && toPort->maxValue.has_value())

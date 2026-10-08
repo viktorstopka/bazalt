@@ -488,7 +488,8 @@ TEST_CASE ("view.cycle and view.meter take Audio and Control; view.spectrum take
 
     CHECK (controller.connect ("control", "out", "scope", "in").success);
     CHECK (controller.connect ("control", "out", "meter", "in").success);
-    CHECK_FALSE (controller.connect ("control", "out", "spectrum", "in").success); // no Control->Audio without an adapter
+    CHECK (controller.connect ("control", "out", "spectrum", "in").success); // one numeric signal (wiki/plans/DataAndWavetable.md D1)
+    REQUIRE (controller.disconnect ("control", "out", "spectrum", "in").success);
 
     REQUIRE (controller.disconnect ("control", "out", "scope", "in").success);
     CHECK_FALSE (controller.connect ("notes", "notes", "scope", "in").success);

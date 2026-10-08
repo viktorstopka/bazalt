@@ -311,22 +311,6 @@ TEST_CASE ("BoolToControlNode maps false/true to 0/1 by default, and to any two 
     CHECK (out == 5.0f);
 }
 
-TEST_CASE ("canConnect auto-inserts adapt.boolToControl for Boolean -> Control",
-           "[engine][CanConnect][BoolToControlNode]")
-{
-    PortDescriptor boolPort { "in", SignalType::Boolean };
-    PortDescriptor controlPort { "out", SignalType::Control };
-
-    const auto result = canConnect (boolPort, controlPort);
-    REQUIRE (result.outcome == ConnectionOutcome::NeedsAdapters);
-    REQUIRE (result.adapterChain.size() == 1);
-    CHECK (result.adapterChain[0].typeId == "adapt.boolToControl");
-}
-
-// ---- adapt.pitchToFrequency / adapt.frequencyToPitch ----
-// Direct feedback: canConnect was auto-inserting adapt.map (linear) for
-// Pitch -> Frequency, which is quietly wrong - the real relationship is
-// exponential.
 
 TEST_CASE ("PitchToFrequencyNode converts MIDI pitch to Hz exactly (A4 = 69 = 440Hz)",
            "[engine][nodes][PitchToFrequencyNode]")

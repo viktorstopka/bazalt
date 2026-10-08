@@ -224,98 +224,70 @@ TEST_CASE ("connectWithAutoAdapt asks before reducing stereo into a mono-only po
                         { return c.fromNodeId == downmixIt->id && c.toNodeId == "follower" && c.toPortId == "in"; }));
 }
 
-TEST_CASE ("connectWithAutoAdapt inserts adapt.audioToControl for raw Audio into a modulation-quantity port",
-           "[plugin][GraphEditController][CanConnect][AudioControlBridge]")
+// wiki/plans/DataAndWavetable.md D1: Audio and Control are one numeric signal.
+// No bridge node any more — a value wires straight in, and a Map appears only
+// where the range changes.
+
+namespace
 {
-    BazaltAudioProcessor processor;
-    processor.prepareToPlay (44100.0, 512);
-    auto& controller = processor.getGraphEditController();
-    REQUIRE (controller.setGraph (bazalt::engine::buildVoiceProofGraph()).success);
-
-    // adapt.normalise's own "in" port is a plain Control port with no
-    // declared quantity (Dimensionless) - canConnect treats Dimensionless as
-    // "not a real quantity" (isRealQuantity() excludes it explicitly, same
-    // as connectControl()'s own lenient Dimensionless handling), so this is
-    // the one-step case: osc.out -> adapt.audioToControl.in -> destTest.in,
-    // no adapt.map involved.
-    REQUIRE (controller.addNode ("adapt.normalise", "destTest", 0.0f, 0.0f).success);
-
-    const auto result = controller.connectWithAutoAdapt ("osc", "out", "destTest", "in");
-    REQUIRE (result.success);
-
-    const auto& graph = controller.getGraph();
-    const bazalt::engine::NodeInstance* bridgeNode = nullptr;
-    for (const auto& n : graph.getNodes())
-        if (n.type == "adapt.audioToControl")
-            bridgeNode = &n;
-    REQUIRE (bridgeNode != nullptr);
-
-    bool sourceToBridge = false, bridgeToDestination = false;
-    for (const auto& c : graph.getConnections())
+    const bazalt::engine::NodeInstance* findNodeOfType (const bazalt::engine::NodeGraph& graph, const juce::String& type)
     {
-        if (c.fromNodeId == "osc" && c.fromPortId == "out" && c.toNodeId == bridgeNode->id && c.toPortId == "in")
-            sourceToBridge = true;
-        if (c.fromNodeId == bridgeNode->id && c.fromPortId == "out" && c.toNodeId == "destTest" && c.toPortId == "in")
-            bridgeToDestination = true;
+        for (const auto& n : graph.getNodes())
+            if (n.type == type)
+                return &n;
+        return nullptr;
     }
-    CHECK (sourceToBridge);
-    CHECK (bridgeToDestination);
+
+    bool hasConnection (const bazalt::engine::NodeGraph& graph, const juce::String& from, const juce::String& fromPort,
+                        const juce::String& to, const juce::String& toPort)
+    {
+        const auto& connections = graph.getConnections();
+        return std::any_of (connections.begin(), connections.end(), [&] (const auto& c)
+                            { return c.fromNodeId == from && c.fromPortId == fromPort && c.toNodeId == to && c.toPortId == toPort; });
+    }
 }
 
-TEST_CASE ("connectWithAutoAdapt inserts adapt.audioToControl then adapt.map for raw Audio into a real-quantity port",
-           "[plugin][GraphEditController][CanConnect][AudioControlBridge]")
+TEST_CASE ("connectWithAutoAdapt wires raw Audio straight into a modulation port",
+           "[plugin][GraphEditController][CanConnect]")
 {
-    // The motivating FM use case: osc.analog's raw waveform ("out", plain
-    // Audio) straight into filter.svf's "cutoff" (Quantity::Frequency) -
-    // audio-rate filter modulation, not a smoothed envelope-follow.
     BazaltAudioProcessor processor;
     processor.prepareToPlay (44100.0, 512);
     auto& controller = processor.getGraphEditController();
     REQUIRE (controller.setGraph (bazalt::engine::buildVoiceProofGraph()).success);
 
-    const auto result = controller.connectWithAutoAdapt ("osc", "out", "svf", "filter.svf.cutoff");
-    REQUIRE (result.success);
+    // adapt.map's own "in" is a plain, quantity-less value port.
+    REQUIRE (controller.addNode ("adapt.map", "destTest", 0.0f, 0.0f).success);
+    const auto nodesBefore = controller.getGraph().getNodes().size();
+
+    REQUIRE (controller.connectWithAutoAdapt ("osc", "out", "destTest", "in").success);
+    CHECK (controller.getGraph().getNodes().size() == nodesBefore);
+    CHECK (hasConnection (controller.getGraph(), "osc", "out", "destTest", "in"));
+}
+
+TEST_CASE ("connectWithAutoAdapt inserts one Map for raw Audio into a real-quantity port, reading the audio as ±1",
+           "[plugin][GraphEditController][CanConnect]")
+{
+    // The FM use case: a raw waveform into a filter's cutoff, at audio rate.
+    BazaltAudioProcessor processor;
+    processor.prepareToPlay (44100.0, 512);
+    auto& controller = processor.getGraphEditController();
+    REQUIRE (controller.setGraph (bazalt::engine::buildVoiceProofGraph()).success);
+
+    REQUIRE (controller.connectWithAutoAdapt ("osc", "out", "svf", "filter.svf.cutoff").success);
 
     const auto& graph = controller.getGraph();
-    const bazalt::engine::NodeInstance* bridgeNode = nullptr;
-    const bazalt::engine::NodeInstance* mapNode = nullptr;
-    for (const auto& n : graph.getNodes())
-    {
-        if (n.type == "adapt.audioToControl")
-            bridgeNode = &n;
-        if (n.type == "adapt.map")
-            mapNode = &n;
-    }
-    REQUIRE (bridgeNode != nullptr);
+    const auto* mapNode = findNodeOfType (graph, "adapt.map");
     REQUIRE (mapNode != nullptr);
-
-    // adapt.map seeded from the destination's own range (filter.svf.cutoff),
-    // exactly like every other seedFromDestinationRange step.
-    REQUIRE (mapNode->parameters.count ("adapt.map.outMin") == 1);
-    REQUIRE (mapNode->parameters.count ("adapt.map.outMax") == 1);
-    // The input range comes from adapt.audioToControl's own Bipolar output,
-    // not from the raw Audio source.
-    REQUIRE (mapNode->parameters.count ("adapt.map.inMin") == 1);
     CHECK (mapNode->parameters.at ("adapt.map.inMin") == -1.0f);
     CHECK (mapNode->parameters.at ("adapt.map.inMax") == 1.0f);
-
-    bool sourceToBridge = false, bridgeToMap = false, mapToDestination = false;
-    for (const auto& c : graph.getConnections())
-    {
-        if (c.fromNodeId == "osc" && c.fromPortId == "out" && c.toNodeId == bridgeNode->id && c.toPortId == "in")
-            sourceToBridge = true;
-        if (c.fromNodeId == bridgeNode->id && c.fromPortId == "out" && c.toNodeId == mapNode->id && c.toPortId == "in")
-            bridgeToMap = true;
-        if (c.fromNodeId == mapNode->id && c.fromPortId == "out" && c.toNodeId == "svf" && c.toPortId == "filter.svf.cutoff")
-            mapToDestination = true;
-    }
-    CHECK (sourceToBridge);
-    CHECK (bridgeToMap);
-    CHECK (mapToDestination);
+    CHECK (mapNode->parameters.count ("adapt.map.outMin") == 1);
+    CHECK (mapNode->parameters.count ("adapt.map.outMax") == 1);
+    CHECK (hasConnection (graph, "osc", "out", mapNode->id, "in"));
+    CHECK (hasConnection (graph, mapNode->id, "out", "svf", "filter.svf.cutoff"));
 }
 
-TEST_CASE ("connectWithAutoAdapt rejects a Stereo source into a Control-typed port outright",
-           "[plugin][GraphEditController][CanConnect][AudioControlBridge][Stereo]")
+TEST_CASE ("connectWithAutoAdapt asks how to reduce a Stereo source into a mono value port",
+           "[plugin][GraphEditController][CanConnect][Stereo]")
 {
     BazaltAudioProcessor processor;
     processor.prepareToPlay (44100.0, 512);
@@ -328,97 +300,53 @@ TEST_CASE ("connectWithAutoAdapt rejects a Stereo source into a Control-typed po
     const auto nodesBefore = controller.getGraph().getNodes().size();
     const auto connectionsBefore = controller.getGraph().getConnections().size();
 
-    const auto result = controller.connectWithAutoAdapt ("stereoSrc", "out", "svf", "filter.svf.cutoff");
-    CHECK_FALSE (result.success);
+    // Without a choice nothing happens — the user is asked first.
+    const auto asked = controller.connectWithAutoAdapt ("stereoSrc", "out", "svf", "filter.svf.cutoff");
+    CHECK_FALSE (asked.success);
+    CHECK_FALSE (asked.choices.isEmpty());
     CHECK (controller.getGraph().getNodes().size() == nodesBefore);
     CHECK (controller.getGraph().getConnections().size() == connectionsBefore);
+
+    // With one: Downmix, then a Map onto the cutoff's range.
+    REQUIRE (controller.connectWithAutoAdapt ("stereoSrc", "out", "svf", "filter.svf.cutoff", "mid").success);
+    CHECK (findNodeOfType (controller.getGraph(), "mix.downmix") != nullptr);
+    CHECK (findNodeOfType (controller.getGraph(), "adapt.map") != nullptr);
 }
 
-TEST_CASE ("connectWithAutoAdapt inserts adapt.controlToAudio for a Bipolar modulation source into an Audio-typed port",
-           "[plugin][GraphEditController][CanConnect][ControlToAudioBridge]")
+TEST_CASE ("connectWithAutoAdapt wires a Bipolar modulation source straight into an Audio port",
+           "[plugin][GraphEditController][CanConnect]")
 {
     BazaltAudioProcessor processor;
     processor.prepareToPlay (44100.0, 512);
     auto& controller = processor.getGraphEditController();
     REQUIRE (controller.setGraph (bazalt::engine::buildVoiceProofGraph()).success);
 
-    // allocator.random1 is a real Bipolar Control source (InstanceVoiceNode.h).
-    // adapt.audioToControl's own "in" is a plain Audio port - a neutral,
-    // otherwise-irrelevant destination, same trick the Audio->Control tests
-    // above use with adapt.normalise for a neutral Control destination.
-    REQUIRE (controller.addNode ("adapt.audioToControl", "destTest", 0.0f, 0.0f).success);
+    // allocator.random1 is a real Bipolar source (InstanceVoiceNode.h).
+    REQUIRE (controller.addNode ("filter.dcBlock", "destTest", 0.0f, 0.0f).success);
+    const auto nodesBefore = controller.getGraph().getNodes().size();
 
-    const auto result = controller.connectWithAutoAdapt ("allocator", "random1", "destTest", "in");
-    REQUIRE (result.success);
-
-    const auto& graph = controller.getGraph();
-    const bazalt::engine::NodeInstance* bridgeNode = nullptr;
-    for (const auto& n : graph.getNodes())
-        if (n.type == "adapt.controlToAudio")
-            bridgeNode = &n;
-    REQUIRE (bridgeNode != nullptr);
-
-    bool sourceToBridge = false, bridgeToDestination = false;
-    for (const auto& c : graph.getConnections())
-    {
-        if (c.fromNodeId == "allocator" && c.fromPortId == "random1" && c.toNodeId == bridgeNode->id && c.toPortId == "in")
-            sourceToBridge = true;
-        if (c.fromNodeId == bridgeNode->id && c.fromPortId == "out" && c.toNodeId == "destTest" && c.toPortId == "in")
-            bridgeToDestination = true;
-    }
-    CHECK (sourceToBridge);
-    CHECK (bridgeToDestination);
+    REQUIRE (controller.connectWithAutoAdapt ("allocator", "random1", "destTest", "in").success);
+    CHECK (controller.getGraph().getNodes().size() == nodesBefore);
+    CHECK (hasConnection (controller.getGraph(), "allocator", "random1", "destTest", "in"));
 }
 
-TEST_CASE ("connectWithAutoAdapt inserts adapt.normalise then adapt.controlToAudio for a real-quantity source into an Audio-typed port",
-           "[plugin][GraphEditController][CanConnect][ControlToAudioBridge]")
+TEST_CASE ("connectWithAutoAdapt inserts one Map from a real-quantity source onto an Audio port's ±1",
+           "[plugin][GraphEditController][CanConnect]")
 {
-    // allocator.pitch is a real Quantity::Pitch source (InstanceVoiceNode.h) -
-    // the symmetric counterpart of the Audio->Control real-quantity test
-    // above, just with the real-quantity step on the source side this time.
     BazaltAudioProcessor processor;
     processor.prepareToPlay (44100.0, 512);
     auto& controller = processor.getGraphEditController();
     REQUIRE (controller.setGraph (bazalt::engine::buildVoiceProofGraph()).success);
 
-    REQUIRE (controller.addNode ("adapt.audioToControl", "destTest", 0.0f, 0.0f).success);
+    REQUIRE (controller.addNode ("filter.dcBlock", "destTest", 0.0f, 0.0f).success);
+    REQUIRE (controller.connectWithAutoAdapt ("allocator", "pitch", "destTest", "in").success);
 
-    const auto result = controller.connectWithAutoAdapt ("allocator", "pitch", "destTest", "in");
-    REQUIRE (result.success);
-
-    const auto& graph = controller.getGraph();
-    const bazalt::engine::NodeInstance* normaliseNode = nullptr;
-    const bazalt::engine::NodeInstance* bridgeNode = nullptr;
-    for (const auto& n : graph.getNodes())
-    {
-        if (n.type == "adapt.normalise")
-            normaliseNode = &n;
-        if (n.type == "adapt.controlToAudio")
-            bridgeNode = &n;
-    }
-    REQUIRE (normaliseNode != nullptr);
-    REQUIRE (bridgeNode != nullptr);
-
-    // adapt.normalise seeded from the SOURCE's own range (allocator.pitch,
-    // 0..127 per InstanceVoiceNode.h's own port descriptor) - the mirror
-    // image of the forward bridge's adapt.map, which seeds from the
-    // DESTINATION instead.
-    REQUIRE (normaliseNode->parameters.count ("adapt.normalise.min") == 1);
-    CHECK (normaliseNode->parameters.at ("adapt.normalise.min") == 0.0f);
-    REQUIRE (normaliseNode->parameters.count ("adapt.normalise.max") == 1);
-    CHECK (normaliseNode->parameters.at ("adapt.normalise.max") == 127.0f);
-
-    bool sourceToNormalise = false, normaliseToBridge = false, bridgeToDestination = false;
-    for (const auto& c : graph.getConnections())
-    {
-        if (c.fromNodeId == "allocator" && c.fromPortId == "pitch" && c.toNodeId == normaliseNode->id && c.toPortId == "in")
-            sourceToNormalise = true;
-        if (c.fromNodeId == normaliseNode->id && c.fromPortId == "out" && c.toNodeId == bridgeNode->id && c.toPortId == "in")
-            normaliseToBridge = true;
-        if (c.fromNodeId == bridgeNode->id && c.fromPortId == "out" && c.toNodeId == "destTest" && c.toPortId == "in")
-            bridgeToDestination = true;
-    }
-    CHECK (sourceToNormalise);
-    CHECK (normaliseToBridge);
-    CHECK (bridgeToDestination);
+    const auto* mapNode = findNodeOfType (controller.getGraph(), "adapt.map");
+    REQUIRE (mapNode != nullptr);
+    // allocator.pitch declares 0..127 (InstanceVoiceNode.h).
+    CHECK (mapNode->parameters.at ("adapt.map.inMin") == 0.0f);
+    CHECK (mapNode->parameters.at ("adapt.map.inMax") == 127.0f);
+    CHECK (mapNode->parameters.at ("adapt.map.outMin") == -1.0f);
+    CHECK (mapNode->parameters.at ("adapt.map.outMax") == 1.0f);
+    CHECK (hasConnection (controller.getGraph(), mapNode->id, "out", "destTest", "in"));
 }
