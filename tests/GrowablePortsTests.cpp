@@ -311,9 +311,8 @@ TEST_CASE ("math.add's SIGNAL TYPE still resolves by declaration order when wire
     // InheritingPortsTests.cpp's own "logic.select resolves by port
     // priority..." test does — GraphCompiler's real canConnect validation
     // would (correctly) reject two DIFFERENT SignalTypes disagreeing on one
-    // node's single resolved type as a genuine mismatch (Audio -> a
-    // Control-resolved port needs adapt.audioToControl, not a free wire),
-    // so this tests the resolution rule in isolation. SignalType keeps the
+    // node's single resolved type), so this tests the resolution rule in
+    // isolation. SignalType keeps the
     // strict priority rule (mixing Audio and Control on one sum is rare,
     // and if it happens one of them IS the odd one out) — QUANTITY does
     // NOT, see the sibling test below for why.

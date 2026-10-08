@@ -2,6 +2,7 @@
 #include "PluginProcessor.h"
 #include "MacroParameters.h"
 #include "bazalt/engine/graph/ProofGraphs.h"
+#include "bazalt/engine/patch/PatchSerializer.h"
 #include <algorithm>
 #include <cmath>
 
@@ -231,4 +232,44 @@ TEST_CASE ("Loading a saved patch where two util.macro nodes claim the same slot
     REQUIRE (afterDoc.nodes.size() == originalDoc.nodes.size());
     for (size_t i = 0; i < originalDoc.nodes.size(); ++i)
         CHECK (afterDoc.nodes[i].id == originalDoc.nodes[i].id);
+}
+
+// wiki/plans/DataAndWavetable.md §2: every factory patch the UI ships still
+// loads through the whole migration chain, compiles, and plays a note — the
+// sweep's removed and merged nodes must never strand an older patch.
+TEST_CASE ("The shipped factory patches load, compile and sound after every migration",
+           "[plugin][PatchState][sweep]")
+{
+    const auto dir = juce::File (BAZALT_FACTORY_PATCH_DIR);
+    REQUIRE (dir.isDirectory());
+    const auto files = dir.findChildFiles (juce::File::findFiles, false, "*.json");
+    REQUIRE_FALSE (files.isEmpty());
+
+    for (const auto& file : files)
+    {
+        INFO (file.getFileName());
+        BazaltAudioProcessor processor;
+        processor.prepareToPlay (44100.0, 512);
+
+        const auto parsed = bazalt::engine::parsePatchFromJson (file.loadFileAsString());
+        REQUIRE (parsed.success);
+        const auto result = processor.getGraphEditController().setGraph (parsed.document.toNodeGraph());
+        INFO (result.errorMessage);
+        REQUIRE (result.success);
+
+        juce::MidiBuffer noteOn;
+        noteOn.addEvent (juce::MidiMessage::noteOn (1, 48, (juce::uint8) 100), 0);
+        juce::AudioBuffer<float> buffer (2, 512);
+        float peak = 0.0f;
+        for (int block = 0; block < 40; ++block)
+        {
+            buffer.clear();
+            juce::MidiBuffer midi;
+            if (block == 0)
+                midi = noteOn;
+            processor.processBlock (buffer, midi);
+            peak = juce::jmax (peak, buffer.getMagnitude (0, 0, buffer.getNumSamples()));
+        }
+        CHECK (peak > 1.0e-4f);
+    }
 }

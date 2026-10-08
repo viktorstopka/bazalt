@@ -723,6 +723,148 @@ namespace bazalt::engine
             return root;
         }
 
+        // wiki/plans/DataAndWavetable.md §2 (1a.2): Audio, Control and
+        // Boolean became one numeric signal, so the nodes that only crossed
+        // between them are gone. Each is rewritten so the patch keeps
+        // working:
+        //   - adapt.controlToAudio, and adapt.boolToControl at its default
+        //     0/1, are spliced out (what fed them feeds what they fed);
+        //   - adapt.audioToControl is spliced out at depth 1, else becomes a
+        //     math.multiply (in -> in.0, depth -> in.1);
+        //   - adapt.boolToControl with other values, adapt.normalise and the
+        //     two polarity converters become an adapt.map over the same
+        //     ranges.
+        // A To Audio fed by a 0..1 source used to stretch it to -1..1, and To
+        // Mod clamped to ±1; neither is reproduced (a plain wire now).
+        juce::var migrateV11ToV12 (juce::var v11Root)
+        {
+            auto root = v11Root.clone();
+            auto* nodes = root["nodes"].getArray();
+            auto* connections = root["connections"].getArray();
+            if (nodes == nullptr)
+            {
+                root.getDynamicObject()->setProperty ("schemaVersion", 12);
+                return root;
+            }
+
+            auto parameterOf = [] (const juce::var& node, const juce::String& id, float fallback)
+            {
+                const auto* parameters = node["parameters"].getDynamicObject();
+                return parameters != nullptr && parameters->hasProperty (id) ? (float) parameters->getProperty (id) : fallback;
+            };
+            auto isWired = [connections] (const juce::String& nodeId, const juce::String& portId)
+            {
+                if (connections == nullptr)
+                    return false;
+                for (const auto& c : *connections)
+                    if (c["toNodeId"].toString() == nodeId && c["toPortId"].toString() == portId)
+                        return true;
+                return false;
+            };
+            auto becomeMap = [] (juce::DynamicObject& node, float inMin, float inMax, float outMin, float outMax)
+            {
+                node.setProperty ("type", "adapt.map");
+                auto* parameters = new juce::DynamicObject();
+                parameters->setProperty ("adapt.map.inMin", inMin);
+                parameters->setProperty ("adapt.map.inMax", inMax);
+                parameters->setProperty ("adapt.map.outMin", outMin);
+                parameters->setProperty ("adapt.map.outMax", outMax);
+                node.setProperty ("parameters", juce::var (parameters));
+            };
+
+            juce::StringArray spliced;
+            for (auto& node : *nodes)
+            {
+                auto* object = node.getDynamicObject();
+                if (object == nullptr)
+                    continue;
+                const auto id = object->getProperty ("id").toString();
+                const auto type = object->getProperty ("type").toString();
+
+                if (type == "adapt.controlToAudio")
+                    spliced.add (id);
+                else if (type == "adapt.boolToControl")
+                {
+                    const auto whenFalse = parameterOf (node, "adapt.boolToControl.whenFalse", 0.0f);
+                    const auto whenTrue = parameterOf (node, "adapt.boolToControl.whenTrue", 1.0f);
+                    if (whenFalse == 0.0f && whenTrue == 1.0f)
+                        spliced.add (id);
+                    else
+                        becomeMap (*object, 0.0f, 1.0f, whenFalse, whenTrue);
+                }
+                else if (type == "adapt.audioToControl")
+                {
+                    const auto depth = parameterOf (node, "depth", 1.0f);
+                    if (depth == 1.0f && ! isWired (id, "depth"))
+                        spliced.add (id);
+                    else
+                    {
+                        object->setProperty ("type", "math.multiply");
+                        auto* parameters = new juce::DynamicObject();
+                        parameters->setProperty ("in.1", depth);
+                        object->setProperty ("parameters", juce::var (parameters));
+                        if (connections != nullptr)
+                            for (auto& c : *connections)
+                                if (auto* connection = c.getDynamicObject(); connection != nullptr && c["toNodeId"].toString() == id)
+                                    connection->setProperty ("toPortId", c["toPortId"].toString() == "depth" ? "in.1" : "in.0");
+                    }
+                }
+                else if (type == "adapt.normalise")
+                    becomeMap (*object, parameterOf (node, "adapt.normalise.min", 0.0f), parameterOf (node, "adapt.normalise.max", 1.0f), 0.0f, 1.0f);
+                else if (type == "util.unipolarToBipolar")
+                    becomeMap (*object, 0.0f, 1.0f, -1.0f, 1.0f);
+                else if (type == "util.bipolarToUnipolar")
+                    becomeMap (*object, -1.0f, 1.0f, 0.0f, 1.0f);
+            }
+
+            // Splice out: what fed a removed node's "in" now feeds everything
+            // its "out" fed (and the graph output, if it was that).
+            for (const auto& id : spliced)
+            {
+                juce::var feeder;
+                if (connections != nullptr)
+                {
+                    for (const auto& c : *connections)
+                        if (c["toNodeId"].toString() == id && c["toPortId"].toString() == "in")
+                            feeder = c;
+
+                    if (! feeder.isVoid())
+                    {
+                        juce::Array<juce::var> bridged;
+                        for (const auto& c : *connections)
+                        {
+                            if (c["fromNodeId"].toString() != id)
+                                continue;
+                            auto* bridge = new juce::DynamicObject();
+                            bridge->setProperty ("fromNodeId", feeder["fromNodeId"]);
+                            bridge->setProperty ("fromPortId", feeder["fromPortId"]);
+                            bridge->setProperty ("toNodeId", c["toNodeId"]);
+                            bridge->setProperty ("toPortId", c["toPortId"]);
+                            bridged.add (juce::var (bridge));
+                        }
+                        connections->addArray (bridged);
+                    }
+
+                    for (int i = connections->size(); --i >= 0;)
+                        if ((*connections)[i]["fromNodeId"].toString() == id || (*connections)[i]["toNodeId"].toString() == id)
+                            connections->remove (i);
+                }
+
+                if (root["outputNodeId"].toString() == id && ! feeder.isVoid())
+                {
+                    root.getDynamicObject()->setProperty ("outputNodeId", feeder["fromNodeId"]);
+                    root.getDynamicObject()->setProperty ("outputPortId", feeder["fromPortId"]);
+                }
+
+                for (int i = nodes->size(); --i >= 0;)
+                    if ((*nodes)[i]["id"].toString() == id)
+                        nodes->remove (i);
+            }
+
+            root.getDynamicObject()->setProperty ("schemaVersion", 12);
+            return root;
+        }
+
         // vN -> vN+1 migrations, keyed by the version they migrate FROM.
         using Migration = std::function<juce::var (juce::var)>;
 
@@ -739,6 +881,7 @@ namespace bazalt::engine
                 { 8, migrateV8ToV9 },
                 { 9, migrateV9ToV10 },
                 { 10, migrateV10ToV11 },
+                { 11, migrateV11ToV12 },
             };
             return migrations;
         }

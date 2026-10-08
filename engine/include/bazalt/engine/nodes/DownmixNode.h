@@ -8,8 +8,7 @@ namespace bazalt::engine::nodes
         (`wiki/NODES.System.md` §9): now a genuine 1-in-1-out node — one
         `Channels::Stereo` `in` port, one mono `out` — which finally makes it
         fit `connectWithAutoAdapt`'s 1-in-1-out `AdapterStep` splice
-        mechanism the same way `adapt.map`/`adapt.normalise`/
-        `adapt.threshold` already do. Before this redesign it took two
+        mechanism the same way `adapt.map`/`adapt.threshold` already do. Before this redesign it took two
         separate mono inputs (`left`/`right`), which never fit that
         mechanism (`CanConnect.cpp`'s own comment used to explain why) —
         that limitation is closed now, not worked around.

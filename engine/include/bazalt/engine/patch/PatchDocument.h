@@ -121,7 +121,11 @@ namespace bazalt::engine
         // Schema v11 (wiki/plans/Decorations.md): util.reroute became
         // deco.reroute (same ports), and patches carry `assets` — the
         // content-addressed files deco.image nodes show.
-        static constexpr int currentSchemaVersion = 11;
+        //
+        // Schema v12 (wiki/plans/DataAndWavetable.md §2): To Mod / To Audio /
+        // From Bool / Normalise and the two polarity converters are gone —
+        // spliced out, or rewritten as math.multiply / adapt.map.
+        static constexpr int currentSchemaVersion = 12;
 
         int schemaVersion = currentSchemaVersion;
         std::vector<NodeInstance> nodes;

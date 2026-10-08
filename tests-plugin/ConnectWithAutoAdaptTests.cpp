@@ -65,10 +65,10 @@ TEST_CASE ("connectWithAutoAdapt inserts and seeds a real adapt.map node for Uni
     auto& controller = processor.getGraphEditController();
     REQUIRE (controller.setGraph (bazalt::engine::buildVoiceProofGraph()).success);
 
-    REQUIRE (controller.addNode ("adapt.normalise", "norm", 0.0f, 0.0f).success);
+    // allocator.velocity is a real Unipolar source (InstanceVoiceNode.h).
     REQUIRE (controller.addNode ("delay.line", "dly", 100.0f, 0.0f).success);
 
-    const auto result = controller.connectWithAutoAdapt ("norm", "out", "dly", "delay.line.samples");
+    const auto result = controller.connectWithAutoAdapt ("allocator", "velocity", "dly", "delay.line.samples");
     REQUIRE (result.success);
 
     const auto& graph = controller.getGraph();
@@ -93,7 +93,7 @@ TEST_CASE ("connectWithAutoAdapt inserts and seeds a real adapt.map node for Uni
     bool sourceToAdapter = false, adapterToDestination = false;
     for (const auto& c : graph.getConnections())
     {
-        if (c.fromNodeId == "norm" && c.fromPortId == "out" && c.toNodeId == mapNode->id)
+        if (c.fromNodeId == "allocator" && c.fromPortId == "velocity" && c.toNodeId == mapNode->id)
             sourceToAdapter = true;
         if (c.fromNodeId == mapNode->id && c.toNodeId == "dly" && c.toPortId == "delay.line.samples")
             adapterToDestination = true;

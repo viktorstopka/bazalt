@@ -26,11 +26,7 @@
 #include "bazalt/engine/nodes/ViewScopeModulationNode.h"
 #include "bazalt/engine/nodes/ViewGateNode.h"
 #include "bazalt/engine/nodes/OutputNode.h"
-#include "bazalt/engine/nodes/NormaliseNode.h"
 #include "bazalt/engine/nodes/ThresholdNode.h"
-#include "bazalt/engine/nodes/AudioToControlNode.h"
-#include "bazalt/engine/nodes/ControlToAudioNode.h"
-#include "bazalt/engine/nodes/BoolToControlNode.h"
 #include "bazalt/engine/nodes/PitchFrequencyNodes.h"
 #include "bazalt/engine/nodes/GateLengthNode.h"
 #include "bazalt/engine/nodes/DownmixNode.h"
@@ -106,8 +102,6 @@
 #include "bazalt/engine/nodes/ExciteMalletNode.h"
 #include "bazalt/engine/nodes/ResonatorPlateNode.h"
 #include "bazalt/engine/nodes/ShapeClipNode.h"
-#include "bazalt/engine/nodes/UnipolarToBipolarNode.h"
-#include "bazalt/engine/nodes/BipolarToUnipolarNode.h"
 
 namespace bazalt::engine
 {
@@ -145,15 +139,11 @@ namespace bazalt::engine
         factory.registerType ("view.scope.modulation", [] { return std::make_unique<nodes::ViewScopeModulationNode>(); }); // design/Visualization/ScopeMod.png
         factory.registerType ("view.gate", [] { return std::make_unique<nodes::ViewGateNode>(); }); // design/Visualization/Gate.png
         factory.registerType ("io.output", [] { return std::make_unique<nodes::OutputNode>(); });
-        factory.registerType ("adapt.normalise", [] { return std::make_unique<nodes::NormaliseNode>(); });
         factory.registerType ("adapt.threshold", [] { return std::make_unique<nodes::ThresholdNode>(); });
         // Audio -> Control Bridge (wiki/plans/AudioControlBridge.md) — the
         // mechanical adapter canConnect auto-inserts for Audio -> Control.
-        factory.registerType ("adapt.audioToControl", [] { return std::make_unique<nodes::AudioToControlNode>(); });
-        factory.registerType ("adapt.controlToAudio", [] { return std::make_unique<nodes::ControlToAudioNode>(); }); // wiki/plans/ControlToAudioBridge.md
         // Boolean -> Control (direct feedback: "bool not being pluggable
         // into control and ints... annoying").
-        factory.registerType ("adapt.boolToControl", [] { return std::make_unique<nodes::BoolToControlNode>(); });
         // Exact Pitch<->Frequency conversion (direct feedback found the
         // generic adapt.map fallback was quietly wrong for this pair —
         // linear where the real relationship is exponential).
@@ -286,8 +276,6 @@ namespace bazalt::engine
         // Unipolar/Bipolar selector parameters - never auto-inserted by
         // connectWithAutoAdapt (adapt.map's own generic fallback already
         // covers a Unipolar<->Bipolar quantity mismatch).
-        factory.registerType ("util.unipolarToBipolar", [] { return std::make_unique<nodes::UnipolarToBipolarNode>(); });
-        factory.registerType ("util.bipolarToUnipolar", [] { return std::make_unique<nodes::BipolarToUnipolarNode>(); });
         return factory;
     }
 

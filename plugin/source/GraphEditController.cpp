@@ -594,7 +594,7 @@ namespace bazalt
             return connect (fromNodeId, fromPortId, toNodeId, toPortId);
 
         // NeedsAdapters. A 1- or 2-step, single-input chain can be spliced
-        // in generically (adapt.map/adapt.normalise/adapt.threshold, and — since the real stereo cable redesign made it a
+        // in generically (adapt.map/adapt.threshold, and — since the real stereo cable redesign made it a
         // genuine 1-in-1-out node — mix.downmix too now; ADR-0019's later
         // waves — Envelope Follower, Sample & Hold, Note gate/value — may
         // need the 2-step path this loop already supports). Every step is a
@@ -651,18 +651,14 @@ namespace bazalt
                 instance.type = step.typeId;
                 instance.position = { posX, posY };
 
-                // Seeding (SIGNAL_TYPES.md §5's "Seeding" column) — by
-                // convention every min/max-seeded adapter this milestone
-                // ships names its parameters "<typeId>.min"/"<typeId>.max"
-                // (adapt.normalise does); a future adapter that doesn't
-                // follow this convention needs its own branch here, not a
-                // silent wrong guess. adapt.map is exactly that case — it
-                // seeds from BOTH ends at once (its own four-range
+                // Seeding (SIGNAL_TYPES.md §5's "Seeding" column) — a generic
+                // min/max-seeded adapter names its parameters
+                // "<typeId>.min"/"<typeId>.max"; adapt.map is the exception —
+                // it seeds from BOTH ends at once (its own four-range
                 // inMin/inMax/outMin/outMax shape). Its INPUT range comes
                 // from whatever actually feeds it: the original source for a
                 // one-step chain, the previous adapter's own output in a
-                // two-step one (adapt.audioToControl -> adapt.map, whose
-                // Audio source has no meaningful range of its own). Every
+                // two-step one (mix.downmix -> adapt.map: ±1). Every
                 // other step still seeds itself independently from the
                 // ORIGINAL endpoints' own ranges (fromPort/toPort).
                 if (step.typeId == "adapt.map")

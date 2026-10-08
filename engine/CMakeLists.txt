@@ -63,7 +63,6 @@ target_sources(engine
             include/bazalt/engine/nodes/MultiplyNode.h
             include/bazalt/engine/nodes/ListenNode.h
             include/bazalt/engine/nodes/OutputNode.h
-            include/bazalt/engine/nodes/NormaliseNode.h
             include/bazalt/engine/nodes/ThresholdNode.h
             include/bazalt/engine/nodes/DownmixNode.h
             include/bazalt/engine/nodes/InstanceVoiceNode.h

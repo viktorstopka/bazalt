@@ -7,13 +7,11 @@ add_executable(EngineTests
     AlignedBufferTests.cpp
     AnalysisThreadBudgetTests.cpp
     AnalysisThreadTests.cpp
-    AudioControlBridgeTests.cpp
     BiquadFilterNodesTests.cpp
     BiquadTests.cpp
     BlockSizeInvarianceTests.cpp
     CanConnectTests.cpp
     ClockSeqNodesTests.cpp
-    ControlToAudioBridgeTests.cpp
     DataFoundationsNodesTests.cpp
     DataTests.cpp
     DcBlockNodeTests.cpp
@@ -73,6 +71,7 @@ add_executable(EngineTests
     ReverbTests.cpp
     SoundPaletteTests.cpp
     DecorationTests.cpp
+    SignalSweepTests.cpp
     VoiceManagerTests.cpp
 )
 

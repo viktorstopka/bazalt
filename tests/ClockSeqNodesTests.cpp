@@ -494,7 +494,7 @@ TEST_CASE ("SeqStepsNode's value output is always bipolar, no Range selector",
     // Unipolar/Bipolar selector (and the unipolar remap it used to apply)
     // is gone - a stored step value passes straight through now, matching
     // how it's always hand-edited (-1..1, "mod values are always
-    // bipolar"). util.bipolarToUnipolar covers the old unipolar case
+    // bipolar"). A Map (-1..1 -> 0..1) covers the old unipolar case
     // explicitly, if ever wanted downstream.
     SeqStepsNode node;
     node.reset();

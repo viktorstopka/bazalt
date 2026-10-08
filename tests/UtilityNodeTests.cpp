@@ -11,7 +11,6 @@
 #include "bazalt/engine/nodes/ListenNode.h"
 #include "bazalt/engine/nodes/OutputNode.h"
 #include "bazalt/engine/nodes/InstanceMixNode.h"
-#include "bazalt/engine/nodes/BoolToControlNode.h"
 #include "bazalt/engine/nodes/PitchFrequencyNodes.h"
 #include "bazalt/engine/nodes/GateLengthNode.h"
 #include <algorithm>
@@ -287,30 +286,10 @@ TEST_CASE ("MapNode's range ports live-modulate independently of setParameter's 
     CHECK (out == 150.0f);
 }
 
-// ---- adapt.boolToControl ----
-// Direct feedback: "bool not being pluggable into control and ints...
-// annoying... via select node... doesn't even have editable props."
-
-TEST_CASE ("BoolToControlNode maps false/true to 0/1 by default, and to any two edited values",
-           "[engine][nodes][BoolToControlNode]")
-{
-    BoolToControlNode node;
-    float out = 0.0f;
-
-    float falseIn = 0.0f, trueIn = 1.0f;
-    node.processSample (&falseIn, &out);
-    CHECK (out == 0.0f);
-    node.processSample (&trueIn, &out);
-    CHECK (out == 1.0f);
-
-    node.setParameter ("adapt.boolToControl.whenFalse", -1.0f);
-    node.setParameter ("adapt.boolToControl.whenTrue", 5.0f);
-    node.processSample (&falseIn, &out);
-    CHECK (out == -1.0f);
-    node.processSample (&trueIn, &out);
-    CHECK (out == 5.0f);
-}
-
+// ---- adapt.pitchToFrequency / adapt.frequencyToPitch ----
+// Direct feedback: canConnect was auto-inserting adapt.map (linear) for
+// Pitch -> Frequency, which is quietly wrong - the real relationship is
+// exponential.
 
 TEST_CASE ("PitchToFrequencyNode converts MIDI pitch to Hz exactly (A4 = 69 = 440Hz)",
            "[engine][nodes][PitchToFrequencyNode]")

@@ -54,9 +54,8 @@ namespace bazalt::engine::nodes
         std::vector<PortDescriptor> getInputPorts() const override
         {
             // minValue/maxValue are the actual (very wide, effectively
-            // unbounded in practice) hard clamp — matching
-            // NormaliseNode.h's own "-100000..100000" convention for a
-            // range that's genuinely arbitrary rather than physically
+            // unbounded in practice) hard clamp — the "-100000..100000"
+            // convention for a range that's genuinely arbitrary rather than physically
             // limited. softMin/softMax (0..1) are only the slider's
             // default *visual* range — direct feedback: dragging past a
             // port's visually-shown range must still reach the value an
