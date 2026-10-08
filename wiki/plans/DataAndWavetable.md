@@ -47,7 +47,7 @@ channel-lane mechanism, `StereoChannels.md`, generalised):
 | Axis | What | Belongs to | Reduced by |
 |---|---|---|---|
 | Channels | stereo (later more) | the signal | Downmix |
-| Instances | voices, swarm members, grains | the computation (an allocator) | Voice Sum |
+| Instances | voices, swarm members, grains | the computation (an allocator) | Merge (was Voice Sum) |
 
 Stage 1 defines the model and moves *all* signals onto the channel axis — controls
 too, so a stereo modulation (an Oscillator with a per-side phase offset into a cutoff)
@@ -179,7 +179,7 @@ force: Curve stays Curve, Filter stays Filter.
 | Logic | And, Or, Xor, Not, Edge, Latch, Toggle, Compare, Threshold, Event Group, Switch |
 | Data | Curve, Wavetable, EQ Curve, Scale, Material, Lookup |
 | Notes | the `note.*` family |
-| Life-cycle | Voice, Swarm (Population), Swarm (Transient), Trigger, Voice Sum |
+| Life-cycle | Voice, Swarm (Population), Swarm (Transient), Trigger, Merge |
 | Random | Random, Drift (stage 2 rethinks this whole category) |
 | Analysis | Level (absorbs Envelope Follower) |
 | View | Listen, Scope, Spectrum, Meter, Cycle, Ripple, Tune, Count |
@@ -194,7 +194,7 @@ really is (State-Variable Filter, Ladder, One-Pole, Slew, Waveshaper, Wavefolder
 Bitcrush, Step Sequencer, Euclidean, Stereo Split …) — the user: "U ničeho mi nevadí"
 (technical names are fine everywhere). Titles change only where §2 merges or removes a
 node (Oscillator, Envelope, Blend, Switch, Clip, Scope, Level, Curve) and in the
-Life-cycle category. Still open: Voice Sum → **Sum** or **Gather**; Swarm (Transient) →
+Life-cycle category. Voice Sum becomes **Merge** (decided 2026-10-08). Still open: Swarm (Transient) →
 **Swarm** and Trigger → **Spawn**, or other names.
 
 ## 4. Batches
