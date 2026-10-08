@@ -143,6 +143,7 @@ load into the new nodes.
 | `env.adsr` | Envelope (Oscillator, Time mode) | times → markers |
 | `data.table` (32-point bank) | Curve (content-backed) | points → content |
 | `view.scope.control`, `view.scope.modulation`, `view.gate` | one **Scope** (range and style from the source's kind) | type id change |
+| `env.follower` (Envelope Follower) | `analysis.level` (Level) | detection → mode (explicit, Follower defaulted to Peak), attack/release carry over, `out` → `level`. Level already did everything Follower did, plus stereo, dB and a better RMS (a 50 ms power window before the ballistics; Follower ran the ballistics on the power, which reads high with asymmetric times) |
 
 Kept on purpose: Map, Threshold (Signal → Event, hysteresis), Sample & Hold, Gate
 Length, Pitch ↔ Frequency (exact, not linear), Downmix / Stereo Split / Combine, Meter
@@ -173,21 +174,28 @@ force: Curve stays Curve, Filter stays Filter.
 | Spectrum | Frequency Shift (and later spectral tools) |
 | Space | Reverb, Diffuser, Pan, Width |
 | Channels | Downmix, Stereo Split, Stereo Combine |
-| Time | Delay, Clock, Divide, Counter, Steps, Euclid, Slew, Sample & Hold, Gate Length |
+| Time | Delay, Clock, Divide, Counter, Step Sequencer, Euclidean, Slew, Sample & Hold, Gate Length |
 | Math | Add, Subtract, Multiply, Divide, Abs, Min/Max, Power, Round, Modulo, Blend, Map, Pitch ↔ Frequency |
 | Logic | And, Or, Xor, Not, Edge, Latch, Toggle, Compare, Threshold, Event Group, Switch |
 | Data | Curve, Wavetable, EQ Curve, Scale, Material, Lookup |
 | Notes | the `note.*` family |
 | Life-cycle | Voice, Swarm (Population), Swarm (Transient), Trigger, Voice Sum |
 | Random | Random, Drift (stage 2 rethinks this whole category) |
-| Analysis | Level, Envelope Follower |
+| Analysis | Level (absorbs Envelope Follower) |
 | View | Listen, Scope, Spectrum, Meter, Cycle, Ripple, Tune, Count |
 | Utility | Constant, Macro |
 | Decorations | Reroute, Header, Comment, Box, Image |
 
 Type ids follow the category (`life.voice`, `time.delay`, …; the never-rename rule is
-suspended, so this is one migration). The final name list is part of batch 1a's review —
-it is shown to the user as one table before anything is renamed.
+suspended, so this is one migration).
+
+**Titles — decided 2026-10-08:** technical names stay wherever they name what a node
+really is (State-Variable Filter, Ladder, One-Pole, Slew, Waveshaper, Wavefolder,
+Bitcrush, Step Sequencer, Euclidean, Stereo Split …) — the user: "U ničeho mi nevadí"
+(technical names are fine everywhere). Titles change only where §2 merges or removes a
+node (Oscillator, Envelope, Blend, Switch, Clip, Scope, Level, Curve) and in the
+Life-cycle category. Still open: Voice Sum → **Sum** or **Gather**; Swarm (Transient) →
+**Swarm** and Trigger → **Spawn**, or other names.
 
 ## 4. Batches
 
