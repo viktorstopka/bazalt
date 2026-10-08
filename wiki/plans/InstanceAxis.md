@@ -68,7 +68,28 @@ voices (stealing, release, Voice Sum), patches, and the rules of what connects.
   publisher, a telemetry tap) gets an explicit per-instance rule.
 - **Per-sample feedback regions** must run per instance — own tests.
 
-## 4. Open questions
+## 4. One allocator, three questions (proposal, 2026-10-08)
+
+The four allocators (Voice, Swarm (Population), Swarm (Transient), Trigger) differ only
+in their answers to three questions, so stage 2 should make them **one allocator** with
+an instance count and three choices — the four become Add-menu presets of it ("template
+allocators cover any case", `wiki/ROADMAP.md`):
+
+| Question | Choices |
+|---|---|
+| When is an instance born? | a note / an event / always (alive from the start) |
+| How long does it live? | while its gate is held (then until silent) / a fixed lifetime / forever |
+| What if the pool is full? | steal the oldest / steal the quietest / ignore the new one |
+
+Every instance is born with an identity: index, a stable seed (its own randomness,
+identical on every replay), birth time and age, plus pitch and velocity for a note — the
+ground the stochastic suite's per-instance identity builds on. Combinations that exist
+nowhere today come for free (born on an event, living while a gate is held). Instances
+do not see each other here — interaction between instances (a flock, voices tuning to
+each other) is a separate question for stage 2's research. Final shape after that
+research; the Merge node (was Voice Sum) closes any of them.
+
+## 5. Open questions
 
 - Memory: per-instance state × 100 for heavy nodes (reverb, long delays) — a per-node
   instance cost the allocator can show, or a hard cap per node type?
