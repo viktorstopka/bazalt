@@ -20,9 +20,7 @@
 #include "bazalt/engine/nodes/ViewCycleNode.h"
 #include "bazalt/engine/nodes/ViewRippleNode.h"
 #include "bazalt/engine/nodes/ViewCountNode.h"
-#include "bazalt/engine/nodes/ViewScopeControlNode.h"
-#include "bazalt/engine/nodes/ViewScopeModulationNode.h"
-#include "bazalt/engine/nodes/ViewGateNode.h"
+#include "bazalt/engine/nodes/ViewScopeNode.h"
 #include "bazalt/engine/nodes/OutputNode.h"
 #include "bazalt/engine/nodes/ThresholdNode.h"
 #include "bazalt/engine/nodes/PitchFrequencyNodes.h"
@@ -41,12 +39,12 @@
 #include "bazalt/engine/nodes/PowerNode.h"
 #include "bazalt/engine/nodes/ModuloNode.h"
 #include "bazalt/engine/nodes/SlewNode.h"
-#include "bazalt/engine/nodes/CrossfadeNode.h"
+#include "bazalt/engine/nodes/BlendNode.h"
 #include "bazalt/engine/nodes/LogicNotNode.h"
 #include "bazalt/engine/nodes/LogicToggleNode.h"
 #include "bazalt/engine/nodes/LogicGateNodes.h"
 #include "bazalt/engine/nodes/LogicEventNodes.h"
-#include "bazalt/engine/nodes/LogicSelectNode.h"
+#include "bazalt/engine/nodes/LogicSwitchNode.h"
 #include "bazalt/engine/nodes/LogicCompareNode.h"
 #include "bazalt/engine/nodes/SampleHoldNode.h"
 #include "bazalt/engine/nodes/IoAudioInNode.h"
@@ -130,9 +128,7 @@ namespace bazalt::engine
         factory.registerType ("view.cycle", [] { return std::make_unique<nodes::ViewCycleNode>(); }); // phase-locked viewer, replaces view.scope/view.glance
         factory.registerType ("view.ripple", [] { return std::make_unique<nodes::ViewRippleNode>(); });
         factory.registerType ("view.count", [] { return std::make_unique<nodes::ViewCountNode>(); }); // design/Visualization/Count.png
-        factory.registerType ("view.scope.control", [] { return std::make_unique<nodes::ViewScopeControlNode>(); }); // design/Visualization/Scope1.png
-        factory.registerType ("view.scope.modulation", [] { return std::make_unique<nodes::ViewScopeModulationNode>(); }); // design/Visualization/ScopeMod.png
-        factory.registerType ("view.gate", [] { return std::make_unique<nodes::ViewGateNode>(); }); // design/Visualization/Gate.png
+        factory.registerType ("view.scope", [] { return std::make_unique<nodes::ViewScopeNode>(); }); // one Scope for any value (wiki/plans/DataAndWavetable.md §2)
         factory.registerType ("io.output", [] { return std::make_unique<nodes::OutputNode>(); });
         factory.registerType ("adapt.threshold", [] { return std::make_unique<nodes::ThresholdNode>(); });
         // Audio -> Control Bridge (wiki/plans/AudioControlBridge.md) — the
@@ -162,7 +158,7 @@ namespace bazalt::engine
         factory.registerType ("math.power", [] { return std::make_unique<nodes::PowerNode>(); });
         factory.registerType ("math.modulo", [] { return std::make_unique<nodes::ModuloNode>(); });
         factory.registerType ("math.slew", [] { return std::make_unique<nodes::SlewNode>(); });
-        factory.registerType ("mix.crossfade", [] { return std::make_unique<nodes::CrossfadeNode>(); });
+        factory.registerType ("math.blend", [] { return std::make_unique<nodes::BlendNode>(); }); // replaces mix.crossfade and logic.select (D8)
         factory.registerType ("logic.not", [] { return std::make_unique<nodes::LogicNotNode>(); });
         factory.registerType ("logic.toggle", [] { return std::make_unique<nodes::LogicToggleNode>(); });
         factory.registerType ("logic.and", [] { return std::make_unique<nodes::LogicAndNode>(); });
@@ -171,7 +167,7 @@ namespace bazalt::engine
         factory.registerType ("logic.eventGroup", [] { return std::make_unique<nodes::LogicEventGroupNode>(); });
         factory.registerType ("logic.edge", [] { return std::make_unique<nodes::LogicEdgeNode>(); });
         factory.registerType ("logic.latch", [] { return std::make_unique<nodes::LogicLatchNode>(); });
-        factory.registerType ("logic.select", [] { return std::make_unique<nodes::LogicSelectNode>(); });
+        factory.registerType ("logic.switch", [] { return std::make_unique<nodes::LogicSwitchNode>(); }); // A/B comparison (D8)
         factory.registerType ("logic.compare", [] { return std::make_unique<nodes::LogicCompareNode>(); });
         factory.registerType ("adapt.sampleHold", [] { return std::make_unique<nodes::SampleHoldNode>(); });
         factory.registerType ("io.audioIn", [] { return std::make_unique<nodes::IoAudioInNode>(); });

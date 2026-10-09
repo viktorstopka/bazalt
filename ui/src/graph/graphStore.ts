@@ -1706,9 +1706,11 @@ export function createMacroFromPort(nodeId: string, portId: string, x: number, y
 const DEFAULT_VIEWER_BY_PORT_KIND: Partial<Record<PortUiKind, string>> = {
   trigger: 'view.ripple', // Ripple.png — the Event viewer
   integer: 'view.count', // Count.png
-  value: 'view.scope.control', // Scope1.png — plain real-quantity Control
-  modulation: 'view.scope.modulation', // ScopeMod.png — Unipolar/Bipolar Control
-  boolean: 'view.gate', // Gate.png
+  // One Scope for all three; it draws a line, a centred fill or a
+  // TRUE/FALSE scale from the source (ScopeBody.tsx).
+  value: 'view.scope',
+  modulation: 'view.scope',
+  boolean: 'view.scope',
 }
 
 export function defaultViewerTypeForPort(port: PortDescriptor): string | undefined {

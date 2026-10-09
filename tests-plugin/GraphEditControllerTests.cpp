@@ -601,7 +601,7 @@ TEST_CASE ("A Reroute still rejects, through the controller, a downstream port i
     CHECK (controller.getGraph().getConnections().size() == connectionsBefore);
 }
 
-TEST_CASE ("logic.select through the controller: data cables of any plain type, any value as the condition, and Note refused",
+TEST_CASE ("math.blend through the controller: value cables of any plain type, any value as the Amount, and Note refused",
            "[plugin][GraphEditController][inheriting][M21]")
 {
     BazaltAudioProcessor processor;
@@ -610,24 +610,23 @@ TEST_CASE ("logic.select through the controller: data cables of any plain type, 
     auto& controller = processor.getGraphEditController();
     REQUIRE (controller.setGraph (bazalt::engine::buildVoiceProofGraph()).success);
 
-    REQUIRE (controller.addNode ("logic.select", "sel", 0.0f, 0.0f).success);
+    REQUIRE (controller.addNode ("math.blend", "sel", 0.0f, 0.0f).success);
     REQUIRE (controller.addNode ("logic.not", "cond", 0.0f, 0.0f).success);
     REQUIRE (controller.addNode ("util.constant", "k", 0.0f, 0.0f).success);
     REQUIRE (controller.addNode ("io.noteIn", "notes", 0.0f, 0.0f).success);
 
-    // A Boolean cable on `condition`, a Control cable on `whenTrue`: both fine.
-    CHECK (controller.connectWithAutoAdapt ("cond", "out", "sel", "condition").success);
-    CHECK (controller.connectWithAutoAdapt ("k", "out", "sel", "whenTrue").success);
+    // A Boolean cable on Amount (the old Select), a Control cable on B: both fine.
+    CHECK (controller.connectWithAutoAdapt ("cond", "out", "sel", "math.blend.amount").success);
+    CHECK (controller.connectWithAutoAdapt ("k", "out", "sel", "b").success);
 
-    // A plain value on the Boolean condition is fine too: a boolean is a 0/1
-    // value (wiki/plans/DataAndWavetable.md D1).
+    // A plain value on Amount is fine too.
     REQUIRE (controller.addNode ("util.constant", "k2", 0.0f, 0.0f).success);
-    REQUIRE (controller.addNode ("logic.select", "sel2", 0.0f, 0.0f).success);
-    CHECK (controller.connectWithAutoAdapt ("k2", "out", "sel2", "condition").success);
+    REQUIRE (controller.addNode ("math.blend", "sel2", 0.0f, 0.0f).success);
+    CHECK (controller.connectWithAutoAdapt ("k2", "out", "sel2", "math.blend.amount").success);
     const auto connectionsBefore = controller.getGraph().getConnections().size();
 
-    // A Note can't ride through a select: it isn't a plain per-sample value.
-    CHECK_FALSE (controller.connectWithAutoAdapt ("notes", "notes", "sel2", "whenFalse").success);
+    // A Note can't ride through a blend: it isn't a plain per-sample value.
+    CHECK_FALSE (controller.connectWithAutoAdapt ("notes", "notes", "sel2", "a").success);
 
     CHECK (controller.getGraph().getConnections().size() == connectionsBefore);
 }
@@ -952,7 +951,7 @@ TEST_CASE ("createMacro's type makes a Bool/Trigger macro wire straight into Boo
 
     auto& controller = processor.getGraphEditController();
     REQUIRE (controller.setGraph (bazalt::engine::buildMasterOutOnlyGraph()).success);
-    REQUIRE (controller.addNode ("view.gate", "gate", 0.0f, 0.0f).success);
+    REQUIRE (controller.addNode ("view.scope", "gate", 0.0f, 0.0f).success);
     REQUIRE (controller.addNode ("view.ripple", "ripple", 0.0f, 0.0f).success);
     REQUIRE (controller.addNode ("view.count", "count", 0.0f, 0.0f).success);
 

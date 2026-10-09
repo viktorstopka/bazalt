@@ -1,8 +1,14 @@
 # Data and Wavetable — roadmap stage 1
 
-**Status:** Proposed, 2026-10-08. Decisions in §1 were taken with the user while
-planning; everything else is the recommended shape, open to change batch by batch. No
-code exists for any of it yet.
+**Status:** In progress. Decisions in §1 were taken with the user while planning
+(2026-10-08); everything else is the recommended shape, open to change batch by batch.
+Built so far (batch 1a): one value family in the connection rules (1a.1), the bridge
+adapters removed with schema v12 (1a.2), and the merges with schema v13 (1a.3) — Gain
+into Multiply, Clamp into Clip (Low/High), Envelope Follower into Level, Crossfade and
+Select into **Blend** (`math.blend`), the three history scopes into one **Scope**
+(`view.scope`, styled by its source), and the new **Switch** (`logic.switch`). A port
+that inherits both type and quantity never asks for a Map. Still open in 1a: the enum
+unification, colours, the card stack, categories and ids (1a.4).
 
 Builds on `Factories.md` (content, editors, unwrap) and replaces its "docked editor
 panel" with a full Factory window (§1, D10). Stage 2's engine work — one plan with an

@@ -62,7 +62,6 @@ add_executable(EngineTests
     ValueContractTests.cpp
     ViewCountNodeTests.cpp
     ViewRippleNodeTests.cpp
-    ViewScopeControlNodeTests.cpp
     ViewHistoryViewerTests.cpp
     PhaseLockedPreviewTests.cpp
     ValueOnlyEditTests.cpp

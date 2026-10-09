@@ -127,7 +127,8 @@ namespace bazalt::engine
         // spliced out, or rewritten as math.multiply / adapt.map.
         //
         // Schema v13 (same plan, 1a.3): duplicated nodes merged — Gain into
-        // Multiply, Clamp into Clip (low/high), Envelope Follower into Level.
+        // Multiply, Clamp into Clip (low/high), Envelope Follower into Level,
+        // Crossfade and Select into Blend, the three history scopes into Scope.
         static constexpr int currentSchemaVersion = 13;
 
         int schemaVersion = currentSchemaVersion;

@@ -251,7 +251,7 @@ TEST_CASE ("The M21 wave-1 nodes declare consistent, well-formed ports through t
     const auto factory = buildDefaultNodeFactory();
 
     for (const auto* typeId : { "math.subtract", "math.divide", "math.abs", "math.minmax", "math.power",
-                                "math.modulo", "math.slew", "mix.crossfade", "logic.not", "logic.toggle" })
+                                "math.modulo", "math.slew", "math.blend", "logic.switch", "logic.not", "logic.toggle" })
     {
         DYNAMIC_SECTION (typeId)
         {

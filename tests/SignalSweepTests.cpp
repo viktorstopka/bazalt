@@ -147,3 +147,56 @@ TEST_CASE ("A v12 patch's Gain, Clamp, Clip and Follower load as Multiply, Clip 
     CHECK (follow->parameters.at ("analysis.level.mode") == 0.0f);
     CHECK (follow->parameters.at ("analysis.level.attack") == 5.0f);
 }
+
+TEST_CASE ("A v12 patch's Crossfade, Select and history scopes load as Blend and Scope",
+           "[engine][PatchSerializer][sweep]")
+{
+    const auto json = R"({ "schemaVersion": 12,
+        "nodes": [
+            { "id": "x", "type": "osc.sine", "parameters": {}, "properties": {} },
+            { "id": "y", "type": "osc.sine", "parameters": {}, "properties": {} },
+            { "id": "cond", "type": "logic.not", "parameters": {}, "properties": {} },
+            { "id": "fade", "type": "mix.crossfade", "parameters": { "mix.crossfade.position": 0.25, "mix.crossfade.law": 1 }, "properties": {} },
+            { "id": "sel", "type": "logic.select", "parameters": {}, "properties": {} },
+            { "id": "mod", "type": "view.scope.modulation", "parameters": { "view.scope.modulation.timeWindow": 4 },
+              "properties": { "viewer.center": 0.5 } },
+            { "id": "gate", "type": "view.gate", "parameters": {}, "properties": {} }
+        ],
+        "connections": [
+            { "fromNodeId": "x", "fromPortId": "out", "toNodeId": "fade", "toPortId": "a" },
+            { "fromNodeId": "y", "fromPortId": "out", "toNodeId": "fade", "toPortId": "b" },
+            { "fromNodeId": "x", "fromPortId": "out", "toNodeId": "sel", "toPortId": "whenFalse" },
+            { "fromNodeId": "y", "fromPortId": "out", "toNodeId": "sel", "toPortId": "whenTrue" },
+            { "fromNodeId": "cond", "fromPortId": "out", "toNodeId": "sel", "toPortId": "condition" },
+            { "fromNodeId": "cond", "fromPortId": "out", "toNodeId": "gate", "toPortId": "in" }
+        ],
+        "outputNodeId": "fade", "outputPortId": "out" })";
+
+    const auto parsed = parsePatchFromJson (json);
+    REQUIRE (parsed.success);
+    const auto& doc = parsed.document;
+
+    const auto* fade = findNode (doc, "fade");
+    REQUIRE (fade != nullptr);
+    CHECK (fade->type == "math.blend");
+    CHECK (fade->parameters.at ("math.blend.amount") == 0.25f);
+    CHECK (fade->parameters.at ("math.blend.law") == 1.0f);
+    CHECK (hasConnection (doc, "x", "out", "fade", "a"));
+
+    // Select: whenFalse is A, whenTrue is B, the condition drives Amount, and
+    // an unwired condition (false) is Amount 0.
+    const auto* sel = findNode (doc, "sel");
+    REQUIRE (sel != nullptr);
+    CHECK (sel->type == "math.blend");
+    CHECK (sel->parameters.at ("math.blend.amount") == 0.0f);
+    CHECK (hasConnection (doc, "x", "out", "sel", "a"));
+    CHECK (hasConnection (doc, "y", "out", "sel", "b"));
+    CHECK (hasConnection (doc, "cond", "out", "sel", "math.blend.amount"));
+
+    const auto* mod = findNode (doc, "mod");
+    REQUIRE (mod != nullptr);
+    CHECK (mod->type == "view.scope");
+    CHECK (mod->parameters.at ("view.scope.timeWindow") == 4.0f);
+    CHECK (mod->properties.count ("viewer.center") == 1); // display settings carry over
+    CHECK (findNode (doc, "gate")->type == "view.scope");
+}

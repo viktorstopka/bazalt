@@ -22,9 +22,7 @@ import { MacroBody, ConstantBody } from './MacroBody'
 import { RippleBody } from './RippleBody'
 import { CountBody } from './CountBody'
 import { TuneBody } from './TuneBody'
-import { ScopeControlBody } from './ScopeControlBody'
-import { ScopeModulationBody } from './ScopeModulationBody'
-import { GateBody } from './GateBody'
+import { ScopeBody } from './ScopeBody'
 import { MapDiagram } from './MapDiagram'
 import { CycleBody } from './CycleBody'
 import './NodeCard.css'
@@ -1027,13 +1025,8 @@ export function NodeCard({ descriptor: declaredDescriptor, state = {}, instanceI
   if (descriptor.typeId === 'view.count') return <CountBody descriptor={descriptor} state={state} instanceId={instanceId} />
   // design/Visualization/Tune.png: the Pitch viewer, same dispatch.
   if (descriptor.typeId === 'view.tune') return <TuneBody descriptor={descriptor} state={state} instanceId={instanceId} />
-  // design/Visualization/Scope1.png: same client-side-only typeId dispatch
-  // as view.ripple/view.count just above.
-  if (descriptor.typeId === 'view.scope.control') return <ScopeControlBody descriptor={descriptor} state={state} instanceId={instanceId} />
-  // design/Visualization/ScopeMod.png and Gate.png: the other two variants
-  // of the same scrolling-history panel (ScopeHistoryBody.tsx).
-  if (descriptor.typeId === 'view.scope.modulation') return <ScopeModulationBody descriptor={descriptor} state={state} instanceId={instanceId} />
-  if (descriptor.typeId === 'view.gate') return <GateBody descriptor={descriptor} state={state} instanceId={instanceId} />
+  // The one scrolling-history Scope; its style follows the source (ScopeBody.tsx).
+  if (descriptor.typeId === 'view.scope') return <ScopeBody descriptor={descriptor} state={state} instanceId={instanceId} />
   // The placeable phase-locked viewer (replaces view.scope/view.glance).
   if (descriptor.typeId === 'view.cycle') return <CycleBody descriptor={descriptor} state={state} instanceId={instanceId} />
   if (descriptor.layoutVariant === 'decoration') return <DecorationBody descriptor={descriptor} />

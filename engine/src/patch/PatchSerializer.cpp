@@ -946,6 +946,27 @@ namespace bazalt::engine
                         inputRenames[id] = { { "env.follower.attack", "analysis.level.attack" }, { "env.follower.release", "analysis.level.release" } };
                         outputRenames[id] = { { "out", "level" } };
                     }
+                    else if (type == "mix.crossfade")
+                    {
+                        object->setProperty ("type", "math.blend");
+                        moveParameter (parameters, "mix.crossfade.position", "math.blend.amount");
+                        moveParameter (parameters, "mix.crossfade.law", "math.blend.law");
+                        inputRenames[id] = { { "mix.crossfade.position", "math.blend.amount" } };
+                    }
+                    else if (type == "logic.select")
+                    {
+                        // Select was a Blend with a boolean Amount: whenFalse is A,
+                        // whenTrue is B, and an unwired condition (false) is Amount 0.
+                        object->setProperty ("type", "math.blend");
+                        parameters.setProperty ("math.blend.amount", 0.0f);
+                        inputRenames[id] = { { "whenFalse", "a" }, { "whenTrue", "b" }, { "condition", "math.blend.amount" } };
+                    }
+                    else if (type == "view.scope.control" || type == "view.scope.modulation" || type == "view.gate")
+                    {
+                        // One Scope for every value; how it draws follows the source.
+                        object->setProperty ("type", "view.scope");
+                        moveParameter (parameters, type + ".timeWindow", "view.scope.timeWindow");
+                    }
                 }
             }
 

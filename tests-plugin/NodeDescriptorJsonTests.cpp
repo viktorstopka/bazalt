@@ -276,12 +276,12 @@ TEST_CASE ("nodeDescriptorToVar reports each port's polymorphism, so the UI adop
         return {};
     };
 
-    // Reroute and select's data ports follow type AND quantity...
+    // Reroute and blend's value ports follow type AND quantity...
     CHECK (polymorphismOf ("deco.reroute", "inputs", "in") == "signalAndQuantity");
-    CHECK (polymorphismOf ("logic.select", "inputs", "whenTrue") == "signalAndQuantity");
-    CHECK (polymorphismOf ("logic.select", "outputs", "out") == "signalAndQuantity");
-    // ...but select's Boolean condition, on that same polymorphic node, stays fixed.
-    CHECK (polymorphismOf ("logic.select", "inputs", "condition") == "none");
+    CHECK (polymorphismOf ("math.blend", "inputs", "a") == "signalAndQuantity");
+    CHECK (polymorphismOf ("math.blend", "outputs", "out") == "signalAndQuantity");
+    // ...but blend's Amount, on that same polymorphic node, stays fixed.
+    CHECK (polymorphismOf ("math.blend", "inputs", "math.blend.amount") == "none");
 
     // compare and sample&hold keep their type Control and follow only the quantity.
     CHECK (polymorphismOf ("logic.compare", "inputs", "a") == "quantity");
