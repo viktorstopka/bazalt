@@ -71,6 +71,8 @@ add_executable(EngineTests
     SignalSweepTests.cpp
     NodeContentTests.cpp
     CurveDataTests.cpp
+    WavetableTests.cpp
+    SineOscillatorNodeTests.cpp
     CurvePlayerNodeTests.cpp
     VoiceManagerTests.cpp
 )

@@ -1,0 +1,167 @@
+.wavetable-editor {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.wavetable-top {
+  display: flex;
+  gap: 16px;
+  align-items: center;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--color-nodeBorder);
+}
+.wavetable-overview {
+  flex: 1;
+  height: 150px;
+  min-width: 0;
+}
+.wavetable-overview-frame {
+  fill: none;
+  stroke: var(--color-textSecondary);
+  stroke-width: 1;
+  opacity: 0.35;
+}
+.wavetable-overview-current {
+  fill: none;
+  stroke-width: 2;
+}
+.wavetable-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 260px;
+  font-size: 12px;
+}
+.wavetable-frame {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.wavetable-frame input {
+  flex: 1;
+}
+.wavetable-frame-value {
+  font-variant-numeric: tabular-nums;
+  color: var(--color-textSecondary);
+  width: 40px;
+}
+.wavetable-frame-hint {
+  color: var(--color-textSecondary);
+  font-size: 11px;
+}
+
+.wavetable-segmented {
+  display: inline-flex;
+  border: 1px solid var(--color-nodeBorder);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  align-self: flex-start;
+}
+.wavetable-segmented button {
+  background: none;
+  border: none;
+  color: var(--color-textSecondary);
+  padding: 4px 12px;
+  cursor: pointer;
+  font-size: 12px;
+}
+.wavetable-segmented button + button {
+  border-left: 1px solid var(--color-nodeBorder);
+}
+.wavetable-segmented button.active {
+  color: var(--color-accent);
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.wavetable-strip-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 12px 8px 36px;
+  border-bottom: 1px solid var(--color-nodeBorder);
+}
+.wavetable-strip {
+  position: relative;
+  flex: 1;
+  height: 44px;
+  margin-right: 30px;
+  border-radius: var(--radius-sm);
+  background: rgba(255, 255, 255, 0.03);
+  cursor: pointer;
+}
+.wavetable-strip-playhead {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: var(--color-accent);
+  opacity: 0.6;
+  pointer-events: none;
+}
+.wavetable-keyframe {
+  position: absolute;
+  top: 4px;
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 2px;
+  border: 1px solid var(--color-nodeBorder);
+  border-radius: var(--radius-sm);
+  background: var(--color-nodeFill);
+  cursor: grab;
+  touch-action: none;
+}
+.wavetable-keyframe.selected {
+  border-color: var(--color-accent);
+}
+.wavetable-keyframe-thumb {
+  display: block;
+  width: 40px;
+  height: 20px;
+}
+.wavetable-keyframe-thumb path {
+  fill: none;
+  stroke-width: 1.5;
+  vector-effect: non-scaling-stroke;
+}
+.wavetable-keyframe-label {
+  position: absolute;
+  top: -2px;
+  left: 3px;
+  font-size: 9px;
+  color: var(--color-textSecondary);
+}
+.wavetable-strip-buttons {
+  display: flex;
+  gap: 6px;
+}
+
+.wavetable-keyframe-bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 6px 12px;
+  border-bottom: 1px solid var(--color-nodeBorder);
+  font-size: 12px;
+}
+.wavetable-keyframe-position {
+  color: var(--color-textSecondary);
+  margin-left: 4px;
+}
+.wavetable-shapes {
+  display: flex;
+  gap: 4px;
+}
+.wavetable-shapes .factory-button {
+  padding: 2px 8px;
+  font-size: 11px;
+}
+
+.wavetable-main {
+  flex: 1;
+  display: flex;
+  min-height: 0;
+}

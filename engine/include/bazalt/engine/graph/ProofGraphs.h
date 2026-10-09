@@ -76,6 +76,8 @@
 #include "bazalt/engine/nodes/SeqEuclidNode.h"
 #include "bazalt/engine/nodes/DataScaleNode.h"
 #include "bazalt/engine/nodes/DataCurveNode.h"
+#include "bazalt/engine/nodes/DataWavetableNode.h"
+#include "bazalt/engine/nodes/SineOscillatorNode.h"
 #include "bazalt/engine/nodes/CurvePlayerNode.h"
 #include "bazalt/engine/nodes/DataLookupNode.h"
 #include "bazalt/engine/nodes/NoteGateNode.h"
@@ -218,6 +220,12 @@ namespace bazalt::engine
         factory.registerType ("source.oscillator", [] { return std::make_unique<nodes::CurveOscillatorNode>(); }); // one curve player, two entries (DataAndWavetable.md D5/D6)
         factory.registerType ("source.envelope", [] { return std::make_unique<nodes::CurveEnvelopeNode>(); });
         factory.registerType ("data.curve", [] { return std::make_unique<nodes::DataCurveNode>(); }); // the curve factory (wiki/plans/DataAndWavetable.md 1b)
+        factory.registerType ("data.wavetable", [] { return std::make_unique<nodes::DataWavetableNode>(); }); // keyframed wavetable (1c)
+        // The fixed classic shapes, back by direct instruction (2026-10-09).
+        factory.registerType ("source.sine", [] { return std::make_unique<nodes::SineOscillatorNode>(); });
+        factory.registerType ("source.saw", [] { return std::make_unique<nodes::SawOscillatorNode>(); });
+        factory.registerType ("source.square", [] { return std::make_unique<nodes::SquareOscillatorNode>(); });
+        factory.registerType ("source.triangle", [] { return std::make_unique<nodes::TriangleOscillatorNode>(); });
         factory.registerType ("data.lookup", [] { return std::make_unique<nodes::DataLookupNode>(); });
         // Note Stream batch — note.hold/note.select/note.chord deferred (a
         // real, documented engine limit: ExecutionPlan::BlockStep supports

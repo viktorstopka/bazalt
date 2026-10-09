@@ -25,6 +25,8 @@ import { TuneBody } from './TuneBody'
 import { ScopeBody } from './ScopeBody'
 import { CurveThumbnail } from '../factory/CurveThumbnail'
 import { CURVE_FACTORY_TYPES, curveFromContent } from '../factory/curveModel'
+import { WavetableThumbnail } from '../factory/WavetableThumbnail'
+import { WAVETABLE_FACTORY_TYPES, wavetableFromContent } from '../factory/wavetableModel'
 import { MapDiagram } from './MapDiagram'
 import { CycleBody } from './CycleBody'
 import './NodeCard.css'
@@ -733,6 +735,9 @@ function StandardBody({ descriptor, state, instanceId }: { descriptor: NodeDescr
           nodeId={instanceId}
           overridden={connected.has('shape')}
         />
+      )}
+      {WAVETABLE_FACTORY_TYPES.has(descriptor.typeId) && (
+        <WavetableThumbnail doc={wavetableFromContent(state.content)} nodeId={instanceId} />
       )}
       {merged && <MergedRowView row={merged} instanceId={instanceId} connected={connected.has(merged.id)} />}
       {inputs.map((row) => (

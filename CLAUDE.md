@@ -205,6 +205,12 @@ ctest --test-dir build -C Debug -R PluginTests --output-on-failure
   schema v16 migrates old patches. Pitch reaches an oscillator through
   `math.pitchToFrequency` (the notes below that say `osc.analog`'s "pitch" port
   describe the pre-1b graph).
+  **1c (2026-10-09):** `data.wavetable` (`WavetableData.h`) plugs into the
+  Oscillator's Shape; its Frame rides on the cable as `DataPublisher`'s companion
+  signal. The fixed Sine/Saw/Square/Triangle nodes are back as `source.sine`/
+  `saw`/`square`/`triangle` (user's instruction). **No new migrations** (user's
+  instruction, same day: patches get rebuilt by hand) — the factory patch list is
+  just Empty, `ui/src/patches/CatPurr.json` stays on disk unused and unmodified.
 
 - **Fixed, 2026-10-03** — this note used to say the M0 plugin editor's
   release-build WebView always served a hard-coded placeholder HTML string

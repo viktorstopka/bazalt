@@ -2,6 +2,7 @@
 
 #include "bazalt/engine/graph/CurveData.h"
 #include "bazalt/engine/graph/HostInputs.h"
+#include "bazalt/engine/graph/WavetableData.h"
 #include "bazalt/engine/telemetry/PhaseSnapshot.h"
 #include "bazalt/engine/graph/ValueTypes.h"
 #include "bazalt/engine/nodes/DataCurveNode.h"
@@ -16,7 +17,8 @@ namespace bazalt::engine::nodes
         entries so both are easy to find.
 
         **Shape** is a Data(curve) input. Wired, it plays what is plugged in (a
-        data.curve shared by several nodes, later a wavetable); unwired, it
+        data.curve shared by several nodes, or — Oscillator only — a
+        data.wavetable, played at the frame its Frame input says); unwired, it
         plays the node's own curve (its content, edited in the Factory window)
         — the same "I have a value, but you can connect me" rule every other
         input follows, applied to a shape. A shape change (an edit, or a new
@@ -135,8 +137,10 @@ namespace bazalt::engine::nodes
 
         std::vector<PortDescriptor> getInputPorts() const override
         {
-            const auto shape = PortDescriptor { .id = "shape", .type = SignalType::Data, .label = "Shape",
-                                                .dataTags = { DataTag::Curve } };
+            auto shape = PortDescriptor { .id = "shape", .type = SignalType::Data, .label = "Shape",
+                                          .dataTags = { DataTag::Curve } };
+            if (mode == Mode::Oscillator)
+                shape.dataTags.push_back (DataTag::Wavetable);
             const auto amplitude = PortDescriptor { .id = amplitudeId, .type = SignalType::Signal, .label = "Amplitude",
                                                     .minValue = 0.0f, .maxValue = 1.0f, .defaultValue = 1.0f,
                                                     .hasFallbackWhenUnconnected = true };
@@ -219,7 +223,10 @@ namespace bazalt::engine::nodes
                 lastBuffer = buffer;
             }
             view = CurveView (buffer);
+            wavetable = WavetableView (buffer);
+            framesFrom = wired;
             trackIndex = 0;
+            sampleIndex = 0;
             Node::processBlock (inputs, outputs, numSamples);
         }
 
@@ -235,6 +242,7 @@ namespace bazalt::engine::nodes
             output = raw + offset;
             offset *= declickCoeff;
             outputs[0] = output;
+            ++sampleIndex;
         }
 
         bool isActive() const noexcept { return mode == Mode::Oscillator || stage != Stage::Idle; }
@@ -272,7 +280,13 @@ namespace bazalt::engine::nodes
             if (trackIndex < phaseTrack.size())
                 phaseTrack[trackIndex++] = (float) ((double) cycleCount + phase);
             float value = 0.0f;
-            if (view.isValid())
+            if (wavetable.isValid())
+            {
+                const auto position = oneShotDone ? 1.0 - 1.0e-9 : phase + (double) phaseOffset;
+                const auto frame = framesFrom != nullptr ? framesFrom->readCompanion (sampleIndex, 0.0f) : 0.0f;
+                value = wavetable.read (CurveView::levelFor (increment), position, frame);
+            }
+            else if (view.isValid())
             {
                 const auto position = oneShotDone ? 1.0 - 1.0e-9 : phase + (double) phaseOffset;
                 value = view.hasBandLimitedTables() ? view.read (CurveView::levelFor (increment), position)
@@ -371,6 +385,9 @@ namespace bazalt::engine::nodes
         CurvePublisher ownCurve;
         std::atomic<DataPublisher*> shapeInput { nullptr };
         CurveView view { nullptr };
+        WavetableView wavetable { nullptr };
+        DataPublisher* framesFrom = nullptr; // the wired shape's publisher: a wavetable's Frame rides on it
+        int sampleIndex = 0;
         const DataBuffer* lastBuffer = nullptr;
 
         double sampleRate = 44100.0;

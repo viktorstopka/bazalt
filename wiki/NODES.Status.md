@@ -85,9 +85,9 @@ rather than waiting; every `factory.*` node still does want the real thing.
 
 | Node | Status | Necessity | Batch | Notes |
 |---|---|---|---|---|
-| `osc.sine` | Implemented | | | |
+| `source.sine` / `saw` / `square` / `triangle` | Implemented | | | Removed in 1b.5, back by request 2026-10-09 (ids moved to `source.*`). |
 | `osc.analog` | Implemented |  | Oscillator Expansion | Done 2026-10-04 (`wiki/plans/SoundPalette.md`) — `fine`, `pulseWidth`, through-zero `phase`, `sync`, real phase-locked preview. |
-| `osc.wavetable` | To be implemented | **B2** | Oscillator Expansion | Needs `Data(wavetable)` — rides the Data pipeline once it exists. |
+| `data.wavetable` → `source.oscillator` | Implemented | | Stage 1c | No separate wavetable oscillator: the table plugs into the Oscillator's Shape (`wiki/plans/DataAndWavetable.md` D7). |
 | `osc.glottal` | To be implemented | **B3** | PM Voice | Correction 1; LF/Rosenberg parametric pulse model — delicate band-limiting. |
 
 ### `sampler.*` — samples and grains — 2 to build

@@ -94,9 +94,10 @@ Exposes the host's transport — tempo, play state, song position, and a beat pu
 
 ## osc — oscillators
 
-#### `source.oscillator` — Oscillator ✅ *(stage 1, 1b — replaces osc.analog, osc.sine/saw/square/triangle and lfo.shape)*
+#### `source.oscillator` — Oscillator ✅ *(stage 1, 1b — replaces osc.analog and lfo.shape)*
 One node that plays a curve as a waveform (`wiki/plans/DataAndWavetable.md` D5). **In:**
-`shape` — `Data(curve)`: wired, it plays the cable's curve; unwired, the node's own
+`shape` — `Data(curve)` or `Data(wavetable)`: wired, it plays the cable's curve, or a
+wavetable at the frame its `data.wavetable` says (1c); unwired, the node's own
 curve (its content, edited in the Factory window — Sine, Triangle, Saw, Ramp, Square,
 Steps or anything drawn); `frequency` (Hz, 0.01–20000, default 440 — pitch arrives
 through `math.pitchToFrequency`); `amplitude`; `phase` (offset in cycles, never
@@ -112,9 +113,18 @@ curve does not fit one). **Gone with the old nodes:** fine tune (add semitones b
 the converter), pulse-width *modulation* (a fixed width is the square's duty), the
 LFO's random shapes (now `random.stepped`). Schema v16 migrates all of them.
 
-#### `osc.wavetable` — Wavetable Oscillator 📋
-Scans across a table of single-cycle waveform frames as it plays, using `position`
-to morph the timbre over the frame set instead of holding one fixed shape. **In:** `table` — `Data(wavetable)`, required; `frequency [audio]`; `position [audio]` (frame scan); `phaseMod [audio]`; `sync : Event`. **Out:** `out` — `Audio`. **Structural:** `interpolation` (enum: none, linear, cubic), `frameBlending` (enum: blend, jump). **Native:** inner loop scales with table size.
+#### `source.sine` / `source.saw` / `source.square` / `source.triangle` — Sine, Saw, Square, Triangle ✅ *(were osc.*; back by the user's direct instruction, 2026-10-09)*
+The fixed classic shapes, kept next to the Oscillator on purpose: "Yes, you can achieve
+those with oscillators, but I still want them in there." **In:** `frequency` (Hz,
+0.01–20000, default 440); `amplitude`; `phase` (offset in cycles); `pulseWidth`
+(Square only, 0.01–0.99); `sync : Event` (restarts the phase). **Out:** `out` — audio.
+**Behavior:** closed-form band-limiting (polyBLEP, exact at every frequency — no
+octave mipmap steps); Sine is exact `std::sin`. A phase source whose preview renders
+its own shape (`SineOscillatorNode.h`).
+
+#### Wavetable — no separate oscillator *(stage 1, 1c — replaces the planned osc.wavetable)*
+A wavetable is played by `source.oscillator`: plug a `data.wavetable` into its Shape
+(D7). See `data.wavetable` below.
 
 #### `osc.glottal` — Glottal Pulse 📋 *(Correction 1)*
 A parametric model of the airflow pulse from a vibrating valve (Liljencrants–Fant, or a simpler Rosenberg mode) — voice research's own measured parameters go in directly. **In:** `f0 : float·Frequency·10–2000Hz·log·110 [audio]`; `openQuotient : float·Unipolar·0.01–0.9·linear·0.5 [audio]` (very low = a purr); `asymmetry : float·Unipolar·0.1–0.9·linear·0.6`; `closureSharpness : float·Unipolar·0–1·linear·0.5 [audio]`; `jitter : float·Unipolar·0–1·linear·0`; `shimmer : float·Unipolar·0–1·linear·0`; `sync : Event`. **Out:** `out` — `Audio` (the flow derivative — the acoustic source); `flow` — `float·Unipolar [audio]` (for gating aspiration noise); `open` — `bool`. **Structural:** `model` (enum: LF, Rosenberg), `seed`. **Native:** delicate band-limited pulse generation; would take dozens of nodes to approximate.
@@ -622,6 +632,18 @@ oscillator's shape, an envelope, a Lookup). **Out:** `curve` — `Data(curve)`.
 a Cycle or Time base, a loop range (`CurveData.h`). Pure content — no inputs. The
 published buffer carries the points (read exactly) and, in Cycle mode, the
 band-limited mipmap levels. `data.lookup` reads it by position or by point index.
+
+#### `data.wavetable` — Wavetable ✅ *(stage 1, 1c)*
+Keyframes along a table (positions 0..1), each one cycle — **drawn** as a curve or
+**painted** as harmonics (amplitude and phase per harmonic) in the Factory window —
+morphing (crossfade) or stepping between them. **In:** `frame` — `float·Unipolar`
+(where in the table to play; per sample). **Out:** `table` — `Data(wavetable)`, into an
+Oscillator's Shape. **Content:** `WavetableData.h` (`interpolation`, `keyframes`).
+**Behavior:** every keyframe is published as the same band-limited mipmap a curve
+gets; the Frame signal travels beside the table on the same cable (the Data
+publisher's companion), so modulating Frame sweeps the timbre sample-accurately.
+Keyframe tables are cached by content, so voice copies and live edits of one keyframe
+rebuild only what changed. Default: a sine morphing into a saw.
 
 #### `data.scale` — Scale ✅
 **In:** `root`. **Out:** `data` — `Data(scale)`. **Structural:** `scale` (enum: major, the church modes, pentatonics, blues, whole tone, chromatic — **12 named scales**; "harmonic series" and "custom" are the two catalog items deliberately deferred, both real gaps not silent ones — see below), `octaveSize` (generalizes the 12-tone patterns to other divisions by proportional scaling, not just padding). **A real, documented RT-safety limit:** `root` is a genuine wireable port, but its *live* cable value is never read on the audio thread — rebuilding a `Data` buffer means a heap allocation, forbidden there (CLAUDE.md rule 2); only the value applied via `setParameter()` (the node's own inline slider) actually republishes. A real worker-thread content-rebuild pipeline (`NODES.System.md` §8's own still-open item) is what closes this properly — not built as a side effect of this one node.

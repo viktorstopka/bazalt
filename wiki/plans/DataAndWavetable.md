@@ -19,7 +19,18 @@ phase-locked previews of a curve oscillator fold real samples instead of renderi
 its shape; an envelope's single stage times can't be modulated (Time Scale scales
 the whole curve); pulse-width modulation is gone with the fixed shapes; mipmap levels
 are per octave, so a sweep changes brightness in octave steps. Still open: the
-Swarm (Transient) and Trigger titles. Next: 1c (Wavetable).
+Swarm (Transient) and Trigger titles.
+1c is built: `data.wavetable` (keyframes drawn as curves or painted as harmonics,
+morph or step), played by the Oscillator through its Shape with the Frame riding on
+the cable as the Data publisher's companion signal (D7); the Factory window's
+wavetable editor (overview, keyframe strip, curve / harmonics editing, preview frame).
+Also on 2026-10-09, by the user's direct instruction: the fixed Sine / Saw / Square /
+Triangle nodes are back (`source.sine` …, next to the Oscillator — "I still want them
+in there"), and **migrations are no longer written** ("That is unmanagable. We will
+make the patches again anyways") — the factory patch list is just Empty; the existing
+migration chain stays but is not extended. Not built from 1c: the single-frame
+"Wavetable Frame" node, and import from audio (stage 3). Next: 1d (EQ Curve and
+Spectrum).
 
 Builds on `Factories.md` (content, editors, unwrap) and replaces its "docked editor
 panel" with a full Factory window (§1, D10). Stage 2's engine work — one plan with an

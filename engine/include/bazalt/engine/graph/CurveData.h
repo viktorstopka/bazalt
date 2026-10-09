@@ -366,6 +366,37 @@ namespace bazalt::engine
         bool hasTables = false;
     };
 
+    /** Message thread: append `CurveView::numLevels` tables of one cycle
+        (`raw`, `CurveView::tableSize` samples) to `values` — level 0 is
+        `raw` exactly, level l keeps only the harmonics up to
+        tableSize/2 >> l. Shared by curves and wavetable keyframes. */
+    inline void appendMipmapLevels (const std::vector<float>& raw, std::vector<float>& values)
+    {
+        constexpr auto n = CurveView::tableSize;
+        juce::dsp::FFT fft (CurveView::tableOrder);
+        std::vector<float> spectrum ((size_t) (2 * n), 0.0f);
+        std::copy (raw.begin(), raw.begin() + n, spectrum.begin());
+        fft.performRealOnlyForwardTransform (spectrum.data()); // the full spectrum, n (re, im) pairs
+
+        values.insert (values.end(), raw.begin(), raw.begin() + n); // level 0: exactly as drawn
+        std::vector<float> work ((size_t) (2 * n));
+        for (int level = 1; level < CurveView::numLevels; ++level)
+        {
+            const auto keep = (n / 2) >> level;
+            std::fill (work.begin(), work.end(), 0.0f);
+            // Harmonics 0..keep and their negative-frequency mirrors.
+            for (int bin = 0; bin < n; ++bin)
+            {
+                if (bin > keep && bin < n - keep)
+                    continue;
+                work[(size_t) (2 * bin)] = spectrum[(size_t) (2 * bin)];
+                work[(size_t) (2 * bin + 1)] = spectrum[(size_t) (2 * bin + 1)];
+            }
+            fft.performRealOnlyInverseTransform (work.data());
+            values.insert (values.end(), work.begin(), work.begin() + n);
+        }
+    }
+
     /** Message thread: the buffer every consumer of `doc` reads. */
     inline std::unique_ptr<DataBuffer> buildCurveBuffer (const CurveDocument& doc)
     {
@@ -393,33 +424,10 @@ namespace bazalt::engine
 
         if (cycle)
         {
-            constexpr auto n = CurveView::tableSize;
-            std::vector<float> raw ((size_t) n);
-            for (int i = 0; i < n; ++i)
-                raw[(size_t) i] = evaluateCurve (doc, (float) i / (float) n);
-
-            juce::dsp::FFT fft (CurveView::tableOrder);
-            std::vector<float> spectrum ((size_t) (2 * n), 0.0f);
-            std::copy (raw.begin(), raw.end(), spectrum.begin());
-            fft.performRealOnlyForwardTransform (spectrum.data()); // the full spectrum, n (re, im) pairs
-
-            values.insert (values.end(), raw.begin(), raw.end()); // level 0: exactly as drawn
-            std::vector<float> work ((size_t) (2 * n));
-            for (int level = 1; level < CurveView::numLevels; ++level)
-            {
-                const auto keep = (n / 2) >> level;
-                std::fill (work.begin(), work.end(), 0.0f);
-                // Harmonics 0..keep and their negative-frequency mirrors.
-                for (int bin = 0; bin < n; ++bin)
-                {
-                    if (bin > keep && bin < n - keep)
-                        continue;
-                    work[(size_t) (2 * bin)] = spectrum[(size_t) (2 * bin)];
-                    work[(size_t) (2 * bin + 1)] = spectrum[(size_t) (2 * bin + 1)];
-                }
-                fft.performRealOnlyInverseTransform (work.data());
-                values.insert (values.end(), work.begin(), work.begin() + n);
-            }
+            std::vector<float> raw ((size_t) CurveView::tableSize);
+            for (int i = 0; i < CurveView::tableSize; ++i)
+                raw[(size_t) i] = evaluateCurve (doc, (float) i / (float) CurveView::tableSize);
+            appendMipmapLevels (raw, values);
         }
 
         return std::make_unique<DataBuffer> (DataTag::Curve, std::move (values), 1);

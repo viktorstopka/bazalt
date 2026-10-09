@@ -224,7 +224,33 @@ namespace bazalt::engine
             return count;
         }
 
+        /** A live per-sample signal riding with the Data (wiki/plans/
+            DataAndWavetable.md D7): a buffer cannot change per sample, so a
+            wavetable's Frame travels beside it on the same cable. The
+            producer points this at a block buffer it owns (set in prepare(),
+            `capacity` samples) and fills it in its processBlock, which the
+            compiler's Data edge orders before every consumer's. Null when the
+            producer has none. */
+        void setCompanion (const float* samples, int capacity) noexcept
+        {
+            companionCapacity.store (samples != nullptr ? capacity : 0, std::memory_order_relaxed);
+            companion.store (samples, std::memory_order_release);
+        }
+
+        /** The companion sample at `index` in the current block, or
+            `fallback` when there is none. */
+        float readCompanion (int index, float fallback) const noexcept
+        {
+            const auto* samples = companion.load (std::memory_order_acquire);
+            const auto capacity = companionCapacity.load (std::memory_order_relaxed);
+            return samples != nullptr && capacity > 0 ? samples[clampIndex (index, capacity)] : fallback;
+        }
+
     private:
+        static int clampIndex (int index, int capacity) noexcept { return index < 0 ? 0 : index >= capacity ? capacity - 1 : index; }
+
+        std::atomic<const float*> companion { nullptr };
+        std::atomic<int> companionCapacity { 0 };
         std::array<std::unique_ptr<DataBuffer>, numSlots> slots;
         std::array<std::atomic<bool>, numSlots> slotOccupied {};
         std::atomic<int> currentSlot { -1 };
