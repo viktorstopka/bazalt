@@ -10,7 +10,7 @@ TEST_CASE ("NodeFactory::describeAll() returns a descriptor for every registered
     auto factory = buildDefaultNodeFactory();
     const auto descriptors = factory.describeAll();
 
-    REQUIRE (descriptors.size() == 122); // + deco.header/comment/box/image (wiki/plans/Decorations.md) // + view.tune (design/Visualization/Tune.png) // + 11 Sound Palette nodes (wiki/plans/SoundPalette.md) + space.diffuser, space.reverb (wiki/plans/Reverb.md). 93 as of util.bipolarToUnipolar (see git history for the full running tally before this) + view.ripple (design/Visualization/Ripple.png) + view.count (design/Visualization/Count.png) + view.scope.control (design/Visualization/Scope1.png) + view.scope.modulation (ScopeMod.png) + view.gate (Gate.png) - adapt.remap (became adapt.map, replacing the old Map — design/Map.png) + osc.saw, osc.square, osc.triangle - view.scope - view.glance + view.cycle - logic.boolean + logic.and/or/xor/eventGroup/edge/latch
+    REQUIRE (descriptors.size() == 111); // + data.wavetable (1c) + source.sine/saw/square/triangle (back by request) // - osc.analog/sine/saw/square/triangle, lfo.shape, env.adsr, data.table (curve nodes, 1b) // + data.curve, source.oscillator, source.envelope (1b) // - mix.crossfade, logic.select, view.scope.control/modulation, view.gate + math.blend, logic.switch, view.scope // - mix.gain, math.clamp, env.follower (merged into Multiply/Clip/Level) // - To Mod/To Audio/From Bool/Normalise/Unipolar to Bipolar/Bipolar to Unipolar (wiki/plans/DataAndWavetable.md §2) // + deco.header/comment/box/image (wiki/plans/Decorations.md) // + view.tune (design/Visualization/Tune.png) // + 11 Sound Palette nodes (wiki/plans/SoundPalette.md) + space.diffuser, space.reverb (wiki/plans/Reverb.md). 93 as of util.bipolarToUnipolar (see git history for the full running tally before this) + view.ripple (design/Visualization/Ripple.png) + view.count (design/Visualization/Count.png) + view.scope.control (design/Visualization/Scope1.png) + view.scope.modulation (ScopeMod.png) + view.gate (Gate.png) - adapt.remap (became adapt.map, replacing the old Map — design/Map.png) + osc.saw, osc.square, osc.triangle - view.scope - view.glance + view.cycle - logic.boolean + logic.and/or/xor/eventGroup/edge/latch
 
     auto findByTypeId = [&] (const juce::String& typeId) -> const NodeDescriptor*
     {
@@ -20,19 +20,24 @@ TEST_CASE ("NodeFactory::describeAll() returns a descriptor for every registered
         return nullptr;
     };
 
-    const auto* osc = findByTypeId ("osc.analog");
+    const auto* osc = findByTypeId ("source.oscillator");
     REQUIRE (osc != nullptr);
     CHECK (osc->title == "Oscillator");
-    CHECK (osc->category == "Generators");
+    CHECK (osc->category == "Sources");
     CHECK (osc->layoutVariant == NodeLayoutVariant::Standard);
-    REQUIRE (osc->inputs.size() == 6); // "pitch" (M18, ADR-0024), "osc.analog.frequency" (M20), fine, pulseWidth, phase, sync (SoundPalette.md Batch 2)
-    CHECK (osc->inputs[0].id == "pitch");
-    CHECK (osc->inputs[0].type == SignalType::Control);
-    CHECK (osc->inputs[1].id == "osc.analog.frequency");
+    REQUIRE (osc->inputs.size() == 6); // shape, frequency, amplitude, phase, trigger, loop (DataAndWavetable.md D5)
+    CHECK (osc->inputs[0].id == "shape");
+    CHECK (osc->inputs[0].type == SignalType::Data);
+    CHECK (osc->inputs[1].id == "source.oscillator.frequency");
     REQUIRE (osc->outputs.size() == 1);
     CHECK (osc->outputs[0].id == "out");
-    CHECK (osc->outputs[0].type == SignalType::Audio);
-    REQUIRE (osc->parameters.size() == 1); // "shape" only — "frequency" is a port now (M20)
+    CHECK (osc->outputs[0].quantity == Quantity::Audio);
+    REQUIRE (osc->parameters.size() == 2); // tempo sync and its division
+
+    const auto* envelope = findByTypeId ("source.envelope");
+    REQUIRE (envelope != nullptr);
+    CHECK (envelope->title == "Envelope");
+    CHECK (envelope->inputs[1].id == "gate");
 
     const auto* svf = findByTypeId ("filter.svf");
     REQUIRE (svf != nullptr);
@@ -41,12 +46,13 @@ TEST_CASE ("NodeFactory::describeAll() returns a descriptor for every registered
     REQUIRE (svf->inputs.size() == 3); // "in", "cutoff", "resonance" (M20)
     CHECK (svf->inputs[0].id == "in");
 
-    const auto* amp = findByTypeId ("mix.gain");
+    // Gain is a Multiply now (wiki/plans/DataAndWavetable.md §2).
+    CHECK (findByTypeId ("mix.gain") == nullptr);
+    const auto* amp = findByTypeId ("math.multiply");
     REQUIRE (amp != nullptr);
-    CHECK (amp->title == "Gain"); // wiki/NODES_Gaps.md's jargon-naming finding: was "VCA"
     REQUIRE (amp->inputs.size() == 2);
-    CHECK (amp->inputs[0].id == "audio");
-    CHECK (amp->inputs[1].id == "gain");
+    CHECK (amp->inputs[0].id == "in.0");
+    CHECK (amp->inputs[1].id == "in.1");
 
     // Every descriptor must have a non-empty title (falls back to typeId)
     // and a category — this is what makes a usable Add menu possible.
@@ -128,13 +134,13 @@ TEST_CASE ("09-28-InstanceAllocator.3: instance.allocate.voice (renamed from ins
     CHECK (findByTypeId ("instance.allocator") == nullptr);
     CHECK (findByTypeId ("instance.voice") == nullptr); // 09-29-AddMenu.1's own rename
 
-    const auto* voice = findByTypeId ("instance.allocate.voice");
+    const auto* voice = findByTypeId ("life.voice");
     REQUIRE (voice != nullptr);
     CHECK (voice->title == "Voice");
     // "Domain/Allocate", not flat "Domain" - 09-29-AddMenu.1 nests Voice (and
     // its future Swarm/Trigger siblings) under an Add-menu flyout, one level
     // deeper than instance.sum, which deliberately stays flat "Domain".
-    CHECK (voice->category == "Domain/Allocate");
+    CHECK (voice->category == "Life-cycle");
 
     bool sawConfiguration = false;
     bool sawMaxInstances = false;
@@ -142,8 +148,8 @@ TEST_CASE ("09-28-InstanceAllocator.3: instance.allocate.voice (renamed from ins
     for (const auto& p : voice->parameters)
     {
         if (p.id.containsIgnoreCase ("configuration")) sawConfiguration = true;
-        if (p.id == "instance.allocate.voice.maxInstances") sawMaxInstances = true;
-        if (p.id == "instance.allocate.voice.seed") sawSeed = true;
+        if (p.id == "life.voice.maxInstances") sawMaxInstances = true;
+        if (p.id == "life.voice.seed") sawSeed = true;
     }
     CHECK_FALSE (sawConfiguration);
     CHECK (sawMaxInstances);
@@ -158,7 +164,7 @@ TEST_CASE ("A node with no title override falls back to its type id in the descr
     {
     public:
         int getNumOutputPorts() const noexcept override { return 1; }
-        std::vector<PortDescriptor> getOutputPorts() const override { return { { "out", SignalType::Audio } }; }
+        std::vector<PortDescriptor> getOutputPorts() const override { return { { .id = "out", .type = SignalType::Signal, .quantity = Quantity::Audio } }; }
     };
 
     NodeFactory factory;

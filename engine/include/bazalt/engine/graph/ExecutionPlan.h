@@ -201,6 +201,11 @@ namespace bazalt::engine
         // up a real within-block discontinuity — this field is the fix.
         std::unordered_map<juce::String, std::unordered_map<juce::String, float>> nodeIdToAppliedParameters;
 
+        /** Each node's content as last handed to setContent(), as JSON text —
+            a reused node gets setContent() again only when this differs
+            (Node::setContent()'s contract makes that safe on a running node). */
+        std::unordered_map<juce::String, juce::String> nodeIdToAppliedContent;
+
         // Empty (each entry) for an ordinary plan. Set once, by whoever
         // compiles this plan, before it's ever published (PlanSwapper) —
         // never mutated after, so reading it from the audio thread via a
@@ -214,7 +219,7 @@ namespace bazalt::engine
         //
         // wiki/plans/DomainRedesign.md Batch 2: generalized from a single
         // juce::String to one entry per possible origin — the ONE shared
-        // global plan can now contain several "instance.sum" nodes at once
+        // global plan can now contain several "life.merge" nodes at once
         // (one per origin bridging into it, DomainRedesign.md §4's multiple
         // independent voice regions), each needing its own driver hand-off.
         // Indexed by origin BUNDLE slot (BazaltAudioProcessor::OriginBundle),

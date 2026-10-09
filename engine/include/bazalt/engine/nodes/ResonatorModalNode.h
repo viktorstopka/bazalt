@@ -1,5 +1,7 @@
 #pragma once
 
+#include <atomic>
+
 #include "bazalt/engine/graph/Node.h"
 #include "bazalt/engine/graph/ValueTypes.h"
 #include <algorithm>
@@ -134,10 +136,10 @@ namespace bazalt::engine::nodes
         std::vector<PortDescriptor> getInputPorts() const override
         {
             return {
-                { "excite", SignalType::Audio },
+                { .id = "excite", .type = SignalType::Signal, .quantity = Quantity::Audio },
                 PortDescriptor { .id = "modes", .type = SignalType::Data, .label = "Modes",
                                   .dataTags = { DataTag::ModalSet } },
-                PortDescriptor { .id = "pitch", .type = SignalType::Control, .unit = "st",
+                PortDescriptor { .id = "pitch", .type = SignalType::Signal, .unit = "st",
                                   .minValue = 0.0f, .maxValue = 127.0f, .defaultValue = 60.0f,
                                   .hasFallbackWhenUnconnected = true, .quantity = Quantity::Pitch },
                 ValueTypes::timeSecondsPort ("resonator.modal.decay", "Decay", 1.5f, 10.0f),
@@ -151,7 +153,7 @@ namespace bazalt::engine::nodes
         std::vector<PortDescriptor> getOutputPorts() const override
         {
             return {
-                PortDescriptor { .id = "out", .type = SignalType::Audio, .label = "Out", .isPrimaryOutput = true, .channels = Channels::Stereo },
+                PortDescriptor { .id = "out", .type = SignalType::Signal, .label = "Out", .isPrimaryOutput = true, .quantity = Quantity::Audio, .channels = Channels::Stereo },
             };
         }
 
@@ -184,7 +186,7 @@ namespace bazalt::engine::nodes
         void setDataInput (const juce::String& inputPortId, DataPublisher* publisher) noexcept override
         {
             if (inputPortId == "modes")
-                modesPublisher = publisher;
+                modesPublisher.store (publisher, std::memory_order_release);
         }
 
         void processSample (const float* inputs, float* outputs) noexcept override
@@ -192,10 +194,11 @@ namespace bazalt::engine::nodes
             outputs[0] = 0.0f;
             outputs[1] = 0.0f;
 
-            if (modesPublisher == nullptr)
+            auto* publisher = modesPublisher.load (std::memory_order_acquire);
+            if (publisher == nullptr)
                 return;
 
-            const auto* buffer = modesPublisher->getCurrentForAudioThread();
+            const auto* buffer = publisher->getCurrentForAudioThread();
             if (buffer == nullptr || buffer->tag() != DataTag::ModalSet || buffer->stride() != 3)
                 return;
 
@@ -255,7 +258,7 @@ namespace bazalt::engine::nodes
     private:
         static PortDescriptor unipolarPort (juce::String id, juce::String label, float defaultValue)
         {
-            return PortDescriptor { .id = std::move (id), .type = SignalType::Control, .label = std::move (label),
+            return PortDescriptor { .id = std::move (id), .type = SignalType::Signal, .label = std::move (label),
                                      .minValue = 0.0f, .maxValue = 1.0f, .defaultValue = defaultValue,
                                      .hasFallbackWhenUnconnected = true, .quantity = Quantity::Unipolar,
                                      .polarity = Polarity::Unipolar };
@@ -264,7 +267,7 @@ namespace bazalt::engine::nodes
         double sampleRate = 44100.0;
         int maxModesParam = defaultMaxModes;
         std::vector<float> state1, state2;
-        DataPublisher* modesPublisher = nullptr;
+        std::atomic<DataPublisher*> modesPublisher { nullptr }; // a recompile may rewire a running node
 
         float storedDecay = 1.5f;
         float storedBrightness = 1.0f;

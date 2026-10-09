@@ -34,7 +34,7 @@ namespace bazalt::engine::nodes
         Domain: a mono source. Placed among voice-domain nodes it is
         duplicated per voice and every copy reads the same host samples
         (DOMAINS.md's free mono->poly broadcast); a graph with no
-        `instance.allocate.voice` runs once, every block, whether or not a note is
+        `life.voice` runs once, every block, whether or not a note is
         held (DomainSplitter.h's mono-graph rule), which is what an audio
         effect needs.
     */
@@ -52,8 +52,8 @@ namespace bazalt::engine::nodes
         std::vector<PortDescriptor> getOutputPorts() const override
         {
             return {
-                PortDescriptor { .id = "channel.0", .type = SignalType::Audio, .label = "Left", .isPrimaryOutput = true },
-                PortDescriptor { .id = "channel.1", .type = SignalType::Audio, .label = "Right" },
+                PortDescriptor { .id = "channel.0", .type = SignalType::Signal, .label = "Left", .isPrimaryOutput = true, .quantity = Quantity::Audio },
+                PortDescriptor { .id = "channel.1", .type = SignalType::Signal, .label = "Right", .quantity = Quantity::Audio },
             };
         }
 

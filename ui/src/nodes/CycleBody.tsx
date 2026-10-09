@@ -34,10 +34,10 @@ export function CycleBody({ descriptor, state, instanceId }: { descriptor: NodeD
   return (
     <div className={classNames}>
       <div className="scope-history-port scope-history-port-left">
-        <PortGlyph port={inputPort} side="left" instanceId={instanceId} connected={state.connectedPortIds?.has(inputPort.id) ?? false} isPoly={false} />
+        <PortGlyph port={inputPort} side="left" instanceId={instanceId} connected={state.connectedPortIds?.has(inputPort.id) ?? false} />
       </div>
       <div className="scope-history-port scope-history-port-right">
-        <PortGlyph port={outputPort} side="right" instanceId={instanceId} connected={state.connectedPortIds?.has(outputPort.id) ?? false} isPoly={false} />
+        <PortGlyph port={outputPort} side="right" instanceId={instanceId} connected={state.connectedPortIds?.has(outputPort.id) ?? false} />
       </div>
       {instanceId && (
         <PhaseLockedPreview

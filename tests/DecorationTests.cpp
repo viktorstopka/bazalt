@@ -16,7 +16,7 @@ TEST_CASE ("Decorations are never compiled", "[engine][decorations]")
     REQUIRE_FALSE (factory.isDecoration ("deco.reroute")); // carries signal
 
     NodeGraph graph;
-    graph.addNode ({ "osc", "osc.sine", {}, {}, {} });
+    graph.addNode ({ "osc", "source.oscillator", {}, {}, {} });
     graph.addNode ({ "title", "deco.header", {}, {}, { { "text", "Bass" } } });
     graph.addNode ({ "note", "deco.comment", {}, {}, { { "text", "A comment" } } });
     graph.addNode ({ "frame", "deco.box", {}, {}, {} });
@@ -32,7 +32,7 @@ TEST_CASE ("deco.reroute passes its signal through", "[engine][decorations]")
 {
     auto factory = buildDefaultNodeFactory();
     NodeGraph graph;
-    graph.addNode ({ "osc", "osc.sine", {}, {}, {} });
+    graph.addNode ({ "osc", "source.oscillator", {}, {}, {} });
     graph.addNode ({ "dot", "deco.reroute", {}, {}, {} });
     graph.addConnection ({ "osc", "out", "dot", "in" });
     graph.setOutput ("dot", "out");

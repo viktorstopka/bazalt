@@ -15,7 +15,7 @@ namespace
     NodeGraph sineAt (float frequency)
     {
         NodeGraph graph;
-        graph.addNode ({ "osc", "osc.sine", {}, { { "osc.sine.frequency", frequency } }, {} });
+        graph.addNode ({ "osc", "source.oscillator", {}, { { "source.oscillator.frequency", frequency } }, {} });
         graph.setOutput ("osc", "out");
         return graph;
     }
@@ -71,10 +71,10 @@ TEST_CASE ("A plan replaced before it ever played hands its pending values on",
 TEST_CASE ("A structural edit still builds a fresh node", "[engine][GraphCompiler][liveEdit]")
 {
     auto factory = buildDefaultNodeFactory();
-    auto graphWithShape = [] (float shape)
+    auto graphWithShape = [] (float mode)
     {
         NodeGraph graph;
-        graph.addNode ({ "osc", "osc.analog", {}, { { "osc.analog.shape", shape } }, {} });
+        graph.addNode ({ "osc", "shape.clip", {}, { { "shape.clip.mode", mode } }, {} });
         graph.setOutput ("osc", "out");
         return graph;
     };
@@ -83,6 +83,6 @@ TEST_CASE ("A structural edit still builds a fresh node", "[engine][GraphCompile
     REQUIRE (first.success);
     auto second = GraphCompiler::compile (graphWithShape (2.0f), factory, { 48000.0, 64 }, 2, &first.plan);
     REQUIRE (second.success);
-    CHECK (nodeOf (second, "osc") != nodeOf (first, "osc")); // osc.analog.shape is structural
+    CHECK (nodeOf (second, "osc") != nodeOf (first, "osc")); // shape.clip.mode is structural
     CHECK (second.plan.pendingParameterUpdates.empty());
 }

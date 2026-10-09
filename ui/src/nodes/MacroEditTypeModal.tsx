@@ -56,6 +56,8 @@ const QUANTITY_LABELS: Record<Quantity, string> = {
   bipolar: 'Bipolar',
   count: 'Count',
   phase: 'Phase',
+  audio: 'Audio',
+  boolean: 'Boolean',
 }
 // Value's own quantity choices exclude Unipolar/Bipolar (that pair IS
 // Modulation, picked via its own Uni/Bi control below, not this list).

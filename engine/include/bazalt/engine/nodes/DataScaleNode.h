@@ -40,7 +40,7 @@ namespace bazalt::engine::nodes
         a genuine, wireable `PortDescriptor` (matching the catalog), but its
         *live*, cable-fed value is never read on the audio thread — only the
         value applied via `setParameter()` (the node's own inline slider,
-        same mechanism `adapt.threshold`'s "threshold" port already uses)
+        same mechanism `logic.threshold`'s "threshold" port already uses)
         rebuilds and republishes the scale. Rebuilding means constructing a
         new `std::vector<float>`/`DataBuffer` — a heap allocation
         (CLAUDE.md rule 2 forbids this on the audio thread) — so a cable

@@ -27,7 +27,7 @@ namespace bazalt::engine::nodes
     class ViewCycleNode : public InheritingPortsNode
     {
     public:
-        ViewCycleNode() noexcept : InheritingPortsNode (SignalType::Audio) {}
+        ViewCycleNode() noexcept : InheritingPortsNode (Quantity::Audio) {}
 
         int getNumInputPorts() const noexcept override { return 1; }
         int getNumOutputPorts() const noexcept override { return 1; }
@@ -38,7 +38,7 @@ namespace bazalt::engine::nodes
 
         void resolveIncomingPort (const juce::String& toPortId, const PortDescriptor& source) noexcept override
         {
-            if (toPortId == "in" && (source.type == SignalType::Audio || source.type == SignalType::Control))
+            if (toPortId == "in" && source.type == SignalType::Signal)
                 offer (0, source, true);
         }
 

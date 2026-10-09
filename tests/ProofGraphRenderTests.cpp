@@ -77,7 +77,7 @@ TEST_CASE ("Karplus-Strong proof graph produces a decaying plucked-string tone",
     REQUIRE (result.success);
 
     auto& plan = result.plan;
-    plan.getNodeById ("delay")->setParameter ("delay.line.samples", (float) (sampleRate / 220.0));
+    plan.getNodeById ("delay")->setParameter ("time.delay.samples", (float) (sampleRate / 220.0));
 
     auto* excite = dynamic_cast<nodes::NoiseBurstNode*> (plan.getNodeById ("excite"));
     REQUIRE (excite != nullptr);

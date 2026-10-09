@@ -11,12 +11,12 @@ using namespace bazalt::engine;
 namespace
 {
     // A sine on the left channel only, through `chain` (each with an
-    // "in" — "audio" for mix.gain — and an "out"), into io.output.
+    // "in" — "in.0" for math.multiply — and an "out"), into io.output.
     NodeGraph leftOnlySineThrough (std::vector<NodeInstance> chain, float cutoff = 1000.0f)
     {
         NodeGraph graph;
-        graph.addNode ({ "osc", "osc.sine", {}, { { "osc.sine.frequency", 220.0f } }, {} });
-        graph.addNode ({ "combine", "stereo.combine", {}, {}, {} });
+        graph.addNode ({ "osc", "source.oscillator", {}, { { "source.oscillator.frequency", 220.0f } }, {} });
+        graph.addNode ({ "combine", "channels.combine", {}, {}, {} });
         graph.addConnection ({ "osc", "out", "combine", "left" });
 
         juce::String previous = "combine";
@@ -26,7 +26,7 @@ namespace
                 node.parameters["filter.svf.cutoff"] = cutoff;
             const auto id = node.id;
             graph.addNode (node);
-            graph.addConnection ({ previous, "out", id, node.type == "mix.gain" ? "audio" : "in" });
+            graph.addConnection ({ previous, "out", id, node.type == "math.multiply" ? "in.0" : "in" });
             previous = id;
         }
 
@@ -70,7 +70,7 @@ TEST_CASE ("A per-channel filter fed stereo runs one lane per channel, each with
 {
     auto factory = buildDefaultNodeFactory();
     auto result = GraphCompiler::compile (leftOnlySineThrough ({ { "svf", "filter.svf", {}, {}, {} },
-                                                                 { "amp", "mix.gain", {}, {}, {} } }),
+                                                                 { "amp", "math.multiply", {}, {}, {} } }),
                                           factory, { 48000.0, 64 }, 1);
     REQUIRE (result.success);
     CHECK (lanesOf (result.plan, "svf") == 2);
@@ -85,7 +85,7 @@ TEST_CASE ("A mono chain keeps one lane per node", "[engine][GraphCompiler][ster
 {
     auto factory = buildDefaultNodeFactory();
     NodeGraph graph;
-    graph.addNode ({ "osc", "osc.sine", {}, {}, {} });
+    graph.addNode ({ "osc", "source.oscillator", {}, {}, {} });
     graph.addNode ({ "svf", "filter.svf", {}, {}, {} });
     graph.addNode ({ "master", "io.output", {}, {}, {} });
     graph.addConnection ({ "osc", "out", "svf", "in" });
@@ -107,10 +107,10 @@ TEST_CASE ("A stereo feedback loop keeps its channels apart and publishes both",
     // combine -> add.in.0; add -> delay; delay -> add.in.1 (the loop) and -> master.
     auto factory = buildDefaultNodeFactory();
     NodeGraph graph;
-    graph.addNode ({ "osc", "osc.sine", {}, { { "osc.sine.frequency", 220.0f } }, {} });
-    graph.addNode ({ "combine", "stereo.combine", {}, {}, {} });
+    graph.addNode ({ "osc", "source.oscillator", {}, { { "source.oscillator.frequency", 220.0f } }, {} });
+    graph.addNode ({ "combine", "channels.combine", {}, {}, {} });
     graph.addNode ({ "add", "math.add", {}, {}, {} });
-    graph.addNode ({ "delay", "delay.line", {}, { { "delay.line.samples", 10.0f } }, {} });
+    graph.addNode ({ "delay", "time.delay", {}, { { "time.delay.samples", 10.0f } }, {} });
     graph.addNode ({ "master", "io.output", {}, {}, {} });
     graph.addConnection ({ "osc", "out", "combine", "left" });
     graph.addConnection ({ "combine", "out", "add", "in.0" });

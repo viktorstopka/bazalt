@@ -1,5 +1,7 @@
 #pragma once
 
+#include <atomic>
+
 #include "bazalt/engine/graph/Node.h"
 #include <cmath>
 #include <limits>
@@ -61,17 +63,17 @@ namespace bazalt::engine::nodes
         int getNumOutputPorts() const noexcept override { return numOutputs; }
 
         juce::String getTitle() const override { return "Scale Quantize"; }
-        juce::String getCategory() const override { return "Note"; }
+        juce::String getCategory() const override { return "Notes"; }
 
         std::vector<PortDescriptor> getInputPorts() const override
         {
             return {
                 PortDescriptor { .id = "notes", .type = SignalType::Note },
                 PortDescriptor { .id = "scale", .type = SignalType::Data, .label = "Scale", .dataTags = { DataTag::Scale } },
-                PortDescriptor { .id = "note.quantize.root", .type = SignalType::Control, .label = "Root",
+                PortDescriptor { .id = "note.quantize.root", .type = SignalType::Signal, .label = "Root",
                                   .unit = "st", .minValue = -60.0f, .maxValue = 60.0f, .defaultValue = 0.0f,
                                   .hasFallbackWhenUnconnected = true, .quantity = Quantity::Pitch, .polarity = Polarity::Bipolar },
-                PortDescriptor { .id = "note.quantize.strength", .type = SignalType::Control, .label = "Strength",
+                PortDescriptor { .id = "note.quantize.strength", .type = SignalType::Signal, .label = "Strength",
                                   .minValue = 0.0f, .maxValue = 1.0f, .defaultValue = 1.0f,
                                   .hasFallbackWhenUnconnected = true, .quantity = Quantity::Unipolar },
             };
@@ -116,7 +118,7 @@ namespace bazalt::engine::nodes
         void setDataInput (const juce::String& inputPortId, DataPublisher* publisher) noexcept override
         {
             if (inputPortId == "scale")
-                scalePublisher = publisher;
+                scalePublisher.store (publisher, std::memory_order_release);
         }
 
         void consumeNoteBlock (const NoteEvent* input, int numSamples) noexcept override
@@ -127,7 +129,8 @@ namespace bazalt::engine::nodes
 
         void processBlock (const float* const* inputs, float* const*, int numSamples) noexcept override
         {
-            currentScale = scalePublisher != nullptr ? scalePublisher->getCurrentForAudioThread() : nullptr;
+            auto* publisher = scalePublisher.load (std::memory_order_acquire);
+            currentScale = publisher != nullptr ? publisher->getCurrentForAudioThread() : nullptr;
 
             for (int i = 0; i < numSamples; ++i)
             {
@@ -199,7 +202,7 @@ namespace bazalt::engine::nodes
 
         const NoteEvent* pendingNoteBlock = nullptr;
         int pendingLength = 0;
-        DataPublisher* scalePublisher = nullptr;
+        std::atomic<DataPublisher*> scalePublisher { nullptr }; // a recompile may rewire a running node
         const DataBuffer* currentScale = nullptr;
 
         float storedRoot = 0.0f;

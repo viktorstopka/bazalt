@@ -12,7 +12,7 @@ namespace
     {
         NodeGraph graph;
         graph.addNode ({ "noteIn", "io.noteIn", {}, {}, {} });
-        graph.addNode ({ "allocator", "instance.allocate.voice", {}, {}, {} });
+        graph.addNode ({ "allocator", "life.voice", {}, {}, {} });
         graph.addConnection ({ "noteIn", "notes", "allocator", "spawn" });
         graph.setOutput ("allocator", "gate"); // arbitrary — bufferIndexFor() below reads any port directly
         return graph;

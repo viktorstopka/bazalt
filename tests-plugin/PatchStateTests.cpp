@@ -2,6 +2,7 @@
 #include "PluginProcessor.h"
 #include "MacroParameters.h"
 #include "bazalt/engine/graph/ProofGraphs.h"
+#include "bazalt/engine/patch/PatchSerializer.h"
 #include <algorithm>
 #include <cmath>
 

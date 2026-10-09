@@ -53,7 +53,7 @@ TEST_CASE ("InstanceSwarmTransientNode: auto-releases itself once duration elaps
 {
     InstanceSwarmTransientNode node;
     node.prepare ({ 44100.0, 64 });
-    node.setParameter ("instance.allocate.swarmTransient.duration", 0.001f); // 1ms -> ~44 samples at 44.1kHz
+    node.setParameter ("life.swarmTransient.duration", 0.001f); // 1ms -> ~44 samples at 44.1kHz
     node.reset();
 
     sampleOnce (node, 1.0f); // spawn
@@ -80,7 +80,7 @@ TEST_CASE ("InstanceSwarmTransientNode: random1/random2/position are determinist
 {
     InstanceSwarmTransientNode a;
     a.prepare ({ 44100.0, 64 });
-    a.setParameter ("instance.allocate.swarmTransient.seed", 42.0f);
+    a.setParameter ("life.swarmTransient.seed", 42.0f);
     a.reset();
     const auto spawnA = sampleOnce (a, 1.0f);
 
@@ -89,7 +89,7 @@ TEST_CASE ("InstanceSwarmTransientNode: random1/random2/position are determinist
     // verbatim from 09-28-InstanceAllocator.2/Batch 2).
     InstanceSwarmTransientNode b;
     b.prepare ({ 44100.0, 64 });
-    b.setParameter ("instance.allocate.swarmTransient.seed", 42.0f);
+    b.setParameter ("life.swarmTransient.seed", 42.0f);
     b.reset();
     const auto spawnB = sampleOnce (b, 1.0f);
 
@@ -122,9 +122,9 @@ TEST_CASE ("InstanceSwarmTransientNode declares the real maxInstances/seed/durat
         return std::find_if (parameters.begin(), parameters.end(), [&] (const ParameterDescriptor& p) { return p.id == id; })
                != parameters.end();
     };
-    CHECK (hasParam ("instance.allocate.swarmTransient.maxInstances"));
-    CHECK (hasParam ("instance.allocate.swarmTransient.seed"));
-    CHECK (hasParam ("instance.allocate.swarmTransient.duration"));
+    CHECK (hasParam ("life.swarmTransient.maxInstances"));
+    CHECK (hasParam ("life.swarmTransient.seed"));
+    CHECK (hasParam ("life.swarmTransient.duration"));
 
     const auto outputs = node.getOutputPorts();
     REQUIRE (outputs.size() == 8);

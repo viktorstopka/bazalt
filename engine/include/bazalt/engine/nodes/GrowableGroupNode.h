@@ -54,7 +54,7 @@ namespace bazalt::engine::nodes
     inline PortDescriptor makeNumericGroupPort (const PortGroup& group, int index, float identity)
     {
         return PortDescriptor { .id = group.idPrefix + juce::String (index),
-                                 .type = SignalType::Control,
+                                 .type = SignalType::Signal,
                                  .label = "In " + juce::String (index + 1),
                                  .defaultValue = identity,
                                  .hasFallbackWhenUnconnected = true,

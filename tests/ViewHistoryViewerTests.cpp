@@ -2,15 +2,11 @@
 #include <catch2/catch_approx.hpp>
 #include "bazalt/engine/graph/GraphCompiler.h"
 #include "bazalt/engine/graph/ProofGraphs.h"
-#include "bazalt/engine/nodes/ViewScopeModulationNode.h"
-#include "bazalt/engine/nodes/ViewGateNode.h"
-#include "bazalt/engine/nodes/ViewScopeControlNode.h"
+#include "bazalt/engine/nodes/ViewScopeNode.h"
 
-// design/Visualization/ScopeMod.png and Gate.png: the second and third of
-// the three scrolling-history viewers. Their engine sides are deliberately
-// view.scope.control's own (a pass-through plus ViewHistoryWindow), so these
-// tests cover only what actually differs: the ports, the parameter ids, and
-// that each splices into its own signal type without an adapter.
+// view.scope — the one scrolling-history viewer (wiki/plans/DataAndWavetable.md
+// §2, merging view.scope.control, view.scope.modulation and view.gate): a
+// pass-through plus ViewHistoryWindow whose ports take on what is wired.
 
 using namespace bazalt::engine;
 using namespace bazalt::engine::nodes;
@@ -45,9 +41,10 @@ namespace
     NodeFactory makeFactory()
     {
         auto factory = buildDefaultNodeFactory();
-        factory.registerType ("test.unipolar", [] { return std::make_unique<FixedSourceNode> (SignalType::Control, Quantity::Unipolar); });
-        factory.registerType ("test.bipolar", [] { return std::make_unique<FixedSourceNode> (SignalType::Control, Quantity::Bipolar); });
-        factory.registerType ("test.bool", [] { return std::make_unique<FixedSourceNode> (SignalType::Boolean, Quantity::Dimensionless); });
+        factory.registerType ("test.unipolar", [] { return std::make_unique<FixedSourceNode> (SignalType::Signal, Quantity::Unipolar); });
+        factory.registerType ("test.bipolar", [] { return std::make_unique<FixedSourceNode> (SignalType::Signal, Quantity::Bipolar); });
+        factory.registerType ("test.frequency", [] { return std::make_unique<FixedSourceNode> (SignalType::Signal, Quantity::Frequency); });
+        factory.registerType ("test.bool", [] { return std::make_unique<FixedSourceNode> (SignalType::Signal, Quantity::Boolean); });
         return factory;
     }
 
@@ -77,103 +74,63 @@ namespace
     }
 }
 
-TEST_CASE ("view.scope.modulation is a Control pass-through that defaults to Bipolar and adopts its source's quantity",
-           "[engine][nodes][view.scope.modulation]")
+TEST_CASE ("view.scope is a pass-through whose ports take on the source's type and quantity",
+           "[engine][nodes][view.scope]")
 {
-    ViewScopeModulationNode node;
-    CHECK (node.hasPolymorphicPorts());
+    ViewScopeNode node;
+    REQUIRE (node.hasPolymorphicPorts());
+    CHECK (node.getInputPorts()[0].type == SignalType::Signal); // unconnected default
 
-    const auto in = node.getInputPorts();
-    const auto out = node.getOutputPorts();
-    REQUIRE (in.size() == 1);
-    REQUIRE (out.size() == 1);
-    CHECK (in[0].type == SignalType::Control);
-    CHECK (in[0].quantity == Quantity::Bipolar); // unconnected: the signed case the panel is drawn for
-    CHECK (in[0].polymorphism == PortPolymorphism::Quantity);
-    CHECK (out[0].isPrimaryOutput);
-    CHECK (out[0].quantity == Quantity::Bipolar);
+    PortDescriptor boolean { .id = "src", .type = SignalType::Signal, .quantity = Quantity::Boolean };
+    node.resolveIncomingPort ("in", boolean);
+    CHECK (node.getInputPorts()[0].quantity == Quantity::Boolean);
+    CHECK (node.getOutputPorts()[0].quantity == Quantity::Boolean);
 
-    PortDescriptor unipolar { "src", SignalType::Control };
+    ViewScopeNode modulation;
+    PortDescriptor unipolar { .id = "src", .type = SignalType::Signal };
     unipolar.quantity = Quantity::Unipolar;
-    node.resolveIncomingPort ("in", unipolar);
-    CHECK (node.getInputPorts()[0].quantity == Quantity::Unipolar);
-    CHECK (node.getOutputPorts()[0].quantity == Quantity::Unipolar); // the pass-through stays transparent downstream
-    CHECK (node.getInputPorts()[0].type == SignalType::Control);     // only the quantity is inherited, never the type
+    modulation.resolveIncomingPort ("in", unipolar);
+    CHECK (modulation.getOutputPorts()[0].quantity == Quantity::Unipolar);
 
-    float value = -0.7f, result = 0.0f;
-    node.processSample (&value, &result);
-    CHECK (result == -0.7f);
+    const float inputs[1] = { 0.375f };
+    float out = 0.0f;
+    node.processSample (inputs, &out);
+    CHECK (out == 0.375f);
 }
 
-TEST_CASE ("view.scope.modulation splices directly into both a unipolar and a bipolar cable, no adapter",
-           "[engine][nodes][view.scope.modulation][GraphCompiler]")
+TEST_CASE ("view.scope splices into any value cable without an adapter",
+           "[engine][nodes][view.scope][GraphCompiler]")
 {
-    CHECK (compileAndRun ("test.unipolar", 0.25f, "view.scope.modulation") == Catch::Approx (0.25f));
-    CHECK (compileAndRun ("test.bipolar", -0.5f, "view.scope.modulation") == Catch::Approx (-0.5f));
+    CHECK (compileAndRun ("test.unipolar", 0.25f, "view.scope") == Catch::Approx (0.25f));
+    CHECK (compileAndRun ("test.bipolar", -0.5f, "view.scope") == Catch::Approx (-0.5f));
+    CHECK (compileAndRun ("test.frequency", 440.0f, "view.scope") == Catch::Approx (440.0f));
+    CHECK (compileAndRun ("test.bool", 1.0f, "view.scope") == Catch::Approx (1.0f));
 }
 
-TEST_CASE ("view.gate is a Boolean pass-through", "[engine][nodes][view.gate]")
+TEST_CASE ("view.scope's RollingHistory preview tracks its structural timeWindow parameter, clamped",
+           "[engine][nodes][view.scope]")
 {
-    ViewGateNode node;
-    CHECK_FALSE (node.hasPolymorphicPorts());
+    ViewScopeNode node;
+    const auto parameters = node.getParameters();
+    REQUIRE (parameters.size() == 1);
+    CHECK (parameters[0].id == "view.scope.timeWindow");
+    CHECK (parameters[0].isStructural);
+    CHECK (previewWindow (node) == ViewHistoryWindow::defaultSeconds);
 
-    const auto in = node.getInputPorts();
-    const auto out = node.getOutputPorts();
-    REQUIRE (in.size() == 1);
-    REQUIRE (out.size() == 1);
-    CHECK (in[0].type == SignalType::Boolean);
-    CHECK (in[0].kind == ValueKind::Bool);
-    CHECK (out[0].type == SignalType::Boolean);
-    CHECK (out[0].isPrimaryOutput);
-
-    float value = 1.0f, result = 0.0f;
-    node.processSample (&value, &result);
-    CHECK (result == 1.0f);
-
-    CHECK (compileAndRun ("test.bool", 1.0f, "view.gate") == Catch::Approx (1.0f));
+    node.setParameter ("view.scope.timeWindow", 4.5f);
+    CHECK (previewWindow (node) == 4.5f);
+    node.setParameter ("view.scope.timeWindow", 1000.0f);
+    CHECK (previewWindow (node) == ViewHistoryWindow::maxSeconds);
+    node.setParameter ("view.scope.timeWindow", -5.0f);
+    CHECK (previewWindow (node) == ViewHistoryWindow::minSeconds);
 }
 
-TEST_CASE ("every history viewer exposes the same clamped time window under its own parameter id",
-           "[engine][nodes][view.scope.modulation][view.gate][view.scope.control]")
-{
-    auto check = [] (auto node, const juce::String& parameterId)
-    {
-        const auto parameters = node.getParameters();
-        REQUIRE (parameters.size() == 1);
-        CHECK (parameters[0].id == parameterId);
-        CHECK (parameters[0].isStructural);
-        CHECK (parameters[0].minValue == ViewHistoryWindow::minSeconds);
-        CHECK (parameters[0].maxValue == ViewHistoryWindow::maxSeconds);
-        CHECK (previewWindow (node) == ViewHistoryWindow::defaultSeconds);
-
-        node.setParameter (parameterId, 7.5f);
-        CHECK (previewWindow (node) == 7.5f);
-        node.setParameter (parameterId, 1000.0f);
-        CHECK (previewWindow (node) == ViewHistoryWindow::maxSeconds);
-        node.setParameter (parameterId, 0.0f);
-        CHECK (previewWindow (node) == ViewHistoryWindow::minSeconds);
-        node.setParameter ("some.other.parameter", 5.0f);
-        CHECK (previewWindow (node) == ViewHistoryWindow::minSeconds);
-    };
-
-    check (ViewScopeControlNode {}, "view.scope.control.timeWindow");
-    check (ViewScopeModulationNode {}, "view.scope.modulation.timeWindow");
-    check (ViewGateNode {}, "view.gate.timeWindow");
-}
-
-TEST_CASE ("view.scope and view.glance are gone; view.cycle replaces them; nothing registered is deprecated",
-           "[engine][nodes][deprecated]")
+TEST_CASE ("view.scope replaces the three type-specific scopes in the default factory", "[engine][nodes][view.scope]")
 {
     const auto factory = buildDefaultNodeFactory();
-    REQUIRE (factory.isRegistered ("view.scope.modulation"));
-    REQUIRE (factory.isRegistered ("view.gate"));
-    REQUIRE (factory.isRegistered ("view.cycle"));
-    CHECK_FALSE (factory.isRegistered ("view.scope"));  // removed 2026-10-04 (PatchSerializer v8 -> v9 drops it)
+    CHECK (factory.isRegistered ("view.scope"));
+    CHECK_FALSE (factory.isRegistered ("view.scope.control"));
+    CHECK_FALSE (factory.isRegistered ("view.scope.modulation"));
+    CHECK_FALSE (factory.isRegistered ("view.gate"));
     CHECK_FALSE (factory.isRegistered ("view.glance")); // removed 2026-10-04 (spliced out of its cable on load)
-
-    for (const auto& descriptor : factory.describeAll())
-    {
-        INFO (descriptor.typeId);
-        CHECK_FALSE (descriptor.deprecated);
-    }
 }

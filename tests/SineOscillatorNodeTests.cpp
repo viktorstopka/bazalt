@@ -1,4 +1,4 @@
-// M22 wave 1: osc.sine — a cheap, exact sine for FM/modal-excitation inner
+// M22 wave 1: source.sine (was osc.sine) — a cheap, exact sine for FM/modal-excitation inner
 // loops. Mechanism tests (matches ModulatablePortsTests.cpp's own idiom for
 // osc.analog) plus one analytical frequency check, since a direct
 // phase-accumulator sine has no band-limiting to make analytical
@@ -159,7 +159,7 @@ TEST_CASE ("Amplitude scales the output, and an unwired port uses its inline val
     SineOscillatorNode full, half;
     full.prepare (info);
     half.prepare (info);
-    half.setParameter ("osc.sine.amplitude", 0.5f);
+    half.setParameter ("source.sine.amplitude", 0.5f);
 
     for (int i = 0; i < 20; ++i)
     {
@@ -182,10 +182,10 @@ TEST_CASE ("All four oscillators share one port layout; only Square adds Pulse W
         CHECK ((int) node.getInputPorts().size() == node.getNumInputPorts());
         return result.joinIntoString (",");
     };
-    CHECK (ids (SineOscillatorNode {}) == "osc.sine.frequency,osc.sine.amplitude,osc.sine.phase,sync");
-    CHECK (ids (SawOscillatorNode {}) == "osc.saw.frequency,osc.saw.amplitude,osc.saw.phase,sync");
-    CHECK (ids (TriangleOscillatorNode {}) == "osc.triangle.frequency,osc.triangle.amplitude,osc.triangle.phase,sync");
-    CHECK (ids (SquareOscillatorNode {}) == "osc.square.frequency,osc.square.amplitude,osc.square.phase,osc.square.pulseWidth,sync");
+    CHECK (ids (SineOscillatorNode {}) == "source.sine.frequency,source.sine.amplitude,source.sine.phase,sync");
+    CHECK (ids (SawOscillatorNode {}) == "source.saw.frequency,source.saw.amplitude,source.saw.phase,sync");
+    CHECK (ids (TriangleOscillatorNode {}) == "source.triangle.frequency,source.triangle.amplitude,source.triangle.phase,sync");
+    CHECK (ids (SquareOscillatorNode {}) == "source.square.frequency,source.square.amplitude,source.square.phase,source.square.pulseWidth,sync");
 
     const auto phase = SawOscillatorNode {}.getInputPorts()[2];
     CHECK (phase.quantity == Quantity::Bipolar); // a Modulation row

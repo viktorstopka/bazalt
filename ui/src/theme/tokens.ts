@@ -52,45 +52,24 @@ export const tokens = {
     meterRms: '#5b8def',
     sliderFill: '#5b8def',
     error: '#e0454f',
+    // A gesture that will succeed on release (Ctrl+drag Add over a node it can add).
+    gestureValid: '#40FF69',
 
     // Port-type palette (NODE_EDITOR.md §5, blueprint §4's table).
-    // `portAudio` is Audio's colour for a Scalar-resolved port — unchanged
-    // value, but its MEANING changed with wiki/plans/DomainRedesign.md
-    // Batch 4: it used to be Audio's only colour, full stop; now it's
-    // specifically the Scalar half of a real Multiplicity distinction (see
-    // `portAudioPoly` below).
+    // Colour means what a signal is (wiki/plans/DataAndWavetable.md D3);
+    // whether it runs once or per voice shows on the node (the card stack).
     portAudio: '#e0339e',
     portModulation: '#FFB094',
     portValue: '#e8e8ea',
     portInteger: '#FFFF4D',
     portTrigger: '#8c7fff',
     portBoolean: '#7cc6f7',
-    // wiki/plans/DomainRedesign.md §5.6/Batch 4: a direct, explicit user
-    // decision, reversing this file's own earlier "don't give Multiplicity
-    // its own hue" recommendation — Poly and Scalar Audio are "very tricky
-    // in plugging each other," and that debugging value outweighs the
-    // colour-budget cost, for now (explicitly reversible: "we can revert
-    // back later"). Retires `portPoly` (`#4ade80` — a DIFFERENT green from
-    // this one) outright: that was the blueprint's own mock-only "poly/mono
-    // encoding will be redesigned later" placeholder, and this is that
-    // redesign, landed for real, Audio-only (§8's still-open question on
-    // Control/other types is not resolved here).
-    portAudioPoly: '#40FF69',
-    // wiki/NODES_Gaps.md's Note-port-connectivity finding: SignalType::Note
-    // had no colour of its own (portUiKind.ts's classifier fell through to
-    // portValue, the exact colour a real-quantity Control port uses) — a
-    // genuine same-colour-but-incompatible collision, not a connection bug.
-    // A distinct teal/cyan, unused anywhere else in this palette.
-    portNote: '#3ecfc0',
-    // Direct feedback, the same real collision Note's own comment above
-    // already names and fixes: portUiKind.ts's classifyPortUiKind() fell
-    // Data through to 'value' (`type !== 'control' -> 'value'`) - the exact
-    // white a real-quantity Control port renders as, so a Data(scale)/
-    // Data(curve) port looked like an ordinary numeric control, with no way
-    // to tell it needed a Data-tagged source, not just any cable. A muted
-    // rust/terracotta, distinct from every hue above (pink, orange, white,
-    // yellow, purple, sky-blue, teal).
-    portData: '#c1665a',
+    // wiki/plans/DataAndWavetable.md D3 (2026-10-08): colour means what a
+    // signal is. Poly has no colour of its own any more (the card stack on
+    // the node shows it), so Notes take the green poly audio used to wear,
+    // and Data takes the teal of the design mockups (was rust #c1665a).
+    portNote: '#40FF69',
+    portData: '#3ecfc0',
 
     // Node-body surface (M9 component gallery; NODE_EDITOR.md §10 — DOM
     // node bodies until the hybrid WebGL-background sync is proven in M10,
@@ -118,8 +97,8 @@ export const tokens = {
     // replaced DomainSplitter's whole-graph voice/global split with a
     // per-PORT Scalar/Poly resolution, so "this node's domain" is no longer a
     // single fact a dot could show; `domainVoice`/`domainGlobal`/`domainMono`
-    // are retired along with it (superseded by `portAudioPoly` above for the
-    // per-port distinction, and by `textFaint` below for the instance-count
+    // are retired along with it (superseded by the card stack (NodeCard.tsx)
+    // for the per-node distinction, and by `textFaint` below for the instance-count
     // badge that replaces the dot's UI slot).
     //
     // Instance-count badge, direct feedback's own redesign of it: no pill

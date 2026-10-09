@@ -1,7 +1,8 @@
 /*
     Bazalt's own Standalone application entry point.
 
-    Exists solely to change ONE default. JUCE's stock Standalone app
+    Exists to change two defaults (the second, opening on Empty, is at the
+    "filterState" line below). JUCE's stock Standalone app
     (juce_audio_plugin_client_Standalone.cpp -> juce::StandaloneFilterApp)
     hardcodes "mute audio input, to avoid a feedback loop" ON whenever no
     settings file yet has an opinion
@@ -72,8 +73,17 @@ public:
         // The one behavioural change from stock juce::StandaloneFilterApp -
         // see this file's own top comment.
         if (auto* settings = appProperties.getUserSettings())
+        {
             if (! settings->containsKey ("shouldMuteInput"))
                 settings->setValue ("shouldMuteInput", false);
+
+            // Direct instruction (2026-10-09): the app always opens on Empty.
+            // JUCE's holder saves the whole plugin state on quit and restores
+            // it at launch ("filterState"); dropping it here means patches
+            // come only from the patch menu. A DAW still restores the
+            // plugin's state with the project — that path is untouched.
+            settings->removeValue ("filterState");
+        }
     }
 
     const juce::String getApplicationName() override                 { return juce::CharPointer_UTF8 (JucePlugin_Name); }

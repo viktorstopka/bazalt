@@ -134,7 +134,7 @@ namespace
         auto& plan = result.plan;
 
         // ~220 Hz pluck: delay length in samples = sampleRate / frequency.
-        plan.getNodeById ("delay")->setParameter ("delay.line.samples", (float) (sampleRate / 220.0));
+        plan.getNodeById ("delay")->setParameter ("time.delay.samples", (float) (sampleRate / 220.0));
 
         auto* excite = dynamic_cast<nodes::NoiseBurstNode*> (plan.getNodeById ("excite"));
         jassert (excite != nullptr);

@@ -1,63 +1,50 @@
 #pragma once
 
-#include "bazalt/engine/graph/Node.h"
+#include "bazalt/engine/nodes/InheritingPortsNode.h"
+#include <algorithm>
 #include <cmath>
 
 namespace bazalt::engine::nodes
 {
-    /** Stable type id: "shape.clip" (wiki/NODES.md's `shape.*` row). "The
-        node you put in a feedback loop so a slider can't destroy a
-        speaker" — the catalog's own framing, and a real, wireable
-        complement to the plugin's own always-on master-output safety net
-        (`bazalt::engine::OutputLimiter`, `PluginProcessor.cpp`): that one
-        protects the final mix unconditionally, but has no concept of
-        "inside a patch" — it can't be inserted mid-chain to tame a
-        resonant feedback loop (`resonator.comb`/`modal`/`string`/`plate`)
-        BEFORE it reaches another node, which is exactly where this one
-        belongs instead.
+    /** Stable type id: "shape.clip". Keeps a signal between **Low** and
+        **High** — the one bounding node: the old Clamp (`math.clamp`, a plain
+        range limit for values) and the old Clip (`±ceiling` safety for audio)
+        merged (wiki/plans/DataAndWavetable.md §2). Hard mode with Knee 0 is
+        exactly the old Clamp; Low = -c, High = c is exactly the old Clip.
 
-        **A concrete, tested contract this session had to design** (the
-        catalog names `ceiling`/`knee`/the three `mode`s, not their exact
-        curves):
-        - **`hard`**: an exact clamp to `±ceiling`, with `knee` (0..1,
-          scaled by `ceiling`) giving a real quadratic soft-knee region
-          immediately below the ceiling — `knee = 0` is a literal instant
-          clamp; `knee > 0` smoothly pulls the signal down toward the
-          ceiling over a small region below it, rather than a single sharp
-          corner, the same quadratic-knee idea compressors use around their
-          own threshold.
-        - **`soft`**: a `tanh`-based saturation that asymptotically
-          approaches `±ceiling` and never hard-clips at all — `knee`
-          controls how early the curve starts bending (`0` = stays linear
-          right up to `ceiling` before bending; `1` = the whole range is
-          shaped by the curve, bending from zero).
-        - **`limiter`**: the SAME attack (~1ms) / release (~100ms) smoothed
-          gain-reduction envelope `OutputLimiter.h` uses for the master
-          output, exposed here as real per-instance node state — `knee`
-          reuses `hard` mode's own quadratic region to compute the
-          INSTANTANEOUS target gain each sample, which the envelope then
-          smooths over time (so "where correction begins" means the same
-          thing in `hard` and `limiter` modes; only the TIME behavior
-          differs between them).
+        "The node you put in a feedback loop so a slider can't destroy a
+        speaker" — a wireable, mid-chain complement to the plugin's always-on
+        master safety net (`OutputLimiter`), and equally a plain range limit
+        for any value. `in` takes on the type and quantity of what feeds it
+        (an audio signal, a frequency, a modulation), and Low/High share that
+        quantity. Stereo runs per channel (Inherited).
 
-        **`clipping`** is `true` whenever this sample's processing is
-        actually altering the signal (above the knee's own start point in
-        `hard`/`soft`, or whenever `limiter` mode's gain reduction is
-        measurably below unity) — a real, live indicator you can wire into
-        `view.glance`/`logic.*` to see or react to when it's doing anything
-        at all, not a static always-on/off flag.
+        The range is handled around its centre: with c = (Low+High)/2 and
+        r = (High-Low)/2, each mode bounds the deviation x - c to ±r:
+        - **hard**: an exact clamp, with `knee` (0..1 of r) giving a quadratic
+          soft-knee just inside the bounds — knee 0 is an instant clamp.
+        - **soft**: tanh saturation that approaches the bounds and never
+          reaches them; `knee` sets how early it starts bending.
+        - **limiter**: hard mode's correction as a target gain, smoothed with
+          the master limiter's attack (~1 ms) / release (~100 ms), with a hard
+          clamp underneath as a backstop for a single isolated spike.
+
+        **clipping** is true while this sample is actually being altered.
     */
-    class ShapeClipNode : public Node
+    class ShapeClipNode : public InheritingPortsNode
     {
     public:
-        static constexpr float minCeiling = 0.05f;
-        static constexpr float maxCeiling = 2.0f;
         static constexpr float attackSeconds = 0.001f;
         static constexpr float releaseSeconds = 0.100f;
-        static constexpr int numInputs = 3;  // in, ceiling, knee
+        static constexpr float defaultLow = -1.0f;
+        static constexpr float defaultHigh = 1.0f;
+        static constexpr float defaultKnee = 0.1f;
+        static constexpr int numInputs = 4;  // in, low, high, knee
         static constexpr int numOutputs = 2; // out, clipping
 
         enum class Mode { Hard, Soft, Limiter };
+
+        ShapeClipNode() noexcept : InheritingPortsNode (Quantity::Audio) {}
 
         void prepare (const NodePrepareInfo& info) override
         {
@@ -74,25 +61,44 @@ namespace bazalt::engine::nodes
         juce::String getTitle() const override { return "Clip"; }
         juce::String getCategory() const override { return "Shape"; }
 
+        // `in` is what is being bounded, so it wins over the range ports.
+        void resolveIncomingPort (const juce::String& toPortId, const PortDescriptor& source) noexcept override
+        {
+            if (toPortId == "in")
+                offer (0, source, true);
+            else if (toPortId == "shape.clip.low")
+                offer (1, source, false);
+            else if (toPortId == "shape.clip.high")
+                offer (2, source, false);
+        }
+
         std::vector<PortDescriptor> getInputPorts() const override
         {
+            auto rangePort = [this] (const char* id, const char* label, float defaultValue)
+            {
+                return PortDescriptor { .id = id, .type = SignalType::Signal, .label = label,
+                                        .defaultValue = defaultValue, .hasFallbackWhenUnconnected = true,
+                                        .quantity = resolvedQuantity, .polymorphism = PortPolymorphism::Quantity };
+            };
             return {
-                perChannel ({ "in", SignalType::Audio }),
-                PortDescriptor { .id = "shape.clip.ceiling", .type = SignalType::Control, .label = "Ceiling",
-                                  .minValue = minCeiling, .maxValue = maxCeiling, .defaultValue = 1.0f,
-                                  .hasFallbackWhenUnconnected = true, .quantity = Quantity::Dimensionless },
-                PortDescriptor { .id = "shape.clip.knee", .type = SignalType::Control, .label = "Knee",
-                                  .minValue = 0.0f, .maxValue = 1.0f, .defaultValue = 0.1f,
-                                  .hasFallbackWhenUnconnected = true, .quantity = Quantity::Unipolar,
-                                  .polarity = Polarity::Unipolar },
+                PortDescriptor { .id = "in", .type = resolvedType, .label = "In", .quantity = resolvedQuantity,
+                                 .channels = Channels::Inherited, .polymorphism = PortPolymorphism::SignalAndQuantity },
+                rangePort ("shape.clip.low", "Low", defaultLow),
+                rangePort ("shape.clip.high", "High", defaultHigh),
+                PortDescriptor { .id = "shape.clip.knee", .type = SignalType::Signal, .label = "Knee",
+                                 .minValue = 0.0f, .maxValue = 1.0f, .defaultValue = defaultKnee,
+                                 .hasFallbackWhenUnconnected = true, .quantity = Quantity::Unipolar,
+                                 .polarity = Polarity::Unipolar },
             };
         }
 
         std::vector<PortDescriptor> getOutputPorts() const override
         {
             return {
-                perChannel (PortDescriptor { .id = "out", .type = SignalType::Audio, .label = "Out", .isPrimaryOutput = true }),
-                PortDescriptor { .id = "clipping", .type = SignalType::Boolean, .label = "Clipping" },
+                PortDescriptor { .id = "out", .type = resolvedType, .label = "Out", .isPrimaryOutput = true,
+                                 .quantity = resolvedQuantity, .channels = Channels::Inherited,
+                                 .polymorphism = PortPolymorphism::SignalAndQuantity },
+                PortDescriptor { .id = "clipping", .type = SignalType::Signal, .label = "Clipping", .quantity = Quantity::Boolean },
             };
         }
 
@@ -109,8 +115,10 @@ namespace bazalt::engine::nodes
 
         void setParameter (const juce::String& parameterId, float value) override
         {
-            if (parameterId == "shape.clip.ceiling")
-                storedCeiling = juce::jlimit (minCeiling, maxCeiling, value);
+            if (parameterId == "shape.clip.low")
+                storedLow = value;
+            else if (parameterId == "shape.clip.high")
+                storedHigh = value;
             else if (parameterId == "shape.clip.knee")
                 storedKnee = juce::jlimit (0.0f, 1.0f, value);
             else if (parameterId == "shape.clip.mode")
@@ -119,97 +127,82 @@ namespace bazalt::engine::nodes
 
         void processSample (const float* inputs, float* outputs) noexcept override
         {
-            const auto ceiling = std::isnan (inputs[1]) ? storedCeiling : juce::jlimit (minCeiling, maxCeiling, inputs[1]);
-            const auto knee = std::isnan (inputs[2]) ? storedKnee : juce::jlimit (0.0f, 1.0f, inputs[2]);
-            const auto x = inputs[0];
-            const auto mag = std::fabs (x);
-            const auto sign = x < 0.0f ? -1.0f : 1.0f;
+            const auto lowIn = std::isnan (inputs[1]) ? storedLow : inputs[1];
+            const auto highIn = std::isnan (inputs[2]) ? storedHigh : inputs[2];
+            const auto knee = std::isnan (inputs[3]) ? storedKnee : juce::jlimit (0.0f, 1.0f, inputs[3]);
+            const auto low = std::min (lowIn, highIn);
+            const auto high = std::max (lowIn, highIn);
+            const auto centre = 0.5f * (low + high);
+            const auto radius = 0.5f * (high - low);
+
+            const auto d = inputs[0] - centre;
+            const auto mag = std::fabs (d);
+            const auto sign = d < 0.0f ? -1.0f : 1.0f;
+
+            if (radius <= 0.0f)
+            {
+                outputs[0] = centre;
+                outputs[1] = mag > 0.0f ? 1.0f : 0.0f;
+                return;
+            }
 
             if (mode == Mode::Soft)
             {
-                const auto kneeStart = ceiling * (1.0f - knee);
+                const auto kneeStart = radius * (1.0f - knee);
                 if (mag <= kneeStart)
                 {
-                    outputs[0] = x;
+                    outputs[0] = inputs[0];
                     outputs[1] = 0.0f;
                 }
                 else
                 {
-                    const auto range = juce::jmax (0.0001f, ceiling - kneeStart);
-                    const auto excess = mag - kneeStart;
-                    const auto saturated = kneeStart + range * std::tanh (excess / range);
-                    outputs[0] = sign * saturated;
+                    const auto range = juce::jmax (0.0001f, radius - kneeStart);
+                    const auto saturated = kneeStart + range * std::tanh ((mag - kneeStart) / range);
+                    outputs[0] = centre + sign * saturated;
                     outputs[1] = 1.0f;
                 }
                 return;
             }
 
-            // Hard and Limiter both start from the same quadratic-knee
-            // instantaneous correction - Limiter just smooths the RESULT
-            // over time instead of applying it immediately.
-            const auto correctedMag = quadraticKneeClip (mag, ceiling, knee * ceiling);
-
+            // Hard and Limiter share the quadratic-knee correction; Limiter
+            // smooths the resulting gain over time instead of applying it.
+            const auto correctedMag = quadraticKneeClip (mag, radius, knee * radius);
             if (mode == Mode::Hard)
             {
-                outputs[0] = sign * correctedMag;
+                outputs[0] = centre + sign * correctedMag;
                 outputs[1] = correctedMag < mag ? 1.0f : 0.0f;
                 return;
             }
 
-            // Limiter: the instantaneous target gain this sample would need
-            // to reach correctedMag, smoothed by the same attack/release
-            // envelope OutputLimiter.h uses for the master output. Same
-            // defense-in-depth as that class: the smoothed envelope alone
-            // can't fully react to a single isolated spike within the ~1ms
-            // attack time, so a hard clamp to ±ceiling underneath it is a
-            // real, deliberate backstop, not a redundant belt-and-braces
-            // gesture - this node's whole purpose is safety, so an
-            // unclamped output here (even if only momentarily, for one
-            // extreme sample) would be a real gap, not a cosmetic one.
             const auto targetGain = mag > 0.0f ? correctedMag / mag : 1.0f;
             const auto coeff = targetGain < gainReduction ? attackCoeff : releaseCoeff;
             gainReduction = targetGain + coeff * (gainReduction - targetGain);
-
-            const auto limited = x * gainReduction;
-            outputs[0] = juce::jlimit (-ceiling, ceiling, limited);
+            outputs[0] = centre + juce::jlimit (-radius, radius, d * gainReduction);
             outputs[1] = gainReduction < 0.999f ? 1.0f : 0.0f;
         }
 
     private:
-        // A real quadratic soft-knee, the same idea compressors use around
-        // their own threshold: unchanged below (ceiling - halfKnee), an
-        // exact clamp at/above (ceiling + halfKnee), and a smooth quadratic
-        // pull-down across the knee region between them. halfKnee == 0
-        // collapses to an exact instant clamp at `ceiling`.
+        // A quadratic soft-knee: unchanged below (ceiling - halfKnee), an
+        // exact clamp from (ceiling + halfKnee) up, and between them a slope
+        // that flattens from 1:1 to land exactly on the ceiling — never above
+        // the input, never above the ceiling. halfKnee 0 is an instant clamp.
         static float quadraticKneeClip (float mag, float ceiling, float kneeWidth) noexcept
         {
             const auto halfKnee = kneeWidth * 0.5f;
             const auto lowerBound = ceiling - halfKnee;
             const auto upperBound = ceiling + halfKnee;
-
             if (mag <= lowerBound)
                 return mag;
             if (halfKnee <= 0.0f || mag >= upperBound)
                 return ceiling;
-
-            // A real bug this session's own tests caught: `mag - t*t*(mag -
-            // ceiling)` looks like it should pull the signal down toward
-            // `ceiling`, but `(mag - ceiling)` is NEGATIVE for any `mag`
-            // between `lowerBound` and `ceiling` (the common case for a
-            // signal just inside the knee) — subtracting a negative number
-            // INCREASES the output past its own input, the opposite of what
-            // a safety knee must do. The correct construction interpolates
-            // the SLOPE instead: 1:1 (unchanged) at `lowerBound`, flattening
-            // smoothly to land exactly on `ceiling` at `upperBound` — always
-            // between `lowerBound` and `ceiling`, never above the input's
-            // own value, by construction.
-            const auto t = (mag - lowerBound) / (upperBound - lowerBound); // 0..1 across the knee
+            const auto t = (mag - lowerBound) / (upperBound - lowerBound);
             const auto pulledDown = lowerBound + (mag - lowerBound) * (1.0f - t * 0.5f);
             return juce::jmin (pulledDown, ceiling);
         }
 
-        float storedCeiling = 1.0f;
-        float storedKnee = 0.1f;
+        float storedLow = defaultLow;
+        float storedHigh = defaultHigh;
+        float storedKnee = defaultKnee;
         Mode mode = Mode::Hard;
         float attackCoeff = 0.0f, releaseCoeff = 0.0f;
         float gainReduction = 1.0f;

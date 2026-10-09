@@ -77,6 +77,8 @@ import {
   graphSetParameterLive,
   graphReleaseParameterLive,
   graphSetProperty,
+  graphSetContent,
+  graphSetContentLive,
   type CommandResult,
   type NodeMultiplicityBadge,
   type PortMultiplicityInfo,
@@ -111,6 +113,9 @@ export interface GraphNode {
       mirrors the engine's own NodeInstance.parameters for this node.
   */
   parameterValues?: Record<string, number>
+  /** A factory node's content (NodeInstance::content) — a curve, a wavetable —
+      exactly as the engine stores it; undefined for every ordinary node. */
+  content?: unknown
   /** wiki/plans/PropsAndMacroRedesign.md Batch E / design/Macro.png: an
       Enum-typed macro's own option labels — a cosmetic property, not a
       real engine parameter (properties["util.macro.enumOptions"], a JSON
@@ -233,13 +238,13 @@ function resolveTypedValueOutputPort(node: GraphNode, staticPort: PortDescriptor
   const rawMin = pv[`${prefix}.min`] ?? 0
   const rawMax = pv[`${prefix}.max`] ?? 1
 
-  if (type === 'bool') return { ...staticPort, type: 'boolean', kind: 'bool', isInteger: false, quantity, minValue: null, maxValue: null, unit: '' }
+  if (type === 'bool') return { ...staticPort, type: 'signal', kind: 'bool', isInteger: false, quantity: 'boolean', minValue: null, maxValue: null, unit: '' }
   if (type === 'trigger') return { ...staticPort, type: 'event', kind: 'int', isInteger: true, quantity, minValue: null, maxValue: null, unit: '' }
 
   // Control.
   const kind: ValueKind = isEnum ? 'enum' : isInteger ? 'int' : 'float'
   const [min, max] = quantity === 'unipolar' ? [0, 1] : quantity === 'bipolar' ? [-1, 1] : [rawMin, rawMax]
-  return { ...staticPort, type: 'control', kind, isInteger, quantity, minValue: min, maxValue: max, unit: quantityUnit(quantity) }
+  return { ...staticPort, type: 'signal', kind, isInteger, quantity, minValue: min, maxValue: max, unit: quantityUnit(quantity) }
 }
 
 export interface GraphWire {
@@ -275,7 +280,7 @@ export interface GraphSnapshot {
       alongside every nodes/wires resync (ensureInitialized, withHistory,
       undo, redo); absent for a node the engine hasn't compiled yet, or
       entirely outside the real WebView. `badge` is present only for
-      "instance.allocate.voice" nodes.
+      "life.voice" nodes.
   */
   multiplicity: ReadonlyMap<string, NodeMultiplicity>
   canUndo: boolean
@@ -312,6 +317,7 @@ interface PatchNodeJson {
   position?: { x: number; y: number }
   parameters?: Record<string, number>
   properties?: Record<string, unknown>
+  content?: unknown
 }
 interface PatchConnectionJson {
   fromNodeId: string
@@ -389,6 +395,7 @@ function patchJsonToLocalState(json: string): { nodes: Map<string, GraphNode>; w
       titleOverride: typeof title === 'string' && title.length > 0 ? title : undefined,
       bypassed: properties.bypassed === true,
       parameterValues: n.parameters && Object.keys(n.parameters).length > 0 ? { ...n.parameters } : undefined,
+      content: n.content,
       macroEnumOptionLabels,
       countMinOverride: typeof countMin === 'number' ? countMin : undefined,
       countMaxOverride: typeof countMax === 'number' ? countMax : undefined,
@@ -747,9 +754,23 @@ function endpointFor(nodeId: string, portId: string, direction: 'input' | 'outpu
     const { type, quantity, unit, minValue, maxValue, isInteger, polarity } = upstream.port
     const adopted = { ...port, quantity, unit, minValue, maxValue, isInteger, polarity }
     if (polymorphism === 'signalAndQuantity') adopted.type = type
+    // Add/Multiply (AddNode.h): a waveform combined with anything is still a waveform.
+    if (WAVEFORM_DOMINANT_TYPES.has(node.typeId) && anyWiredInputIsAudio(nodeId, descriptor.inputs, seen)) adopted.quantity = 'audio'
     return { nodeId, portId, direction, port: adopted }
   }
   return unresolvedEndpoint
+}
+
+const WAVEFORM_DOMINANT_TYPES = new Set(['math.add', 'math.multiply'])
+
+function anyWiredInputIsAudio(nodeId: string, inputs: readonly PortDescriptor[], seen: Set<string>): boolean {
+  for (const input of inputs) {
+    const wire = wires.get(wireId(nodeId, input.id))
+    if (!wire) continue
+    const upstream = endpointFor(wire.fromNodeId, wire.fromPortId, 'output', new Set(seen))
+    if (upstream && !upstream.unresolved && upstream.port.quantity === 'audio') return true
+  }
+  return false
 }
 
 export function findWireAtInput(nodeId: string, portId: string): GraphWire | undefined {
@@ -1215,6 +1236,33 @@ export function setParameterValue(nodeId: string, parameterId: string, value: nu
   )
 }
 
+/** A factory editor's edit, committed: one undo step (graphSetContent). */
+export function setNodeContent(nodeId: string, content: unknown): void {
+  void withHistory(
+    () => fireCommand(() => graphSetContent(nodeId, content)).then(() => undefined),
+    () => {
+      const node = nodes.get(nodeId)
+      if (node) nodes.set(nodeId, { ...node, content })
+    },
+  )
+}
+
+/** A factory editor mid-drag: the content goes straight to the running nodes
+    (no recompile, no undo step), coalesced to one message per animation frame.
+    The release commits with setNodeContent. */
+const pendingLiveContent = new Map<string, unknown>()
+let liveContentFlushScheduled = false
+export function setNodeContentLive(nodeId: string, content: unknown): void {
+  pendingLiveContent.set(nodeId, content)
+  if (liveContentFlushScheduled) return
+  liveContentFlushScheduled = true
+  requestAnimationFrame(() => {
+    liveContentFlushScheduled = false
+    for (const [id, value] of pendingLiveContent) graphSetContentLive(id, value).catch(() => undefined)
+    pendingLiveContent.clear()
+  })
+}
+
 /** A slider mid-drag (value) or just released (null): streams the value to
     the running engine without a recompile or an undo step — the commit on
     release (setParameterValue) is still what's saved. Coalesced to at most
@@ -1528,7 +1576,7 @@ function macroConfigForPort(port: PortDescriptor, currentValue: number): MacroSe
     const maxIndex = port.options.length - 1
     return { type: 'control', min: 0, max: maxIndex, isInteger: true, quantity: 'dimensionless', defaultRaw: rawOf(Math.round(currentValue), 0, maxIndex) }
   }
-  if (port.type === 'boolean') {
+  if (port.quantity === 'boolean') {
     return { type: 'bool', min: 0, max: 1, isInteger: false, quantity: 'dimensionless', defaultRaw: currentValue >= 0.5 ? 1 : 0 }
   }
   if (port.type === 'event') {
@@ -1549,14 +1597,14 @@ function macroConfigForPort(port: PortDescriptor, currentValue: number): MacroSe
   return { type: 'control', min: 0, max: 1, isInteger: false, quantity: 'dimensionless', defaultRaw: clamp(currentValue, 0, 1) }
 }
 
-/** Whether `port` could sensibly become a Macro's value at all: Control,
-    Boolean and Event — a macro is Control, Bool or Trigger typed
-    (macroConfigForPort picks the matching one). Audio and Note don't (a
-    macro is a scalar/discrete automatable value, not an audio-rate or
-    event-stream signal), Data never converts implicitly, Spectral isn't real.
+/** Whether `port` could sensibly become a Macro's value at all: a value, a
+    Boolean or an Event — a macro is Control, Bool or Trigger typed
+    (macroConfigForPort picks the matching one). An audio input and Note don't
+    (a macro is a scalar/discrete automatable value, not a waveform or an
+    event stream), Data never converts implicitly, Spectral isn't real.
 */
-export function isMacroablePort(port: Pick<PortDescriptor, 'type'>): boolean {
-  return port.type === 'control' || port.type === 'boolean' || port.type === 'event'
+export function isMacroablePort(port: Pick<PortDescriptor, 'type' | 'quantity'>): boolean {
+  return (port.type === 'signal' && port.quantity !== 'audio') || port.type === 'event'
 }
 
 /** The authoritative check `createMacroFromPort` uses right before
@@ -1706,19 +1754,21 @@ export function createMacroFromPort(nodeId: string, portId: string, x: number, y
 const DEFAULT_VIEWER_BY_PORT_KIND: Partial<Record<PortUiKind, string>> = {
   trigger: 'view.ripple', // Ripple.png — the Event viewer
   integer: 'view.count', // Count.png
-  value: 'view.scope.control', // Scope1.png — plain real-quantity Control
-  modulation: 'view.scope.modulation', // ScopeMod.png — Unipolar/Bipolar Control
-  boolean: 'view.gate', // Gate.png
+  // One Scope for all three; it draws a line, a centred fill or a
+  // TRUE/FALSE scale from the source (ScopeBody.tsx).
+  value: 'view.scope',
+  modulation: 'view.scope',
+  boolean: 'view.scope',
 }
 
 export function defaultViewerTypeForPort(port: PortDescriptor): string | undefined {
   // A Pitch-quantity Control port gets the tuner (design/Visualization/Tune.png),
   // not the generic Control scope.
-  if (port.type === 'control' && port.quantity === 'pitch') return 'view.tune'
+  if (port.type === 'signal' && port.quantity === 'pitch') return 'view.tune'
   // classifyPortUiKind falls back to 'value' for a type it has no colour for
   // (Spectral) — only a genuine Control port gets the Control scope.
   const kind = classifyPortUiKind(port)
-  if (kind === 'value' && port.type !== 'control') return undefined
+  if (kind === 'value' && port.type !== 'signal') return undefined
   return DEFAULT_VIEWER_BY_PORT_KIND[kind]
 }
 
@@ -1760,4 +1810,209 @@ export function createViewerFromPort(nodeId: string, portId: string, x: number, 
   )
 
   return viewerId
+}
+
+// ---- Stage 0 gestures (wiki/ROADMAP.md) ------------------------------------
+
+/** The output a whole-node gesture (Ctrl+Y, Ctrl+drag Add) reaches for: the
+    descriptor's primary output, else its first one. */
+export function mainOutputPortId(nodeId: string): string | undefined {
+  const node = nodes.get(nodeId)
+  return node ? primaryOutputPortId(node.typeId) : undefined
+}
+
+/** Whether a node's main output is a plain value Add can take (a signal or a
+    boolean — not an Event, Note or Data stream). */
+export function canAddFromNode(nodeId: string): boolean {
+  const portId = mainOutputPortId(nodeId)
+  const endpoint = portId ? getEndpoint(nodeId, portId, 'output') : undefined
+  return !!endpoint && endpoint.port.type === 'signal'
+}
+
+/** Ctrl+Y: a Map fed from the node's main output, placed at (x, y). One undo step. */
+export function addMapFromMainOutput(nodeId: string, x: number, y: number): string | undefined {
+  const portId = mainOutputPortId(nodeId)
+  if (!portId) return undefined
+  const mapId = makeId('node')
+  void withHistory(
+    async () => {
+      if (!(await fireCommand(() => graphAddNode('math.map', mapId, x, y)))) return
+      await fireCommand(() => graphConnectWithAutoAdapt(nodeId, portId, mapId, 'in'))
+    },
+    () => {
+      nodes.set(mapId, { id: mapId, typeId: 'math.map', x, y, bypassed: false })
+      selection = new Set([mapId])
+    },
+  )
+  return mapId
+}
+
+/** Ctrl+drag from one node onto another: an Add of both main outputs, placed
+    at (x, y). One undo step. */
+export function addSumOfNodes(aId: string, bId: string, x: number, y: number): string | undefined {
+  const aPort = mainOutputPortId(aId)
+  const bPort = mainOutputPortId(bId)
+  if (!aPort || !bPort || aId === bId) return undefined
+  const addId = makeId('node')
+  void withHistory(
+    async () => {
+      if (!(await fireCommand(() => graphAddNode('math.add', addId, x, y)))) return
+      if (!(await fireCommand(() => graphConnectWithAutoAdapt(aId, aPort, addId, 'in.0')))) return
+      await fireCommand(() => graphConnectWithAutoAdapt(bId, bPort, addId, 'in.1'))
+    },
+    () => {
+      nodes.set(addId, { id: addId, typeId: 'math.add', x, y, bypassed: false })
+      selection = new Set([addId])
+    },
+  )
+  return addId
+}
+
+/** Copied nodes, as the engine stores them: their own JSON, the connections
+    between them (a cable to anything outside the copy is dropped) and the
+    images they show. Positions stay absolute; `originX`/`originY` is the
+    copy's top-left, which lands on the cursor when pasted. */
+export interface NodeFragment {
+  nodes: readonly PatchNodeJson[]
+  connections: readonly PatchConnectionJson[]
+  assets: Readonly<Record<string, { type: string; data: string }>>
+  originX: number
+  originY: number
+}
+
+/** Listen is a working state, never part of what is copied or saved. */
+const UNCOPYABLE_TYPES = new Set(['view.listen'])
+
+export function copyFragment(ids: readonly string[]): NodeFragment | undefined {
+  if (engineSnapshotCache === null) return undefined
+  const doc = JSON.parse(engineSnapshotCache) as PatchDocumentJson
+  const wanted = new Set(ids)
+  const copied = (doc.nodes ?? []).filter((n) => wanted.has(n.id) && !UNCOPYABLE_TYPES.has(n.type))
+  if (copied.length === 0) return undefined
+  const copiedIds = new Set(copied.map((n) => n.id))
+  const connections = (doc.connections ?? []).filter((c) => copiedIds.has(c.fromNodeId) && copiedIds.has(c.toNodeId))
+  const assetsUsed: Record<string, { type: string; data: string }> = {}
+  for (const n of copied) {
+    const assetId = n.properties?.asset
+    if (typeof assetId === 'string') {
+      const asset = doc.assets?.[assetId] ?? assets.get(assetId)
+      if (asset) assetsUsed[assetId] = asset
+    }
+  }
+  return {
+    nodes: copied,
+    connections,
+    assets: assetsUsed,
+    originX: Math.min(...copied.map((n) => n.position?.x ?? 0)),
+    originY: Math.min(...copied.map((n) => n.position?.y ?? 0)),
+  }
+}
+
+let clipboard: NodeFragment | null = null
+export function getClipboard(): NodeFragment | null {
+  return clipboard
+}
+/** Ctrl+C. */
+export function copyNodes(ids: readonly string[]): boolean {
+  const fragment = copyFragment(ids)
+  if (fragment) clipboard = fragment
+  return !!fragment
+}
+/** Ctrl+X: copy, then delete — the delete is the one undo step. */
+export function cutNodes(ids: readonly string[]): void {
+  if (copyNodes(ids)) deleteNodes(ids)
+}
+
+/** The fragment's nodes as local mirror nodes, positioned relative to its
+    origin — what the placement ghost draws. */
+export function fragmentPreviewNodes(fragment: NodeFragment): GraphNode[] {
+  const local = patchJsonToLocalState(JSON.stringify({ nodes: fragment.nodes, connections: [], assets: fragment.assets }))
+  return [...local.nodes.values()].map((n) => ({ ...n, x: n.x - fragment.originX, y: n.y - fragment.originY }))
+}
+
+/** Places a copy of the fragment with its top-left at (x, y): fresh ids, the
+    copied cables between them, a free slot for each Macro (two Macros on one
+    slot would be rejected). Applied as one snapshot restore — the same
+    whole-graph path undo uses — so it is one recompile and one undo step;
+    the pasted nodes end up selected. */
+export function pasteFragment(fragment: NodeFragment, x: number, y: number): void {
+  if (engineSnapshotCache === null) return
+  const doc = JSON.parse(engineSnapshotCache) as PatchDocumentJson & Record<string, unknown>
+  const idMap = new Map<string, string>()
+  const claimedSlots = new Set<number>()
+  for (const node of nodes.values()) {
+    const slot = node.typeId === 'util.macro' ? node.parameterValues?.['util.macro.slot'] : undefined
+    if (slot !== undefined && slot >= 0) claimedSlots.add(Math.round(slot))
+  }
+
+  const pasted: PatchNodeJson[] = fragment.nodes.map((n) => {
+    const id = makeId('node')
+    idMap.set(n.id, id)
+    const parameters = n.parameters ? { ...n.parameters } : undefined
+    if (n.type === 'util.macro' && parameters) {
+      let slot = -1
+      for (let s = 0; s < 32; s++) {
+        if (!claimedSlots.has(s)) {
+          slot = s
+          break
+        }
+      }
+      if (slot >= 0) claimedSlots.add(slot)
+      parameters['util.macro.slot'] = slot
+    }
+    return {
+      ...n,
+      id,
+      position: { x: x + (n.position?.x ?? 0) - fragment.originX, y: y + (n.position?.y ?? 0) - fragment.originY },
+      parameters,
+      properties: n.properties ? { ...n.properties } : undefined,
+    }
+  })
+  const pastedConnections = fragment.connections.map((c) => ({
+    ...c,
+    fromNodeId: idMap.get(c.fromNodeId) ?? c.fromNodeId,
+    toNodeId: idMap.get(c.toNodeId) ?? c.toNodeId,
+  }))
+
+  doc.nodes = [...(doc.nodes ?? []), ...pasted]
+  doc.connections = [...(doc.connections ?? []), ...pastedConnections]
+  doc.assets = { ...(doc.assets ?? {}), ...fragment.assets }
+  const json = JSON.stringify(doc)
+  const newIds = pasted.map((n) => n.id)
+
+  void withHistory(async () => {
+    await fireCommand(() => graphRestoreSnapshot(json))
+  }).then(() => {
+    selection = new Set(newIds.filter((id) => nodes.has(id)))
+    notify()
+  })
+}
+
+/** Ctrl+Alt+click on an output: listens to it — every other Listen goes —
+    or, when this output is already being listened to, stops listening. One
+    undo step either way. A Listen is never saved with the patch. */
+export function toggleListenAtPort(nodeId: string, portId: string, x: number, y: number): void {
+  const listensHere = [...wires.values()]
+    .filter((w) => w.fromNodeId === nodeId && w.fromPortId === portId && nodes.get(w.toNodeId)?.typeId === 'view.listen')
+    .map((w) => w.toNodeId)
+  if (listensHere.length > 0) {
+    deleteNodes(listensHere)
+    return
+  }
+
+  const existing = [...nodes.values()].filter((n) => n.typeId === 'view.listen').map((n) => n.id)
+  const listenId = makeId('node')
+  void withHistory(
+    async () => {
+      for (const id of existing) await fireCommand(() => graphDeleteNode(id))
+      if (!(await fireCommand(() => graphAddNode('view.listen', listenId, x, y)))) return
+      await fireCommand(() => graphConnectWithAutoAdapt(nodeId, portId, listenId, 'in'))
+    },
+    () => {
+      for (const id of existing) nodes.delete(id)
+      nodes.set(listenId, { id: listenId, typeId: 'view.listen', x, y, bypassed: false })
+      const newWireId = wireId(listenId, 'in')
+      wires.set(newWireId, { id: newWireId, fromNodeId: nodeId, fromPortId: portId, toNodeId: listenId, toPortId: 'in' })
+    },
+  )
 }

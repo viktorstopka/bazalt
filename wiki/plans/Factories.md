@@ -10,6 +10,11 @@ how and the order.
 Companion plans that build on this one: `BakedPhysics.md` (a physics scene is a
 factory) and `SpatialScene.md` (a 3D scene is a factory).
 
+**Update, 2026-10-08:** scheduled as roadmap stage 1 (`DataAndWavetable.md`). The editor
+opens in a full **Factory window** that replaces the canvas, not the docked panel §4
+recommends; `factory.wave`'s consumer is the single Oscillator (no separate
+`osc.wavetable`), and the LFO is gone — see that plan's decisions D5–D10.
+
 ---
 
 ## 0. Origin

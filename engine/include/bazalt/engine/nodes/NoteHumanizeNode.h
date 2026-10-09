@@ -64,19 +64,19 @@ namespace bazalt::engine::nodes
         int getNumOutputPorts() const noexcept override { return numOutputs; }
 
         juce::String getTitle() const override { return "Humanize"; }
-        juce::String getCategory() const override { return "Note"; }
+        juce::String getCategory() const override { return "Notes"; }
 
         std::vector<PortDescriptor> getInputPorts() const override
         {
             return {
                 PortDescriptor { .id = "notes", .type = SignalType::Note },
-                PortDescriptor { .id = "note.humanize.timing", .type = SignalType::Control, .label = "Timing",
+                PortDescriptor { .id = "note.humanize.timing", .type = SignalType::Signal, .label = "Timing",
                                   .minValue = 0.0f, .maxValue = 1.0f, .defaultValue = 0.0f,
                                   .hasFallbackWhenUnconnected = true, .quantity = Quantity::Unipolar },
-                PortDescriptor { .id = "note.humanize.velocity", .type = SignalType::Control, .label = "Velocity",
+                PortDescriptor { .id = "note.humanize.velocity", .type = SignalType::Signal, .label = "Velocity",
                                   .minValue = 0.0f, .maxValue = 1.0f, .defaultValue = 0.0f,
                                   .hasFallbackWhenUnconnected = true, .quantity = Quantity::Unipolar },
-                PortDescriptor { .id = "note.humanize.pitch", .type = SignalType::Control, .label = "Pitch",
+                PortDescriptor { .id = "note.humanize.pitch", .type = SignalType::Signal, .label = "Pitch",
                                   .minValue = 0.0f, .maxValue = 1.0f, .defaultValue = 0.0f,
                                   .hasFallbackWhenUnconnected = true, .quantity = Quantity::Unipolar },
             };

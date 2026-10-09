@@ -10,7 +10,7 @@ namespace bazalt::engine
         // Batch 1b (wiki/plans/DomainRedesign.md sec 10.3) renamed this from
         // "instance.mix" — kept as one isolated constant so that rename was a
         // one-line diff here, not a re-derivation of the algorithm below.
-        constexpr const char* instanceSumTypeId = "instance.sum";
+        constexpr const char* instanceSumTypeId = "life.merge";
         constexpr const char* instanceSumInputPortId = "in";
 
         /** Domain Extensions batch: every node type that opens an instanced
@@ -26,10 +26,10 @@ namespace bazalt::engine
             string, same reason instanceSumTypeId above is a string too.
         */
         constexpr const char* instanceOriginTypeIds[] = {
-            "instance.allocate.voice",
-            "instance.allocate.swarmPopulation",
-            "instance.allocate.swarmTransient",
-            "instance.allocate.trigger",
+            "life.voice",
+            "life.swarmPopulation",
+            "life.swarmTransient",
+            "life.trigger",
         };
 
         bool isInstanceOriginType (const juce::String& type) noexcept
@@ -60,8 +60,7 @@ namespace bazalt::engine
         if ((int) originIds.size() > maxOrigins)
         {
             result.errorMessage = "Only up to " + juce::String (maxOrigins)
-                                   + " instance-allocating nodes (instance.allocate.voice/swarmPopulation/"
-                                     "swarmTransient/trigger) are supported per graph (found "
+                                   + " Life-cycle allocators (Voice, Swarm, Trigger) are supported per graph (found "
                                    + juce::String ((int) originIds.size()) + ")";
             return result;
         }
@@ -164,7 +163,7 @@ namespace bazalt::engine
 
             if (incomingCount > 1)
             {
-                result.errorMessage = "instance.sum must have at most one connection into its 'in' port (found "
+                result.errorMessage = "Merge must have at most one connection into its 'in' port (found "
                                        + juce::String (incomingCount) + ")";
                 return result;
             }
@@ -172,7 +171,7 @@ namespace bazalt::engine
             const auto originIt = resolvedOrigin.find (feeding->fromNodeId);
             if (originIt == resolvedOrigin.end())
             {
-                result.errorMessage = "instance.sum '" + sumId + "'s input must be a Poly signal — nothing to reduce";
+                result.errorMessage = "Merge '" + sumId + "'s input must be a Poly signal — nothing to reduce";
                 return result;
             }
 
@@ -182,7 +181,7 @@ namespace bazalt::engine
             auto& sums = sumsForOrigin[originId];
             if ((int) sums.size() >= maxSumsPerOrigin)
             {
-                result.errorMessage = "Only up to " + juce::String (maxSumsPerOrigin) + " Voice Sums can reduce one voice allocator ('"
+                result.errorMessage = "Only up to " + juce::String (maxSumsPerOrigin) + " Merges can reduce one allocator ('"
                                        + originId + "') — found another: '" + sumId + "'";
                 return result;
             }

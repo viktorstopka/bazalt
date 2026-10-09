@@ -11,12 +11,12 @@
 
 namespace bazalt::engine::nodes
 {
-    /** Stable type id: "instance.allocate.voice" (M17, renamed from "instance.allocator"
+    /** Stable type id: "life.voice" (M17, renamed from "instance.allocator"
         in 09-28-InstanceAllocator.3, renamed again from "instance.voice" in
         09-29-AddMenu.1 — CLAUDE.md rule 3 is suspended, so both are direct
         renames, no migration path). The second rename inserts an "allocate"
         namespace segment purely so the Add menu's category tree (also
-        09-29-AddMenu.1) can nest Voice under Domain > Allocate — `instance.sum`
+        09-29-AddMenu.1) can nest Voice under Domain > Allocate — `life.merge`
         deliberately stays flat (no such segment) since it isn't one of several
         spawn-mechanism siblings the way Voice/Swarm/Trigger are. `DOMAINS.md`
         §3's Instance Allocator concept — **Voice configuration only**, and (as
@@ -81,7 +81,7 @@ namespace bazalt::engine::nodes
         // "Domain" (see the class comment above for why). Sibling spawn
         // mechanisms (instance.allocate.swarmPopulation, etc., M28) land in
         // the same "Domain/Allocate" flyout once built.
-        juce::String getCategory() const override { return "Domain/Allocate"; }
+        juce::String getCategory() const override { return "Life-cycle"; }
 
         std::vector<PortDescriptor> getInputPorts() const override
         {
@@ -91,18 +91,18 @@ namespace bazalt::engine::nodes
         std::vector<PortDescriptor> getOutputPorts() const override
         {
             return {
-                PortDescriptor { .id = "gate", .type = SignalType::Boolean, .isPrimaryOutput = true },
+                PortDescriptor { .id = "gate", .type = SignalType::Signal, .isPrimaryOutput = true, .quantity = Quantity::Boolean },
                 // Absolute pitch (VALUE_MODEL.md §3: "semitones, 60 = middle
                 // C") — deliberately NOT ValueTypes::pitchPort(), which is a
                 // *relative* transpose/bend amount (its own doc comment says
                 // so); this port's default IS the anchor, not an offset
                 // from it.
-                PortDescriptor { .id = "pitch", .type = SignalType::Control, .unit = "st", .minValue = 0.0f, .maxValue = 127.0f, .defaultValue = 60.0f, .quantity = Quantity::Pitch },
-                PortDescriptor { .id = "velocity", .type = SignalType::Control, .quantity = Quantity::Unipolar, .polarity = Polarity::Unipolar },
-                PortDescriptor { .id = "instanceIndex", .type = SignalType::Control, .isInteger = true, .quantity = Quantity::Count, .step = 1.0f },
-                PortDescriptor { .id = "instanceAge", .type = SignalType::Control, .quantity = Quantity::Time },
-                PortDescriptor { .id = "random1", .type = SignalType::Control, .quantity = Quantity::Bipolar, .polarity = Polarity::Bipolar },
-                PortDescriptor { .id = "random2", .type = SignalType::Control, .quantity = Quantity::Bipolar, .polarity = Polarity::Bipolar },
+                PortDescriptor { .id = "pitch", .type = SignalType::Signal, .unit = "st", .minValue = 0.0f, .maxValue = 127.0f, .defaultValue = 60.0f, .quantity = Quantity::Pitch },
+                PortDescriptor { .id = "velocity", .type = SignalType::Signal, .quantity = Quantity::Unipolar, .polarity = Polarity::Unipolar },
+                PortDescriptor { .id = "instanceIndex", .type = SignalType::Signal, .isInteger = true, .quantity = Quantity::Count, .step = 1.0f },
+                PortDescriptor { .id = "instanceAge", .type = SignalType::Signal, .quantity = Quantity::Time },
+                PortDescriptor { .id = "random1", .type = SignalType::Signal, .quantity = Quantity::Bipolar, .polarity = Polarity::Bipolar },
+                PortDescriptor { .id = "random2", .type = SignalType::Signal, .quantity = Quantity::Bipolar, .polarity = Polarity::Bipolar },
                 PortDescriptor { .id = "start", .type = SignalType::Event },
                 PortDescriptor { .id = "stop", .type = SignalType::Event },
             };
@@ -113,7 +113,7 @@ namespace bazalt::engine::nodes
             // 09-28-InstanceAllocator.3: "configuration" removed outright —
             // see the class comment. maxInstances is the only real structural
             // parameter this node has left.
-            return { ParameterDescriptor { .id = "instance.allocate.voice.maxInstances",
+            return { ParameterDescriptor { .id = "life.voice.maxInstances",
                                             .minValue = 1.0f,
                                             .maxValue = 64.0f,
                                             .defaultValue = 8.0f,
@@ -124,7 +124,7 @@ namespace bazalt::engine::nodes
                      // at last — same shape/convention as random.stepped.seed/
                      // random.drift.seed (RandomSteppedNode.h/RandomDriftNode.h),
                      // deterministic-by-default rather than time-based.
-                     ParameterDescriptor { .id = "instance.allocate.voice.seed",
+                     ParameterDescriptor { .id = "life.voice.seed",
                                             .minValue = 0.0f,
                                             .maxValue = 999999.0f,
                                             .defaultValue = 1.0f,
@@ -137,9 +137,9 @@ namespace bazalt::engine::nodes
 
         void setParameter (const juce::String& parameterId, float value) override
         {
-            if (parameterId == "instance.allocate.voice.maxInstances")
+            if (parameterId == "life.voice.maxInstances")
                 maxInstances = (int) (value + 0.5f);
-            else if (parameterId == "instance.allocate.voice.seed")
+            else if (parameterId == "life.voice.seed")
                 seed = (int) std::lround (value);
         }
 

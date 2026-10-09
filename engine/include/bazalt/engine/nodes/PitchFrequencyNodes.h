@@ -6,8 +6,8 @@
 
 namespace bazalt::engine::nodes
 {
-    /** Stable type id: "adapt.pitchToFrequency". Direct feedback: `canConnect`
-        was auto-inserting `adapt.map` — a plain LINEAR interpolation
+    /** Stable type id: "math.pitchToFrequency". Direct feedback: `canConnect`
+        was auto-inserting `math.map` — a plain LINEAR interpolation
         between two ranges — for a `Pitch -> Frequency` connection (e.g.
         pitch-tracking a filter's cutoff, `CanConnect.cpp`'s own long-standing
         example). Pitch-to-Hz is exponential (each semitone is ×2^(1/12)), so
@@ -35,18 +35,18 @@ namespace bazalt::engine::nodes
         int getNumOutputPorts() const noexcept override { return numOutputs; }
 
         juce::String getTitle() const override { return "Pitch to Frequency"; }
-        juce::String getCategory() const override { return "Adapters"; }
+        juce::String getCategory() const override { return "Math"; }
 
         std::vector<PortDescriptor> getInputPorts() const override
         {
-            return { PortDescriptor { .id = "pitch", .type = SignalType::Control, .label = "Pitch",
+            return { PortDescriptor { .id = "pitch", .type = SignalType::Signal, .label = "Pitch",
                                        .unit = "st", .minValue = 0.0f, .maxValue = 127.0f, .defaultValue = defaultPitch,
                                        .hasFallbackWhenUnconnected = true, .quantity = Quantity::Pitch } };
         }
 
         std::vector<PortDescriptor> getOutputPorts() const override
         {
-            return { PortDescriptor { .id = "frequency", .type = SignalType::Control, .label = "Frequency",
+            return { PortDescriptor { .id = "frequency", .type = SignalType::Signal, .label = "Frequency",
                                        .isPrimaryOutput = true, .unit = "Hz", .quantity = Quantity::Frequency,
                                        .curve = Curve::Logarithmic } };
         }
@@ -67,7 +67,7 @@ namespace bazalt::engine::nodes
         float storedPitch = defaultPitch;
     };
 
-    /** Stable type id: "adapt.frequencyToPitch" — the inverse of
+    /** Stable type id: "math.frequencyToPitch" — the inverse of
         `PitchToFrequencyNode` above; see that class's own doc comment for
         why this exists (the linear-remap correctness gap it closes).
         Frequencies at or below zero have no defined pitch — clamped to a
@@ -88,11 +88,11 @@ namespace bazalt::engine::nodes
         int getNumOutputPorts() const noexcept override { return numOutputs; }
 
         juce::String getTitle() const override { return "Frequency to Pitch"; }
-        juce::String getCategory() const override { return "Adapters"; }
+        juce::String getCategory() const override { return "Math"; }
 
         std::vector<PortDescriptor> getInputPorts() const override
         {
-            return { PortDescriptor { .id = "frequency", .type = SignalType::Control, .label = "Frequency",
+            return { PortDescriptor { .id = "frequency", .type = SignalType::Signal, .label = "Frequency",
                                        .unit = "Hz", .minValue = 0.01f, .maxValue = 20000.0f, .defaultValue = defaultFrequency,
                                        .isLogScale = true, .hasFallbackWhenUnconnected = true, .quantity = Quantity::Frequency,
                                        .curve = Curve::Logarithmic } };
@@ -100,7 +100,7 @@ namespace bazalt::engine::nodes
 
         std::vector<PortDescriptor> getOutputPorts() const override
         {
-            return { PortDescriptor { .id = "pitch", .type = SignalType::Control, .label = "Pitch",
+            return { PortDescriptor { .id = "pitch", .type = SignalType::Signal, .label = "Pitch",
                                        .isPrimaryOutput = true, .unit = "st", .quantity = Quantity::Pitch } };
         }
 

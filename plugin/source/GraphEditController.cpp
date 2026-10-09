@@ -175,15 +175,17 @@ namespace bazalt
             return mappings;
         }
 
-        /** adapt.map's input range when auto-inserted: the feeding port's own
+        /** A port's range for seeding an auto-inserted adapt.map (input side
+            from the feeder, output side from the destination): its own
             declared bounds, else its polarity (a Modulation port that
-            declares no bounds is still -1..1 or 0..1 by definition), else
-            nothing — the node's own 0..1 default stands. */
+            declares no bounds is still -1..1 or 0..1 by definition, an audio
+            port ±1), else nothing — the node's own default stands. */
         std::optional<std::pair<float, float>> seedRangeForMapInput (const bazalt::engine::PortDescriptor& feeder)
         {
             if (feeder.minValue.has_value() && feeder.maxValue.has_value())
                 return std::make_pair (*feeder.minValue, *feeder.maxValue);
-            if (feeder.quantity == bazalt::engine::Quantity::Bipolar)
+            // An audio port is a waveform: ±1 (wiki/plans/DataAndWavetable.md D1).
+            if (feeder.quantity == bazalt::engine::Quantity::Bipolar || feeder.quantity == bazalt::engine::Quantity::Audio)
                 return std::make_pair (-1.0f, 1.0f);
             if (feeder.quantity == bazalt::engine::Quantity::Unipolar)
                 return std::make_pair (0.0f, 1.0f);
@@ -592,7 +594,7 @@ namespace bazalt
             return connect (fromNodeId, fromPortId, toNodeId, toPortId);
 
         // NeedsAdapters. A 1- or 2-step, single-input chain can be spliced
-        // in generically (adapt.map/adapt.normalise/adapt.threshold, and — since the real stereo cable redesign made it a
+        // in generically (adapt.map/adapt.threshold, and — since the real stereo cable redesign made it a
         // genuine 1-in-1-out node — mix.downmix too now; ADR-0019's later
         // waves — Envelope Follower, Sample & Hold, Note gate/value — may
         // need the 2-step path this loop already supports). Every step is a
@@ -649,21 +651,17 @@ namespace bazalt
                 instance.type = step.typeId;
                 instance.position = { posX, posY };
 
-                // Seeding (SIGNAL_TYPES.md §5's "Seeding" column) — by
-                // convention every min/max-seeded adapter this milestone
-                // ships names its parameters "<typeId>.min"/"<typeId>.max"
-                // (adapt.normalise does); a future adapter that doesn't
-                // follow this convention needs its own branch here, not a
-                // silent wrong guess. adapt.map is exactly that case — it
-                // seeds from BOTH ends at once (its own four-range
+                // Seeding (SIGNAL_TYPES.md §5's "Seeding" column) — a generic
+                // min/max-seeded adapter names its parameters
+                // "<typeId>.min"/"<typeId>.max"; adapt.map is the exception —
+                // it seeds from BOTH ends at once (its own four-range
                 // inMin/inMax/outMin/outMax shape). Its INPUT range comes
                 // from whatever actually feeds it: the original source for a
                 // one-step chain, the previous adapter's own output in a
-                // two-step one (adapt.audioToControl -> adapt.map, whose
-                // Audio source has no meaningful range of its own). Every
+                // two-step one (mix.downmix -> adapt.map: ±1). Every
                 // other step still seeds itself independently from the
                 // ORIGINAL endpoints' own ranges (fromPort/toPort).
-                if (step.typeId == "adapt.map")
+                if (step.typeId == "math.map")
                 {
                     std::vector<bazalt::engine::PortDescriptor> feederStorage;
                     const bazalt::engine::PortDescriptor* feeder = fromPort;
@@ -675,13 +673,15 @@ namespace bazalt
 
                     if (const auto range = seedRangeForMapInput (*feeder))
                     {
-                        instance.parameters["adapt.map.inMin"] = range->first;
-                        instance.parameters["adapt.map.inMax"] = range->second;
+                        instance.parameters["math.map.inMin"] = range->first;
+                        instance.parameters["math.map.inMax"] = range->second;
                     }
-                    if (toPort->minValue.has_value() && toPort->maxValue.has_value())
+                    // The same reading for the destination: its bounds, else
+                    // its polarity, else ±1 for an audio port.
+                    if (const auto range = seedRangeForMapInput (*toPort))
                     {
-                        instance.parameters["adapt.map.outMin"] = *toPort->minValue;
-                        instance.parameters["adapt.map.outMax"] = *toPort->maxValue;
+                        instance.parameters["math.map.outMin"] = range->first;
+                        instance.parameters["math.map.outMax"] = range->second;
                     }
                 }
                 else if (step.seedFromDestinationRange && toPort->minValue.has_value() && toPort->maxValue.has_value())
@@ -853,6 +853,39 @@ namespace bazalt
         return result;
     }
 
+    GraphEditController::CommandResult GraphEditController::setContent (const juce::String& nodeId, juce::var content)
+    {
+        auto* node = graph.findNode (nodeId);
+        if (node == nullptr)
+            return { false, "No such node: " + nodeId };
+
+        const auto previousGraph = graph;
+        node->content = std::move (content);
+
+        auto result = recompileAndPublish();
+        if (! result.success)
+            graph = previousGraph;
+        return result;
+    }
+
+    GraphEditController::CommandResult GraphEditController::setContentLive (const juce::String& nodeId, const juce::var& content)
+    {
+        if (graph.findNode (nodeId) == nullptr)
+            return { false, "No such node: " + nodeId };
+
+        auto apply = [&] (const bazalt::engine::ExecutionPlan* plan)
+        {
+            if (plan != nullptr)
+                if (auto* running = plan->getNodeById (nodeId))
+                    running->setContent (content);
+        };
+        apply (processor.getGlobalPlanSwapper().peekCurrentPlan());
+        for (int slot = 0; slot < BazaltAudioProcessor::maxOrigins; ++slot)
+            for (int i = 0; i < BazaltAudioProcessor::numVoices; ++i)
+                apply (processor.getOriginVoicePlanSwapper (slot, i).peekCurrentPlan());
+        return { true, {} };
+    }
+
     GraphEditController::CommandResult GraphEditController::addImage (const juce::String& nodeId, float x, float y,
                                                                        const juce::String& mimeType, const juce::String& base64,
                                                                        float width, float height)
@@ -894,7 +927,12 @@ namespace bazalt
         const auto previousGraph = graph;
         graph = std::move (newGraph);
 
+        // A whole patch replaces the graph: nothing of the previous patch's
+        // running state carries over, even where node ids happen to match
+        // (every patch numbers its nodes the same way, so they often do).
+        freshStateOnNextCompile = true;
         auto result = recompileAndPublish();
+        freshStateOnNextCompile = false;
         if (! result.success)
             graph = previousGraph;
 
@@ -925,7 +963,30 @@ namespace bazalt
             return { false, collisionError };
 
         // Decorations never reach the resolver or a plan (wiki/plans/Decorations.md).
-        auto split = bazalt::engine::MultiplicityResolver::split (bazalt::engine::withoutDecorations (graph, processor.getNodeFactory()));
+        auto compiled = bazalt::engine::withoutDecorations (graph, processor.getNodeFactory());
+
+        // A wired Listen overrides Master Out (wiki/ROADMAP.md stage 0): the
+        // compiled graph's designated output becomes whatever feeds it. The
+        // edited graph keeps its own output, so removing the Listen goes
+        // straight back to Master Out. At most one Listen exists (the UI
+        // replaces any other); if several do, the first wired one wins.
+        for (const auto& node : compiled.getNodes())
+        {
+            if (node.type != "view.listen")
+                continue;
+            const auto& connections = compiled.getConnections();
+            const auto feed = std::find_if (connections.begin(), connections.end(),
+                                            [&node] (const bazalt::engine::Connection& c) { return c.toNodeId == node.id && c.toPortId == "in"; });
+            if (feed != connections.end())
+            {
+                const auto fromNodeId = feed->fromNodeId;
+                const auto fromPortId = feed->fromPortId;
+                compiled.setOutput (fromNodeId, fromPortId);
+                break;
+            }
+        }
+
+        auto split = bazalt::engine::MultiplicityResolver::split (compiled);
         if (! split.success)
             return { false, split.errorMessage };
 
@@ -981,7 +1042,7 @@ namespace bazalt
         // edit recompiles and republishes every one of them fresh.
         if (effectiveMonoOnly)
         {
-            const auto* previousPlan = processor.getGlobalPlanSwapper().peekCurrentPlan();
+            const auto* previousPlan = freshStateOnNextCompile ? nullptr : processor.getGlobalPlanSwapper().peekCurrentPlan();
 
             auto monoCompile = bazalt::engine::GraphCompiler::compile (
                 split.globalGraph, factory, prepareInfo, nextGeneration(), previousPlan);
@@ -1035,7 +1096,7 @@ namespace bazalt
         std::array<std::array<std::unique_ptr<bazalt::engine::ExecutionPlan>, BazaltAudioProcessor::numVoices>, BazaltAudioProcessor::maxOrigins> newVoicePlansBySlot;
 
         // wiki/plans/DomainRedesign.md Batch 4: this origin's own
-        // "instance.allocate.voice.maxInstances", read off the REAL
+        // "life.voice.maxInstances", read off the REAL
         // compiled node (whatever the graph's own NodeInstance::parameters
         // actually applied, default included) — captured per-slot here
         // and enforced (VoiceManager::setMaxActiveVoices) only once every
@@ -1090,7 +1151,7 @@ namespace bazalt
                 // the SAME slot this origin already occupies (or a freshly
                 // empty one for a brand-new origin) — never a different
                 // origin's own plans.
-                const auto* previousPlan = processor.getOriginVoicePlanSwapper (slot, i).peekCurrentPlan();
+                const auto* previousPlan = freshStateOnNextCompile ? nullptr : processor.getOriginVoicePlanSwapper (slot, i).peekCurrentPlan();
 
                 auto compileResult = bazalt::engine::GraphCompiler::compile (
                     origin.voiceGraph, factory, prepareInfo, nextGeneration(), previousPlan);
@@ -1113,7 +1174,7 @@ namespace bazalt
                         const auto& sum = origin.sums[s];
                         const auto left = plan.findOutputBufferIndex (sum.fromNodeId, sum.fromPortId);
                         if (left < 0)
-                            return { false, "Voice Sum '" + sum.sumNodeId + "' is fed from inside a feedback loop — "
+                            return { false, "Merge '" + sum.sumNodeId + "' is fed from inside a feedback loop — "
                                                 "take its input from outside the loop" };
                         plan.sumOutputs[s] = { left, plan.findRightOutputBufferIndex (sum.fromNodeId, sum.fromPortId) };
                         plan.numSumOutputs = (int) s + 1;
@@ -1208,7 +1269,7 @@ namespace bazalt
             // state it held, on every single edit including a plain move.
             // The per-voice loop above already gets this right; this branch
             // just never had its own matching peekCurrentPlan() call.
-            const auto* previousGlobalPlan = processor.getGlobalPlanSwapper().peekCurrentPlan();
+            const auto* previousGlobalPlan = freshStateOnNextCompile ? nullptr : processor.getGlobalPlanSwapper().peekCurrentPlan();
 
             ensureGlobalGraphHasAValidOutput (split.globalGraph, factory);
 
@@ -1360,10 +1421,19 @@ namespace bazalt
         return { true, {} };
     }
 
+    bazalt::engine::NodeGraph GraphEditController::getGraphForSaving() const
+    {
+        auto saved = graph;
+        for (const auto& node : graph.getNodes())
+            if (node.type == "view.listen")
+                saved.removeNode (node.id);
+        return saved;
+    }
+
     GraphEditController::CommandResult GraphEditController::exportSnapshotToFile (const juce::File& file) const
     {
         const auto json = bazalt::engine::serializePatchToJson (
-            bazalt::engine::PatchDocument::fromNodeGraph (graph), true); // pretty-printed - a human/AI reads this file directly
+            bazalt::engine::PatchDocument::fromNodeGraph (getGraphForSaving()), true); // pretty-printed - a human/AI reads this file directly
 
         const auto parentDir = file.getParentDirectory();
         if (! parentDir.exists() && ! parentDir.createDirectory())

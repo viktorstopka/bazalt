@@ -23,9 +23,14 @@
 // subscribe/getSnapshot pair, following graphStore.ts's own external-store
 // convention.
 import type { Camera } from './webgl/webglUtils'
+import type { NodeFragment } from '../graph/graphStore'
 
+/** What follows the cursor until a click places it: one new node of
+    `typeId`, or — for paste and duplicate (Ctrl+V, Ctrl+D) — a copied
+    fragment of nodes, in which case `typeId` is empty. */
 export interface GhostPlacement {
   typeId: string
+  fragment?: NodeFragment
 }
 
 let camera: Camera = { panX: 0, panY: 0, zoom: 1 }
@@ -46,6 +51,10 @@ export function getGhost(): GhostPlacement | null {
 }
 export function armGhost(typeId: string): void {
   ghost = { typeId }
+  notifyGhost()
+}
+export function armFragmentGhost(fragment: NodeFragment): void {
+  ghost = { typeId: '', fragment }
   notifyGhost()
 }
 export function clearGhost(): void {
@@ -121,7 +130,19 @@ export interface DragToMacroGesture {
   nodeId: string
   portId: string
 }
-export type Gesture = PanGesture | BoxSelectGesture | NodeDragGesture | WireDragGesture | DragToMacroGesture | null
+/** wiki/ROADMAP.md stage 0: Ctrl+drag from a node's body draws a line with a
+    "+" to the cursor; releasing over another node whose main output Add can
+    take adds both through a new Add. `startX`/`startY` are canvas pixels at
+    the press; `hoverNodeId`/`hoverValid` are refreshed every frame. */
+export interface LinkAddGesture {
+  kind: 'linkAdd'
+  fromNodeId: string
+  startX: number
+  startY: number
+  hoverNodeId?: string
+  hoverValid?: boolean
+}
+export type Gesture = PanGesture | BoxSelectGesture | NodeDragGesture | WireDragGesture | DragToMacroGesture | LinkAddGesture | null
 
 let gesture: Gesture = null
 export function getGesture(): Gesture {

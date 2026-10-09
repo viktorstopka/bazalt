@@ -192,8 +192,8 @@ TEST_CASE ("SlewNode lags toward its target with a per-direction time constant, 
         NodePrepareInfo info;
         info.sampleRate = sampleRate;
         node.prepare (info);
-        node.setParameter ("math.slew.rise", riseSeconds);
-        node.setParameter ("math.slew.fall", fallSeconds);
+        node.setParameter ("time.slew.rise", riseSeconds);
+        node.setParameter ("time.slew.fall", fallSeconds);
 
         float out = 0.0f;
         float inputs[3] = { startValue, unconnectedSentinel, unconnectedSentinel };
@@ -224,8 +224,8 @@ TEST_CASE ("SlewNode starts at its first input, holds through NaN, and reset() r
            "[engine][nodes][math][M21]")
 {
     SlewNode node;
-    node.setParameter ("math.slew.rise", 1.0f);
-    node.setParameter ("math.slew.fall", 1.0f);
+    node.setParameter ("time.slew.rise", 1.0f);
+    node.setParameter ("time.slew.fall", 1.0f);
 
     float out = 0.0f;
     float inputs[3] = { 0.8f, unconnectedSentinel, unconnectedSentinel };
@@ -251,7 +251,7 @@ TEST_CASE ("The M21 wave-1 nodes declare consistent, well-formed ports through t
     const auto factory = buildDefaultNodeFactory();
 
     for (const auto* typeId : { "math.subtract", "math.divide", "math.abs", "math.minmax", "math.power",
-                                "math.modulo", "math.slew", "mix.crossfade", "logic.not", "logic.toggle" })
+                                "math.modulo", "time.slew", "math.blend", "logic.switch", "logic.not", "logic.toggle" })
     {
         DYNAMIC_SECTION (typeId)
         {

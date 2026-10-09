@@ -6,7 +6,7 @@
 
 namespace bazalt::engine::nodes
 {
-    /** Stable type id: "math.slew" (NODE_CATALOG.md's `math.*` row: `in`,
+    /** Stable type id: "time.slew" (NODE_CATALOG.md's `math.*` row: `in`,
         `rise`/`fall : float·Time·0–10s·log·10ms` — "portamento,
         smoothing, envelope-like shaping").
 
@@ -45,27 +45,27 @@ namespace bazalt::engine::nodes
         int getNumOutputPorts() const noexcept override { return numOutputs; }
 
         juce::String getTitle() const override { return "Slew"; }
-        juce::String getCategory() const override { return "Math"; }
+        juce::String getCategory() const override { return "Time"; }
 
         std::vector<PortDescriptor> getInputPorts() const override
         {
             return {
-                { "in", SignalType::Control },
-                ValueTypes::timeSecondsPort ("math.slew.rise", "Rise", 0.01f),
-                ValueTypes::timeSecondsPort ("math.slew.fall", "Fall", 0.01f),
+                { .id = "in", .type = SignalType::Signal },
+                ValueTypes::timeSecondsPort ("time.slew.rise", "Rise", 0.01f),
+                ValueTypes::timeSecondsPort ("time.slew.fall", "Fall", 0.01f),
             };
         }
 
         std::vector<PortDescriptor> getOutputPorts() const override
         {
-            return { PortDescriptor { .id = "out", .type = SignalType::Control, .isPrimaryOutput = true } };
+            return { PortDescriptor { .id = "out", .type = SignalType::Signal, .isPrimaryOutput = true } };
         }
 
         void setParameter (const juce::String& parameterId, float value) override
         {
-            if (parameterId == "math.slew.rise")
+            if (parameterId == "time.slew.rise")
                 storedRise = value;
-            else if (parameterId == "math.slew.fall")
+            else if (parameterId == "time.slew.fall")
                 storedFall = value;
         }
 

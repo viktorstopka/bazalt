@@ -27,14 +27,16 @@ namespace
     {
         NodeGraph graph;
         graph.addNode ({ "noteIn", "io.noteIn", {}, {}, {} });
-        graph.addNode ({ "allocator", "instance.allocate.voice", {}, {}, {} });
-        graph.addNode ({ "osc", "osc.analog", {}, {}, {} });
+        graph.addNode ({ "allocator", "life.voice", {}, {}, {} });
+        graph.addNode (withContent ({ "osc", "source.oscillator", {}, {}, {} }, CurveDocument::saw()));
         graph.addNode ({ "svf", "filter.svf", {}, {}, {} });
-        graph.addNode ({ "instancesum", "instance.sum", {}, {}, {} }); // batch 1b renames this type id to "instance.sum"
+        graph.addNode ({ "instancesum", "life.merge", {}, {}, {} }); // batch 1b renames this type id to "life.merge"
         graph.addNode ({ "masterout", "io.output", {}, {}, {} });
 
         graph.addConnection ({ "noteIn", "notes", "allocator", "spawn" });
-        graph.addConnection ({ "allocator", "pitch", "osc", "pitch" });
+        graph.addNode ({ "oscToFreq", "math.pitchToFrequency", {}, {}, {} });
+        graph.addConnection ({ "allocator", "pitch", "oscToFreq", "pitch" });
+        graph.addConnection ({ "oscToFreq", "frequency", "osc", "source.oscillator.frequency" });
         graph.addConnection ({ "osc", "out", "svf", "in" });
         graph.addConnection ({ "svf", "out", "instancesum", "in" });
         graph.addConnection ({ "instancesum", "out", "masterout", "in" });
@@ -112,13 +114,13 @@ TEST_CASE ("MultiplicityResolver correctly partitions a graph with one instance.
     REQUIRE (origin.sums.size() == 1);
     CHECK (origin.sums[0].sumNodeId == "instancesum");
 
-    // Voice region: noteIn, allocator, osc, svf — output retargeted to
-    // whatever fed instancesum.in (svf.out).
-    REQUIRE (origin.voiceGraph.getNodes().size() == 4);
+    // Voice region: noteIn, allocator, the pitch converter, osc, svf — output
+    // retargeted to whatever fed instancesum.in (svf.out).
+    REQUIRE (origin.voiceGraph.getNodes().size() == 5);
     CHECK (origin.voiceGraph.getOutputNodeId() == "svf");
     CHECK (origin.voiceGraph.getOutputPortId() == "out");
     for (const auto& node : origin.voiceGraph.getNodes())
-        CHECK ((node.id == "noteIn" || node.id == "allocator" || node.id == "osc" || node.id == "svf"));
+        CHECK ((node.id == "noteIn" || node.id == "allocator" || node.id == "oscToFreq" || node.id == "osc" || node.id == "svf"));
     for (const auto& connection : origin.voiceGraph.getConnections())
         CHECK (connection.toNodeId != "instancesum"); // the boundary edge must not appear in either subgraph verbatim
 
@@ -190,7 +192,7 @@ TEST_CASE ("MultiplicityResolver rejects more than maxOrigins instance.allocate.
 {
     NodeGraph graph;
     for (int i = 0; i < MultiplicityResolver::maxOrigins + 1; ++i)
-        graph.addNode ({ "alloc" + juce::String (i), "instance.allocate.voice", {}, {}, {} });
+        graph.addNode ({ "alloc" + juce::String (i), "life.voice", {}, {}, {} });
     graph.addNode ({ "masterout", "io.output", {}, {}, {} });
     graph.setOutput ("masterout", "out");
 
@@ -208,20 +210,24 @@ TEST_CASE ("Two independent origin/instance.sum pairs partition independently - 
     // region bookkeeping. Structurally minimal here (no real note source),
     // since this test is about partition mechanics, not audio behaviour.
     NodeGraph graph;
-    graph.addNode ({ "allocA", "instance.allocate.voice", {}, {}, {} });
-    graph.addNode ({ "oscA", "osc.analog", {}, {}, {} });
-    graph.addNode ({ "sumA", "instance.sum", {}, {}, {} });
+    graph.addNode ({ "allocA", "life.voice", {}, {}, {} });
+    graph.addNode (withContent ({ "oscA", "source.oscillator", {}, {}, {} }, CurveDocument::saw()));
+    graph.addNode ({ "sumA", "life.merge", {}, {}, {} });
 
-    graph.addNode ({ "allocB", "instance.allocate.voice", {}, {}, {} });
-    graph.addNode ({ "oscB", "osc.analog", {}, {}, {} });
-    graph.addNode ({ "sumB", "instance.sum", {}, {}, {} });
+    graph.addNode ({ "allocB", "life.voice", {}, {}, {} });
+    graph.addNode (withContent ({ "oscB", "source.oscillator", {}, {}, {} }, CurveDocument::saw()));
+    graph.addNode ({ "sumB", "life.merge", {}, {}, {} });
 
     graph.addNode ({ "mixdown", "math.add", {}, {}, {} });
     graph.addNode ({ "masterout", "io.output", {}, {}, {} });
 
-    graph.addConnection ({ "allocA", "pitch", "oscA", "pitch" });
+    graph.addNode ({ "oscAToFreq", "math.pitchToFrequency", {}, {}, {} });
+    graph.addConnection ({ "allocA", "pitch", "oscAToFreq", "pitch" });
+    graph.addConnection ({ "oscAToFreq", "frequency", "oscA", "source.oscillator.frequency" });
     graph.addConnection ({ "oscA", "out", "sumA", "in" });
-    graph.addConnection ({ "allocB", "pitch", "oscB", "pitch" });
+    graph.addNode ({ "oscBToFreq", "math.pitchToFrequency", {}, {}, {} });
+    graph.addConnection ({ "allocB", "pitch", "oscBToFreq", "pitch" });
+    graph.addConnection ({ "oscBToFreq", "frequency", "oscB", "source.oscillator.frequency" });
     graph.addConnection ({ "oscB", "out", "sumB", "in" });
     graph.addConnection ({ "sumA", "out", "mixdown", "in.0" });
     graph.addConnection ({ "sumB", "out", "mixdown", "in.1" });
@@ -259,15 +265,17 @@ TEST_CASE ("Several instance.sum nodes may reduce the SAME origin, each from its
     // One voice feeding a main chain (osc -> sum1) and a separate layer
     // (osc -> svf -> sum2), each summed on its own, then added after.
     NodeGraph graph;
-    graph.addNode ({ "alloc", "instance.allocate.voice", {}, {}, {} });
-    graph.addNode ({ "osc", "osc.analog", {}, {}, {} });
+    graph.addNode ({ "alloc", "life.voice", {}, {}, {} });
+    graph.addNode (withContent ({ "osc", "source.oscillator", {}, {}, {} }, CurveDocument::saw()));
     graph.addNode ({ "svf", "filter.svf", {}, {}, {} });
-    graph.addNode ({ "sum1", "instance.sum", {}, {}, {} });
-    graph.addNode ({ "sum2", "instance.sum", {}, {}, {} });
+    graph.addNode ({ "sum1", "life.merge", {}, {}, {} });
+    graph.addNode ({ "sum2", "life.merge", {}, {}, {} });
     graph.addNode ({ "add", "math.add", {}, {}, {} });
     graph.addNode ({ "masterout", "io.output", {}, {}, {} });
 
-    graph.addConnection ({ "alloc", "pitch", "osc", "pitch" });
+    graph.addNode ({ "oscToFreq", "math.pitchToFrequency", {}, {}, {} });
+    graph.addConnection ({ "alloc", "pitch", "oscToFreq", "pitch" });
+    graph.addConnection ({ "oscToFreq", "frequency", "osc", "source.oscillator.frequency" });
     graph.addConnection ({ "osc", "out", "sum1", "in" });
     graph.addConnection ({ "osc", "out", "svf", "in" });
     graph.addConnection ({ "svf", "out", "sum2", "in" });
@@ -296,14 +304,16 @@ TEST_CASE ("Several instance.sum nodes may reduce the SAME origin, each from its
 TEST_CASE ("More than maxSumsPerOrigin instance.sum nodes on one origin is rejected", "[engine][MultiplicityResolver]")
 {
     NodeGraph graph;
-    graph.addNode ({ "alloc", "instance.allocate.voice", {}, {}, {} });
-    graph.addNode ({ "osc", "osc.analog", {}, {}, {} });
+    graph.addNode ({ "alloc", "life.voice", {}, {}, {} });
+    graph.addNode (withContent ({ "osc", "source.oscillator", {}, {}, {} }, CurveDocument::saw()));
     graph.addNode ({ "masterout", "io.output", {}, {}, {} });
-    graph.addConnection ({ "alloc", "pitch", "osc", "pitch" });
+    graph.addNode ({ "oscToFreq", "math.pitchToFrequency", {}, {}, {} });
+    graph.addConnection ({ "alloc", "pitch", "oscToFreq", "pitch" });
+    graph.addConnection ({ "oscToFreq", "frequency", "osc", "source.oscillator.frequency" });
     for (int i = 0; i <= MultiplicityResolver::maxSumsPerOrigin; ++i)
     {
         const auto id = "sum" + juce::String (i);
-        graph.addNode ({ id, "instance.sum", {}, {}, {} });
+        graph.addNode ({ id, "life.merge", {}, {}, {} });
         graph.addConnection ({ "osc", "out", id, "in" });
     }
     graph.addConnection ({ "sum0", "out", "masterout", "in" });
@@ -311,10 +321,10 @@ TEST_CASE ("More than maxSumsPerOrigin instance.sum nodes on one origin is rejec
 
     const auto result = MultiplicityResolver::split (graph);
     CHECK_FALSE (result.success);
-    CHECK (result.errorMessage.contains ("Voice Sums"));
+    CHECK (result.errorMessage.contains ("Merges"));
 }
 
-TEST_CASE ("instance.sum's input must resolve Poly - Scalar (nothing to reduce) is rejected",
+TEST_CASE ("life.merge's input must resolve Poly - Scalar (nothing to reduce) is rejected",
            "[engine][MultiplicityResolver][DomainRedesign]")
 {
     // §2.4's settled question: instance.sum's input is the one port in the
@@ -322,7 +332,7 @@ TEST_CASE ("instance.sum's input must resolve Poly - Scalar (nothing to reduce) 
     // allocator anywhere in the graph) is exactly "nothing to reduce".
     NodeGraph graph;
     graph.addNode ({ "k", "util.constant", {}, {}, {} });
-    graph.addNode ({ "sum", "instance.sum", {}, {}, {} });
+    graph.addNode ({ "sum", "life.merge", {}, {}, {} });
     graph.addNode ({ "masterout", "io.output", {}, {}, {} });
     graph.addConnection ({ "k", "out", "sum", "in" });
     graph.addConnection ({ "sum", "out", "masterout", "in" });
@@ -349,7 +359,7 @@ TEST_CASE ("An unwired instance.sum is not a domain boundary yet, not an error -
     // (currently inert) graph is ordinary global content, which is the
     // more coherent answer, not a regression.
     NodeGraph graph;
-    graph.addNode ({ "sum", "instance.sum", {}, {}, {} });
+    graph.addNode ({ "sum", "life.merge", {}, {}, {} });
     graph.addNode ({ "masterout", "io.output", {}, {}, {} });
     graph.addConnection ({ "sum", "out", "masterout", "in" });
     graph.setOutput ("masterout", "out");
@@ -364,7 +374,7 @@ TEST_CASE ("An unwired instance.sum is not a domain boundary yet, not an error -
 TEST_CASE ("instance.sum rejects more than one connection into its input port", "[engine][MultiplicityResolver][M19]")
 {
     NodeGraph graph;
-    graph.addNode ({ "sum", "instance.sum", {}, {}, {} });
+    graph.addNode ({ "sum", "life.merge", {}, {}, {} });
     graph.addNode ({ "src1", "util.constant", {}, {}, {} });
     graph.addNode ({ "src2", "util.constant", {}, {}, {} });
     graph.addNode ({ "masterout", "io.output", {}, {}, {} });
@@ -382,8 +392,8 @@ TEST_CASE ("A node fed directly by two different origins' Poly outputs is reject
            "[engine][MultiplicityResolver][DomainRedesign]")
 {
     NodeGraph graph;
-    graph.addNode ({ "allocA", "instance.allocate.voice", {}, {}, {} });
-    graph.addNode ({ "allocB", "instance.allocate.voice", {}, {}, {} });
+    graph.addNode ({ "allocA", "life.voice", {}, {}, {} });
+    graph.addNode ({ "allocB", "life.voice", {}, {}, {} });
     graph.addNode ({ "ringmod", "math.multiply", {}, {}, {} });
     graph.addNode ({ "masterout", "io.output", {}, {}, {} });
 
@@ -413,14 +423,14 @@ TEST_CASE ("The exact motivating repro (section 0): env.adsr -> mix.gain connect
     // order.
     auto buildBase = [] {
         NodeGraph graph;
-        graph.addNode ({ "alloc", "instance.allocate.voice", {}, {}, {} });
-        graph.addNode ({ "env", "env.adsr", {}, {}, {} });
-        graph.addNode ({ "osc", "osc.analog", {}, {}, {} });
-        graph.addNode ({ "gain", "mix.gain", {}, {}, {} });
+        graph.addNode ({ "alloc", "life.voice", {}, {}, {} });
+        graph.addNode (withContent ({ "env", "source.envelope", {}, {}, {} }, CurveDocument::adsr (0.1f, 0.1f, 1.0f, 0.1f, 0.0f)));
+        graph.addNode (withContent ({ "osc", "source.oscillator", {}, {}, {} }, CurveDocument::saw()));
+        graph.addNode ({ "gain", "math.multiply", {}, {}, {} });
         graph.addNode ({ "masterout", "io.output", {}, {}, {} });
 
         graph.addConnection ({ "alloc", "gate", "env", "gate" });
-        graph.addConnection ({ "osc", "out", "gain", "audio" });
+        graph.addConnection ({ "osc", "out", "gain", "in.0" });
         graph.setOutput ("masterout", "out");
         return graph;
     };
@@ -428,7 +438,7 @@ TEST_CASE ("The exact motivating repro (section 0): env.adsr -> mix.gain connect
     // Order 1: wire env -> gain FIRST, gain -> masterout second.
     {
         auto graph = buildBase();
-        graph.addConnection ({ "env", "out", "gain", "gain" });
+        graph.addConnection ({ "env", "out", "gain", "in.1" });
         const auto beforeOutput = MultiplicityResolver::split (graph);
         REQUIRE (beforeOutput.success); // accepted even with nothing downstream of gain yet
 
@@ -450,7 +460,7 @@ TEST_CASE ("The exact motivating repro (section 0): env.adsr -> mix.gain connect
         REQUIRE (beforeEnv.success);
         CHECK (beforeEnv.hasGlobalDomain); // no Poly reaches gain/masterout yet — ordinary global content
 
-        graph.addConnection ({ "env", "out", "gain", "gain" });
+        graph.addConnection ({ "env", "out", "gain", "in.1" });
         const auto afterEnv = MultiplicityResolver::split (graph);
         REQUIRE (afterEnv.success); // <- the exact edge the OLD model rejected in this order
         CHECK (afterEnv.outputOriginId == "alloc");
@@ -461,14 +471,16 @@ TEST_CASE ("A mono source that feeds only the global domain joins the global pla
            "[engine][MultiplicityResolver][M21]")
 {
     NodeGraph graph;
-    graph.addNode ({ "alloc", "instance.allocate.voice", {}, {}, {} });
-    graph.addNode ({ "osc", "osc.analog", {}, {}, {} });
-    graph.addNode ({ "sum", "instance.sum", {}, {}, {} });
+    graph.addNode ({ "alloc", "life.voice", {}, {}, {} });
+    graph.addNode (withContent ({ "osc", "source.oscillator", {}, {}, {} }, CurveDocument::saw()));
+    graph.addNode ({ "sum", "life.merge", {}, {}, {} });
     graph.addNode ({ "audioin", "io.audioIn", {}, {}, {} });
     graph.addNode ({ "mixdown", "math.add", {}, {}, {} });
     graph.addNode ({ "masterout", "io.output", {}, {}, {} });
 
-    graph.addConnection ({ "alloc", "pitch", "osc", "pitch" });
+    graph.addNode ({ "oscToFreq", "math.pitchToFrequency", {}, {}, {} });
+    graph.addConnection ({ "alloc", "pitch", "oscToFreq", "pitch" });
+    graph.addConnection ({ "oscToFreq", "frequency", "osc", "source.oscillator.frequency" });
     graph.addConnection ({ "osc", "out", "sum", "in" });
     graph.addConnection ({ "sum", "out", "mixdown", "in.0" });
     graph.addConnection ({ "audioin", "channel.0", "mixdown", "in.1" });
@@ -506,7 +518,7 @@ TEST_CASE ("An instance.allocate.voice not reachable from the output still runs 
     effect.setOutput ("out", "out");
 
     auto withUnconnectedAllocator = effect;
-    withUnconnectedAllocator.addNode ({ "alloc", "instance.allocate.voice", {}, {}, {} }); // no connections at all
+    withUnconnectedAllocator.addNode ({ "alloc", "life.voice", {}, {}, {} }); // no connections at all
     auto result = MultiplicityResolver::split (withUnconnectedAllocator);
     REQUIRE (result.success);
     REQUIRE (result.hasGlobalDomain);
@@ -524,7 +536,7 @@ TEST_CASE ("An instance.allocate.voice not reachable from the output still runs 
     // reaches the designated output.
     auto withWiredButIrrelevantAllocator = effect;
     withWiredButIrrelevantAllocator.addNode ({ "noteIn", "io.noteIn", {}, {}, {} });
-    withWiredButIrrelevantAllocator.addNode ({ "alloc", "instance.allocate.voice", {}, {}, {} });
+    withWiredButIrrelevantAllocator.addNode ({ "alloc", "life.voice", {}, {}, {} });
     withWiredButIrrelevantAllocator.addConnection ({ "noteIn", "notes", "alloc", "spawn" });
     result = MultiplicityResolver::split (withWiredButIrrelevantAllocator);
     REQUIRE (result.success);
@@ -544,13 +556,15 @@ TEST_CASE ("09-28-InstanceAllocator.1 (part 4): an unconnected node is folded in
            "[engine][MultiplicityResolver][InstanceAllocator]")
 {
     NodeGraph graph;
-    graph.addNode ({ "alloc", "instance.allocate.voice", {}, {}, {} });
-    graph.addNode ({ "osc", "osc.analog", {}, {}, {} });
-    graph.addNode ({ "sum", "instance.sum", {}, {}, {} });
+    graph.addNode ({ "alloc", "life.voice", {}, {}, {} });
+    graph.addNode (withContent ({ "osc", "source.oscillator", {}, {}, {} }, CurveDocument::saw()));
+    graph.addNode ({ "sum", "life.merge", {}, {}, {} });
     graph.addNode ({ "masterout", "io.output", {}, {}, {} });
     graph.addNode ({ "orphan", "excite.burst", {}, {}, {} }); // never connected to anything
 
-    graph.addConnection ({ "alloc", "pitch", "osc", "pitch" });
+    graph.addNode ({ "oscToFreq", "math.pitchToFrequency", {}, {}, {} });
+    graph.addConnection ({ "alloc", "pitch", "oscToFreq", "pitch" });
+    graph.addConnection ({ "oscToFreq", "frequency", "osc", "source.oscillator.frequency" });
     graph.addConnection ({ "osc", "out", "sum", "in" });
     graph.addConnection ({ "sum", "out", "masterout", "in" });
     graph.setOutput ("masterout", "out");
@@ -575,7 +589,7 @@ TEST_CASE ("An origin with no instance.sum still targets the GRAPH's real design
     // such plan's real audible signal for the allocator's own raw Boolean
     // gate value.
     auto graph = buildVoiceProofGraph();
-    graph.removeConnection ("svf", "out", "amp", "audio"); // still a real edit; must not disturb the output designation
+    graph.removeConnection ("svf", "out", "amp", "in.0"); // still a real edit; must not disturb the output designation
 
     const auto result = MultiplicityResolver::split (graph);
     REQUIRE (result.success);

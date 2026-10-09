@@ -4,9 +4,9 @@ namespace bazalt::engine::nodes
 {
     /** wiki/NODES.Status.md's "Domain Extensions" batch — shared by every
         node type that opens an instanced (Poly) region: `InstanceVoiceNode`
-        ("instance.allocate.voice") and its Swarm-transient/Trigger siblings
-        (`instance.allocate.swarmTransient`/`instance.allocate.trigger`).
-        `instance.allocate.swarmPopulation` deliberately does NOT implement
+        ("life.voice") and its Swarm-transient/Trigger siblings
+        (`life.swarmTransient`/`life.trigger`).
+        `life.swarmPopulation` deliberately does NOT implement
         this — per its own design ("fixed count, always live... no spawn
         logic", `archive_docs/DOMAINS.md` §3), it never spawns or releases
         anything after `prepare()`, so there is nothing for this interface's

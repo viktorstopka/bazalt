@@ -50,7 +50,7 @@ namespace bazalt::engine::nodes
         {
             return {
                 PortDescriptor { .id = "trigger", .type = SignalType::Event, .label = "Trigger" },
-                PortDescriptor { .id = "excite.impulse.amplitude", .type = SignalType::Control, .label = "Amplitude",
+                PortDescriptor { .id = "excite.impulse.amplitude", .type = SignalType::Signal, .label = "Amplitude",
                                   .minValue = 0.0f, .maxValue = 1.0f, .defaultValue = 1.0f,
                                   .hasFallbackWhenUnconnected = true, .quantity = Quantity::Unipolar,
                                   .polarity = Polarity::Unipolar },
@@ -60,7 +60,7 @@ namespace bazalt::engine::nodes
 
         std::vector<PortDescriptor> getOutputPorts() const override
         {
-            return { { "out", SignalType::Audio } };
+            return { { .id = "out", .type = SignalType::Signal, .quantity = Quantity::Audio } };
         }
 
         void setParameter (const juce::String& parameterId, float value) override

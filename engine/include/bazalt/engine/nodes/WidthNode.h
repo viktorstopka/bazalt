@@ -56,11 +56,11 @@ namespace bazalt::engine::nodes
         std::vector<PortDescriptor> getInputPorts() const override
         {
             return {
-                PortDescriptor { .id = "in", .type = SignalType::Audio, .channels = Channels::Stereo },
-                PortDescriptor { .id = "space.width.width", .type = SignalType::Control, .label = "Width",
+                PortDescriptor { .id = "in", .type = SignalType::Signal, .quantity = Quantity::Audio, .channels = Channels::Stereo },
+                PortDescriptor { .id = "space.width.width", .type = SignalType::Signal, .label = "Width",
                                   .minValue = 0.0f, .maxValue = 2.0f, .defaultValue = 1.0f,
                                   .hasFallbackWhenUnconnected = true, .quantity = Quantity::Unipolar },
-                PortDescriptor { .id = "space.width.bassMonoBelow", .type = SignalType::Control, .label = "Bass Mono Below",
+                PortDescriptor { .id = "space.width.bassMonoBelow", .type = SignalType::Signal, .label = "Bass Mono Below",
                                   .unit = "Hz", .minValue = 20.0f, .maxValue = 500.0f, .defaultValue = defaultBassMonoBelowHz,
                                   .isLogScale = true, .hasFallbackWhenUnconnected = true, .quantity = Quantity::Frequency,
                                   .curve = Curve::Logarithmic },
@@ -70,7 +70,7 @@ namespace bazalt::engine::nodes
         std::vector<PortDescriptor> getOutputPorts() const override
         {
             return {
-                PortDescriptor { .id = "out", .type = SignalType::Audio, .label = "Out", .isPrimaryOutput = true, .channels = Channels::Stereo },
+                PortDescriptor { .id = "out", .type = SignalType::Signal, .label = "Out", .isPrimaryOutput = true, .quantity = Quantity::Audio, .channels = Channels::Stereo },
             };
         }
 

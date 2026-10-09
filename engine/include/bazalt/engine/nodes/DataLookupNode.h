@@ -1,6 +1,8 @@
 #pragma once
 
+#include "bazalt/engine/graph/CurveData.h"
 #include "bazalt/engine/graph/Node.h"
+#include <atomic>
 #include <cmath>
 
 namespace bazalt::engine::nodes
@@ -60,12 +62,12 @@ namespace bazalt::engine::nodes
         std::vector<PortDescriptor> getInputPorts() const override
         {
             return {
-                PortDescriptor { .id = "in", .type = SignalType::Control, .label = "In" },
+                PortDescriptor { .id = "in", .type = SignalType::Signal, .label = "In" },
                 PortDescriptor { .id = "data", .type = SignalType::Data, .label = "Data",
                                   .dataTags = { DataTag::Curve, DataTag::Scale } },
                 PortDescriptor { .id = "dataB", .type = SignalType::Data, .label = "Data B",
                                   .dataTags = { DataTag::Curve, DataTag::Scale } },
-                PortDescriptor { .id = "data.lookup.morph", .type = SignalType::Control, .label = "Morph",
+                PortDescriptor { .id = "data.lookup.morph", .type = SignalType::Signal, .label = "Morph",
                                   .minValue = 0.0f, .maxValue = 1.0f, .defaultValue = 0.0f,
                                   .hasFallbackWhenUnconnected = true, .quantity = Quantity::Unipolar },
             };
@@ -73,7 +75,7 @@ namespace bazalt::engine::nodes
 
         std::vector<PortDescriptor> getOutputPorts() const override
         {
-            return { { "out", SignalType::Control } };
+            return { { .id = "out", .type = SignalType::Signal } };
         }
 
         std::vector<ParameterDescriptor> getParameters() const override
@@ -106,9 +108,9 @@ namespace bazalt::engine::nodes
         void setDataInput (const juce::String& inputPortId, DataPublisher* publisher) noexcept override
         {
             if (inputPortId == "data")
-                dataPublisherA = publisher;
+                dataPublisherA.store (publisher, std::memory_order_release);
             else if (inputPortId == "dataB")
-                dataPublisherB = publisher;
+                dataPublisherB.store (publisher, std::memory_order_release);
         }
 
         void processBlock (const float* const* inputs, float* const* outputs, int numSamples) noexcept override
@@ -117,8 +119,10 @@ namespace bazalt::engine::nodes
             // changes mid-block (only ever swapped between blocks by a
             // discrete edit), and getCurrentForAudioThread() is cheap but
             // there's still no reason to call it more than once here.
-            currentA = dataPublisherA != nullptr ? dataPublisherA->getCurrentForAudioThread() : nullptr;
-            currentB = dataPublisherB != nullptr ? dataPublisherB->getCurrentForAudioThread() : nullptr;
+            auto* publisherA = dataPublisherA.load (std::memory_order_acquire);
+            auto* publisherB = dataPublisherB.load (std::memory_order_acquire);
+            currentA = publisherA != nullptr ? publisherA->getCurrentForAudioThread() : nullptr;
+            currentB = publisherB != nullptr ? publisherB->getCurrentForAudioThread() : nullptr;
             Node::processBlock (inputs, outputs, numSamples);
         }
 
@@ -158,6 +162,22 @@ namespace bazalt::engine::nodes
 
         float sampleAt (const DataBuffer& buffer, float in) const noexcept
         {
+            // A drawn curve (data.curve, CurveData.h): position reads the curve
+            // itself, exactly as drawn; an index reads its points.
+            if (const CurveView curve (&buffer); curve.isValid())
+            {
+                const auto count = curve.getNumPoints();
+                if (mode == Mode::Index || mode == Mode::WrapIndex)
+                {
+                    const auto raw = (int) std::lround (in);
+                    const auto idx = mode == Mode::WrapIndex ? ((raw % count) + count) % count : wrapOrClampIndex (raw, count, edgeMode);
+                    return curve.point (idx).y;
+                }
+                auto pos01 = in * 0.5f + 0.5f;
+                pos01 = edgeMode == EdgeMode::Wrap ? pos01 - std::floor (pos01) : juce::jlimit (0.0f, 1.0f, pos01);
+                return curve.evaluate (pos01 * (curve.isCycle() ? 1.0f : curve.lengthSeconds()));
+            }
+
             const auto length = buffer.length();
             if (length <= 0)
                 return 0.0f;
@@ -195,8 +215,9 @@ namespace bazalt::engine::nodes
             }
         }
 
-        DataPublisher* dataPublisherA = nullptr;
-        DataPublisher* dataPublisherB = nullptr;
+        // Atomic: a recompile may rewire a node the audio thread is running.
+        std::atomic<DataPublisher*> dataPublisherA { nullptr };
+        std::atomic<DataPublisher*> dataPublisherB { nullptr };
         const DataBuffer* currentA = nullptr;
         const DataBuffer* currentB = nullptr;
         float storedMorph = 0.0f;

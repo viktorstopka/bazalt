@@ -48,12 +48,12 @@ namespace bazalt::engine::nodes
         std::vector<PortDescriptor> getInputPorts() const override
         {
             return {
-                PortDescriptor { .id = "in", .type = SignalType::Audio, .channels = Channels::Stereo },
+                PortDescriptor { .id = "in", .type = SignalType::Signal, .quantity = Quantity::Audio, .channels = Channels::Stereo },
                 ValueTypes::timeMsPort ("space.diffuser.size", "Size", 30.0f, maxSizeMs),
-                PortDescriptor { .id = "space.diffuser.diffusion", .type = SignalType::Control, .label = "Diffusion",
+                PortDescriptor { .id = "space.diffuser.diffusion", .type = SignalType::Signal, .label = "Diffusion",
                                   .minValue = 0.0f, .maxValue = 1.0f, .defaultValue = 1.0f,
                                   .hasFallbackWhenUnconnected = true, .quantity = Quantity::Unipolar },
-                PortDescriptor { .id = "space.diffuser.modulation", .type = SignalType::Control, .label = "Modulation",
+                PortDescriptor { .id = "space.diffuser.modulation", .type = SignalType::Signal, .label = "Modulation",
                                   .minValue = 0.0f, .maxValue = 1.0f, .defaultValue = 0.0f,
                                   .hasFallbackWhenUnconnected = true, .quantity = Quantity::Unipolar },
             };
@@ -61,7 +61,7 @@ namespace bazalt::engine::nodes
 
         std::vector<PortDescriptor> getOutputPorts() const override
         {
-            return { PortDescriptor { .id = "out", .type = SignalType::Audio, .label = "Out", .isPrimaryOutput = true, .channels = Channels::Stereo } };
+            return { PortDescriptor { .id = "out", .type = SignalType::Signal, .label = "Out", .isPrimaryOutput = true, .quantity = Quantity::Audio, .channels = Channels::Stereo } };
         }
 
         std::vector<ParameterDescriptor> getParameters() const override

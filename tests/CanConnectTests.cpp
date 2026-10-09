@@ -7,14 +7,14 @@ namespace
 {
     PortDescriptor audioPort (Channels channels = Channels::Mono)
     {
-        PortDescriptor p { "p", SignalType::Audio };
+        PortDescriptor p { .id = "p", .type = SignalType::Signal, .quantity = Quantity::Audio };
         p.channels = channels;
         return p;
     }
 
     PortDescriptor controlPort (Quantity quantity = Quantity::Dimensionless, std::optional<float> minValue = {}, std::optional<float> maxValue = {})
     {
-        PortDescriptor p { "p", SignalType::Control };
+        PortDescriptor p { .id = "p", .type = SignalType::Signal };
         p.quantity = quantity;
         p.minValue = minValue;
         p.maxValue = maxValue;
@@ -42,7 +42,7 @@ TEST_CASE ("canConnect: same signal type, same or Dimensionless quantity is alwa
     PortDescriptor note { "n", SignalType::Note };
     CHECK (canConnect (note, note).outcome == ConnectionOutcome::Ok);
 
-    PortDescriptor boolean { "b", SignalType::Boolean };
+    PortDescriptor boolean { .id = "b", .type = SignalType::Signal, .quantity = Quantity::Boolean };
     CHECK (canConnect (boolean, boolean).outcome == ConnectionOutcome::Ok);
 }
 
@@ -62,7 +62,7 @@ TEST_CASE ("canConnect: Unipolar/Bipolar into a real quantity needs Map, seeded 
 
     REQUIRE (result.outcome == ConnectionOutcome::NeedsAdapters);
     REQUIRE (result.adapterChain.size() == 1);
-    CHECK (result.adapterChain[0].typeId == "adapt.map");
+    CHECK (result.adapterChain[0].typeId == "math.map");
     CHECK (result.adapterChain[0].seedFromDestinationRange);
     CHECK (result.adapterChain[0].seedFromSourceRange); // adapt.map seeds its input range too (design/Map.png)
 
@@ -70,18 +70,19 @@ TEST_CASE ("canConnect: Unipolar/Bipolar into a real quantity needs Map, seeded 
     CHECK (canConnect (controlPort (Quantity::Bipolar), to).outcome == ConnectionOutcome::NeedsAdapters);
 }
 
-TEST_CASE ("canConnect: a real quantity into Unipolar/Bipolar needs Normalise, seeded from the source",
+TEST_CASE ("canConnect: a real quantity into Unipolar/Bipolar needs a Map, seeded from both sides",
            "[engine][CanConnect]")
 {
+    // Normalise is gone (wiki/plans/DataAndWavetable.md §2): a Map from the
+    // source's range onto 0..1 / -1..1 is the same thing.
     const auto from = controlPort (Quantity::Time, 0.0f, 10.0f);
-    const auto to = controlPort (Quantity::Unipolar);
-    const auto result = canConnect (from, to);
+    const auto result = canConnect (from, controlPort (Quantity::Unipolar));
 
     REQUIRE (result.outcome == ConnectionOutcome::NeedsAdapters);
     REQUIRE (result.adapterChain.size() == 1);
-    CHECK (result.adapterChain[0].typeId == "adapt.normalise");
+    CHECK (result.adapterChain[0].typeId == "math.map");
     CHECK (result.adapterChain[0].seedFromSourceRange);
-    CHECK_FALSE (result.adapterChain[0].seedFromDestinationRange);
+    CHECK (result.adapterChain[0].seedFromDestinationRange);
 }
 
 TEST_CASE ("canConnect: two different real quantities insert adapt.map, seeded from both sides at once",
@@ -99,7 +100,7 @@ TEST_CASE ("canConnect: two different real quantities insert adapt.map, seeded f
     REQUIRE (result.outcome == ConnectionOutcome::NeedsAdapters);
     REQUIRE (result.adapterChain.size() == 1);
 
-    CHECK (result.adapterChain[0].typeId == "adapt.map");
+    CHECK (result.adapterChain[0].typeId == "math.map");
     CHECK (result.adapterChain[0].seedFromSourceRange);
     CHECK (result.adapterChain[0].seedFromDestinationRange);
     CHECK (result.reason.isNotEmpty());
@@ -114,7 +115,7 @@ TEST_CASE ("canConnect: Pitch<->Frequency gets the exact converter, not the gene
     const auto toFrequency = canConnect (pitch, frequency);
     REQUIRE (toFrequency.outcome == ConnectionOutcome::NeedsAdapters);
     REQUIRE (toFrequency.adapterChain.size() == 1);
-    CHECK (toFrequency.adapterChain[0].typeId == "adapt.pitchToFrequency");
+    CHECK (toFrequency.adapterChain[0].typeId == "math.pitchToFrequency");
     CHECK (toFrequency.adapterChain[0].inputPortId == "pitch");
     CHECK (toFrequency.adapterChain[0].outputPortId == "frequency");
     // No seeding at all - the conversion is a fixed formula, not range-dependent.
@@ -124,18 +125,18 @@ TEST_CASE ("canConnect: Pitch<->Frequency gets the exact converter, not the gene
     const auto toPitch = canConnect (frequency, pitch);
     REQUIRE (toPitch.outcome == ConnectionOutcome::NeedsAdapters);
     REQUIRE (toPitch.adapterChain.size() == 1);
-    CHECK (toPitch.adapterChain[0].typeId == "adapt.frequencyToPitch");
+    CHECK (toPitch.adapterChain[0].typeId == "math.frequencyToPitch");
 }
 
-TEST_CASE ("canConnect: Boolean into Control needs a From Bool adapter",
-           "[engine][CanConnect][AudioControlBridge]")
+TEST_CASE ("canConnect: a Boolean is a plain 0/1 value - it wires straight into any value port",
+           "[engine][CanConnect]")
 {
-    PortDescriptor boolPort { "b", SignalType::Boolean };
-    const auto result = canConnect (boolPort, controlPort());
-
-    REQUIRE (result.outcome == ConnectionOutcome::NeedsAdapters);
-    REQUIRE (result.adapterChain.size() == 1);
-    CHECK (result.adapterChain[0].typeId == "adapt.boolToControl");
+    PortDescriptor boolPort { .id = "b", .type = SignalType::Signal, .quantity = Quantity::Boolean };
+    CHECK (canConnect (boolPort, controlPort()).outcome == ConnectionOutcome::Ok);
+    CHECK (canConnect (boolPort, controlPort (Quantity::Frequency, 20.0f, 20000.0f)).outcome == ConnectionOutcome::Ok);
+    CHECK (canConnect (boolPort, audioPort()).outcome == ConnectionOutcome::Ok);
+    // ...and any value reads as a boolean (non-zero is true).
+    CHECK (canConnect (controlPort(), boolPort).outcome == ConnectionOutcome::Ok);
 }
 
 TEST_CASE ("canConnect: Control into Event needs Threshold, wired into 'by' not 'in'", "[engine][CanConnect]")
@@ -143,7 +144,7 @@ TEST_CASE ("canConnect: Control into Event needs Threshold, wired into 'by' not 
     const auto result = canConnect (controlPort(), PortDescriptor { "e", SignalType::Event });
     REQUIRE (result.outcome == ConnectionOutcome::NeedsAdapters);
     REQUIRE (result.adapterChain.size() == 1);
-    CHECK (result.adapterChain[0].typeId == "adapt.threshold");
+    CHECK (result.adapterChain[0].typeId == "logic.threshold");
     CHECK (result.adapterChain[0].inputPortId == "by");
 }
 
@@ -155,87 +156,64 @@ TEST_CASE ("canConnect: heterogeneous pairs with no adapter yet are Reject, neve
     CHECK (result.outcome == ConnectionOutcome::Reject);
 }
 
-TEST_CASE ("canConnect: mono Audio into a modulation-quantity Control needs Audio to Modulation, one step",
-           "[engine][CanConnect][AudioControlBridge]")
+TEST_CASE ("canConnect: Audio and modulation values meet directly - both are normalised ranges",
+           "[engine][CanConnect]")
 {
-    const auto result = canConnect (audioPort(), controlPort (Quantity::Bipolar));
+    // wiki/plans/DataAndWavetable.md D1: one numeric signal; To Mod / To Audio are gone.
+    CHECK (canConnect (audioPort(), controlPort (Quantity::Bipolar)).outcome == ConnectionOutcome::Ok);
+    CHECK (canConnect (audioPort(), controlPort (Quantity::Unipolar)).outcome == ConnectionOutcome::Ok);
+    CHECK (canConnect (audioPort(), controlPort()).outcome == ConnectionOutcome::Ok);
+    CHECK (canConnect (controlPort (Quantity::Bipolar), audioPort()).outcome == ConnectionOutcome::Ok);
+    CHECK (canConnect (controlPort (Quantity::Unipolar), audioPort()).outcome == ConnectionOutcome::Ok);
+    CHECK (canConnect (controlPort(), audioPort()).outcome == ConnectionOutcome::Ok);
+}
+
+TEST_CASE ("canConnect: Audio into a real-quantity port needs a Map, one step",
+           "[engine][CanConnect]")
+{
+    const auto result = canConnect (audioPort(), controlPort (Quantity::Frequency, 20.0f, 20000.0f));
 
     REQUIRE (result.outcome == ConnectionOutcome::NeedsAdapters);
     REQUIRE (result.adapterChain.size() == 1);
-    CHECK (result.adapterChain[0].typeId == "adapt.audioToControl");
-    CHECK (result.adapterChain[0].inputPortId == "in");
-
-    // Dimensionless behaves the same as an explicit modulation quantity —
-    // one step only, same as connectControl()'s own Dimensionless handling.
-    CHECK (canConnect (audioPort(), controlPort()).outcome == ConnectionOutcome::NeedsAdapters);
+    CHECK (result.adapterChain[0].typeId == "math.map");
+    CHECK (result.adapterChain[0].seedFromSourceRange); // the audio side reads as ±1
+    CHECK (result.adapterChain[0].seedFromDestinationRange);
 }
 
-TEST_CASE ("canConnect: mono Audio into a real-quantity Control needs Audio to Modulation, then Map",
-           "[engine][CanConnect][AudioControlBridge]")
+TEST_CASE ("canConnect: stereo into a mono value port asks for a Downmix, then Maps when needed",
+           "[engine][CanConnect][channels]")
 {
-    const auto to = controlPort (Quantity::Frequency, 20.0f, 20000.0f);
-    const auto result = canConnect (audioPort(), to);
-
-    REQUIRE (result.outcome == ConnectionOutcome::NeedsAdapters);
-    REQUIRE (result.adapterChain.size() == 2);
-    CHECK (result.adapterChain[0].typeId == "adapt.audioToControl");
-    CHECK (result.adapterChain[1].typeId == "adapt.map");
-    CHECK (result.adapterChain[1].seedFromDestinationRange);
-    CHECK (result.adapterChain[1].seedFromSourceRange); // from adapt.audioToControl's Bipolar output
-}
-
-TEST_CASE ("canConnect: stereo Audio into Control is a hard reject, not a 3-step chain",
-           "[engine][CanConnect][AudioControlBridge][channels]")
-{
-    const auto result = canConnect (audioPort (Channels::Stereo), controlPort());
-    CHECK (result.outcome == ConnectionOutcome::Reject);
+    const auto modulation = canConnect (audioPort (Channels::Stereo), controlPort());
+    REQUIRE (modulation.outcome == ConnectionOutcome::NeedsAdapters);
+    REQUIRE (modulation.adapterChain.size() == 1);
+    CHECK (modulation.adapterChain[0].typeId == "channels.downmix");
+    CHECK_FALSE (modulation.choices.empty());
 
     const auto realQuantity = canConnect (audioPort (Channels::Stereo), controlPort (Quantity::Frequency, 20.0f, 20000.0f));
-    CHECK (realQuantity.outcome == ConnectionOutcome::Reject);
+    REQUIRE (realQuantity.outcome == ConnectionOutcome::NeedsAdapters);
+    REQUIRE (realQuantity.adapterChain.size() == 2);
+    CHECK (realQuantity.adapterChain[0].typeId == "channels.downmix");
+    CHECK (realQuantity.adapterChain[1].typeId == "math.map");
+    CHECK_FALSE (realQuantity.choices.empty());
 }
 
-TEST_CASE ("canConnect: a modulation-quantity Control into Audio needs To Audio, one step",
-           "[engine][CanConnect][ControlToAudioBridge]")
+
+TEST_CASE ("canConnect: a real-quantity value into Audio needs a Map onto +-1",
+           "[engine][CanConnect]")
 {
-    const auto result = canConnect (controlPort (Quantity::Bipolar), audioPort());
+    const auto result = canConnect (controlPort (Quantity::Frequency, 20.0f, 20000.0f), audioPort());
 
     REQUIRE (result.outcome == ConnectionOutcome::NeedsAdapters);
     REQUIRE (result.adapterChain.size() == 1);
-    CHECK (result.adapterChain[0].typeId == "adapt.controlToAudio");
-    CHECK (result.adapterChain[0].inputPortId == "in");
-
-    // Dimensionless behaves the same as an explicit modulation quantity -
-    // one step only, same as connectControl()'s own Dimensionless handling.
-    CHECK (canConnect (controlPort(), audioPort()).outcome == ConnectionOutcome::NeedsAdapters);
-    CHECK (canConnect (controlPort (Quantity::Unipolar), audioPort()).outcome == ConnectionOutcome::NeedsAdapters);
-}
-
-TEST_CASE ("canConnect: a real-quantity Control into Audio needs Normalise, then To Audio",
-           "[engine][CanConnect][ControlToAudioBridge]")
-{
-    const auto from = controlPort (Quantity::Frequency, 20.0f, 20000.0f);
-    const auto result = canConnect (from, audioPort());
-
-    REQUIRE (result.outcome == ConnectionOutcome::NeedsAdapters);
-    REQUIRE (result.adapterChain.size() == 2);
-    CHECK (result.adapterChain[0].typeId == "adapt.normalise");
+    CHECK (result.adapterChain[0].typeId == "math.map");
     CHECK (result.adapterChain[0].seedFromSourceRange);
-    CHECK_FALSE (result.adapterChain[0].seedFromDestinationRange);
-    CHECK (result.adapterChain[1].typeId == "adapt.controlToAudio");
+    CHECK (result.adapterChain[0].seedFromDestinationRange);
 }
 
-TEST_CASE ("canConnect: Control into Audio has no stereo complication - Control has no Channels concept",
-           "[engine][CanConnect][ControlToAudioBridge][channels]")
+TEST_CASE ("canConnect: a mono value into a stereo Audio port broadcasts for free",
+           "[engine][CanConnect][channels]")
 {
-    // A Control source into a STEREO-destined Audio port still only ever
-    // needs the one-step bridge - the existing mono->stereo free broadcast
-    // (connectAudio()) handles the rest once adapt.controlToAudio's own
-    // mono "out" reaches the real Audio<->Audio leg, with no second adapter
-    // needed on THIS leg of the connection.
-    const auto result = canConnect (controlPort (Quantity::Bipolar), audioPort (Channels::Stereo));
-    REQUIRE (result.outcome == ConnectionOutcome::NeedsAdapters);
-    REQUIRE (result.adapterChain.size() == 1);
-    CHECK (result.adapterChain[0].typeId == "adapt.controlToAudio");
+    CHECK (canConnect (controlPort (Quantity::Bipolar), audioPort (Channels::Stereo)).outcome == ConnectionOutcome::Ok);
 }
 
 TEST_CASE ("canConnect: Audio channels, mono->mono, mono->stereo (free), stereo->stereo are Ok",
@@ -251,7 +229,7 @@ TEST_CASE ("canConnect: stereo->mono needs mix.downmix, and the user's choice of
     const auto result = canConnect (audioPort (Channels::Stereo), audioPort (Channels::Mono));
     REQUIRE (result.outcome == ConnectionOutcome::NeedsAdapters);
     REQUIRE (result.adapterChain.size() == 1);
-    CHECK (result.adapterChain[0].typeId == "mix.downmix");
+    CHECK (result.adapterChain[0].typeId == "channels.downmix");
     CHECK (result.choices == std::vector<juce::String> { "mid", "left", "right", "side" });
 }
 

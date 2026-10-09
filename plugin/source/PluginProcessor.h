@@ -33,7 +33,7 @@ namespace bazalt
         around PatchSerializer.
 
         wiki/plans/DomainRedesign.md Batch 2: up to `maxOrigins` simultaneous
-        "instance.allocate.voice" origins, each with its own independent
+        "life.voice" origins, each with its own independent
         VoiceManager and 8 PlanSwappers (`OriginBundle`) — the runtime shape
         is still N independent physical ExecutionPlans per origin (§10.1's
         own key decision: a compile-time reclassification rewrite, not an
@@ -68,7 +68,7 @@ namespace bazalt
         static_assert (maxOrigins == bazalt::engine::ExecutionPlan::maxOrigins
                        && maxSumsPerOrigin == bazalt::engine::ExecutionPlan::maxSumsPerOrigin);
 
-        /** One "instance.allocate.voice" origin's own runtime state — a
+        /** One "life.voice" origin's own runtime state — a
             fully independent VoiceManager + 8 PlanSwappers, exactly what a
             single-origin graph already had, just no longer assumed to be
             the only one. `originNodeId` is this bundle's current origin's
@@ -239,7 +239,7 @@ namespace bazalt
         void setHasGlobalDomain (bool hasIt) noexcept { hasGlobalDomain.store (hasIt, std::memory_order_release); }
 
         /** M21: true while the graph has no active origin at all (no
-            "instance.allocate.voice", or a real instance.sum with nothing
+            "life.voice", or a real instance.sum with nothing
             to reduce — MultiplicityResolver's own monoOnly/empty-origins
             cases) — the one compiled plan lives in the GLOBAL swapper and
             runs every block, voices are never allocated. Set by
@@ -282,7 +282,7 @@ namespace bazalt
         void commitOriginBundleAssignments (const std::array<juce::String, maxOrigins>& originIdBySlot) noexcept;
 
         /** wiki/plans/DomainRedesign.md Batch 4: enforces
-            "instance.allocate.voice.maxInstances" for real (VoiceManager::
+            "life.voice.maxInstances" for real (VoiceManager::
             setMaxActiveVoices) — called once per recompile, after this
             bundle's own voice-slot-0 plan is compiled, with whatever that
             plan's real origin node reports via `InstanceOriginNode::

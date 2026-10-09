@@ -6,7 +6,7 @@
 
 namespace bazalt::engine::nodes
 {
-    /** Stable type id: "fx.freqShift" (wiki/plans/SoundPalette.md, Batch 4).
+    /** Stable type id: "spectrum.freqShift" (wiki/plans/SoundPalette.md, Batch 4).
         Moves every partial up (or down) by the same number of Hz — unlike
         pitch shifting, which multiplies. Harmonic sounds turn inharmonic and
         bell-like; a few Hz gives slow phasing/barber-pole movement. Easy
@@ -40,17 +40,17 @@ namespace bazalt::engine::nodes
         int getNumInputPorts() const noexcept override { return 3; }
         int getNumOutputPorts() const noexcept override { return 2; }
         juce::String getTitle() const override { return "Frequency Shift"; }
-        juce::String getCategory() const override { return "Effects"; }
+        juce::String getCategory() const override { return "Spectrum"; }
 
         std::vector<PortDescriptor> getInputPorts() const override
         {
             return {
-                perChannel ({ "in", SignalType::Audio }),
-                PortDescriptor { .id = "fx.freqShift.shift", .type = SignalType::Control, .label = "Shift", .unit = "Hz",
+                perChannel ({ .id = "in", .type = SignalType::Signal, .quantity = Quantity::Audio }),
+                PortDescriptor { .id = "spectrum.freqShift.shift", .type = SignalType::Signal, .label = "Shift", .unit = "Hz",
                                   .minValue = -5000.0f, .maxValue = 5000.0f, .defaultValue = 100.0f,
                                   .hasFallbackWhenUnconnected = true, .quantity = Quantity::Frequency, .polarity = Polarity::Bipolar,
                                   .softMin = -500.0f, .softMax = 500.0f },
-                PortDescriptor { .id = "fx.freqShift.mix", .type = SignalType::Control, .label = "Mix",
+                PortDescriptor { .id = "spectrum.freqShift.mix", .type = SignalType::Signal, .label = "Mix",
                                   .minValue = 0.0f, .maxValue = 1.0f, .defaultValue = 1.0f, .hasFallbackWhenUnconnected = true,
                                   .quantity = Quantity::Unipolar },
             };
@@ -58,15 +58,15 @@ namespace bazalt::engine::nodes
         std::vector<PortDescriptor> getOutputPorts() const override
         {
             return {
-                perChannel (PortDescriptor { .id = "out", .type = SignalType::Audio, .label = "Up", .isPrimaryOutput = true }),
-                perChannel (PortDescriptor { .id = "mirror", .type = SignalType::Audio, .label = "Down" }),
+                perChannel (PortDescriptor { .id = "out", .type = SignalType::Signal, .label = "Up", .isPrimaryOutput = true, .quantity = Quantity::Audio }),
+                perChannel (PortDescriptor { .id = "mirror", .type = SignalType::Signal, .label = "Down", .quantity = Quantity::Audio }),
             };
         }
         void setParameter (const juce::String& parameterId, float value) override
         {
-            if (parameterId == "fx.freqShift.shift")
+            if (parameterId == "spectrum.freqShift.shift")
                 storedShift = value;
-            else if (parameterId == "fx.freqShift.mix")
+            else if (parameterId == "spectrum.freqShift.mix")
                 storedMix = value;
         }
 

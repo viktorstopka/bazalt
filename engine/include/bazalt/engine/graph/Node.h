@@ -259,6 +259,21 @@ namespace bazalt::engine
             juce::ignoreUnused (parameterId, value);
         }
 
+        /** A factory node's content (NodeInstance::content, a JSON document).
+            Called on the message thread: after construction, and again —
+            on a node the audio thread may be running — whenever the content
+            changes, live while an editor drags or on commit. So it must touch
+            only state the audio thread reads through a `DataPublisher`
+            (build the new buffer here, publish it, never mutate one in use).
+            That is what lets a content edit keep the running node: no fresh
+            state, no click. A void var means "no content": use the default.
+
+            Returns false if the content could not be applied to this running
+            node (its publisher's slots are all still held — a voice that has
+            not played since several edits); the compiler then builds a fresh
+            node instead of reusing this one. */
+        virtual bool setContent (const juce::var& content) { juce::ignoreUnused (content); return true; }
+
         virtual bool supportsPerSample() const noexcept { return true; }
 
         /** inputs[i]/outputs[j] are single sample values, in the same order

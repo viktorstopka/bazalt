@@ -42,8 +42,8 @@ namespace bazalt::engine::nodes
         Macro-only fourth and fifth.
 
         `Bool`/`Trigger` are unchanged in spirit from the first cut:
-        `Bool` genuinely outputs `SignalType::Boolean` (not a disguised
-        Control 0/1) and `Trigger` genuinely outputs `SignalType::Event` —
+        `Bool` genuinely outputs a Boolean (`Quantity::Boolean`, not a
+        disguised plain 0/1) and `Trigger` genuinely outputs `SignalType::Event` —
         see this class's own method doc comments below for why.
 
         `unit` is no longer a stored/settable field at all ("Unit should
@@ -64,9 +64,8 @@ namespace bazalt::engine::nodes
     protected:
         static SignalType outputSignalTypeFor (TypedValueType type) noexcept
         {
-            if (type == TypedValueType::Bool) return SignalType::Boolean;
             if (type == TypedValueType::Trigger) return SignalType::Event;
-            return SignalType::Control;
+            return SignalType::Signal; // a Bool is a Signal whose quantity is Boolean (buildTypedOutputPort)
         }
 
         /** `isInteger`/`isEnum` only mean anything for `Control` — both
@@ -212,7 +211,7 @@ namespace bazalt::engine::nodes
             port.type = outputSignalTypeFor (storedType);
             port.isPrimaryOutput = true;
             port.kind = outputValueKindFor (storedType, storedIsInteger, storedIsEnum);
-            port.quantity = storedQuantity;
+            port.quantity = storedType == TypedValueType::Bool ? Quantity::Boolean : storedQuantity;
             port.isInteger = portIsIntegerFor (storedType, storedIsInteger);
             if (storedType == TypedValueType::Control)
             {

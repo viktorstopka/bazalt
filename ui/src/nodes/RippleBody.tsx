@@ -164,10 +164,10 @@ export function RippleBody({ descriptor, state, instanceId }: { descriptor: Node
   return (
     <div className={classNames}>
       <div className="view-ripple-port view-ripple-port-left">
-        <PortGlyph port={inputPort} side="left" instanceId={instanceId} connected={inputConnected} isPoly={false} />
+        <PortGlyph port={inputPort} side="left" instanceId={instanceId} connected={inputConnected} />
       </div>
       <div className="view-ripple-port view-ripple-port-right">
-        <PortGlyph port={outputPort} side="right" instanceId={instanceId} connected={outputConnected} isPoly={false} />
+        <PortGlyph port={outputPort} side="right" instanceId={instanceId} connected={outputConnected} />
       </div>
       <svg ref={svgRef} className="view-ripple-visual" viewBox={`0 0 ${PANEL_SIZE} ${PANEL_SIZE}`}>
         {Array.from({ length: RING_POOL_SIZE }, (_, i) => (

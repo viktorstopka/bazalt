@@ -1,7 +1,7 @@
 #include <catch2/catch_test_macros.hpp>
 #include <algorithm>
 #include "bazalt/engine/graph/ValueTypes.h"
-#include "bazalt/engine/nodes/OscillatorNode.h"
+#include "bazalt/engine/nodes/CurvePlayerNode.h"
 
 using namespace bazalt::engine;
 
@@ -73,7 +73,7 @@ TEST_CASE ("Unmigrated ports/parameters default every new value-contract field t
     // A plain, pre-M14-style aggregate init — exactly what every node
     // header still writes for a bespoke value ValueTypes.h doesn't cover
     // (e.g. filter.svf's resonance, filter.onepole's coefficient).
-    const PortDescriptor port { "in", SignalType::Control };
+    const PortDescriptor port { .id = "in", .type = SignalType::Signal };
     CHECK (port.kind == ValueKind::Float);
     CHECK (port.quantity == Quantity::Dimensionless);
     CHECK (port.curve == Curve::Linear);
@@ -90,30 +90,24 @@ TEST_CASE ("Unmigrated ports/parameters default every new value-contract field t
     CHECK_FALSE (parameter.isStructural);
 }
 
-TEST_CASE ("osc.analog.shape is a real, correctly-ordered enum",
-           "[engine][OscillatorNode][M14]")
+TEST_CASE ("source.oscillator.division is a real, correctly-ordered enum",
+           "[engine][CurvePlayerNode][M14]")
 {
-    const nodes::OscillatorNode osc;
+    const nodes::CurveOscillatorNode osc;
     const auto parameters = osc.getParameters();
     const auto it = std::find_if (parameters.begin(), parameters.end(),
-                                   [] (const ParameterDescriptor& p) { return p.id == "osc.analog.shape"; });
+                                   [] (const ParameterDescriptor& p) { return p.id == "source.oscillator.division"; });
     REQUIRE (it != parameters.end());
 
     CHECK (it->kind == ValueKind::Enum);
-    CHECK (it->isStructural);
-    REQUIRE (it->enumOptions.size() == 4);
-    // Order matches waveformForShapeValue()'s switch exactly (see that
-    // function's own comment on why this coupling is deliberate, not
-    // accidental, for now) — 0=Sine, 1=Saw, 2=Square, 3=Triangle.
-    CHECK (it->enumOptions[0].id == "sine");
-    CHECK (it->enumOptions[1].id == "saw");
-    CHECK (it->enumOptions[2].id == "square");
-    CHECK (it->enumOptions[3].id == "triangle");
-
-    // Bit-identical DSP behavior: the underlying float storage/dispatch is
-    // untouched by this migration.
+    REQUIRE (it->enumOptions.size() == 9);
+    // Order matches the beats table in CurvePlayerNode::setParameter.
+    CHECK (it->enumOptions[0].id == "8bars");
+    CHECK (it->enumOptions[3].id == "1bar");
+    CHECK (it->enumOptions[5].id == "1/4");
+    CHECK (it->enumOptions[8].id == "1/32");
     CHECK (it->minValue == 0.0f);
-    CHECK (it->maxValue == 3.0f);
-    CHECK (it->defaultValue == 1.0f);
+    CHECK (it->maxValue == 8.0f);
+    CHECK (it->defaultValue == 4.0f);
     CHECK (it->isInteger);
 }

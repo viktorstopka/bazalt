@@ -100,10 +100,10 @@ export function TuneBody({ descriptor, state, instanceId }: { descriptor: NodeDe
   return (
     <div className={classNames} ref={rootRef} title={`Within ±${TUNE_TOLERANCE_CENTS} cents reads white; outside, red`}>
       <div className="view-tune-port view-tune-port-left">
-        <PortGlyph port={inputPort} side="left" instanceId={instanceId} connected={inputConnected} isPoly={false} />
+        <PortGlyph port={inputPort} side="left" instanceId={instanceId} connected={inputConnected} />
       </div>
       <div className="view-tune-port view-tune-port-right">
-        <PortGlyph port={outputPort} side="right" instanceId={instanceId} connected={outputConnected} isPoly={false} />
+        <PortGlyph port={outputPort} side="right" instanceId={instanceId} connected={outputConnected} />
       </div>
       <div className="view-tune-meter">
         <div ref={bandRef} className="view-tune-band" />

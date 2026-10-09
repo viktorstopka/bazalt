@@ -60,7 +60,7 @@ namespace bazalt::engine
         // (wiki/plans/StereoChannels.md) — is compile()'s own widthOf().
         int channelCountOf (const PortDescriptor& port) noexcept
         {
-            return (port.type == SignalType::Audio && port.channels == Channels::Stereo) ? 2 : 1;
+            return (port.type == SignalType::Signal && port.channels == Channels::Stereo) ? 2 : 1;
         }
 
         // One entry per descriptor: the flat index its first channel starts
@@ -412,6 +412,22 @@ namespace bazalt::engine
                 }
             }
 
+            // Content (Node::setContent()): a reused node gets it only when it
+            // changed — republishing its buffer keeps the running node, so a
+            // content edit never resets its state. One that cannot take it
+            // (Node::setContent() returned false) is built fresh instead.
+            const auto contentJson = instance.content.isVoid() ? juce::String() : juce::JSON::toString (instance.content, true);
+            if (reused)
+            {
+                const auto previous = previousPlan->nodeIdToAppliedContent.find (instance.id);
+                const auto previousJson = previous != previousPlan->nodeIdToAppliedContent.end() ? previous->second : juce::String();
+                if (previousJson != contentJson && ! node->setContent (instance.content))
+                {
+                    reused = false;
+                    node = nullptr;
+                }
+            }
+
             if (reused)
             {
                 // A value-only edit: the new values ride with the plan and the
@@ -455,6 +471,9 @@ namespace bazalt::engine
 
                 for (const auto& [paramId, value] : instance.parameters)
                     node->setParameter (paramId, value);
+
+                if (! instance.content.isVoid())
+                    node->setContent (instance.content);
             }
 
             portIdIndexBySlot[(size_t) slot] = buildPortIdIndex (*node);
@@ -479,6 +498,7 @@ namespace bazalt::engine
             plan.nodeIdToSlot[instance.id] = slot;
             plan.nodeIdToType[instance.id] = instance.type;
             plan.nodeIdToAppliedParameters[instance.id] = instance.parameters;
+            plan.nodeIdToAppliedContent[instance.id] = contentJson;
 
             // ExecutionPlan::noteInNodeId's own comment has the full story:
             // resolved once here, by type, instead of PluginProcessor
@@ -564,26 +584,31 @@ namespace bazalt::engine
 
         for (int slot = 0; slot < numNodes; ++slot)
         {
-            auto inheritedInput = false, inheritedOutput = false, fixedWidthAudio = false;
+            // Every Signal can carry channels (DataAndWavetable.md D2) — a
+            // modulation as much as a sound. A Mono port beside the lane
+            // ports is shared: inputs broadcast to every lane, outputs are
+            // read from lane 0 (forEachLaneOutput). Only a fixed-Stereo port
+            // means the node already handles both channels itself.
+            auto inheritedInput = false, inheritedOutput = false, fixedStereo = false;
             for (const auto& port : inputPortsBySlot[(size_t) slot])
-                if (port.type == SignalType::Audio)
+                if (port.type == SignalType::Signal)
                 {
                     inheritedInput = inheritedInput || port.channels == Channels::Inherited;
-                    fixedWidthAudio = fixedWidthAudio || port.channels == Channels::Stereo;
+                    fixedStereo = fixedStereo || port.channels == Channels::Stereo;
                 }
             for (const auto& port : outputPortsBySlot[(size_t) slot])
-                if (port.type == SignalType::Audio)
+                if (port.type == SignalType::Signal)
                 {
                     inheritedOutput = inheritedOutput || port.channels == Channels::Inherited;
-                    fixedWidthAudio = fixedWidthAudio || port.channels != Channels::Inherited;
+                    fixedStereo = fixedStereo || port.channels == Channels::Stereo;
                 }
-            laneable[(size_t) slot] = (char) (inheritedInput && inheritedOutput && ! fixedWidthAudio);
+            laneable[(size_t) slot] = (char) (inheritedInput && inheritedOutput && ! fixedStereo);
         }
 
         // How many channels a port carries in this compile.
         const auto widthOf = [&] (int slot, const PortDescriptor& port) -> int
         {
-            if (port.type != SignalType::Audio)
+            if (port.type != SignalType::Signal)
                 return 1;
             if (port.channels == Channels::Stereo)
                 return 2;
@@ -594,7 +619,7 @@ namespace bazalt::engine
         // Whether this port is one the node's lanes each get their own channel of.
         const auto isLanePort = [&] (int slot, const PortDescriptor& port)
         {
-            return laneable[(size_t) slot] && port.type == SignalType::Audio && port.channels == Channels::Inherited;
+            return laneable[(size_t) slot] && port.type == SignalType::Signal && port.channels == Channels::Inherited;
         };
 
         for (int pass = 0; pass <= numNodes; ++pass)
@@ -875,6 +900,21 @@ namespace bazalt::engine
                 successors[(size_t) fromIt->second].push_back (toIt->second);
         }
 
+        // A reused node keeps whatever Data publisher it was last handed: one
+        // whose Data cable is gone must be told so, or it reads a producer that
+        // may no longer exist. Consumers hold it atomically (the old plan may
+        // still be running the node) and fall back to their own content.
+        for (int slot = 0; slot < numNodes; ++slot)
+        {
+            if (! reusedBySlot[(size_t) slot])
+                continue;
+            const auto& inputs = inputPortsBySlot[(size_t) slot];
+            for (int p = 0; p < (int) inputs.size(); ++p)
+                if (inputs[(size_t) p].type == SignalType::Data && dataInputsUsed.find ({ slot, p }) == dataInputsUsed.end())
+                    for (const auto laneSlot : plan.laneSlotsBySlot[(size_t) slot])
+                        plan.nodes[(size_t) laneSlot]->setDataInput (inputs[(size_t) p].id, nullptr);
+        }
+
         // ---- Note buffers (M18, ADR-0024) ---------------------------------
         // One ExecutionPlan::noteBuffers entry per connected Note-typed
         // OUTPUT port, shared by every consumer wired to it (fan-out works
@@ -924,7 +964,7 @@ namespace bazalt::engine
                 // wired to them — deliberately NOT the port's own
                 // `defaultValue`: baking that in here would freeze it at
                 // whatever it was when this plan was compiled, silently
-                // breaking any node (DelayNode.h's "delay.line.samples" is
+                // breaking any node (DelayNode.h's "time.delay.samples" is
                 // the first example) whose value is still meant to be
                 // adjustable via setParameter() after compilation. The node
                 // itself resolves NaN -> "use my own current value" every

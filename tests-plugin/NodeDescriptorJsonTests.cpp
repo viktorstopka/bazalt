@@ -3,7 +3,7 @@
 #include "NodeDescriptorJson.h"
 #include "bazalt/engine/graph/ProofGraphs.h"
 #include "bazalt/engine/nodes/ConstantNode.h"
-#include "bazalt/engine/nodes/OscillatorNode.h"
+#include "bazalt/engine/nodes/CurvePlayerNode.h"
 #include "bazalt/engine/nodes/RerouteNode.h"
 #include "bazalt/engine/nodes/InstanceMixNode.h"
 #include "bazalt/engine/nodes/ViewCycleNode.h"
@@ -22,7 +22,7 @@ namespace
     {
     public:
         int getNumOutputPorts() const noexcept override { return 1; }
-        std::vector<PortDescriptor> getOutputPorts() const override { return { { "out", SignalType::Audio } }; }
+        std::vector<PortDescriptor> getOutputPorts() const override { return { { .id = "out", .type = SignalType::Signal, .quantity = Quantity::Audio } }; }
         void processSample (const float*, float* outputs) noexcept override { outputs[0] = 0.0f; }
 
         std::vector<PreviewDescriptor> getPreviews() const override
@@ -52,18 +52,18 @@ TEST_CASE ("nodeDescriptorToVar serializes a node with an unbounded numeric outp
     // PropsAndMacroRedesign.md Batch E gave it a real, configurable range
     // contract, so its own output port is bounded by default now (see the
     // dedicated util.constant descriptor test below).
-    const auto descriptor = describeNode ("adapt.map", nodes::MapNode {});
+    const auto descriptor = describeNode ("math.map", nodes::MapNode {});
     const auto var = nodeDescriptorToVar (descriptor);
 
     REQUIRE (var.isObject());
-    CHECK (var["typeId"].toString() == "adapt.map");
+    CHECK (var["typeId"].toString() == "math.map");
 
     const auto* outputs = var["outputs"].getArray();
     REQUIRE (outputs != nullptr);
     REQUIRE (outputs->size() == 1);
     const auto& out = (*outputs)[0];
     CHECK (out["id"].toString() == "out");
-    CHECK (out["type"].toString() == "control");
+    CHECK (out["type"].toString() == "signal");
     CHECK ((bool) out["isPrimaryOutput"]);
     // Unset optional<float> must serialize to a JS-visible null (isVoid),
     // never 0 — 0 is a legitimate bound, absence isn't the same fact.
@@ -94,7 +94,7 @@ TEST_CASE ("nodeDescriptorToVar serializes util.constant's new type-aware descri
     REQUIRE (outputs->size() == 1);
     const auto& out = (*outputs)[0];
     CHECK (out["id"].toString() == "out");
-    CHECK (out["type"].toString() == "control");
+    CHECK (out["type"].toString() == "signal");
     CHECK ((bool) out["isPrimaryOutput"]);
     CHECK ((float) out["minValue"] == -100000.0f);
     CHECK ((float) out["maxValue"] == 100000.0f);
@@ -157,35 +157,34 @@ TEST_CASE ("nodeDescriptorToVar reports whether a node type is deprecated",
 TEST_CASE ("nodeDescriptorToVar serializes InstanceMixNode's port metadata intact",
            "[plugin][NodeDescriptorJson][M17]")
 {
-    const auto descriptor = describeNode ("instance.sum", nodes::InstanceMixNode {});
+    const auto descriptor = describeNode ("life.merge", nodes::InstanceMixNode {});
     const auto var = nodeDescriptorToVar (descriptor);
-    CHECK (var["typeId"].toString() == "instance.sum");
+    CHECK (var["typeId"].toString() == "life.merge");
 
     const auto* inputs = var["inputs"].getArray();
     REQUIRE (inputs != nullptr);
     REQUIRE (! inputs->isEmpty());
 }
 
-TEST_CASE ("nodeDescriptorToVar serializes osc.analog.shape's M14 enum metadata end to end",
+TEST_CASE ("nodeDescriptorToVar serializes source.oscillator.division's M14 enum metadata end to end",
            "[plugin][NodeDescriptorJson][M14]")
 {
-    const auto descriptor = describeNode ("osc.analog", nodes::OscillatorNode {});
+    const auto descriptor = describeNode ("source.oscillator", nodes::CurveOscillatorNode {});
     const auto var = nodeDescriptorToVar (descriptor);
 
     const auto* parameters = var["parameters"].getArray();
     REQUIRE (parameters != nullptr);
     const auto it = std::find_if (parameters->begin(), parameters->end(), [] (const juce::var& p)
-                                   { return p["id"].toString() == "osc.analog.shape"; });
+                                   { return p["id"].toString() == "source.oscillator.division"; });
     REQUIRE (it != parameters->end());
 
     CHECK ((*it)["kind"].toString() == "enum");
-    CHECK ((bool) (*it)["isStructural"]);
     const auto* options = (*it)["enumOptions"].getArray();
     REQUIRE (options != nullptr);
-    REQUIRE (options->size() == 4);
-    CHECK ((*options)[0]["id"].toString() == "sine");
-    CHECK ((*options)[0]["label"].toString() == "Sine");
-    CHECK ((*options)[3]["id"].toString() == "triangle");
+    REQUIRE (options->size() == 9);
+    CHECK ((*options)[0]["id"].toString() == "8bars");
+    CHECK ((*options)[0]["label"].toString() == "8 bars");
+    CHECK ((*options)[8]["id"].toString() == "1/32");
 }
 
 TEST_CASE ("nodeDescriptorToVar serializes an empty previews[] for a node that declares none",
@@ -253,8 +252,8 @@ TEST_CASE ("nodeDescriptorToVar flags a polymorphic-port node, and only that one
 
     CHECK (flagFor ("deco.reroute").isBool());
     CHECK ((bool) flagFor ("deco.reroute"));
-    CHECK (flagFor ("osc.analog").isBool());
-    CHECK_FALSE ((bool) flagFor ("osc.analog"));
+    CHECK (flagFor ("source.oscillator").isBool());
+    CHECK_FALSE ((bool) flagFor ("source.oscillator"));
 }
 
 TEST_CASE ("nodeDescriptorToVar reports each port's polymorphism, so the UI adopts a type only where the engine does",
@@ -276,17 +275,17 @@ TEST_CASE ("nodeDescriptorToVar reports each port's polymorphism, so the UI adop
         return {};
     };
 
-    // Reroute and select's data ports follow type AND quantity...
+    // Reroute and blend's value ports follow type AND quantity...
     CHECK (polymorphismOf ("deco.reroute", "inputs", "in") == "signalAndQuantity");
-    CHECK (polymorphismOf ("logic.select", "inputs", "whenTrue") == "signalAndQuantity");
-    CHECK (polymorphismOf ("logic.select", "outputs", "out") == "signalAndQuantity");
-    // ...but select's Boolean condition, on that same polymorphic node, stays fixed.
-    CHECK (polymorphismOf ("logic.select", "inputs", "condition") == "none");
+    CHECK (polymorphismOf ("math.blend", "inputs", "a") == "signalAndQuantity");
+    CHECK (polymorphismOf ("math.blend", "outputs", "out") == "signalAndQuantity");
+    // ...but blend's Amount, on that same polymorphic node, stays fixed.
+    CHECK (polymorphismOf ("math.blend", "inputs", "math.blend.amount") == "none");
 
     // compare and sample&hold keep their type Control and follow only the quantity.
     CHECK (polymorphismOf ("logic.compare", "inputs", "a") == "quantity");
-    CHECK (polymorphismOf ("adapt.sampleHold", "inputs", "in") == "quantity");
-    CHECK (polymorphismOf ("adapt.sampleHold", "inputs", "trigger") == "none");
+    CHECK (polymorphismOf ("time.sampleHold", "inputs", "in") == "quantity");
+    CHECK (polymorphismOf ("time.sampleHold", "inputs", "trigger") == "none");
 
-    CHECK (polymorphismOf ("osc.analog", "outputs", "out") == "none");
+    CHECK (polymorphismOf ("source.oscillator", "outputs", "out") == "none");
 }

@@ -7,17 +7,14 @@ add_executable(EngineTests
     AlignedBufferTests.cpp
     AnalysisThreadBudgetTests.cpp
     AnalysisThreadTests.cpp
-    AudioControlBridgeTests.cpp
     BiquadFilterNodesTests.cpp
     BiquadTests.cpp
     BlockSizeInvarianceTests.cpp
     CanConnectTests.cpp
     ClockSeqNodesTests.cpp
-    ControlToAudioBridgeTests.cpp
     DataFoundationsNodesTests.cpp
     DataTests.cpp
     DcBlockNodeTests.cpp
-    EnvelopeFollowerNodeTests.cpp
     EngineVersionTests.cpp
     ExecutionPlanTapTests.cpp
     GraphCompilerTests.cpp
@@ -53,7 +50,6 @@ add_executable(EngineTests
     RtAllocationTrapTests.cpp
     SampleRateCoverageTests.cpp
     ShapeClipNodeTests.cpp
-    SineOscillatorNodeTests.cpp
     SmoothedParameterTests.cpp
     SpaceNodesTests.cpp
     SvfFilterTests.cpp
@@ -65,7 +61,6 @@ add_executable(EngineTests
     ValueContractTests.cpp
     ViewCountNodeTests.cpp
     ViewRippleNodeTests.cpp
-    ViewScopeControlNodeTests.cpp
     ViewHistoryViewerTests.cpp
     PhaseLockedPreviewTests.cpp
     ValueOnlyEditTests.cpp
@@ -73,6 +68,12 @@ add_executable(EngineTests
     ReverbTests.cpp
     SoundPaletteTests.cpp
     DecorationTests.cpp
+    SignalSweepTests.cpp
+    NodeContentTests.cpp
+    CurveDataTests.cpp
+    WavetableTests.cpp
+    SineOscillatorNodeTests.cpp
+    CurvePlayerNodeTests.cpp
     VoiceManagerTests.cpp
 )
 

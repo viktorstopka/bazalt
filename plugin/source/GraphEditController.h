@@ -12,7 +12,7 @@ namespace bazalt
     /** Owns the live, editable NodeGraph and applies commands to it
         (NODE_EDITOR.md §6) — message-thread only. Every graph-shaped
         command recompiles and republishes fresh plans: 8 voice plans per
-        active "instance.allocate.voice" origin (up to
+        active "life.voice" origin (up to
         MultiplicityResolver::maxOrigins simultaneously,
         wiki/plans/DomainRedesign.md Batch 2), plus one shared global plan
         whenever the graph has real Scalar-resolved content (supersedes the
@@ -144,6 +144,17 @@ namespace bazalt
         */
         CommandResult setProperty (const juce::String& nodeId, const juce::String& propertyKey, juce::var value);
 
+        /** A factory node's content (NodeInstance::content): one undoable
+            edit, recompiled like any other — the running node is kept and
+            republishes its buffer (Node::setContent()), so it never clicks. */
+        CommandResult setContent (const juce::String& nodeId, juce::var content);
+
+        /** WHILE an editor drags: hands the content straight to every running
+            copy of the node (each voice's, and the global plan's) without
+            recompiling or touching the graph. The release commits it with
+            setContent(). Same idea as the live slider path (LiveParameterEdits.h). */
+        CommandResult setContentLive (const juce::String& nodeId, const juce::var& content);
+
         /** The most image data one patch may carry (wiki/plans/Decorations.md
             §4): an image that would take it past this is refused. */
         static constexpr size_t maxPatchAssetBytes = 5 * 1024 * 1024;
@@ -181,6 +192,12 @@ namespace bazalt
         CommandResult applyBatch (const std::function<void (bazalt::engine::NodeGraph&)>& mutate);
 
         const bazalt::engine::NodeGraph& getGraph() const noexcept { return graph; }
+
+        /** The graph as it is saved — a patch file, the host's plugin state,
+            the dev export: `view.listen` nodes left out (wiki/ROADMAP.md
+            stage 0 — listening is a working state, never part of a patch).
+            Undo snapshots use getGraph() and keep them. */
+        bazalt::engine::NodeGraph getGraphForSaving() const;
         bool getHasGlobalDomain() const noexcept { return hasGlobalDomain; }
 
         /** Dev-convenience export, direct instruction ("build that", after
@@ -236,7 +253,7 @@ namespace bazalt
             return portMultiplicity;
         }
 
-        /** Every "instance.allocate.voice" node id -> the origin bundle
+        /** Every "life.voice" node id -> the origin bundle
             slot it currently occupies on the processor, as of the last
             successful recompile — the instance-count badge's own LIVE
             activeCount/maxCount are deliberately NOT cached here (they
@@ -262,6 +279,7 @@ namespace bazalt
         double sampleRate = 44100.0;
         int blockSize = 512;
         bool hasGlobalDomain = false;
+        bool freshStateOnNextCompile = false; // setGraph: a whole new patch keeps no running state
         std::unordered_map<juce::String, juce::String> nodeDomains;
         std::unordered_map<juce::String, std::unordered_map<juce::String, PortMultiplicityInfo>> portMultiplicity;
         std::unordered_map<juce::String, int> originBundleIndexByNodeId;

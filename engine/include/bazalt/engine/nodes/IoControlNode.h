@@ -53,7 +53,7 @@ namespace bazalt::engine::nodes
 
         std::vector<PortDescriptor> getOutputPorts() const override
         {
-            return { PortDescriptor { .id = "value", .type = SignalType::Control, .label = "Value", .isPrimaryOutput = true,
+            return { PortDescriptor { .id = "value", .type = SignalType::Signal, .label = "Value", .isPrimaryOutput = true,
                                        .minValue = 0.0f, .maxValue = 1.0f, .quantity = Quantity::Unipolar } };
         }
 

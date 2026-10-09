@@ -27,17 +27,17 @@ namespace
     // InstanceSwarmPopulationTests.cpp/InstanceSwarmTransientTests.cpp.
     bool buildTriggerGraph (GraphEditController& controller)
     {
-        if (! controller.addNode ("instance.allocate.trigger", "trig", 0.0f, 0.0f).success)
+        if (! controller.addNode ("life.trigger", "trig", 0.0f, 0.0f).success)
             return false;
-        if (! controller.addNode ("clock.pulse", "clock", -200.0f, 0.0f).success)
+        if (! controller.addNode ("time.clock", "clock", -200.0f, 0.0f).success)
             return false;
         if (! controller.connect ("clock", "tick", "trig", "trigger").success) // Event -> Event, no adapter needed
             return false;
-        if (! controller.addNode ("osc.analog", "osc", 200.0f, 0.0f).success)
+        if (! controller.addNode ("source.oscillator", "osc", 200.0f, 0.0f).success)
             return false;
-        if (! controller.addNode ("instance.sum", "sum", 400.0f, 0.0f).success)
+        if (! controller.addNode ("life.merge", "sum", 400.0f, 0.0f).success)
             return false;
-        if (! controller.connectWithAutoAdapt ("trig", "random1", "osc", "pitch").success)
+        if (! controller.connectWithAutoAdapt ("trig", "random1", "osc", "source.oscillator.frequency").success)
             return false;
         if (! controller.connect ("osc", "out", "sum", "in").success)
             return false;
@@ -45,7 +45,7 @@ namespace
     }
 }
 
-TEST_CASE ("instance.allocate.trigger's own trigger Event dispatches through the same generalized "
+TEST_CASE ("life.trigger's own trigger Event dispatches through the same generalized "
            "relay Batch 3 built - a real VoiceManager voice gets allocated and real audio reaches "
            "the output",
            "[plugin][InstanceTrigger]")
@@ -75,7 +75,7 @@ TEST_CASE ("instance.allocate.trigger's own trigger Event dispatches through the
     CHECK (rms (buffer, 0) > 0.001f);
 }
 
-TEST_CASE ("instance.allocate.trigger's instance-count badge always reports a ceiling of 1 - "
+TEST_CASE ("life.trigger's instance-count badge always reports a ceiling of 1 - "
            "maxInstances is implicitly 1, never an editable parameter",
            "[plugin][InstanceTrigger]")
 {

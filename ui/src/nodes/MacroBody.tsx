@@ -249,7 +249,7 @@ function TypedValueCard({
   // to the static port with no live instance to resolve against (the M9
   // gallery), same as every other port lookup in this codebase.
   const outputPort = (instanceId && getEndpoint(instanceId, 'out', 'output')?.port) || descriptor.outputs[0]
-  const color = portUiStyle(outputPort, false).color
+  const color = portUiStyle(outputPort).color
   const outputLabel = macroType === 'trigger' ? 'Trigger' : 'Value'
   const outputConnected = state.connectedPortIds?.has(outputPort.id) ?? false
   // The LIVE-resolved effective min/max/unit (same resolution as
@@ -305,7 +305,7 @@ function TypedValueCard({
 
       <div className="node-row node-row-port node-row-output">
         <span style={{ color }}>{outputLabel}</span>
-        <PortGlyph port={outputPort} side="right" instanceId={instanceId} connected={outputConnected} isPoly={false} />
+        <PortGlyph port={outputPort} side="right" instanceId={instanceId} connected={outputConnected} />
       </div>
 
       {editTypeOpen &&

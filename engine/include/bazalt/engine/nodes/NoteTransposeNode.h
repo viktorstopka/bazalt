@@ -40,14 +40,14 @@ namespace bazalt::engine::nodes
         int getNumOutputPorts() const noexcept override { return numOutputs; }
 
         juce::String getTitle() const override { return "Transpose"; }
-        juce::String getCategory() const override { return "Note"; }
+        juce::String getCategory() const override { return "Notes"; }
 
         std::vector<PortDescriptor> getInputPorts() const override
         {
             return {
                 PortDescriptor { .id = "notes", .type = SignalType::Note },
                 ValueTypes::pitchPort ("note.transpose.semitones", "Semitones"),
-                PortDescriptor { .id = "note.transpose.octaves", .type = SignalType::Control, .label = "Octaves",
+                PortDescriptor { .id = "note.transpose.octaves", .type = SignalType::Signal, .label = "Octaves",
                                   .minValue = -10.0f, .maxValue = 10.0f, .defaultValue = 0.0f, .isInteger = true,
                                   .hasFallbackWhenUnconnected = true, .quantity = Quantity::Count, .step = 1.0f },
             };

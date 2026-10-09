@@ -24,7 +24,7 @@ namespace
             return graph;
         }
 
-        graph.addNode ({ "sum", "instance.sum", {}, {}, {} });
+        graph.addNode ({ "sum", "life.merge", {}, {}, {} });
         graph.addNode ({ "post", "filter.svf", {}, { { "filter.svf.cutoff", 8000.0f } }, {} });
         graph.addNode ({ "master", "io.output", {}, {}, {} });
         graph.addConnection ({ "pan", "out", "sum", "in" });

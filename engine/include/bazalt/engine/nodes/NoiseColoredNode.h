@@ -6,7 +6,7 @@
 
 namespace bazalt::engine::nodes
 {
-    /** Stable type id: "noise.colored" (wiki/plans/SoundPalette.md, Batch 1).
+    /** Stable type id: "source.noise" (wiki/plans/SoundPalette.md, Batch 1).
         White, pink, brown, blue or violet noise — the spectral slope is the
         colour: 0, -3, -6, +3, +6 dB per octave. Each colour is normalised to
         roughly the same loudness, so switching colour changes the tone, not
@@ -51,47 +51,47 @@ namespace bazalt::engine::nodes
         int getNumOutputChannels() const noexcept override { return stereo ? 2 : 1; }
 
         juce::String getTitle() const override { return "Noise"; }
-        juce::String getCategory() const override { return "Generators"; }
+        juce::String getCategory() const override { return "Sources"; }
 
         std::vector<PortDescriptor> getInputPorts() const override
         {
-            return { PortDescriptor { .id = "noise.colored.level", .type = SignalType::Control, .label = "Level",
+            return { PortDescriptor { .id = "source.noise.level", .type = SignalType::Signal, .label = "Level",
                                       .minValue = 0.0f, .maxValue = 1.0f, .defaultValue = 0.5f,
                                       .hasFallbackWhenUnconnected = true, .quantity = Quantity::Unipolar } };
         }
 
         std::vector<PortDescriptor> getOutputPorts() const override
         {
-            return { PortDescriptor { .id = "out", .type = SignalType::Audio, .label = "Out", .isPrimaryOutput = true,
-                                      .channels = stereo ? Channels::Stereo : Channels::Mono } };
+            return { PortDescriptor { .id = "out", .type = SignalType::Signal, .label = "Out", .isPrimaryOutput = true,
+                                      .quantity = Quantity::Audio, .channels = stereo ? Channels::Stereo : Channels::Mono } };
         }
 
         std::vector<ParameterDescriptor> getParameters() const override
         {
             return {
-                ParameterDescriptor { .id = "noise.colored.colour", .minValue = 0.0f, .maxValue = 4.0f, .defaultValue = 1.0f,
+                ParameterDescriptor { .id = "source.noise.colour", .minValue = 0.0f, .maxValue = 4.0f, .defaultValue = 1.0f,
                                        .displayName = "Colour", .isInteger = true, .kind = ValueKind::Enum,
                                        .enumOptions = { { "white", "White" }, { "pink", "Pink" }, { "brown", "Brown" },
                                                          { "blue", "Blue" }, { "violet", "Violet" } } },
-                ParameterDescriptor { .id = "noise.colored.stereo", .minValue = 0.0f, .maxValue = 1.0f, .defaultValue = 0.0f,
+                ParameterDescriptor { .id = "source.noise.stereo", .minValue = 0.0f, .maxValue = 1.0f, .defaultValue = 0.0f,
                                        .displayName = "Stereo", .isInteger = true, .kind = ValueKind::Bool, .isStructural = true },
-                ParameterDescriptor { .id = "noise.colored.seed", .minValue = 0.0f, .maxValue = 9999.0f, .defaultValue = 0.0f,
+                ParameterDescriptor { .id = "source.noise.seed", .minValue = 0.0f, .maxValue = 9999.0f, .defaultValue = 0.0f,
                                        .displayName = "Seed", .isInteger = true, .kind = ValueKind::Int, .isStructural = true },
             };
         }
 
         void setParameter (const juce::String& parameterId, float value) override
         {
-            if (parameterId == "noise.colored.colour")
+            if (parameterId == "source.noise.colour")
                 colour = (Colour) juce::jlimit (0, 4, (int) std::lround (value));
-            else if (parameterId == "noise.colored.stereo")
+            else if (parameterId == "source.noise.stereo")
                 stereo = value > 0.5f;
-            else if (parameterId == "noise.colored.seed")
+            else if (parameterId == "source.noise.seed")
             {
                 seed = (uint32_t) juce::jmax (0, (int) std::lround (value));
                 reset();
             }
-            else if (parameterId == "noise.colored.level")
+            else if (parameterId == "source.noise.level")
                 storedLevel = juce::jlimit (0.0f, 1.0f, value);
         }
 

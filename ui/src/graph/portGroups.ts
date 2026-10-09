@@ -30,8 +30,10 @@ function groupsOf(inputs: readonly PortDescriptor[]): PortGroup[] {
   return groups
 }
 
-/** "In 1" -> "In 4" for index 3; a label with no trailing number gets one appended. */
+/** "In 1" -> "In 4" for index 3; a single letter continues the alphabet ("A" -> "D",
+    logic.switch); any other label with no trailing number gets one appended. */
 function relabel(templateLabel: string, index: number): string {
+  if (/^[A-Z]$/.test(templateLabel)) return String.fromCharCode(templateLabel.charCodeAt(0) + index)
   const human = String(index + 1)
   return /\d+$/.test(templateLabel) ? templateLabel.replace(/\d+$/, human) : `${templateLabel} ${human}`.trim()
 }

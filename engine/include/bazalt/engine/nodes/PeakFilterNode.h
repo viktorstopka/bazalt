@@ -46,13 +46,13 @@ namespace bazalt::engine::nodes
         std::vector<PortDescriptor> getInputPorts() const override
         {
             return {
-                perChannel ({ "in", SignalType::Audio }),
+                perChannel ({ .id = "in", .type = SignalType::Signal, .quantity = Quantity::Audio }),
                 ValueTypes::frequencyPort ("filter.peak.frequency", "Frequency", defaultFrequencyHz),
-                PortDescriptor { .id = "filter.peak.gain", .type = SignalType::Control, .label = "Gain",
+                PortDescriptor { .id = "filter.peak.gain", .type = SignalType::Signal, .label = "Gain",
                                   .minValue = 0.06f, .maxValue = 16.0f, .defaultValue = defaultGainLinear,
                                   .isLogScale = true, .hasFallbackWhenUnconnected = true, .quantity = Quantity::Gain,
                                   .curve = Curve::Logarithmic },
-                PortDescriptor { .id = "filter.peak.q", .type = SignalType::Control, .label = "Q",
+                PortDescriptor { .id = "filter.peak.q", .type = SignalType::Signal, .label = "Q",
                                   .minValue = 0.1f, .maxValue = 30.0f, .defaultValue = defaultQ,
                                   .isLogScale = true, .hasFallbackWhenUnconnected = true, .quantity = Quantity::Ratio,
                                   .curve = Curve::Logarithmic },
@@ -61,7 +61,7 @@ namespace bazalt::engine::nodes
 
         std::vector<PortDescriptor> getOutputPorts() const override
         {
-            return { perChannel ({ "out", SignalType::Audio }) };
+            return { perChannel ({ .id = "out", .type = SignalType::Signal, .quantity = Quantity::Audio }) };
         }
 
         void setParameter (const juce::String& parameterId, float value) override

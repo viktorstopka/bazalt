@@ -1,4 +1,6 @@
 #include "bazalt/engine/patch/PatchSerializer.h"
+#include "bazalt/engine/graph/CurveData.h"
+#include <cmath>
 #include <functional>
 #include <unordered_map>
 #include <unordered_set>
@@ -67,6 +69,8 @@ namespace bazalt::engine
             obj->setProperty ("position", positionToVar (node.position));
             obj->setProperty ("parameters", parametersToVar (node.parameters));
             obj->setProperty ("properties", propertiesToVar (node.properties));
+            if (! node.content.isVoid())
+                obj->setProperty ("content", node.content);
             return juce::var (obj);
         }
 
@@ -78,6 +82,7 @@ namespace bazalt::engine
             node.position = positionFromVar (value["position"]);
             node.parameters = parametersFromVar (value["parameters"]);
             node.properties = propertiesFromVar (value["properties"]);
+            node.content = value["content"].clone();
             return node;
         }
 
@@ -723,6 +728,641 @@ namespace bazalt::engine
             return root;
         }
 
+        // wiki/plans/DataAndWavetable.md §2 (1a.2): Audio, Control and
+        // Boolean became one numeric signal, so the nodes that only crossed
+        // between them are gone. Each is rewritten so the patch keeps
+        // working:
+        //   - adapt.controlToAudio, and adapt.boolToControl at its default
+        //     0/1, are spliced out (what fed them feeds what they fed);
+        //   - adapt.audioToControl is spliced out at depth 1, else becomes a
+        //     math.multiply (in -> in.0, depth -> in.1);
+        //   - adapt.boolToControl with other values, adapt.normalise and the
+        //     two polarity converters become an adapt.map over the same
+        //     ranges.
+        // A To Audio fed by a 0..1 source used to stretch it to -1..1, and To
+        // Mod clamped to ±1; neither is reproduced (a plain wire now).
+        juce::var migrateV11ToV12 (juce::var v11Root)
+        {
+            auto root = v11Root.clone();
+            auto* nodes = root["nodes"].getArray();
+            auto* connections = root["connections"].getArray();
+            if (nodes == nullptr)
+            {
+                root.getDynamicObject()->setProperty ("schemaVersion", 12);
+                return root;
+            }
+
+            auto parameterOf = [] (const juce::var& node, const juce::String& id, float fallback)
+            {
+                const auto* parameters = node["parameters"].getDynamicObject();
+                return parameters != nullptr && parameters->hasProperty (id) ? (float) parameters->getProperty (id) : fallback;
+            };
+            auto isWired = [connections] (const juce::String& nodeId, const juce::String& portId)
+            {
+                if (connections == nullptr)
+                    return false;
+                for (const auto& c : *connections)
+                    if (c["toNodeId"].toString() == nodeId && c["toPortId"].toString() == portId)
+                        return true;
+                return false;
+            };
+            auto becomeMap = [] (juce::DynamicObject& node, float inMin, float inMax, float outMin, float outMax)
+            {
+                node.setProperty ("type", "adapt.map");
+                auto* parameters = new juce::DynamicObject();
+                parameters->setProperty ("adapt.map.inMin", inMin);
+                parameters->setProperty ("adapt.map.inMax", inMax);
+                parameters->setProperty ("adapt.map.outMin", outMin);
+                parameters->setProperty ("adapt.map.outMax", outMax);
+                node.setProperty ("parameters", juce::var (parameters));
+            };
+
+            juce::StringArray spliced;
+            for (auto& node : *nodes)
+            {
+                auto* object = node.getDynamicObject();
+                if (object == nullptr)
+                    continue;
+                const auto id = object->getProperty ("id").toString();
+                const auto type = object->getProperty ("type").toString();
+
+                if (type == "adapt.controlToAudio")
+                    spliced.add (id);
+                else if (type == "adapt.boolToControl")
+                {
+                    const auto whenFalse = parameterOf (node, "adapt.boolToControl.whenFalse", 0.0f);
+                    const auto whenTrue = parameterOf (node, "adapt.boolToControl.whenTrue", 1.0f);
+                    if (whenFalse == 0.0f && whenTrue == 1.0f)
+                        spliced.add (id);
+                    else
+                        becomeMap (*object, 0.0f, 1.0f, whenFalse, whenTrue);
+                }
+                else if (type == "adapt.audioToControl")
+                {
+                    const auto depth = parameterOf (node, "depth", 1.0f);
+                    if (depth == 1.0f && ! isWired (id, "depth"))
+                        spliced.add (id);
+                    else
+                    {
+                        object->setProperty ("type", "math.multiply");
+                        auto* parameters = new juce::DynamicObject();
+                        parameters->setProperty ("in.1", depth);
+                        object->setProperty ("parameters", juce::var (parameters));
+                        if (connections != nullptr)
+                            for (auto& c : *connections)
+                                if (auto* connection = c.getDynamicObject(); connection != nullptr && c["toNodeId"].toString() == id)
+                                    connection->setProperty ("toPortId", c["toPortId"].toString() == "depth" ? "in.1" : "in.0");
+                    }
+                }
+                else if (type == "adapt.normalise")
+                    becomeMap (*object, parameterOf (node, "adapt.normalise.min", 0.0f), parameterOf (node, "adapt.normalise.max", 1.0f), 0.0f, 1.0f);
+                else if (type == "util.unipolarToBipolar")
+                    becomeMap (*object, 0.0f, 1.0f, -1.0f, 1.0f);
+                else if (type == "util.bipolarToUnipolar")
+                    becomeMap (*object, -1.0f, 1.0f, 0.0f, 1.0f);
+            }
+
+            // Splice out: what fed a removed node's "in" now feeds everything
+            // its "out" fed (and the graph output, if it was that).
+            for (const auto& id : spliced)
+            {
+                juce::var feeder;
+                if (connections != nullptr)
+                {
+                    for (const auto& c : *connections)
+                        if (c["toNodeId"].toString() == id && c["toPortId"].toString() == "in")
+                            feeder = c;
+
+                    if (! feeder.isVoid())
+                    {
+                        juce::Array<juce::var> bridged;
+                        for (const auto& c : *connections)
+                        {
+                            if (c["fromNodeId"].toString() != id)
+                                continue;
+                            auto* bridge = new juce::DynamicObject();
+                            bridge->setProperty ("fromNodeId", feeder["fromNodeId"]);
+                            bridge->setProperty ("fromPortId", feeder["fromPortId"]);
+                            bridge->setProperty ("toNodeId", c["toNodeId"]);
+                            bridge->setProperty ("toPortId", c["toPortId"]);
+                            bridged.add (juce::var (bridge));
+                        }
+                        connections->addArray (bridged);
+                    }
+
+                    for (int i = connections->size(); --i >= 0;)
+                        if ((*connections)[i]["fromNodeId"].toString() == id || (*connections)[i]["toNodeId"].toString() == id)
+                            connections->remove (i);
+                }
+
+                if (root["outputNodeId"].toString() == id && ! feeder.isVoid())
+                {
+                    root.getDynamicObject()->setProperty ("outputNodeId", feeder["fromNodeId"]);
+                    root.getDynamicObject()->setProperty ("outputPortId", feeder["fromPortId"]);
+                }
+
+                for (int i = nodes->size(); --i >= 0;)
+                    if ((*nodes)[i]["id"].toString() == id)
+                        nodes->remove (i);
+            }
+
+            root.getDynamicObject()->setProperty ("schemaVersion", 12);
+            return root;
+        }
+
+        // wiki/plans/DataAndWavetable.md §2 (1a.3): duplicated nodes merged.
+        //   - mix.gain -> math.multiply (audio -> in.0, gain -> in.1);
+        //   - math.clamp -> shape.clip (low/high carry over, knee 0: an exact
+        //     clamp), and an old shape.clip's ±ceiling -> low = -c, high = c
+        //     (a wired ceiling drives High only);
+        //   - env.follower -> analysis.level (detection -> mode, attack and
+        //     release carry over, out -> level).
+        juce::var migrateV12ToV13 (juce::var v12Root)
+        {
+            auto root = v12Root.clone();
+            auto* nodes = root["nodes"].getArray();
+            auto* connections = root["connections"].getArray();
+
+            // Port renames per node id, applied to connections afterwards.
+            std::unordered_map<juce::String, std::unordered_map<juce::String, juce::String>> inputRenames, outputRenames;
+
+            auto parametersOf = [] (juce::DynamicObject& node) -> juce::DynamicObject&
+            {
+                if (node.getProperty ("parameters").getDynamicObject() == nullptr)
+                    node.setProperty ("parameters", juce::var (new juce::DynamicObject()));
+                return *node.getProperty ("parameters").getDynamicObject();
+            };
+            auto moveParameter = [] (juce::DynamicObject& parameters, const juce::String& from, const juce::String& to)
+            {
+                if (! parameters.hasProperty (from))
+                    return;
+                const auto value = parameters.getProperty (from);
+                parameters.removeProperty (from);
+                parameters.setProperty (to, value);
+            };
+
+            if (nodes != nullptr)
+            {
+                for (auto& node : *nodes)
+                {
+                    auto* object = node.getDynamicObject();
+                    if (object == nullptr)
+                        continue;
+                    const auto id = object->getProperty ("id").toString();
+                    const auto type = object->getProperty ("type").toString();
+                    auto& parameters = parametersOf (*object);
+
+                    if (type == "mix.gain")
+                    {
+                        object->setProperty ("type", "math.multiply");
+                        moveParameter (parameters, "gain", "in.1");
+                        inputRenames[id] = { { "audio", "in.0" }, { "gain", "in.1" } };
+                    }
+                    else if (type == "math.clamp")
+                    {
+                        object->setProperty ("type", "shape.clip");
+                        moveParameter (parameters, "math.clamp.low", "shape.clip.low");
+                        moveParameter (parameters, "math.clamp.high", "shape.clip.high");
+                        if (! parameters.hasProperty ("shape.clip.low"))
+                            parameters.setProperty ("shape.clip.low", 0.0f); // Clamp's own defaults
+                        if (! parameters.hasProperty ("shape.clip.high"))
+                            parameters.setProperty ("shape.clip.high", 1.0f);
+                        parameters.setProperty ("shape.clip.knee", 0.0f);
+                        inputRenames[id] = { { "math.clamp.low", "shape.clip.low" }, { "math.clamp.high", "shape.clip.high" } };
+                    }
+                    else if (type == "shape.clip")
+                    {
+                        const auto ceiling = parameters.hasProperty ("shape.clip.ceiling") ? (float) parameters.getProperty ("shape.clip.ceiling") : 1.0f;
+                        parameters.removeProperty ("shape.clip.ceiling");
+                        parameters.setProperty ("shape.clip.low", -ceiling);
+                        parameters.setProperty ("shape.clip.high", ceiling);
+                        inputRenames[id] = { { "shape.clip.ceiling", "shape.clip.high" } };
+                    }
+                    else if (type == "env.follower")
+                    {
+                        object->setProperty ("type", "analysis.level");
+                        // Follower: 0 Peak, 1 RMS (Peak by default). Level: 0 RMS, 1 Peak.
+                        const auto detection = parameters.hasProperty ("env.follower.detection") ? (int) std::lround ((float) parameters.getProperty ("env.follower.detection")) : 0;
+                        parameters.removeProperty ("env.follower.detection");
+                        parameters.setProperty ("analysis.level.mode", detection == 1 ? 0.0f : 1.0f);
+                        moveParameter (parameters, "env.follower.attack", "analysis.level.attack");
+                        moveParameter (parameters, "env.follower.release", "analysis.level.release");
+                        inputRenames[id] = { { "env.follower.attack", "analysis.level.attack" }, { "env.follower.release", "analysis.level.release" } };
+                        outputRenames[id] = { { "out", "level" } };
+                    }
+                    else if (type == "mix.crossfade")
+                    {
+                        object->setProperty ("type", "math.blend");
+                        moveParameter (parameters, "mix.crossfade.position", "math.blend.amount");
+                        moveParameter (parameters, "mix.crossfade.law", "math.blend.law");
+                        inputRenames[id] = { { "mix.crossfade.position", "math.blend.amount" } };
+                    }
+                    else if (type == "logic.select")
+                    {
+                        // Select was a Blend with a boolean Amount: whenFalse is A,
+                        // whenTrue is B, and an unwired condition (false) is Amount 0.
+                        object->setProperty ("type", "math.blend");
+                        parameters.setProperty ("math.blend.amount", 0.0f);
+                        inputRenames[id] = { { "whenFalse", "a" }, { "whenTrue", "b" }, { "condition", "math.blend.amount" } };
+                    }
+                    else if (type == "view.scope.control" || type == "view.scope.modulation" || type == "view.gate")
+                    {
+                        // One Scope for every value; how it draws follows the source.
+                        object->setProperty ("type", "view.scope");
+                        moveParameter (parameters, type + ".timeWindow", "view.scope.timeWindow");
+                    }
+                }
+            }
+
+            auto rename = [] (const std::unordered_map<juce::String, std::unordered_map<juce::String, juce::String>>& renames,
+                              const juce::String& nodeId, const juce::String& portId) -> juce::String
+            {
+                const auto node = renames.find (nodeId);
+                if (node == renames.end())
+                    return portId;
+                const auto port = node->second.find (portId);
+                return port == node->second.end() ? portId : port->second;
+            };
+
+            if (connections != nullptr)
+            {
+                for (auto& c : *connections)
+                {
+                    if (auto* connection = c.getDynamicObject())
+                    {
+                        connection->setProperty ("toPortId", rename (inputRenames, c["toNodeId"].toString(), c["toPortId"].toString()));
+                        connection->setProperty ("fromPortId", rename (outputRenames, c["fromNodeId"].toString(), c["fromPortId"].toString()));
+                    }
+                }
+            }
+            if (root.getDynamicObject()->hasProperty ("outputNodeId"))
+                root.getDynamicObject()->setProperty ("outputPortId", rename (outputRenames, root["outputNodeId"].toString(), root["outputPortId"].toString()));
+
+            root.getDynamicObject()->setProperty ("schemaVersion", 13);
+            return root;
+        }
+
+        // Schema v14 (wiki/plans/DataAndWavetable.md §3): type ids follow the
+        // category (`life.voice`, `time.delay`, …). A renamed node's own
+        // parameter keys and port ids carry its type id as their prefix
+        // ("adapt.map.inMin"), so they move with it.
+        juce::var migrateV13ToV14 (juce::var v13Root)
+        {
+            static const std::unordered_map<juce::String, juce::String> renamed {
+                { "noise.colored", "source.noise" },
+                { "noise.dust", "source.dust" },
+                { "dyn.compress", "dynamics.compress" },
+                { "dyn.gate", "dynamics.gate" },
+                { "fx.freqShift", "spectrum.freqShift" },
+                { "mix.downmix", "channels.downmix" },
+                { "stereo.split", "channels.split" },
+                { "stereo.combine", "channels.combine" },
+                { "delay.line", "time.delay" },
+                { "clock.pulse", "time.clock" },
+                { "clock.divide", "time.divide" },
+                { "clock.counter", "time.counter" },
+                { "seq.steps", "time.steps" },
+                { "seq.euclid", "time.euclid" },
+                { "math.slew", "time.slew" },
+                { "adapt.sampleHold", "time.sampleHold" },
+                { "adapt.gateLength", "time.gateLength" },
+                { "adapt.map", "math.map" },
+                { "adapt.pitchToFrequency", "math.pitchToFrequency" },
+                { "adapt.frequencyToPitch", "math.frequencyToPitch" },
+                { "adapt.threshold", "logic.threshold" },
+                { "instance.allocate.voice", "life.voice" },
+                { "instance.allocate.swarmPopulation", "life.swarmPopulation" },
+                { "instance.allocate.swarmTransient", "life.swarmTransient" },
+                { "instance.allocate.trigger", "life.trigger" },
+                { "instance.sum", "life.merge" }
+            };
+
+            auto root = v13Root.clone();
+            std::unordered_map<juce::String, std::pair<juce::String, juce::String>> prefixByNodeId; // id -> (old., new.)
+
+            if (auto* nodes = root["nodes"].getArray())
+            {
+                for (auto& node : *nodes)
+                {
+                    auto* object = node.getDynamicObject();
+                    if (object == nullptr)
+                        continue;
+                    const auto it = renamed.find (object->getProperty ("type").toString());
+                    if (it == renamed.end())
+                        continue;
+
+                    object->setProperty ("type", it->second);
+                    const auto oldPrefix = it->first + ".", newPrefix = it->second + ".";
+                    prefixByNodeId[object->getProperty ("id").toString()] = { oldPrefix, newPrefix };
+
+                    if (auto* parameters = object->getProperty ("parameters").getDynamicObject())
+                    {
+                        auto* moved = new juce::DynamicObject();
+                        for (const auto& property : parameters->getProperties())
+                        {
+                            const auto key = property.name.toString();
+                            moved->setProperty (key.startsWith (oldPrefix) ? newPrefix + key.substring (oldPrefix.length()) : key, property.value);
+                        }
+                        object->setProperty ("parameters", juce::var (moved));
+                    }
+                }
+            }
+
+            auto renamePort = [&] (const juce::String& nodeId, const juce::String& portId) -> juce::String
+            {
+                const auto it = prefixByNodeId.find (nodeId);
+                if (it == prefixByNodeId.end() || ! portId.startsWith (it->second.first))
+                    return portId;
+                return it->second.second + portId.substring (it->second.first.length());
+            };
+
+            if (auto* connections = root["connections"].getArray())
+                for (auto& c : *connections)
+                    if (auto* connection = c.getDynamicObject())
+                    {
+                        connection->setProperty ("toPortId", renamePort (c["toNodeId"].toString(), c["toPortId"].toString()));
+                        connection->setProperty ("fromPortId", renamePort (c["fromNodeId"].toString(), c["fromPortId"].toString()));
+                    }
+            if (root.getDynamicObject()->hasProperty ("outputNodeId"))
+                root.getDynamicObject()->setProperty ("outputPortId", renamePort (root["outputNodeId"].toString(), root["outputPortId"].toString()));
+
+            root.getDynamicObject()->setProperty ("schemaVersion", 14);
+            return root;
+        }
+
+        // Schema v15 (wiki/plans/DataAndWavetable.md 1b): nodes may carry
+        // `content` (a factory's document). Optional, so nothing to rewrite.
+        juce::var migrateV14ToV15 (juce::var v14Root)
+        {
+            auto root = v14Root.clone();
+            root.getDynamicObject()->setProperty ("schemaVersion", 15);
+            return root;
+        }
+
+        // Schema v16 (wiki/plans/DataAndWavetable.md D5/D6, 1b): the oscillators,
+        // the LFO, the ADSR and data.table become the curve nodes — one
+        // source.oscillator / source.envelope / data.curve whose shape is
+        // content. What a curve cannot express: osc.analog's and osc.square's
+        // pulse-width MODULATION (a fixed width becomes the square's duty), an
+        // ADSR's modulated stage times (their cables are dropped), and the
+        // LFO's two random shapes, which become random.stepped (a different
+        // random sequence; random was never repeatable across node types).
+        juce::var migrateV15ToV16 (juce::var v15Root)
+        {
+            auto root = v15Root.clone();
+            auto* nodes = root["nodes"].getArray();
+            auto* connections = root["connections"].getArray();
+            if (nodes == nullptr || connections == nullptr)
+            {
+                root.getDynamicObject()->setProperty ("schemaVersion", 16);
+                return root;
+            }
+
+            std::unordered_set<juce::String> usedIds;
+            for (const auto& node : *nodes)
+                usedIds.insert (node["id"].toString());
+            auto freshId = [&] (const juce::String& base)
+            {
+                auto id = base;
+                for (int n = 2; usedIds.count (id) > 0; ++n)
+                    id = base + juce::String (n);
+                usedIds.insert (id);
+                return id;
+            };
+            auto number = [] (juce::DynamicObject* parameters, const char* key, float fallback)
+            {
+                return parameters != nullptr && parameters->hasProperty (key) ? (float) (double) parameters->getProperty (key) : fallback;
+            };
+            auto connection = [] (const juce::String& from, const juce::String& fromPort, const juce::String& to, const juce::String& toPort)
+            {
+                auto* c = new juce::DynamicObject();
+                c->setProperty ("fromNodeId", from);
+                c->setProperty ("fromPortId", fromPort);
+                c->setProperty ("toNodeId", to);
+                c->setProperty ("toPortId", toPort);
+                return juce::var (c);
+            };
+            auto newNode = [] (const juce::String& id, const juce::String& type, const juce::var& near, juce::DynamicObject* parameters)
+            {
+                auto* n = new juce::DynamicObject();
+                n->setProperty ("id", id);
+                n->setProperty ("type", type);
+                auto* position = new juce::DynamicObject();
+                position->setProperty ("x", (double) near["position"]["x"] - 160.0);
+                position->setProperty ("y", (double) near["position"]["y"]);
+                n->setProperty ("position", juce::var (position));
+                n->setProperty ("parameters", juce::var (parameters != nullptr ? parameters : new juce::DynamicObject()));
+                n->setProperty ("properties", juce::var (new juce::DynamicObject()));
+                return juce::var (n);
+            };
+            auto cycleShape = [] (int index, float duty)
+            {
+                switch (index)
+                {
+                    case 0: return CurveDocument::sine();
+                    case 2: return CurveDocument::square (duty);
+                    case 3: return CurveDocument::triangle();
+                    default: return CurveDocument::saw();
+                }
+            };
+
+            // Per node: input port renames, and inputs whose cables no longer
+            // have anywhere to go.
+            std::unordered_map<juce::String, std::unordered_map<juce::String, juce::String>> inputRenames, outputRenames;
+            std::unordered_map<juce::String, std::unordered_set<juce::String>> droppedInputs;
+            std::vector<juce::var> addedNodes, addedConnections;
+            // osc.analog fed by Pitch: the pitch cable moves onto a Pitch to Frequency node.
+            std::unordered_map<juce::String, juce::String> pitchConverterFor;
+            std::unordered_map<juce::String, float> fineFor;
+
+            for (auto& node : *nodes)
+            {
+                auto* object = node.getDynamicObject();
+                if (object == nullptr)
+                    continue;
+                const auto id = object->getProperty ("id").toString();
+                const auto type = object->getProperty ("type").toString();
+                auto* parameters = object->getProperty ("parameters").getDynamicObject();
+                auto* moved = new juce::DynamicObject();
+
+                if (type == "osc.sine" || type == "osc.saw" || type == "osc.square" || type == "osc.triangle")
+                {
+                    const auto prefix = type + ".";
+                    const auto shape = type == "osc.sine" ? 0 : type == "osc.saw" ? 1 : type == "osc.square" ? 2 : 3;
+                    moved->setProperty ("source.oscillator.frequency", number (parameters, (prefix + "frequency").toRawUTF8(), 440.0f));
+                    if (parameters != nullptr && parameters->hasProperty (prefix + "amplitude"))
+                        moved->setProperty ("source.oscillator.amplitude", parameters->getProperty (prefix + "amplitude"));
+                    if (parameters != nullptr && parameters->hasProperty (prefix + "phase"))
+                        moved->setProperty ("source.oscillator.phase", parameters->getProperty (prefix + "phase"));
+                    object->setProperty ("content", cycleShape (shape, number (parameters, (prefix + "pulseWidth").toRawUTF8(), 0.5f)).toVar());
+                    object->setProperty ("type", "source.oscillator");
+                    inputRenames[id] = { { prefix + "frequency", "source.oscillator.frequency" },
+                                         { prefix + "amplitude", "source.oscillator.amplitude" },
+                                         { prefix + "phase", "source.oscillator.phase" },
+                                         { "sync", "trigger" } };
+                    droppedInputs[id] = { prefix + "pulseWidth" };
+                }
+                else if (type == "osc.analog")
+                {
+                    const auto shape = juce::jlimit (0, 3, (int) std::lround (number (parameters, "osc.analog.shape", 1.0f)));
+                    const auto fine = number (parameters, "osc.analog.fine", 0.0f);
+                    moved->setProperty ("source.oscillator.frequency", number (parameters, "osc.analog.frequency", 440.0f) * std::exp2 (fine / 1200.0f));
+                    if (parameters != nullptr && parameters->hasProperty ("osc.analog.phase"))
+                        moved->setProperty ("source.oscillator.phase", parameters->getProperty ("osc.analog.phase"));
+                    object->setProperty ("content", cycleShape (shape, number (parameters, "osc.analog.pulseWidth", 0.5f)).toVar());
+                    object->setProperty ("type", "source.oscillator");
+                    inputRenames[id] = { { "osc.analog.frequency", "source.oscillator.frequency" },
+                                         { "osc.analog.phase", "source.oscillator.phase" },
+                                         { "sync", "trigger" } };
+                    droppedInputs[id] = { "osc.analog.pulseWidth", "osc.analog.fine" };
+                    fineFor[id] = fine;
+                }
+                else if (type == "lfo.shape")
+                {
+                    const auto shape = juce::jlimit (0, 6, (int) std::lround (number (parameters, "lfo.shape.shape", 0.0f)));
+                    const auto unipolar = number (parameters, "lfo.shape.polarity", 0.0f) > 0.5f;
+                    if (shape >= 5)
+                    {
+                        object->setProperty ("type", "random.stepped");
+                        moved->setProperty ("random.stepped.rate", number (parameters, "lfo.shape.rate", 1.0f));
+                        moved->setProperty ("random.stepped.smooth", shape == 6 ? 1.0f : 0.0f);
+                        if (unipolar)
+                        {
+                            moved->setProperty ("random.stepped.bias", 0.5f);
+                            moved->setProperty ("random.stepped.amount", 0.5f);
+                        }
+                        inputRenames[id] = { { "lfo.shape.rate", "random.stepped.rate" }, { "reset", "trigger" } };
+                        droppedInputs[id] = { "lfo.shape.phase" };
+                    }
+                    else
+                    {
+                        CurveDocument doc = shape == 0 ? CurveDocument::sine() : shape == 1 ? CurveDocument::triangle()
+                                           : shape == 2 ? CurveDocument::saw() : shape == 3 ? CurveDocument::ramp()
+                                                                                             : CurveDocument::square();
+                        if (unipolar)
+                            for (auto& point : doc.points)
+                                point.y = 0.5f * (point.y + 1.0f);
+                        object->setProperty ("content", doc.toVar());
+                        object->setProperty ("type", "source.oscillator");
+                        moved->setProperty ("source.oscillator.frequency", number (parameters, "lfo.shape.rate", 1.0f));
+                        if (parameters != nullptr && parameters->hasProperty ("lfo.shape.phase"))
+                            moved->setProperty ("source.oscillator.phase", parameters->getProperty ("lfo.shape.phase"));
+                        moved->setProperty ("source.oscillator.sync", number (parameters, "lfo.shape.sync", 0.0f));
+                        moved->setProperty ("source.oscillator.division", number (parameters, "lfo.shape.division", 4.0f));
+                        inputRenames[id] = { { "lfo.shape.rate", "source.oscillator.frequency" },
+                                             { "lfo.shape.phase", "source.oscillator.phase" },
+                                             { "reset", "trigger" } };
+                    }
+                }
+                else if (type == "env.adsr")
+                {
+                    // juce::ADSR's own defaults are what played when a stage was never set.
+                    const auto doc = CurveDocument::adsr (number (parameters, "env.adsr.attack", 0.1f), number (parameters, "env.adsr.decay", 0.1f),
+                                                          number (parameters, "env.adsr.sustain", 1.0f), number (parameters, "env.adsr.release", 0.1f), 0.0f);
+                    object->setProperty ("content", doc.toVar());
+                    object->setProperty ("type", "source.envelope");
+                    droppedInputs[id] = { "env.adsr.attack", "env.adsr.decay", "env.adsr.sustain", "env.adsr.release" };
+                }
+                else if (type == "data.table")
+                {
+                    const auto count = juce::jlimit (2, 32, (int) std::lround (number (parameters, "data.table.resolution", 8.0f)));
+                    CurveDocument doc;
+                    doc.timeBase = CurveDocument::TimeBase::Time; // held at both ends, as a Lookup read the table
+                    doc.lengthSeconds = 1.0f;
+                    for (int i = 0; i < count; ++i)
+                        doc.points.push_back ({ (float) i / (float) (count - 1),
+                                                number (parameters, ("data.table.point." + juce::String (i)).toRawUTF8(), 0.0f) });
+                    object->setProperty ("content", doc.toVar());
+                    object->setProperty ("type", "data.curve");
+                    outputRenames[id] = { { "data", "curve" } };
+                }
+                else
+                {
+                    delete moved;
+                    continue;
+                }
+                object->setProperty ("parameters", juce::var (moved));
+            }
+
+            // Rewire.
+            juce::Array<juce::var> kept;
+            for (auto& c : *connections)
+            {
+                const auto to = c["toNodeId"].toString();
+                const auto from = c["fromNodeId"].toString();
+                auto toPort = c["toPortId"].toString();
+                auto fromPort = c["fromPortId"].toString();
+
+                if (const auto dropped = droppedInputs.find (to); dropped != droppedInputs.end() && dropped->second.count (toPort) > 0)
+                    continue;
+
+                if (fineFor.count (to) > 0 && toPort == "pitch")
+                {
+                    // Pitch -> [+ fine] -> Pitch to Frequency -> frequency.
+                    auto& converter = pitchConverterFor[to];
+                    if (converter.isEmpty())
+                    {
+                        const juce::var* owner = nullptr;
+                        for (const auto& node : *nodes)
+                            if (node["id"].toString() == to)
+                                owner = &node;
+                        converter = freshId (to + "PitchToFrequency");
+                        addedNodes.push_back (newNode (converter, "math.pitchToFrequency", *owner, nullptr));
+                        auto source = juce::String (from), sourcePort = fromPort;
+                        if (const auto fine = fineFor[to]; fine != 0.0f)
+                        {
+                            auto* addParameters = new juce::DynamicObject();
+                            addParameters->setProperty ("in.1", fine / 100.0f);
+                            const auto adder = freshId (to + "Fine");
+                            addedNodes.push_back (newNode (adder, "math.add", *owner, addParameters));
+                            addedConnections.push_back (connection (source, sourcePort, adder, "in.0"));
+                            source = adder;
+                            sourcePort = "out";
+                        }
+                        else
+                        {
+                            addedConnections.push_back (connection (source, sourcePort, converter, "pitch"));
+                            source = {};
+                        }
+                        if (source.isNotEmpty())
+                            addedConnections.push_back (connection (source, sourcePort, converter, "pitch"));
+                        addedConnections.push_back (connection (converter, "frequency", to, "source.oscillator.frequency"));
+                    }
+                    continue;
+                }
+
+                if (const auto renames = inputRenames.find (to); renames != inputRenames.end())
+                    if (const auto renamed = renames->second.find (toPort); renamed != renames->second.end())
+                        toPort = renamed->second;
+                if (const auto renames = outputRenames.find (from); renames != outputRenames.end())
+                    if (const auto renamed = renames->second.find (fromPort); renamed != renames->second.end())
+                        fromPort = renamed->second;
+
+                c.getDynamicObject()->setProperty ("toPortId", toPort);
+                c.getDynamicObject()->setProperty ("fromPortId", fromPort);
+                kept.add (c);
+            }
+
+            // A pitch-driven osc.analog ignored its own Frequency cable: so does the migration.
+            juce::Array<juce::var> result;
+            for (const auto& c : kept)
+                if (! (pitchConverterFor.count (c["toNodeId"].toString()) > 0 && c["toPortId"].toString() == "source.oscillator.frequency"))
+                    result.add (c);
+            for (const auto& c : addedConnections)
+                result.add (c);
+            for (const auto& n : addedNodes)
+                nodes->add (n);
+            root.getDynamicObject()->setProperty ("connections", result);
+
+            if (root.getDynamicObject()->hasProperty ("outputNodeId"))
+                if (const auto renames = outputRenames.find (root["outputNodeId"].toString()); renames != outputRenames.end())
+                    if (const auto renamed = renames->second.find (root["outputPortId"].toString()); renamed != renames->second.end())
+                        root.getDynamicObject()->setProperty ("outputPortId", renamed->second);
+
+            root.getDynamicObject()->setProperty ("schemaVersion", 16);
+            return root;
+        }
+
         // vN -> vN+1 migrations, keyed by the version they migrate FROM.
         using Migration = std::function<juce::var (juce::var)>;
 
@@ -739,6 +1379,11 @@ namespace bazalt::engine
                 { 8, migrateV8ToV9 },
                 { 9, migrateV9ToV10 },
                 { 10, migrateV10ToV11 },
+                { 11, migrateV11ToV12 },
+                { 12, migrateV12ToV13 },
+                { 13, migrateV13ToV14 },
+                { 14, migrateV14ToV15 },
+                { 15, migrateV15ToV16 },
             };
             return migrations;
         }

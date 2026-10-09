@@ -50,7 +50,7 @@ namespace bazalt::engine::nodes
         int getNumOutputPorts() const noexcept override { return numOutputs; }
 
         juce::String getTitle() const override { return "Note Value"; }
-        juce::String getCategory() const override { return "Note"; }
+        juce::String getCategory() const override { return "Notes"; }
 
         std::vector<PortDescriptor> getInputPorts() const override
         {
@@ -60,9 +60,9 @@ namespace bazalt::engine::nodes
         std::vector<PortDescriptor> getOutputPorts() const override
         {
             return {
-                PortDescriptor { .id = "pitch", .type = SignalType::Control, .isPrimaryOutput = true,
+                PortDescriptor { .id = "pitch", .type = SignalType::Signal, .isPrimaryOutput = true,
                                   .minValue = 0.0f, .maxValue = 127.0f, .defaultValue = 60.0f, .quantity = Quantity::Pitch },
-                PortDescriptor { .id = "velocity", .type = SignalType::Control,
+                PortDescriptor { .id = "velocity", .type = SignalType::Signal,
                                   .quantity = Quantity::Unipolar, .polarity = Polarity::Unipolar },
             };
         }

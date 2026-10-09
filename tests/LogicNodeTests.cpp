@@ -130,9 +130,9 @@ TEST_CASE ("threshold -> logic.toggle -> env.adsr gate compiles and toggles, so 
 
     NodeGraph graph;
     graph.addNode ({ "level", "util.constant", {}, { { "util.constant.value", 0.6f } }, {} });
-    graph.addNode ({ "edge", "adapt.threshold", {}, {}, {} });
+    graph.addNode ({ "edge", "logic.threshold", {}, {}, {} });
     graph.addNode ({ "flip", "logic.toggle", {}, {}, {} });
-    graph.addNode ({ "env", "env.adsr", {}, {}, {} });
+    graph.addNode (withContent ({ "env", "source.envelope", {}, {}, {} }, CurveDocument::adsr (0.1f, 0.1f, 1.0f, 0.1f, 0.0f)));
     graph.addConnection ({ "level", "out", "edge", "by" });
     graph.addConnection ({ "edge", "onThreshold", "flip", "trigger" });
     graph.addConnection ({ "flip", "out", "env", "gate" });
@@ -267,7 +267,7 @@ TEST_CASE ("A logic gate's group size is clamped to 2..16 and drives its declare
     REQUIRE (node.getInputPorts().size() == 5);
     CHECK (node.getNumInputPorts() == 5);
     CHECK (node.getInputPorts()[4].id == "in.4");
-    CHECK (node.getInputPorts()[4].type == SignalType::Boolean);
+    CHECK (node.getInputPorts()[4].quantity == Quantity::Boolean);
 
     node.setGroupPortCount (99);
     CHECK (node.getGroupPortCount() == 16);

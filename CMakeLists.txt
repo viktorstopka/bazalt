@@ -27,6 +27,13 @@ if (MSVC)
     add_link_options ($<$<CONFIG:Release>:/DEBUG> $<$<CONFIG:Release>:/OPT:REF> $<$<CONFIG:Release>:/OPT:ICF>)
 endif()
 
+# The C++ runtime is linked into the binaries rather than loaded from
+# VCRUNTIME140.dll / MSVCP140.dll: a Windows machine without the Visual C++
+# Redistributable installed (a fresh PC) can then still start Bazalt.exe and
+# load the VST3. Set before JUCE and Catch2 are fetched, so every target
+# agrees on one runtime.
+set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+
 option(BAZALT_BUILD_TESTS "Build the Catch2 engine test suite" ON)
 
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")

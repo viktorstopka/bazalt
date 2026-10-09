@@ -31,7 +31,7 @@ TEST_CASE ("InstanceSwarmPopulationNode: slots below populationSize are Gate=tru
 {
     InstanceSwarmPopulationNode node;
     node.prepare ({ 44100.0, 64 });
-    node.setParameter ("instance.allocate.swarmPopulation.populationSize", 4.0f);
+    node.setParameter ("life.swarmPopulation.populationSize", 4.0f);
 
     for (int slot = 0; slot < 8; ++slot)
     {
@@ -64,7 +64,7 @@ TEST_CASE ("InstanceSwarmPopulationNode: random1/random2/position are determinis
 {
     InstanceSwarmPopulationNode a;
     a.prepare ({ 44100.0, 64 });
-    a.setParameter ("instance.allocate.swarmPopulation.seed", 42.0f);
+    a.setParameter ("life.swarmPopulation.seed", 42.0f);
     a.setInstanceSlot (3);
     a.reset();
     const auto outA = sampleOnce (a);
@@ -73,7 +73,7 @@ TEST_CASE ("InstanceSwarmPopulationNode: random1/random2/position are determinis
     // bit-identical (DOMAINS.md §4's own determinism requirement).
     InstanceSwarmPopulationNode b;
     b.prepare ({ 44100.0, 64 });
-    b.setParameter ("instance.allocate.swarmPopulation.seed", 42.0f);
+    b.setParameter ("life.swarmPopulation.seed", 42.0f);
     b.setInstanceSlot (3);
     b.reset();
     const auto outB = sampleOnce (b);
@@ -86,7 +86,7 @@ TEST_CASE ("InstanceSwarmPopulationNode: random1/random2/position are determinis
     // just returns a fixed constant regardless of slot).
     InstanceSwarmPopulationNode c;
     c.prepare ({ 44100.0, 64 });
-    c.setParameter ("instance.allocate.swarmPopulation.seed", 42.0f);
+    c.setParameter ("life.swarmPopulation.seed", 42.0f);
     c.setInstanceSlot (4);
     c.reset();
     const auto outC = sampleOnce (c);
@@ -107,8 +107,8 @@ TEST_CASE ("InstanceSwarmPopulationNode declares the real populationSize/seed st
         return std::find_if (parameters.begin(), parameters.end(), [&] (const ParameterDescriptor& p) { return p.id == id; })
                != parameters.end();
     };
-    CHECK (hasParam ("instance.allocate.swarmPopulation.populationSize"));
-    CHECK (hasParam ("instance.allocate.swarmPopulation.seed"));
+    CHECK (hasParam ("life.swarmPopulation.populationSize"));
+    CHECK (hasParam ("life.swarmPopulation.seed"));
 
     const auto outputs = node.getOutputPorts();
     REQUIRE (outputs.size() == 8);

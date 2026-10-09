@@ -345,6 +345,20 @@ namespace bazalt
             completion (true);
         });
 
+        // A factory node's content (a curve, a wavetable), as JSON text: one
+        // undoable edit. graphSetContentLive streams it to the running nodes
+        // while an editor drags, without recompiling; the release commits.
+        options = options.withNativeFunction ("graphSetContent", [&processor] (Args args, Completion completion)
+        {
+            const auto result = processor.getGraphEditController().setContent (argString (args, 0), juce::JSON::parse (argString (args, 1)));
+            completion (commandResultToVar (result));
+        });
+        options = options.withNativeFunction ("graphSetContentLive", [&processor] (Args args, Completion completion)
+        {
+            const auto result = processor.getGraphEditController().setContentLive (argString (args, 0), juce::JSON::parse (argString (args, 1)));
+            completion (result.success);
+        });
+
         options = options.withNativeFunction ("graphSetOutput", [&processor] (Args args, Completion completion)
         {
             auto& controller = processor.getGraphEditController();
@@ -456,7 +470,7 @@ namespace bazalt
         options = options.withNativeFunction ("patchSave", [&processor] (Args args, Completion completion)
         {
             juce::String error;
-            const auto document = bazalt::engine::PatchDocument::fromNodeGraph (processor.getGraphEditController().getGraph());
+            const auto document = bazalt::engine::PatchDocument::fromNodeGraph (processor.getGraphEditController().getGraphForSaving());
             const auto fileName = bazalt::UserPatchLibrary().save (argString (args, 0), document, error);
 
             auto* obj = new juce::DynamicObject();
@@ -517,7 +531,7 @@ namespace bazalt
         // { "ports": { nodeId: { portId: { "kind": "poly"|"scalar",
         // "originId"?: string } } },
         //   "badges": { nodeId: { "activeCount": n, "maxCount": n } } } —
-        // "badges" entries exist only for "instance.allocate.voice" nodes,
+        // "badges" entries exist only for "life.voice" nodes,
         // and their two numbers are read FRESH off the processor's live
         // atomics on every call (they change on every voice on/off, far
         // more often than a recompile), not cached on the controller.

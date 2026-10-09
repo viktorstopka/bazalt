@@ -124,7 +124,7 @@ TEST_CASE ("VoiceManager::setMaxActiveVoices actually enforces the ceiling, not 
            "wiki/plans/DomainRedesign.md Batch 4",
            "[engine][VoiceManager][DomainRedesign]")
 {
-    // Real, found-live gap this closes: "instance.allocate.voice.
+    // Real, found-live gap this closes: "life.voice.
     // maxInstances" was declared and editable since M17 but read nowhere -
     // the pool was always hardcoded to the full numVoices regardless of it.
     VoiceManager voices;

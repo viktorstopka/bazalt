@@ -71,10 +71,10 @@ namespace bazalt::engine::nodes
             return {
                 PortDescriptor { .id = "trigger", .type = SignalType::Event, .label = "Trigger" },
                 ValueTypes::timeMsPort ("excite.burst.duration", "Duration", defaultDurationMs, 2000.0f),
-                PortDescriptor { .id = "excite.burst.tone", .type = SignalType::Control, .label = "Tone",
+                PortDescriptor { .id = "excite.burst.tone", .type = SignalType::Signal, .label = "Tone",
                                   .minValue = -1.0f, .maxValue = 1.0f, .defaultValue = 0.0f, .hasFallbackWhenUnconnected = true,
                                   .quantity = Quantity::Bipolar, .polarity = Polarity::Bipolar },
-                PortDescriptor { .id = "excite.burst.shape", .type = SignalType::Control, .label = "Shape",
+                PortDescriptor { .id = "excite.burst.shape", .type = SignalType::Signal, .label = "Shape",
                                   .minValue = -1.0f, .maxValue = 1.0f, .defaultValue = 0.0f, .hasFallbackWhenUnconnected = true,
                                   .quantity = Quantity::Bipolar, .polarity = Polarity::Bipolar },
             };
@@ -82,7 +82,7 @@ namespace bazalt::engine::nodes
 
         std::vector<PortDescriptor> getOutputPorts() const override
         {
-            return { { "out", SignalType::Audio } };
+            return { { .id = "out", .type = SignalType::Signal, .quantity = Quantity::Audio } };
         }
 
         void setParameter (const juce::String& parameterId, float value) override

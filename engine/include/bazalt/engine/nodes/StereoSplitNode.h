@@ -4,7 +4,7 @@
 
 namespace bazalt::engine::nodes
 {
-    /** Stable type id: "stereo.split". Real stereo cable redesign
+    /** Stable type id: "channels.split". Real stereo cable redesign
         (`wiki/NODES.System.md` §9): the bridge node independent per-channel
         wiring needs — takes one real stereo cable (`in`, `Channels::Stereo`)
         and re-exposes each side as an ordinary, individually-wireable mono
@@ -30,20 +30,20 @@ namespace bazalt::engine::nodes
         int getNumInputChannels() const noexcept override { return 2; }
 
         juce::String getTitle() const override { return "Stereo Split"; }
-        juce::String getCategory() const override { return "Adapters"; }
+        juce::String getCategory() const override { return "Channels"; }
 
         std::vector<PortDescriptor> getInputPorts() const override
         {
             return {
-                PortDescriptor { .id = "in", .type = SignalType::Audio, .channels = Channels::Stereo },
+                PortDescriptor { .id = "in", .type = SignalType::Signal, .quantity = Quantity::Audio, .channels = Channels::Stereo },
             };
         }
 
         std::vector<PortDescriptor> getOutputPorts() const override
         {
             return {
-                PortDescriptor { .id = "left", .type = SignalType::Audio, .label = "Left", .isPrimaryOutput = true },
-                PortDescriptor { .id = "right", .type = SignalType::Audio, .label = "Right" },
+                PortDescriptor { .id = "left", .type = SignalType::Signal, .label = "Left", .isPrimaryOutput = true, .quantity = Quantity::Audio },
+                PortDescriptor { .id = "right", .type = SignalType::Signal, .label = "Right", .quantity = Quantity::Audio },
             };
         }
 

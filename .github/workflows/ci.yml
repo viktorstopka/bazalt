@@ -26,8 +26,20 @@ jobs:
           path: build/_deps
           key: ${{ runner.os }}-fetchcontent-${{ hashFiles('CMakeLists.txt') }}
 
+      # JUCE's WebView2 (static) needs the Microsoft.Web.WebView2 NuGet
+      # package; the runner doesn't have it. Fetch the exact version JUCE's
+      # FindWebView2.cmake asks for and point CMake at it.
+      - name: Fetch WebView2 SDK
+        shell: pwsh
+        run: |
+          $version = "1.0.3485.44"
+          $dir = ($env:RUNNER_TEMP -replace "\\", "/") + "/webview2"  # forward slashes: CMake globs this
+          Invoke-WebRequest -Uri "https://www.nuget.org/api/v2/package/Microsoft.Web.WebView2/$version" -OutFile "$env:RUNNER_TEMP/webview2.zip"
+          Expand-Archive "$env:RUNNER_TEMP/webview2.zip" -DestinationPath "$dir/Microsoft.Web.WebView2.$version"
+          "WEBVIEW2_DIR=$dir" | Out-File -FilePath $env:GITHUB_ENV -Append
+
       - name: Configure
-        run: cmake -S . -B build -G "Visual Studio 17 2022" -A x64
+        run: cmake -S . -B build -G "Visual Studio 17 2022" -A x64 "-DJUCE_WEBVIEW2_PACKAGE_LOCATION=${{ env.WEBVIEW2_DIR }}"
 
       - name: Build (Debug)
         run: cmake --build build --config Debug --parallel

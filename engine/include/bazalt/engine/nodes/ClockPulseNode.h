@@ -5,7 +5,7 @@
 
 namespace bazalt::engine::nodes
 {
-    /** Stable type id: "clock.pulse" (wiki/NODES.md's `clock.*` row, the
+    /** Stable type id: "time.clock" (wiki/NODES.md's `clock.*` row, the
         Clock+Seq batch, wiki/NODES.Status.md). The root timing source: a
         phase accumulator that fires an Event on every cycle, with optional
         swing/jitter and an internal free-run rate or a tempo-synced one.
@@ -25,7 +25,7 @@ namespace bazalt::engine::nodes
         `jitter * 0.5` periods either direction. `seed` (a structural
         parameter, matching `random.stepped`/`random.drift`'s own
         convention) makes this reproducible — the catalog doesn't name a
-        `seed` port for `clock.pulse`, but every other node in this codebase
+        `seed` port for `time.clock`, but every other node in this codebase
         with internal randomness gets one, and jitter without one would make
         an otherwise deterministic render non-reproducible for no reason.
 
@@ -77,23 +77,23 @@ namespace bazalt::engine::nodes
         int getNumOutputPorts() const noexcept override { return numOutputs; }
 
         juce::String getTitle() const override { return "Clock"; }
-        juce::String getCategory() const override { return "Clock"; }
+        juce::String getCategory() const override { return "Time"; }
 
         std::vector<PortDescriptor> getInputPorts() const override
         {
             return {
-                PortDescriptor { .id = "clock.pulse.rate", .type = SignalType::Control, .label = "Rate",
+                PortDescriptor { .id = "time.clock.rate", .type = SignalType::Signal, .label = "Rate",
                                   .unit = "Hz", .minValue = 0.01f, .maxValue = 100.0f, .defaultValue = defaultRateHz,
                                   .isLogScale = true, .hasFallbackWhenUnconnected = true, .quantity = Quantity::Frequency,
                                   .curve = Curve::Logarithmic },
-                PortDescriptor { .id = "clock.pulse.swing", .type = SignalType::Control, .label = "Swing",
+                PortDescriptor { .id = "time.clock.swing", .type = SignalType::Signal, .label = "Swing",
                                   .minValue = 0.0f, .maxValue = 1.0f, .defaultValue = 0.0f,
                                   .hasFallbackWhenUnconnected = true, .quantity = Quantity::Unipolar },
-                PortDescriptor { .id = "clock.pulse.jitter", .type = SignalType::Control, .label = "Jitter",
+                PortDescriptor { .id = "time.clock.jitter", .type = SignalType::Signal, .label = "Jitter",
                                   .minValue = 0.0f, .maxValue = 1.0f, .defaultValue = 0.0f,
                                   .hasFallbackWhenUnconnected = true, .quantity = Quantity::Unipolar },
-                PortDescriptor { .id = "clock.pulse.run", .type = SignalType::Boolean, .label = "Run",
-                                  .defaultValue = 1.0f, .hasFallbackWhenUnconnected = true, .kind = ValueKind::Bool },
+                PortDescriptor { .id = "time.clock.run", .type = SignalType::Signal, .label = "Run",
+                                  .defaultValue = 1.0f, .hasFallbackWhenUnconnected = true, .kind = ValueKind::Bool, .quantity = Quantity::Boolean },
                 PortDescriptor { .id = "reset", .type = SignalType::Event, .label = "Reset" },
             };
         }
@@ -102,7 +102,7 @@ namespace bazalt::engine::nodes
         {
             return {
                 PortDescriptor { .id = "tick", .type = SignalType::Event, .label = "Tick", .isPrimaryOutput = true },
-                PortDescriptor { .id = "phase", .type = SignalType::Control, .label = "Phase",
+                PortDescriptor { .id = "phase", .type = SignalType::Signal, .label = "Phase",
                                   .minValue = 0.0f, .maxValue = 1.0f, .quantity = Quantity::Phase },
             };
         }
@@ -110,19 +110,19 @@ namespace bazalt::engine::nodes
         std::vector<ParameterDescriptor> getParameters() const override
         {
             return {
-                ParameterDescriptor { .id = "clock.pulse.rateMode",
+                ParameterDescriptor { .id = "time.clock.rateMode",
                                        .minValue = 0.0f, .maxValue = 1.0f, .defaultValue = 0.0f,
                                        .displayName = "Rate Mode", .isInteger = true, .kind = ValueKind::Enum,
                                        .enumOptions = { { "free", "Free" }, { "division", "Division" } },
                                        .isStructural = true },
-                ParameterDescriptor { .id = "clock.pulse.division",
+                ParameterDescriptor { .id = "time.clock.division",
                                        .minValue = 0.0f, .maxValue = 5.0f, .defaultValue = 2.0f, // "quarter"
                                        .displayName = "Division", .isInteger = true, .kind = ValueKind::Enum,
                                        .enumOptions = { { "whole", "1/1" }, { "half", "1/2" }, { "quarter", "1/4" },
                                                          { "eighth", "1/8" }, { "sixteenth", "1/16" },
                                                          { "thirtySecond", "1/32" } },
                                        .isStructural = true },
-                ParameterDescriptor { .id = "clock.pulse.seed",
+                ParameterDescriptor { .id = "time.clock.seed",
                                        .minValue = 0.0f, .maxValue = 999999.0f, .defaultValue = 1.0f,
                                        .displayName = "Seed", .isInteger = true, .quantity = Quantity::Count,
                                        .step = 1.0f, .isStructural = true },
@@ -131,19 +131,19 @@ namespace bazalt::engine::nodes
 
         void setParameter (const juce::String& parameterId, float value) override
         {
-            if (parameterId == "clock.pulse.rate")
+            if (parameterId == "time.clock.rate")
                 storedRateHz = juce::jmax (0.01f, value);
-            else if (parameterId == "clock.pulse.swing")
+            else if (parameterId == "time.clock.swing")
                 storedSwing = juce::jlimit (0.0f, 1.0f, value);
-            else if (parameterId == "clock.pulse.jitter")
+            else if (parameterId == "time.clock.jitter")
                 storedJitter = juce::jlimit (0.0f, 1.0f, value);
-            else if (parameterId == "clock.pulse.run")
+            else if (parameterId == "time.clock.run")
                 storedRunning = value > 0.5f;
-            else if (parameterId == "clock.pulse.rateMode")
+            else if (parameterId == "time.clock.rateMode")
                 rateMode = std::lround (value) == 1 ? RateMode::Division : RateMode::Free;
-            else if (parameterId == "clock.pulse.division")
+            else if (parameterId == "time.clock.division")
                 division = (Division) juce::jlimit (0, 5, (int) std::lround (value));
-            else if (parameterId == "clock.pulse.seed")
+            else if (parameterId == "time.clock.seed")
             {
                 seed = (int) std::lround (value);
                 random = juce::Random ((juce::int64) seed);

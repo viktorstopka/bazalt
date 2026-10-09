@@ -5,17 +5,17 @@
 
 namespace bazalt::engine::nodes
 {
-    /** Stable type id: "clock.counter" (wiki/NODES.md's `clock.*` row, the
+    /** Stable type id: "time.counter" (wiki/NODES.md's `clock.*` row, the
         Clock+Seq batch). The catalog's own framing: "the generic sequencer
         engine — with `note.select`, an arpeggiator; with `data.lookup`, a
         step sequencer." Advances an index on every incoming tick, per
         `mode`.
 
         **`length`/`step` are real ports here** (catalog puts them under
-        `clock.counter`'s **In:**, unlike `seq.steps`' structural `length` —
+        `time.counter`'s **In:**, unlike `time.steps`' structural `length` —
         that's a real, deliberate difference between the two nodes, not an
         inconsistency to "fix"), so both can be live-modulated; no per-index
-        array is stored (unlike `seq.steps`), so a live-changing `length`
+        array is stored (unlike `time.steps`), so a live-changing `length`
         never risks an out-of-bounds read — every mode's arithmetic is
         plain-integer, `juce::jlimit`-guarded.
 
@@ -28,7 +28,7 @@ namespace bazalt::engine::nodes
 
         **`seed`** (structural, matching `random.stepped`/`random.drift`'s
         convention) makes `random` mode reproducible — not named in the
-        catalog's own port list for this node, same reasoning `clock.pulse`
+        catalog's own port list for this node, same reasoning `time.clock`
         already gives for its own added `seed`.
     */
     class ClockCounterNode : public Node
@@ -50,17 +50,17 @@ namespace bazalt::engine::nodes
         int getNumOutputPorts() const noexcept override { return numOutputs; }
 
         juce::String getTitle() const override { return "Counter"; }
-        juce::String getCategory() const override { return "Clock"; }
+        juce::String getCategory() const override { return "Time"; }
 
         std::vector<PortDescriptor> getInputPorts() const override
         {
             return {
                 PortDescriptor { .id = "tick", .type = SignalType::Event, .label = "Tick" },
                 PortDescriptor { .id = "reset", .type = SignalType::Event, .label = "Reset" },
-                PortDescriptor { .id = "clock.counter.length", .type = SignalType::Control, .label = "Length",
+                PortDescriptor { .id = "time.counter.length", .type = SignalType::Signal, .label = "Length",
                                   .minValue = 1.0f, .maxValue = 1024.0f, .defaultValue = 8.0f, .isInteger = true,
                                   .hasFallbackWhenUnconnected = true, .quantity = Quantity::Count, .step = 1.0f },
-                PortDescriptor { .id = "clock.counter.step", .type = SignalType::Control, .label = "Step",
+                PortDescriptor { .id = "time.counter.step", .type = SignalType::Signal, .label = "Step",
                                   .minValue = 1.0f, .maxValue = 64.0f, .defaultValue = 1.0f, .isInteger = true,
                                   .hasFallbackWhenUnconnected = true, .quantity = Quantity::Count, .step = 1.0f },
             };
@@ -69,9 +69,9 @@ namespace bazalt::engine::nodes
         std::vector<PortDescriptor> getOutputPorts() const override
         {
             return {
-                PortDescriptor { .id = "index", .type = SignalType::Control, .label = "Index", .isPrimaryOutput = true,
+                PortDescriptor { .id = "index", .type = SignalType::Signal, .label = "Index", .isPrimaryOutput = true,
                                   .minValue = 0.0f, .isInteger = true, .quantity = Quantity::Count },
-                PortDescriptor { .id = "normalised", .type = SignalType::Control, .label = "Normalised",
+                PortDescriptor { .id = "normalised", .type = SignalType::Signal, .label = "Normalised",
                                   .minValue = 0.0f, .maxValue = 1.0f, .quantity = Quantity::Unipolar },
                 PortDescriptor { .id = "wrapped", .type = SignalType::Event, .label = "Wrapped" },
             };
@@ -80,13 +80,13 @@ namespace bazalt::engine::nodes
         std::vector<ParameterDescriptor> getParameters() const override
         {
             return {
-                ParameterDescriptor { .id = "clock.counter.mode",
+                ParameterDescriptor { .id = "time.counter.mode",
                                        .minValue = 0.0f, .maxValue = 3.0f, .defaultValue = 0.0f,
                                        .displayName = "Mode", .isInteger = true, .kind = ValueKind::Enum,
                                        .enumOptions = { { "up", "Up" }, { "down", "Down" },
                                                          { "pingPong", "Ping-Pong" }, { "random", "Random" } },
                                        .isStructural = true },
-                ParameterDescriptor { .id = "clock.counter.seed",
+                ParameterDescriptor { .id = "time.counter.seed",
                                        .minValue = 0.0f, .maxValue = 999999.0f, .defaultValue = 1.0f,
                                        .displayName = "Seed", .isInteger = true, .quantity = Quantity::Count,
                                        .step = 1.0f, .isStructural = true },
@@ -95,13 +95,13 @@ namespace bazalt::engine::nodes
 
         void setParameter (const juce::String& parameterId, float value) override
         {
-            if (parameterId == "clock.counter.length")
+            if (parameterId == "time.counter.length")
                 storedLength = juce::jmax (1, (int) std::lround (value));
-            else if (parameterId == "clock.counter.step")
+            else if (parameterId == "time.counter.step")
                 storedStep = juce::jmax (1, (int) std::lround (value));
-            else if (parameterId == "clock.counter.mode")
+            else if (parameterId == "time.counter.mode")
                 mode = (Mode) juce::jlimit (0, 3, (int) std::lround (value));
-            else if (parameterId == "clock.counter.seed")
+            else if (parameterId == "time.counter.seed")
             {
                 seed = (int) std::lround (value);
                 random = juce::Random ((juce::int64) seed);

@@ -1,20 +1,13 @@
-// design/TopBar.png: the top bar's centre dropdown. Direct instruction:
-// "The purpose is not saving or authoring patches from inside the software
-// yet. I need a menu of premade patches so the system can be shown to a
-// few people without instructing them how to connect everything." — so
-// this is a fixed, hand-written list (not a file picker, not user-savable
-// patches), each entry a whole-graph JSON string in the exact shape
-// PatchSerializer.cpp's `parsePatchFromJson` expects (schemaVersion/nodes/
-// connections/outputNodeId/outputPortId — the same shape graphGetSnapshot
-// returns and graphRestoreSnapshot/undo-redo already round-trip), loaded
-// via graphStore.ts's `loadPatch`. "Do not create those [real demo]
-// patches yet" — only two placeholders exist for now: "Empty" (mirrors
-// ProofGraphs.h's own buildMasterOutOnlyGraph() exactly — same node id
-// "masterOut", same position — so picking it matches a fresh plugin
-// instance's own default graph) and "Sine" (adds one osc.sine straight
-// into the same Master Out).
+// design/TopBar.png: the top bar's centre dropdown — Factory patches and
+// the user's own saved patches. Factory patches are "Empty" plus every
+// `.bazalt` file in ./patches/factory (direct instruction, 2026-10-09):
+// drop a patch saved from Bazalt into that folder and it ships, named by
+// its own meta.name. "Empty" mirrors ProofGraphs.h's
+// buildMasterOutOnlyGraph() exactly — same node id "masterOut", same
+// position — which is also what the app opens on. Each entry is a
+// whole-graph JSON string in the shape PatchSerializer.cpp's
+// `parsePatchFromJson` expects, loaded via graphStore.ts's `loadPatch`.
 import { useEffect, useRef, useState } from 'react'
-import catPurringJson from './patches/CatPurr.json?raw'
 import { deleteUserPatch, listUserPatches, saveUserPatch, userPatchExists, type UserPatchEntry } from './graph/patchLibrary'
 import './PatchMenu.css'
 
@@ -25,7 +18,7 @@ export interface PatchOption {
 
 function emptyPatchJson(): string {
   return JSON.stringify({
-    schemaVersion: 7,
+    schemaVersion: 16,
     nodes: [{ id: 'masterOut', type: 'io.output', position: { x: 640, y: 360 }, parameters: {}, properties: {} }],
     connections: [],
     outputNodeId: 'masterOut',
@@ -33,35 +26,25 @@ function emptyPatchJson(): string {
   })
 }
 
-function sinePatchJson(): string {
-  return JSON.stringify({
-    schemaVersion: 7,
-    nodes: [
-      { id: 'sine1', type: 'osc.sine', position: { x: 300, y: 360 }, parameters: {}, properties: {} },
-      { id: 'masterOut', type: 'io.output', position: { x: 640, y: 360 }, parameters: {}, properties: {} },
-    ],
-    connections: [{ fromNodeId: 'sine1', fromPortId: 'out', toNodeId: 'masterOut', toPortId: 'in' }],
-    outputNodeId: 'masterOut',
-    outputPortId: 'out',
-  })
+// Raw text, not JSON.parse'd and re-stringified: loadPatch parses it on its
+// own end, and re-serializing could reformat values tuned by ear.
+const factoryFiles = import.meta.glob('./patches/factory/*.bazalt', { query: '?raw', import: 'default', eager: true }) as Record<string, string>
+
+function factoryPatchName(path: string, json: string): string {
+  try {
+    const name = (JSON.parse(json) as { meta?: { name?: unknown } }).meta?.name
+    if (typeof name === 'string' && name.trim()) return name.trim()
+  } catch {
+    // Not readable JSON: fall back to the file name.
+  }
+  return path.replace(/^.*\//, '').replace(/\.bazalt$/, '')
 }
 
-/** The first real demo patch (direct instruction, 2026-10-05) — "MIDI Saw,
-    Karplus-Strong, Arp, Swarm and many others" are still future work, not
-    stubbed here even as empty entries, but this one is real: a physically-
-    modelled cat purr (breath oscillator -> glottal fold -> nasal/body
-    modal resonators), hand-built in the live editor and exported via
-    graphGetSnapshot (patches/CatPurr.json — a verbatim copy; the original
-    the user dropped next to the Standalone executable is left untouched,
-    per their own instruction). Imported as a raw string (`?raw`, Vite's
-    own text-asset import), not JSON.parse'd and re-stringified: `json`
-    only ever needs to BE a JSON string for loadPatch to parse on its own
-    end, and re-serializing here would risk silently reformatting/losing
-    precision on values this patch's own author actually tuned by ear. */
 export const PREMADE_PATCHES: readonly PatchOption[] = [
   { name: 'Empty', json: emptyPatchJson() },
-  { name: 'Sine', json: sinePatchJson() },
-  { name: 'Cat Purring', json: catPurringJson },
+  ...Object.entries(factoryFiles)
+    .map(([path, json]) => ({ name: factoryPatchName(path, json), json }))
+    .sort((a, b) => a.name.localeCompare(b.name)),
 ]
 
 /** What the live graph was last loaded from or saved as — the menu's label,

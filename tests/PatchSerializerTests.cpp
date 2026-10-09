@@ -172,9 +172,9 @@ TEST_CASE ("A hand-written schema v1 patch migrates to v2 with resolved port ids
     CHECK (doc.connections[0].fromPortId == "out"); // osc.analog's only output
     CHECK (doc.connections[0].toPortId == "in");    // filter.svf's only input
     CHECK (doc.connections[1].fromPortId == "out"); // filter.svf's only output
-    CHECK (doc.connections[1].toPortId == "audio"); // mix.gain input 0
+    CHECK (doc.connections[1].toPortId == "in.0"); // mix.gain input 0, math.multiply since v13
     CHECK (doc.connections[2].fromPortId == "out"); // env.adsr's only output
-    CHECK (doc.connections[2].toPortId == "gain");  // mix.gain input 1
+    CHECK (doc.connections[2].toPortId == "in.1"); // mix.gain input 1, math.multiply since v13
 
     // The migrated graph must still actually compile — not just parse.
     auto graph = doc.toNodeGraph();
@@ -248,21 +248,21 @@ TEST_CASE ("v7 -> v8 migration rewrites adapt.remap into adapt.map and the old t
     };
 
     const auto& oldMap = find ("oldMap");
-    CHECK (oldMap.type == "adapt.map");
-    CHECK (oldMap.parameters.count ("adapt.map.min") == 0);
-    CHECK (oldMap.parameters.at ("adapt.map.inMin") == 0.0f);
-    CHECK (oldMap.parameters.at ("adapt.map.inMax") == 1.0f);
-    CHECK (oldMap.parameters.at ("adapt.map.outMin") == 200.0f);
-    CHECK (oldMap.parameters.at ("adapt.map.outMax") == 8000.0f);
+    CHECK (oldMap.type == "math.map");
+    CHECK (oldMap.parameters.count ("math.map.min") == 0);
+    CHECK (oldMap.parameters.at ("math.map.inMin") == 0.0f);
+    CHECK (oldMap.parameters.at ("math.map.inMax") == 1.0f);
+    CHECK (oldMap.parameters.at ("math.map.outMin") == 200.0f);
+    CHECK (oldMap.parameters.at ("math.map.outMax") == 8000.0f);
 
     const auto& remap = find ("remap");
-    CHECK (remap.type == "adapt.map");
-    CHECK (remap.parameters.at ("adapt.map.outMin") == 1.0f);
-    CHECK (remap.parameters.at ("adapt.map.outMax") == 0.0f);
+    CHECK (remap.type == "math.map");
+    CHECK (remap.parameters.at ("math.map.outMin") == 1.0f);
+    CHECK (remap.parameters.at ("math.map.outMax") == 0.0f);
     CHECK (remap.parameters.count ("adapt.remap.outMin") == 0);
 
     REQUIRE (result.document.connections.size() == 1);
-    CHECK (result.document.connections[0].toPortId == "adapt.map.inMax");
+    CHECK (result.document.connections[0].toPortId == "math.map.inMax");
 }
 
 TEST_CASE ("v8 -> v9 migration drops view.scope and splices view.glance out of its cable",
@@ -288,13 +288,13 @@ TEST_CASE ("v8 -> v9 migration drops view.scope and splices view.glance out of i
     REQUIRE (result.success);
     REQUIRE (result.document.nodes.size() == 2);
     for (const auto& node : result.document.nodes)
-        CHECK ((node.type == "osc.sine" || node.type == "mix.gain"));
+        CHECK ((node.type == "source.oscillator" || node.type == "math.multiply")); // later migrations: v13 mix.gain, v16 osc.sine
 
     REQUIRE (result.document.connections.size() == 1);
     const auto& c = result.document.connections[0];
     CHECK (c.fromNodeId == "osc");
     CHECK (c.toNodeId == "gain");
-    CHECK (c.toPortId == "audio");
+    CHECK (c.toPortId == "in.0");
     CHECK (result.document.outputNodeId == "osc");
 }
 

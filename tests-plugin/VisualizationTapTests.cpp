@@ -52,7 +52,7 @@ TEST_CASE ("09-28-InstanceAllocator.1 (part 3): a voice domain not reaching the 
     // movement").
     NodeGraph graph;
     graph.addNode ({ "noteIn", "io.noteIn", { 40.0f, 40.0f }, {}, {} });
-    graph.addNode ({ "allocator", "instance.allocate.voice", { 340.0f, 40.0f }, {}, {} });
+    graph.addNode ({ "allocator", "life.voice", { 340.0f, 40.0f }, {}, {} });
     graph.addNode ({ "audioIn", "io.audioIn", { 40.0f, 400.0f }, {}, {} });
     graph.addNode ({ "masterOut", "io.output", { 340.0f, 400.0f }, {}, {} });
 
@@ -253,7 +253,7 @@ TEST_CASE ("A voice-domain preview tap keeps receiving after a graph edit, with 
     const auto beforeEdit = tap->getTotalPushed();
     REQUIRE (beforeEdit > 0);
 
-    REQUIRE (processor.getGraphEditController().setParameterValue ("osc", "osc.analog.shape", 1.0f).success);
+    REQUIRE (processor.getGraphEditController().setParameterValue ("osc", "source.oscillator.amplitude", 0.9f).success);
 
     // The same voice is still held and no note-on arrives, so nothing here can
     // re-point the tap by luck: only the re-attach can keep it alive.
@@ -488,7 +488,8 @@ TEST_CASE ("view.cycle and view.meter take Audio and Control; view.spectrum take
 
     CHECK (controller.connect ("control", "out", "scope", "in").success);
     CHECK (controller.connect ("control", "out", "meter", "in").success);
-    CHECK_FALSE (controller.connect ("control", "out", "spectrum", "in").success); // no Control->Audio without an adapter
+    CHECK (controller.connect ("control", "out", "spectrum", "in").success); // one numeric signal (wiki/plans/DataAndWavetable.md D1)
+    REQUIRE (controller.disconnect ("control", "out", "spectrum", "in").success);
 
     REQUIRE (controller.disconnect ("control", "out", "scope", "in").success);
     CHECK_FALSE (controller.connect ("notes", "notes", "scope", "in").success);

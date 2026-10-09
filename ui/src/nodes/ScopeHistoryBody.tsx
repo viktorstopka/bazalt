@@ -2,16 +2,15 @@
 // scrolling-history viewer — "Scope for Control values, Scope for
 // Modulation, and Gate... variants of one panel with different vertical
 // scales and different trace styles, so build the shared pieces here and
-// reuse them for the other two." Each typeId has a thin wrapper supplying
-// only what differs: ScopeControlBody.tsx (white line), ScopeModulationBody.tsx
-// (orange, filled to an editable centre line, range seeded from the source's
-// polarity) and GateBody.tsx (blue, binary TRUE/FALSE scale, square-edged
-// trace that never drops a brief true state). The `variant` prop selects the
-// vertical scale + trace style; everything else here is shared by all three.
+// reuse them for the other two." Since the merge into one view.scope node,
+// ScopeBody.tsx picks the variant from the source: a white line, an orange
+// fill to an editable centre line (range seeded from the source's polarity),
+// or a blue binary TRUE/FALSE scale with a square-edged trace that never
+// drops a brief true state. Everything else here is shared by all three.
 //
 // Driven entirely by real engine telemetry (PreviewKind::RollingHistory,
-// AnalysisThread::publishRollingHistory via view.scope.control's own
-// ParameterDescriptor-backed timeWindow — ViewScopeControlNode.h) —
+// AnalysisThread::publishRollingHistory via view.scope's own
+// ParameterDescriptor-backed timeWindow — ViewScopeNode.h) —
 // "Driven by engine telemetry at display rate and interpolated between
 // frames; never reconstructed UI-side" (direct instruction) is why this
 // reads getInterpolatedTap, unlike CountBody.tsx/RippleBody.tsx's own
@@ -130,13 +129,13 @@ function estimatePeriodSeconds(payload: Float32Array, columnDurationSeconds: num
 
 /** Which vertical scale + trace style the shared panel draws — the only
     thing that genuinely differs between the three history viewers.
-    - 'line' (view.scope.control, Scope1.png): an editable min/max range and
+    - 'line' (a plain value, Scope1.png): an editable min/max range and
       a thin min/max-decimated line.
-    - 'centred' (view.scope.modulation, ScopeMod.png): the same editable
+    - 'centred' (a modulation or audio signal, ScopeMod.png): the same editable
       range plus an editable centre line; the area between the trace and the
       centre is filled dim, with the line drawn bright on top — above and
       below read with the same weight, a signed value rather than a level.
-    - 'binary' (view.gate, Gate.png): fixed TRUE/FALSE levels, nothing to
+    - 'binary' (a Boolean, Gate.png): fixed TRUE/FALSE levels, nothing to
       zoom into; a square-edged filled region wherever the value was true.
 */
 export type ScopeHistoryVariant = 'line' | 'centred' | 'binary'
@@ -503,10 +502,10 @@ export function ScopeHistoryBody({
   return (
     <div className={classNames} ref={rootRef}>
       <div className="scope-history-port scope-history-port-left">
-        <PortGlyph port={inputPort} side="left" instanceId={instanceId} connected={inputConnected} isPoly={false} styleOverride={portStyle} />
+        <PortGlyph port={inputPort} side="left" instanceId={instanceId} connected={inputConnected} styleOverride={portStyle} />
       </div>
       <div className="scope-history-port scope-history-port-right">
-        <PortGlyph port={outputPort} side="right" instanceId={instanceId} connected={outputConnected} isPoly={false} styleOverride={portStyle} />
+        <PortGlyph port={outputPort} side="right" instanceId={instanceId} connected={outputConnected} styleOverride={portStyle} />
       </div>
       <svg className="scope-history-visual" ref={svgRef} viewBox={`0 0 ${PANEL_WIDTH} ${PANEL_HEIGHT}`}>
         {variant === 'centred' && (

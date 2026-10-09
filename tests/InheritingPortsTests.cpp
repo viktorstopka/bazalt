@@ -3,9 +3,8 @@
 #include "bazalt/engine/graph/GraphCompiler.h"
 #include "bazalt/engine/graph/ProofGraphs.h"
 #include "bazalt/engine/nodes/LogicCompareNode.h"
-#include "bazalt/engine/nodes/LogicSelectNode.h"
+#include "bazalt/engine/nodes/BlendNode.h"
 #include "bazalt/engine/nodes/SampleHoldNode.h"
-#include "bazalt/engine/nodes/ClampNode.h"
 #include "bazalt/engine/nodes/ViewCycleNode.h"
 #include <cmath>
 #include <limits>
@@ -35,7 +34,7 @@ namespace
         int getNumOutputPorts() const noexcept override { return 1; }
         std::vector<PortDescriptor> getOutputPorts() const override
         {
-            PortDescriptor port { "out", SignalType::Control };
+            PortDescriptor port { .id = "out", .type = SignalType::Signal };
             port.quantity = quantity;
             return { port };
         }
@@ -75,103 +74,103 @@ namespace
     }
 }
 
-// ---- logic.select ---------------------------------------------------------
+// ---- math.blend (was logic.select's role) --------------------------------
 
-TEST_CASE ("logic.select routes whenTrue or whenFalse by its Boolean condition, per sample",
-           "[engine][nodes][logic][M21][inheriting]")
+TEST_CASE ("math.blend picks A at Amount 0 and B at Amount 1, and blends between them",
+           "[engine][nodes][math][inheriting]")
 {
-    LogicSelectNode node;
+    BlendNode node; // not prepared: no smoothing, each sample lands on its Amount
     float out = 0.0f;
 
-    auto pick = [&] (float condition, float whenTrue, float whenFalse)
+    auto blend = [&] (float a, float b, float amount)
     {
-        const float inputs[3] = { condition, whenTrue, whenFalse };
+        const float inputs[3] = { a, b, amount };
         node.processSample (inputs, &out);
         return out;
     };
 
-    CHECK (pick (1.0f, 10.0f, 20.0f) == 10.0f);
-    CHECK (pick (0.0f, 10.0f, 20.0f) == 20.0f);
-    CHECK (pick (0.6f, 10.0f, 20.0f) == 10.0f);  // "true" is > 0.5, like env.adsr's gate
-    CHECK (pick (0.4f, 10.0f, 20.0f) == 20.0f);
-    CHECK (pick (0.0f, 10.0f, 20.0f) == 20.0f);  // an unwired condition reads false
+    CHECK (blend (10.0f, 20.0f, 0.0f) == 10.0f);
+    CHECK (blend (10.0f, 20.0f, 1.0f) == 20.0f); // a Boolean Amount is the old Select
+    CHECK (blend (10.0f, 20.0f, 0.5f) == Catch::Approx (15.0f));
+    CHECK (blend (10.0f, 20.0f, unwired) == Catch::Approx (15.0f)); // unwired: the stored 0.5
 }
 
-TEST_CASE ("logic.select's data ports adopt the wired type and quantity; condition stays Boolean",
-           "[engine][nodes][logic][M21][inheriting]")
+TEST_CASE ("math.blend's A, B and Out adopt the wired type and quantity; Amount stays a 0..1 value",
+           "[engine][nodes][math][inheriting]")
 {
-    LogicSelectNode node;
+    BlendNode node;
     REQUIRE (node.hasPolymorphicPorts());
+    CHECK (portNamed (node.getInputPorts(), "a").quantity == Quantity::Audio); // unconnected default
 
-    // Unconnected defaults.
-    CHECK (portNamed (node.getInputPorts(), "whenTrue").type == SignalType::Control);
-    CHECK (portNamed (node.getInputPorts(), "condition").type == SignalType::Boolean);
+    node.resolveIncomingPort ("a", sourcePort (SignalType::Signal, Quantity::Frequency));
+    for (const auto* id : { "a", "b" })
+    {
+        CHECK (portNamed (node.getInputPorts(), id).type == SignalType::Signal);
+        CHECK (portNamed (node.getInputPorts(), id).quantity == Quantity::Frequency);
+    }
+    CHECK (portNamed (node.getOutputPorts(), "out").quantity == Quantity::Frequency);
+    CHECK (portNamed (node.getInputPorts(), "math.blend.amount").quantity == Quantity::Unipolar);
 
-    node.resolveIncomingPort ("whenTrue", sourcePort (SignalType::Audio));
-
-    for (const auto* id : { "whenTrue", "whenFalse" })
-        CHECK (portNamed (node.getInputPorts(), id).type == SignalType::Audio);
-    CHECK (portNamed (node.getOutputPorts(), "out").type == SignalType::Audio);
-    CHECK (portNamed (node.getInputPorts(), "condition").type == SignalType::Boolean); // untouched
-
-    // A cable on `condition` is never a source of the data type.
-    LogicSelectNode other;
-    other.resolveIncomingPort ("condition", sourcePort (SignalType::Audio));
-    CHECK (portNamed (other.getInputPorts(), "whenTrue").type == SignalType::Control);
-
-    // Quantity travels with it.
-    LogicSelectNode withQuantity;
-    withQuantity.resolveIncomingPort ("whenFalse", sourcePort (SignalType::Control, Quantity::Frequency));
-    CHECK (portNamed (withQuantity.getOutputPorts(), "out").quantity == Quantity::Frequency);
-    CHECK (portNamed (withQuantity.getInputPorts(), "whenTrue").quantity == Quantity::Frequency);
+    // A cable on Amount is never a source of the blended type.
+    BlendNode other;
+    other.resolveIncomingPort ("math.blend.amount", sourcePort (SignalType::Signal, Quantity::Boolean));
+    CHECK (portNamed (other.getInputPorts(), "a").quantity == Quantity::Audio);
 }
 
-TEST_CASE ("logic.select resolves by port priority, not by the order sources are offered",
-           "[engine][nodes][logic][M21][inheriting]")
+TEST_CASE ("math.blend resolves by port priority, not by the order sources are offered",
+           "[engine][nodes][math][inheriting]")
 {
-    // The compiler re-offers to a fixed point, and a source may itself be an
-    // unresolved Reroute reporting its default on an early pass. Arrival order
-    // must not decide: whenTrue outranks whenFalse either way round.
-    for (const auto whenFalseFirst : { true, false })
+    for (const auto bFirst : { true, false })
     {
-        DYNAMIC_SECTION ("whenFalse offered " << (whenFalseFirst ? "first" : "second"))
+        DYNAMIC_SECTION ("b offered " << (bFirst ? "first" : "second"))
         {
-            LogicSelectNode node;
-            const auto audio = sourcePort (SignalType::Audio);
-            const auto control = sourcePort (SignalType::Control, Quantity::Frequency);
-
-            if (whenFalseFirst)
+            BlendNode node;
+            const auto audio = sourcePort (SignalType::Signal, Quantity::Audio);
+            const auto control = sourcePort (SignalType::Signal, Quantity::Frequency);
+            if (bFirst)
             {
-                node.resolveIncomingPort ("whenFalse", control);
-                node.resolveIncomingPort ("whenTrue", audio);
+                node.resolveIncomingPort ("b", control);
+                node.resolveIncomingPort ("a", audio);
             }
             else
             {
-                node.resolveIncomingPort ("whenTrue", audio);
-                node.resolveIncomingPort ("whenFalse", control);
+                node.resolveIncomingPort ("a", audio);
+                node.resolveIncomingPort ("b", control);
             }
-
-            CHECK (portNamed (node.getOutputPorts(), "out").type == SignalType::Audio);
-            CHECK (portNamed (node.getOutputPorts(), "out").quantity == Quantity::Dimensionless);
+            CHECK (portNamed (node.getOutputPorts(), "out").type == SignalType::Signal);
+            CHECK (portNamed (node.getOutputPorts(), "out").quantity == Quantity::Audio);
         }
     }
 
-    // ...and a re-offer from the winning port still updates (chains of Reroutes).
-    LogicSelectNode chained;
-    chained.resolveIncomingPort ("whenTrue", sourcePort (SignalType::Audio)); // an unresolved upstream default
-    chained.resolveIncomingPort ("whenTrue", sourcePort (SignalType::Control, Quantity::Time)); // resolved later
-    CHECK (portNamed (chained.getOutputPorts(), "out").type == SignalType::Control);
-    CHECK (portNamed (chained.getOutputPorts(), "out").quantity == Quantity::Time);
-}
-
-TEST_CASE ("logic.select refuses Note, Data and Spectral sources, leaving the default so canConnect rejects them",
-           "[engine][nodes][logic][M21][inheriting]")
-{
     for (const auto type : { SignalType::Note, SignalType::Data, SignalType::Spectral })
     {
-        LogicSelectNode node;
-        node.resolveIncomingPort ("whenTrue", sourcePort (type));
-        CHECK (portNamed (node.getOutputPorts(), "out").type == SignalType::Control);
+        BlendNode node;
+        node.resolveIncomingPort ("a", sourcePort (type));
+        CHECK (portNamed (node.getOutputPorts(), "out").quantity == Quantity::Audio);
+    }
+}
+
+TEST_CASE ("math.blend smooths a jump in Amount instead of stepping, at any sample rate",
+           "[engine][nodes][math]")
+{
+    for (const auto sampleRate : { 44100.0, 96000.0 })
+    {
+        BlendNode node;
+        node.prepare ({ sampleRate, 64 });
+        float out = 0.0f;
+        float inputs[3] = { 0.0f, 1.0f, 0.0f };
+        node.processSample (inputs, &out);
+        CHECK (out == 0.0f); // starts where it is asked to
+
+        inputs[2] = 1.0f; // a Boolean flipping
+        node.processSample (inputs, &out);
+        CHECK (out > 0.0f);
+        CHECK (out < 0.1f); // no step
+
+        // ~5 ms time constant: well past 99% after 30 ms.
+        for (int i = 0; i < (int) (0.03 * sampleRate); ++i)
+            node.processSample (inputs, &out);
+        CHECK (out == Catch::Approx (1.0f).margin (0.01f));
     }
 }
 
@@ -229,20 +228,20 @@ TEST_CASE ("logic.compare inherits one quantity across a, b and tolerance, but a
            "[engine][nodes][logic][M21][inheriting]")
 {
     LogicCompareNode node;
-    node.resolveIncomingPort ("a", sourcePort (SignalType::Control, Quantity::Frequency));
+    node.resolveIncomingPort ("a", sourcePort (SignalType::Signal, Quantity::Frequency));
 
     for (const auto* id : { "a", "b", "logic.compare.tolerance" })
         CHECK (portNamed (node.getInputPorts(), id).quantity == Quantity::Frequency);
-    CHECK (portNamed (node.getOutputPorts(), "out").type == SignalType::Boolean);
+    CHECK (portNamed (node.getOutputPorts(), "out").quantity == Quantity::Boolean);
 
     // a outranks b: a later, different quantity on b does not override it.
-    node.resolveIncomingPort ("b", sourcePort (SignalType::Control, Quantity::Pitch));
+    node.resolveIncomingPort ("b", sourcePort (SignalType::Signal, Quantity::Pitch));
     CHECK (portNamed (node.getInputPorts(), "b").quantity == Quantity::Frequency);
 
     // An Audio source is a plain value too, but the compared type is fixed.
     LogicCompareNode audioFed;
-    audioFed.resolveIncomingPort ("a", sourcePort (SignalType::Audio));
-    CHECK (portNamed (audioFed.getInputPorts(), "a").type == SignalType::Control);
+    audioFed.resolveIncomingPort ("a", sourcePort (SignalType::Signal, Quantity::Audio));
+    CHECK (portNamed (audioFed.getInputPorts(), "a").type == SignalType::Signal);
 }
 
 TEST_CASE ("logic.compare through the real compiler: matching quantities compile, a Frequency-vs-Pitch mix-up is rejected",
@@ -273,16 +272,16 @@ TEST_CASE ("logic.compare through the real compiler: matching quantities compile
     CHECK (mixedUp.errorMessage.isNotEmpty());
 }
 
-// ---- logic.select through a Reroute chain ---------------------------------
+// ---- math.blend through a Reroute chain ----------------------------------
 
-TEST_CASE ("logic.select resolves through a Reroute chain declared sink-first, and switches the value",
-           "[engine][nodes][logic][M21][inheriting][GraphCompiler]")
+TEST_CASE ("math.blend resolves through a Reroute chain declared sink-first, and switches the value",
+           "[engine][nodes][math][inheriting][GraphCompiler]")
 {
     const auto factory = makeFactory();
 
     NodeGraph graph;
-    // Declared out of dependency order on purpose: select, rr2, rr1, sources.
-    graph.addNode ({ "sel", "logic.select", {}, {}, {} });
+    // Declared out of dependency order on purpose: blend, rr2, rr1, sources.
+    graph.addNode ({ "sel", "math.blend", {}, {}, {} });
     graph.addNode ({ "rr2", "deco.reroute", {}, {}, {} });
     graph.addNode ({ "rr1", "deco.reroute", {}, {}, {} });
     graph.addNode ({ "hz", "test.frequency", {}, { { "value", 440.0f } }, {} });
@@ -290,19 +289,18 @@ TEST_CASE ("logic.select resolves through a Reroute chain declared sink-first, a
     graph.addNode ({ "cond", "logic.not", {}, {}, {} }); // unwired input reads false, so its NOT is true
     graph.addConnection ({ "hz", "out", "rr1", "in" });
     graph.addConnection ({ "rr1", "out", "rr2", "in" });
-    graph.addConnection ({ "rr2", "out", "sel", "whenTrue" });
-    graph.addConnection ({ "other", "out", "sel", "whenFalse" });
-    graph.addConnection ({ "cond", "out", "sel", "condition" });
+    graph.addConnection ({ "rr2", "out", "sel", "b" });
+    graph.addConnection ({ "other", "out", "sel", "a" });
+    graph.addConnection ({ "cond", "out", "sel", "math.blend.amount" });
     graph.setOutput ("sel", "out");
 
     auto result = GraphCompiler::compile (graph, factory, { 44100.0, 64 }, 1);
     REQUIRE (result.success);
 
-    const auto& select = *result.plan.nodes[(size_t) result.plan.nodeIdToSlot.at ("sel")];
-    CHECK (portNamed (select.getOutputPorts(), "out").quantity == Quantity::Frequency); // carried through two Reroutes
-    CHECK (portNamed (select.getOutputPorts(), "out").type == SignalType::Control);
-    CHECK (portNamed (select.getInputPorts(), "condition").type == SignalType::Boolean);
-    CHECK (finalOutput (result) == 440.0f); // condition true -> whenTrue
+    const auto& blend = *result.plan.nodes[(size_t) result.plan.nodeIdToSlot.at ("sel")];
+    CHECK (portNamed (blend.getOutputPorts(), "out").quantity == Quantity::Frequency); // carried through two Reroutes
+    CHECK (portNamed (blend.getOutputPorts(), "out").type == SignalType::Signal);
+    CHECK (finalOutput (result) == 440.0f); // Amount true -> B
 }
 
 // ---- adapt.sampleHold -----------------------------------------------------
@@ -336,7 +334,7 @@ TEST_CASE ("adapt.sampleHold glides to a new held value over `glide`, at any sam
         NodePrepareInfo info;
         info.sampleRate = sampleRate;
         node.prepare (info);
-        node.setParameter ("adapt.sampleHold.glide", 0.010f);
+        node.setParameter ("time.sampleHold.glide", 0.010f);
 
         float out = 0.0f;
         float inputs[3] = { 1.0f, 1.0f, unwired };
@@ -380,59 +378,21 @@ TEST_CASE ("adapt.sampleHold ignores a non-finite input at a trigger, and reset(
     CHECK (out == 0.0f); // back to "nothing sampled yet"
 }
 
-TEST_CASE ("adapt.sampleHold's in and out share the source's quantity; trigger and glide do not influence it",
+TEST_CASE ("time.sampleHold's in and out share the source's quantity; trigger and glide do not influence it",
            "[engine][nodes][adapt][M21][inheriting]")
 {
     SampleHoldNode node;
     node.resolveIncomingPort ("trigger", sourcePort (SignalType::Event));
-    node.resolveIncomingPort ("adapt.sampleHold.glide", sourcePort (SignalType::Control, Quantity::Time));
+    node.resolveIncomingPort ("time.sampleHold.glide", sourcePort (SignalType::Signal, Quantity::Time));
     CHECK (portNamed (node.getOutputPorts(), "out").quantity == Quantity::Dimensionless);
 
-    node.resolveIncomingPort ("in", sourcePort (SignalType::Control, Quantity::Frequency));
+    node.resolveIncomingPort ("in", sourcePort (SignalType::Signal, Quantity::Frequency));
     CHECK (portNamed (node.getInputPorts(), "in").quantity == Quantity::Frequency);
     CHECK (portNamed (node.getOutputPorts(), "out").quantity == Quantity::Frequency);
     CHECK (portNamed (node.getInputPorts(), "trigger").type == SignalType::Event);
 }
 
 // ---- math.clamp ------------------------------------------------------------
-
-TEST_CASE ("math.clamp inherits one quantity across in, low, high and out, by priority (in beats low beats high)",
-           "[engine][nodes][util][M20][inheriting]")
-{
-    ClampNode node;
-
-    // Unconnected default: every port stays Dimensionless/Control.
-    for (const auto* id : { "in", "math.clamp.low", "math.clamp.high" })
-        CHECK (portNamed (node.getInputPorts(), id).quantity == Quantity::Dimensionless);
-    CHECK (portNamed (node.getOutputPorts(), "out").quantity == Quantity::Dimensionless);
-
-    // low resolves first (nothing on "in" yet) — low/high/out all pick it up.
-    node.resolveIncomingPort ("math.clamp.low", sourcePort (SignalType::Control, Quantity::Time));
-    for (const auto* id : { "in", "math.clamp.low", "math.clamp.high" })
-        CHECK (portNamed (node.getInputPorts(), id).quantity == Quantity::Time);
-    CHECK (portNamed (node.getOutputPorts(), "out").quantity == Quantity::Time);
-
-    // "in" outranks low: once it resolves, its quantity wins everywhere,
-    // even though low resolved first — same "priority, not arrival order"
-    // rule logic.compare's own a/b/tolerance test already establishes.
-    node.resolveIncomingPort ("in", sourcePort (SignalType::Control, Quantity::Frequency));
-    for (const auto* id : { "in", "math.clamp.low", "math.clamp.high" })
-        CHECK (portNamed (node.getInputPorts(), id).quantity == Quantity::Frequency);
-    CHECK (portNamed (node.getOutputPorts(), "out").quantity == Quantity::Frequency);
-
-    // The SignalType itself never follows the source — Clamp has never
-    // taken anything but Control.
-    ClampNode audioFed;
-    audioFed.resolveIncomingPort ("in", sourcePort (SignalType::Audio));
-    CHECK (portNamed (audioFed.getInputPorts(), "in").type == SignalType::Control);
-
-    // Clamping still behaves exactly as before — the inheritance above is a
-    // pure type/colour hint, processSample is unchanged.
-    float inputs[3] = { 2.0f, 0.0f, 1.0f };
-    float out = 0.0f;
-    node.processSample (inputs, &out);
-    CHECK (out == 1.0f);
-}
 
 TEST_CASE ("view.cycle adopts the wired type and quantity on both in and out, and passes the value through unchanged",
            "[engine][nodes][view][M0.6][inheriting]")
@@ -441,13 +401,13 @@ TEST_CASE ("view.cycle adopts the wired type and quantity on both in and out, an
     REQUIRE (node.hasPolymorphicPorts());
 
     // Unconnected default.
-    CHECK (portNamed (node.getInputPorts(), "in").type == SignalType::Audio);
-    CHECK (portNamed (node.getOutputPorts(), "out").type == SignalType::Audio);
+    CHECK (portNamed (node.getInputPorts(), "in").quantity == Quantity::Audio);
+    CHECK (portNamed (node.getOutputPorts(), "out").quantity == Quantity::Audio);
 
-    node.resolveIncomingPort ("in", sourcePort (SignalType::Control, Quantity::Pitch));
-    CHECK (portNamed (node.getInputPorts(), "in").type == SignalType::Control);
+    node.resolveIncomingPort ("in", sourcePort (SignalType::Signal, Quantity::Pitch));
+    CHECK (portNamed (node.getInputPorts(), "in").type == SignalType::Signal);
     CHECK (portNamed (node.getInputPorts(), "in").quantity == Quantity::Pitch);
-    CHECK (portNamed (node.getOutputPorts(), "out").type == SignalType::Control);
+    CHECK (portNamed (node.getOutputPorts(), "out").type == SignalType::Signal);
     CHECK (portNamed (node.getOutputPorts(), "out").quantity == Quantity::Pitch);
 
     float in = 0.42f;

@@ -5,7 +5,7 @@
 // nodes today still have a single-segment category ("Filters", "Utility",
 // ...) and render exactly as before: this only changes anything for a
 // category that genuinely has more than one segment somewhere in the catalog
-// (today: only `instance.allocate.voice`'s "Domain/Allocate").
+// (today: only `life.voice`'s "Domain/Allocate").
 import type { NodeDescriptor } from './descriptorTypes'
 
 export interface CategoryTreeNode {

@@ -92,8 +92,7 @@ namespace bazalt::engine::nodes
         // node's first pass — can un-stick an earlier disagreement.
         void resolveIncomingPort (const juce::String& toPortId, const PortDescriptor& source) noexcept override
         {
-            const auto isPlainValue = source.type == SignalType::Audio || source.type == SignalType::Control
-                                       || source.type == SignalType::Boolean || source.type == SignalType::Event;
+            const auto isPlainValue = source.type == SignalType::Signal || source.type == SignalType::Event;
             const auto priority = parsePortGroupIndex (toPortId, "in.");
             if (! isPlainValue || priority < 0 || priority >= maxInputs)
                 return;
@@ -107,12 +106,20 @@ namespace bazalt::engine::nodes
             perPortQuantity[(size_t) priority] = source.quantity;
             perPortHasQuantity[(size_t) priority] = true;
 
+            // A waveform combined with anything is still a waveform: any Audio
+            // input makes the result Audio. Otherwise the unanimous rule above,
+            // where a Boolean counts as no quantity at all.
             auto agreed = Quantity::Dimensionless;
             auto anyReal = false;
             auto conflict = false;
+            auto anyAudio = false;
             for (int i = 0; i < maxInputs; ++i)
             {
-                if (! perPortHasQuantity[(size_t) i] || perPortQuantity[(size_t) i] == Quantity::Dimensionless)
+                if (! perPortHasQuantity[(size_t) i])
+                    continue;
+                const auto q = perPortQuantity[(size_t) i];
+                anyAudio = anyAudio || q == Quantity::Audio;
+                if (q == Quantity::Dimensionless || q == Quantity::Boolean || q == Quantity::Audio)
                     continue;
 
                 if (! anyReal)
@@ -126,7 +133,7 @@ namespace bazalt::engine::nodes
                     break;
                 }
             }
-            resolvedQuantity = (anyReal && ! conflict) ? agreed : Quantity::Dimensionless;
+            resolvedQuantity = anyAudio ? Quantity::Audio : (anyReal && ! conflict) ? agreed : Quantity::Dimensionless;
         }
 
         std::vector<PortDescriptor> getInputPorts() const override
@@ -168,7 +175,7 @@ namespace bazalt::engine::nodes
 
     private:
         std::array<float, maxInputs> storedValues {}; // identity 0 until an in-node value is set
-        SignalType resolvedType = SignalType::Control; // unresolved default — every existing math.add's own prior behaviour
+        SignalType resolvedType = SignalType::Signal;
         Quantity resolvedQuantity = Quantity::Dimensionless;
         int bestTypePriority = std::numeric_limits<int>::max();
         std::array<Quantity, maxInputs> perPortQuantity {};

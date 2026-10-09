@@ -14,7 +14,7 @@ namespace bazalt::engine
 
     /** One node to splice into a `NeedsAdapters` chain (SIGNAL_TYPES.md
         §5). `inputPortId` is which of the adapter's own input ports
-        receives the incoming signal — not always "in" (`adapt.threshold`
+        receives the incoming signal — not always "in" (`logic.threshold`
         uses "by") — so the caller doesn't have to special-case it per
         adapter type. `seedFromSourceRange`/`seedFromDestinationRange`
         tell the caller which side's `minValue`/`maxValue` to seed the

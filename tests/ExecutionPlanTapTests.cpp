@@ -17,13 +17,13 @@ namespace
 {
     NodeGraph buildConstantThroughGainGraph()
     {
-        // ConstantNode's "out" is Control-typed, so it feeds mix.gain's
+        // ConstantNode's "out" is Control-typed, so it feeds math.multiply's
         // Control-typed "gain" input (not its Audio-typed "audio" input,
         // which canConnect() would reject as an incompatible signal type).
         NodeGraph graph;
         graph.addNode ({ "src", "util.constant", {}, { { "util.constant.value", 0.25f } }, {} });
-        graph.addNode ({ "amp", "mix.gain", {}, {}, {} });
-        graph.addConnection ({ "src", "out", "amp", "gain" });
+        graph.addNode ({ "amp", "math.multiply", {}, {}, {} });
+        graph.addConnection ({ "src", "out", "amp", "in.1" });
         graph.setOutput ("amp", "out");
         return graph;
     }
@@ -73,7 +73,7 @@ TEST_CASE ("addTapForBufferIndex + process() pushes real block values with no re
     const auto available = tap.readLatest (readBack, numSamples);
     REQUIRE (available == numSamples);
     for (int i = 0; i < numSamples; ++i)
-        CHECK (readBack[i] == 0.25f); // util.constant's own value, unmodified by mix.gain's default gain
+        CHECK (readBack[i] == 0.25f); // util.constant's own value, unmodified by math.multiply's default in.1 of 1
 
     // Unsubscribing is the same mechanism in reverse — no recompile either.
     plan.removeTap (&tap);
@@ -155,13 +155,13 @@ TEST_CASE ("A plan resolves an INPUT port to the buffer wired into it",
 
     const auto srcOut = plan.outputBufferIndexByNodeAndPort.at ("src").at ("out");
 
-    // amp.gain is fed by src.out, so tapping amp's "gain" input is tapping src's buffer.
-    CHECK (plan.inputSourceBufferIndexByNodeAndPort.at ("amp").at ("gain") == srcOut);
-    CHECK (plan.findTappableBufferIndex ("amp", "gain") == srcOut);
+    // amp.in.1 is fed by src.out, so tapping that input is tapping src's buffer.
+    CHECK (plan.inputSourceBufferIndexByNodeAndPort.at ("amp").at ("in.1") == srcOut);
+    CHECK (plan.findTappableBufferIndex ("amp", "in.1") == srcOut);
 
     // An output still resolves to its own buffer, an unwired input to nothing.
     CHECK (plan.findTappableBufferIndex ("src", "out") == srcOut);
-    CHECK (plan.findTappableBufferIndex ("amp", "audio") == -1);
+    CHECK (plan.findTappableBufferIndex ("amp", "in.0") == -1);
     CHECK (plan.findTappableBufferIndex ("amp", "no-such-port") == -1);
     CHECK (plan.findTappableBufferIndex ("no-such-node", "out") == -1);
 }

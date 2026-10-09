@@ -34,47 +34,52 @@ function needsAdapters(reason: string): CanConnectResult {
   return { outcome: 'needsAdapters', reason }
 }
 
+// An audio waveform reads as a normalised ±1 value; a Boolean is a plain 0/1 that fits anywhere.
 function isNormalisedQuantity(q: Quantity): boolean {
-  return q === 'unipolar' || q === 'bipolar'
+  return q === 'unipolar' || q === 'bipolar' || q === 'audio'
 }
 function isRealQuantity(q: Quantity): boolean {
-  return q !== 'dimensionless' && !isNormalisedQuantity(q)
+  return q !== 'dimensionless' && q !== 'boolean' && !isNormalisedQuantity(q)
 }
 
-function connectAudio(from: PortDescriptor, to: PortDescriptor): CanConnectResult {
-  if (from.channels === 'inherited' || to.channels === 'inherited') return ok()
+/** wiki/plans/DataAndWavetable.md D1 (mirrors CanConnect.cpp): Audio, Control
+    and Boolean are one numeric signal; connecting them is decided by what a
+    value means — an Audio port reads as a waveform (±1, like Bipolar), a
+    Boolean as a plain 0/1 that fits anywhere. */
+function isValueType(type: PortDescriptor['type']): boolean {
+  return type === 'signal'
+}
+function meaningOf(port: PortDescriptor): Quantity {
+  if (port.quantity === 'audio') return 'bipolar'
+  if (port.quantity === 'boolean') return 'dimensionless'
+  return port.quantity
+}
+/** What a destination expects: a port inheriting both type and quantity (Multiply,
+    Add, Clip's `in`, Reroute) expects nothing of its own — what it resolved to was
+    borrowed from its inputs, so nothing is ever rescaled into it. */
+function expectedMeaningOf(port: PortDescriptor): Quantity {
+  if (port.polymorphism === 'signalAndQuantity') return 'dimensionless'
+  return meaningOf(port)
+}
+
+/** The rescaling reason between two meanings, or null when they meet directly. */
+function rescaleFor(from: Quantity, to: Quantity): string | null {
+  if (from === to || from === 'dimensionless' || to === 'dimensionless') return null
+  if (isNormalisedQuantity(from) && isNormalisedQuantity(to)) return null
+  if (isNormalisedQuantity(from) && isRealQuantity(to)) return 'A modulation or audio value into a real-quantity port needs a Map'
+  if (isRealQuantity(from) && isNormalisedQuantity(to)) return 'A real-quantity value into a modulation or audio port needs a Map'
+  if (from === 'pitch' && to === 'frequency') return 'Pitch into a Frequency-typed port needs an exact conversion, not a linear remap'
+  if (from === 'frequency' && to === 'pitch') return 'Frequency into a Pitch-typed port needs an exact conversion, not a linear remap'
+  return 'Different real quantities — rescaled via Map'
+}
+
+function connectValues(from: PortDescriptor, to: PortDescriptor): CanConnectResult {
+  const rescale = rescaleFor(meaningOf(from), expectedMeaningOf(to))
   if (from.channels === 'stereo' && to.channels === 'mono') {
+    if (rescale && (rescale.startsWith('Pitch') || rescale.startsWith('Frequency'))) return reject('Stereo into this port needs a Downmix first')
     return needsAdapters('Stereo into a mono-only port: choose Mid, Left, Right or Side')
   }
-  return ok() // mono->mono, mono->stereo (free broadcast), stereo->stereo
-}
-
-function connectControl(from: PortDescriptor, to: PortDescriptor): CanConnectResult {
-  if (from.quantity === to.quantity || from.quantity === 'dimensionless' || to.quantity === 'dimensionless') {
-    return ok()
-  }
-  if (isNormalisedQuantity(from.quantity) && isRealQuantity(to.quantity)) {
-    return needsAdapters('Modulation-range value into a real-quantity port needs a Map')
-  }
-  if (isRealQuantity(from.quantity) && isNormalisedQuantity(to.quantity)) {
-    return needsAdapters('Real-quantity value into a modulation-range port needs a Normalise')
-  }
-  // Pitch <-> Frequency: an exact conversion, not the generic linear remap
-  // below (mirrors CanConnect.cpp's own revision of this exact case).
-  if (from.quantity === 'pitch' && to.quantity === 'frequency') {
-    return needsAdapters('Pitch into a Frequency-typed port needs an exact conversion, not a linear remap')
-  }
-  if (from.quantity === 'frequency' && to.quantity === 'pitch') {
-    return needsAdapters('Frequency into a Pitch-typed port needs an exact conversion, not a linear remap')
-  }
-
-  // Two different real quantities (e.g. Frequency and Time) — rescaled by a
-  // Map seeded from both ranges, same as CanConnect.cpp's mirrored case. Live
-  // wire-drag prediction only needs the outcome (NeedsAdapters renders
-  // identically to Ok during a drag, per this file's own header comment);
-  // the actual insertion happens engine-side, in
-  // GraphEditController::connectWithAutoAdapt, once the drop commits.
-  return needsAdapters('Different real quantities — rescaled via Map')
+  return rescale ? needsAdapters(rescale) : ok()
 }
 
 function dataTagAccepted(produced: string, required: string): boolean {
@@ -90,60 +95,21 @@ export function canConnectPorts(from: PortDescriptor, to: PortDescriptor): CanCo
     return reject("Data tag mismatch — this port doesn't accept what's produced here")
   }
 
+  if (isValueType(from.type) && isValueType(to.type)) return connectValues(from, to)
+
   if (from.type === to.type) {
     switch (from.type) {
-      case 'audio':
-        return connectAudio(from, to)
-      case 'control':
-        return connectControl(from, to)
       case 'event':
         return ok()
       case 'note':
-        return ok()
-      case 'boolean':
         return ok()
       case 'spectral':
         return reject('Spectral is reserved, not yet implemented')
     }
   }
 
-  if (from.type === 'control' && to.type === 'event') {
-    return needsAdapters('A Control signal into an Event-typed port needs a Threshold')
-  }
-
-  // Audio -> Control Bridge (wiki/plans/AudioControlBridge.md). Auto-inserts
-  // adapt.audioToControl (Bipolar), followed by adapt.map when the
-  // destination is a real-quantity port — mirrors CanConnect.cpp's own
-  // branch exactly. This deliberately overrides ADR-0019's original text,
-  // which named env.follower as the eventual target for this pair — see
-  // that plan's §5 and the CanConnect.cpp comment for why.
-  if (from.type === 'audio' && to.type === 'control') {
-    if (from.channels === 'stereo') {
-      return reject('Stereo source into a Control-typed port needs mix.downmix first')
-    }
-    return needsAdapters(
-      isRealQuantity(to.quantity)
-        ? 'Raw audio into a real-quantity port needs Audio to Modulation, then Map'
-        : 'A raw audio signal into a modulation port needs Audio to Modulation',
-    )
-  }
-
-  // Control -> Audio Bridge (wiki/plans/ControlToAudioBridge.md) — the
-  // reverse of the Audio -> Control bridge above, closing the "open
-  // symmetric question for later" AudioControlBridge.md §6 explicitly
-  // deferred. Mirrors CanConnect.cpp's own branch exactly. No stereo
-  // complication: Control ports have no channels concept to begin with.
-  if (from.type === 'control' && to.type === 'audio') {
-    return needsAdapters(
-      isRealQuantity(from.quantity)
-        ? 'A real-quantity modulation source into Audio needs Normalise, then To Audio'
-        : 'A modulation signal into an Audio-typed port needs To Audio',
-    )
-  }
-
-  // Direct feedback: "bool not being pluggable into control and ints."
-  if (from.type === 'boolean' && to.type === 'control') {
-    return needsAdapters('A Boolean signal into a Control-typed port needs a From Bool')
+  if (isValueType(from.type) && to.type === 'event') {
+    return needsAdapters('A value into an Event-typed port needs a Threshold')
   }
 
   return reject('Incompatible signal types with no adapter available yet')

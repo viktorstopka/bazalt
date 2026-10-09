@@ -12,7 +12,7 @@ namespace bazalt
         patch: `numSources` util.constant nodes feed a binary tree of
         math.add nodes reducing them to one value, designated directly as
         the graph's output (NodeGraph::setOutput, same as
-        buildVoiceProofGraph()'s own mix.gain - no separate io.output node
+        buildVoiceProofGraph()'s own gain (math.multiply) - no separate io.output node
         needed, setOutput can point at any node's port directly). This
         proves the command path and GraphCompiler/DomainSplitter scale to
         hundreds of nodes - the UI's separate rendering-performance stress

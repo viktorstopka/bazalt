@@ -12,7 +12,7 @@ namespace bazalt::engine::nodes
         `count` (not elaborated by the catalog): a plain running tally of
         note-on events seen since the last `reset()` — this node's own
         concrete design, useful for anything that wants to react every Nth
-        note (feed it into `clock.divide`, or `math.modulo` for a repeating
+        note (feed it into `time.divide`, or `math.modulo` for a repeating
         pattern).
     */
     class NoteGateNode : public Node
@@ -27,7 +27,7 @@ namespace bazalt::engine::nodes
         int getNumOutputPorts() const noexcept override { return numOutputs; }
 
         juce::String getTitle() const override { return "Note Gate"; }
-        juce::String getCategory() const override { return "Note"; }
+        juce::String getCategory() const override { return "Notes"; }
 
         std::vector<PortDescriptor> getInputPorts() const override
         {
@@ -39,8 +39,8 @@ namespace bazalt::engine::nodes
             return {
                 PortDescriptor { .id = "noteOn", .type = SignalType::Event, .label = "Note On", .isPrimaryOutput = true },
                 PortDescriptor { .id = "noteOff", .type = SignalType::Event, .label = "Note Off" },
-                PortDescriptor { .id = "gate", .type = SignalType::Boolean, .label = "Gate", .kind = ValueKind::Bool },
-                PortDescriptor { .id = "count", .type = SignalType::Control, .label = "Count",
+                PortDescriptor { .id = "gate", .type = SignalType::Signal, .label = "Gate", .kind = ValueKind::Bool, .quantity = Quantity::Boolean },
+                PortDescriptor { .id = "count", .type = SignalType::Signal, .label = "Count",
                                   .minValue = 0.0f, .isInteger = true, .quantity = Quantity::Count },
             };
         }

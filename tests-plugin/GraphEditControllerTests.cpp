@@ -1,6 +1,7 @@
 #include <catch2/catch_test_macros.hpp>
 #include "PluginProcessor.h"
 #include "bazalt/engine/graph/ProofGraphs.h"
+#include "bazalt/engine/graph/CurveData.h"
 #include "bazalt/engine/patch/PatchSerializer.h"
 #include <algorithm>
 #include <atomic>
@@ -33,10 +34,10 @@ TEST_CASE ("addNode + connect + setParameterValue commands produce the expected 
     // Reroute svf's output through a new one-pole damping node instead of
     // straight into amp — proves add/connect/setParameter together produce
     // a graph that actually compiles differently and sounds differently.
-    REQUIRE (controller.disconnect ("svf", "out", "amp", "audio").success);
+    REQUIRE (controller.disconnect ("svf", "out", "amp", "in.0").success);
     REQUIRE (controller.addNode ("filter.onepole", "damper", 100.0f, 100.0f).success);
     REQUIRE (controller.connect ("svf", "out", "damper", "in").success);
-    REQUIRE (controller.connect ("damper", "out", "amp", "audio").success);
+    REQUIRE (controller.connect ("damper", "out", "amp", "in.0").success);
     REQUIRE (controller.setParameterValue ("damper", "filter.onepole.coefficient", 0.8f).success);
 
     juce::MidiBuffer noteOn;
@@ -75,7 +76,7 @@ TEST_CASE ("Connecting into an already-wired input replaces the old connection i
     // `occupied-port-rejects` finding) — it should now succeed and REPLACE
     // the old connection instead, exactly like dropping a new cable onto an
     // occupied jack on a real patchbay.
-    const auto result = controller.connectWithAutoAdapt ("osc", "out", "amp", "audio");
+    const auto result = controller.connectWithAutoAdapt ("osc", "out", "amp", "in.0");
     REQUIRE (result.success);
 
     const auto& connections = controller.getGraph().getConnections();
@@ -85,7 +86,7 @@ TEST_CASE ("Connecting into an already-wired input replaces the old connection i
     auto sourcedFromOsc = 0;
     for (const auto& c : connections)
     {
-        if (c.toNodeId == "amp" && c.toPortId == "audio")
+        if (c.toNodeId == "amp" && c.toPortId == "in.0")
         {
             ++targetingAmpAudio;
             if (c.fromNodeId == "svf") ++sourcedFromSvf;
@@ -107,16 +108,13 @@ TEST_CASE ("deleteNode and disconnect commands are reflected in the live graph a
     auto& controller = processor.getGraphEditController();
     REQUIRE (controller.setGraph (bazalt::engine::buildVoiceProofGraph()).success);
 
-    // Disconnecting svf's output from amp's audio input leaves it silent
-    // (0 — an unconnected Audio port carries no fallback to fall back to,
-    // unlike a Control port), so amp's audio*gain output is silent
-    // regardless of gain — directly, audibly verifiable, not just a
-    // graph-shape assertion. (Not disconnecting env from amp's own "gain"
-    // input for this: since wiki/NODES_Gaps.md's `modulation-only-port` fix,
-    // an unpatched gain now correctly falls back to unity — "just as loud
-    // as before" — rather than silence, so that disconnect alone no longer
-    // silences the voice; it isn't meant to any more.)
-    REQUIRE (controller.disconnect ("svf", "out", "amp", "audio").success);
+    // Disconnecting the oscillator from svf's audio input leaves the filter
+    // silent (an unconnected Audio input reads 0), so the whole voice is
+    // silent — directly, audibly verifiable, not just a graph-shape
+    // assertion. (Not disconnecting svf from amp: amp is a Multiply since
+    // schema v13, and its unwired input falls back to 1, so amp would then
+    // pass the envelope through instead of going quiet.)
+    REQUIRE (controller.disconnect ("osc", "out", "svf", "in").success);
 
     juce::MidiBuffer noteOn;
     noteOn.addEvent (juce::MidiMessage::noteOn (1, 60, (juce::uint8) 100), 0);
@@ -131,7 +129,7 @@ TEST_CASE ("deleteNode and disconnect commands are reflected in the live graph a
         processor.processBlock (buffer, empty);
     }
 
-    CHECK (rms (buffer, 0) < 0.0001f); // amp.audio is silent -> whole voice is silent
+    CHECK (rms (buffer, 0) < 0.0001f); // svf.in is silent -> whole voice is silent
 
     // deleteNode removes the node AND every connection touching it —
     // verified directly against the live graph.
@@ -159,7 +157,7 @@ TEST_CASE ("An invalid command is rejected and leaves the graph and compiled aud
     const auto connectionsBefore = controller.getGraph().getConnections().size();
 
     // Unknown node id — rejected before any mutation is even attempted.
-    const auto badConnect = controller.connect ("does-not-exist", "out", "amp", "audio");
+    const auto badConnect = controller.connect ("does-not-exist", "out", "amp", "in.0");
     CHECK_FALSE (badConnect.success);
     CHECK (badConnect.errorMessage.isNotEmpty());
 
@@ -361,7 +359,7 @@ TEST_CASE ("A graph snapshot round-trips through PatchDocument/PatchSerializer a
 
     REQUIRE (controller.getGraph().findNode ("extra") != nullptr);
     CHECK (controller.getGraph().findNode ("svf")->parameters.at ("filter.svf.cutoff") == 1234.0f);
-    CHECK (controller.getGraph().getNodes().size() == 7); // noteIn, allocator, osc, svf, env, amp, extra
+    CHECK (controller.getGraph().getNodes().size() == 8); // noteIn, allocator, pitchToFreq, osc, svf, env, amp, extra
 }
 
 TEST_CASE ("exportSnapshotToFile writes the live graph as pretty-printed, parseable JSON",
@@ -604,7 +602,7 @@ TEST_CASE ("A Reroute still rejects, through the controller, a downstream port i
     CHECK (controller.getGraph().getConnections().size() == connectionsBefore);
 }
 
-TEST_CASE ("logic.select through the controller: data cables of any plain type, a fixed Boolean condition, and Note refused",
+TEST_CASE ("math.blend through the controller: value cables of any plain type, any value as the Amount, and Note refused",
            "[plugin][GraphEditController][inheriting][M21]")
 {
     BazaltAudioProcessor processor;
@@ -613,25 +611,23 @@ TEST_CASE ("logic.select through the controller: data cables of any plain type, 
     auto& controller = processor.getGraphEditController();
     REQUIRE (controller.setGraph (bazalt::engine::buildVoiceProofGraph()).success);
 
-    REQUIRE (controller.addNode ("logic.select", "sel", 0.0f, 0.0f).success);
+    REQUIRE (controller.addNode ("math.blend", "sel", 0.0f, 0.0f).success);
     REQUIRE (controller.addNode ("logic.not", "cond", 0.0f, 0.0f).success);
     REQUIRE (controller.addNode ("util.constant", "k", 0.0f, 0.0f).success);
     REQUIRE (controller.addNode ("io.noteIn", "notes", 0.0f, 0.0f).success);
 
-    // A Boolean cable on `condition`, a Control cable on `whenTrue`: both fine.
-    CHECK (controller.connectWithAutoAdapt ("cond", "out", "sel", "condition").success);
-    CHECK (controller.connectWithAutoAdapt ("k", "out", "sel", "whenTrue").success);
+    // A Boolean cable on Amount (the old Select), a Control cable on B: both fine.
+    CHECK (controller.connectWithAutoAdapt ("cond", "out", "sel", "math.blend.amount").success);
+    CHECK (controller.connectWithAutoAdapt ("k", "out", "sel", "b").success);
 
-    // A Control cable must NOT be accepted on the fixed Boolean condition of an
-    // already-resolved select — polymorphic nodes don't become "accepts anything".
+    // A plain value on Amount is fine too.
     REQUIRE (controller.addNode ("util.constant", "k2", 0.0f, 0.0f).success);
+    REQUIRE (controller.addNode ("math.blend", "sel2", 0.0f, 0.0f).success);
+    CHECK (controller.connectWithAutoAdapt ("k2", "out", "sel2", "math.blend.amount").success);
     const auto connectionsBefore = controller.getGraph().getConnections().size();
-    // (condition is already wired, so target a second select's condition instead)
-    REQUIRE (controller.addNode ("logic.select", "sel2", 0.0f, 0.0f).success);
-    CHECK_FALSE (controller.connectWithAutoAdapt ("k2", "out", "sel2", "condition").success);
 
-    // A Note can't ride through a select: it isn't a plain per-sample value.
-    CHECK_FALSE (controller.connectWithAutoAdapt ("notes", "notes", "sel2", "whenFalse").success);
+    // A Note can't ride through a blend: it isn't a plain per-sample value.
+    CHECK_FALSE (controller.connectWithAutoAdapt ("notes", "notes", "sel2", "a").success);
 
     CHECK (controller.getGraph().getConnections().size() == connectionsBefore);
 }
@@ -678,7 +674,7 @@ TEST_CASE ("getNodeDomains() classifies every node as voice/global/mono after a 
     // already-settled graph) wouldn't actually exercise the rollback path,
     // since nothing about node membership would differ regardless.
     REQUIRE (controller.setGraph (bazalt::engine::buildInitPatchGraph()).success);
-    REQUIRE (controller.addNode ("osc.analog", "orphanOsc", 0.0f, 0.0f).success);
+    REQUIRE (controller.addNode ("source.oscillator", "orphanOsc", 0.0f, 0.0f).success);
     REQUIRE (controller.getNodeDomains().count ("orphanOsc") == 1);
     CHECK (controller.getNodeDomains().at ("orphanOsc") == "global"); // unconnected, fed by nothing
 
@@ -782,7 +778,7 @@ TEST_CASE ("A Trigger-type util.macro connects directly into a real Event-typed 
 
     const auto& graphAfterTrigger = controller.getGraph();
     const auto hasThresholdAdapter = std::any_of (graphAfterTrigger.getNodes().begin(), graphAfterTrigger.getNodes().end(),
-                                                   [] (const auto& n) { return n.type == "adapt.threshold"; });
+                                                   [] (const auto& n) { return n.type == "logic.threshold"; });
     CHECK_FALSE (hasThresholdAdapter);
 
     const auto& connectionsAfterTrigger = graphAfterTrigger.getConnections();
@@ -794,7 +790,7 @@ TEST_CASE ("A Trigger-type util.macro connects directly into a real Event-typed 
     REQUIRE (controller.addNode ("util.macro", "boolMacro", 0.0f, 100.0f).success);
     REQUIRE (controller.setParameterValue ("boolMacro", "util.macro.slot", 11.0f).success);
     REQUIRE (controller.setParameterValue ("boolMacro", "util.macro.type", 1.0f).success);
-    REQUIRE (controller.addNode ("env.adsr", "env1", 200.0f, 100.0f).success);
+    REQUIRE (controller.addNode ("source.envelope", "env1", 200.0f, 100.0f).success);
 
     REQUIRE (controller.connectWithAutoAdapt ("boolMacro", "out", "env1", "gate").success);
 }
@@ -956,7 +952,7 @@ TEST_CASE ("createMacro's type makes a Bool/Trigger macro wire straight into Boo
 
     auto& controller = processor.getGraphEditController();
     REQUIRE (controller.setGraph (bazalt::engine::buildMasterOutOnlyGraph()).success);
-    REQUIRE (controller.addNode ("view.gate", "gate", 0.0f, 0.0f).success);
+    REQUIRE (controller.addNode ("view.scope", "gate", 0.0f, 0.0f).success);
     REQUIRE (controller.addNode ("view.ripple", "ripple", 0.0f, 0.0f).success);
     REQUIRE (controller.addNode ("view.count", "count", 0.0f, 0.0f).success);
 
@@ -1056,7 +1052,7 @@ TEST_CASE ("connectWithAutoAdapt resolves a polymorphic source before choosing a
     REQUIRE (result.success);
 
     const auto& nodes = controller.getGraph().getNodes();
-    CHECK (std::any_of (nodes.begin(), nodes.end(), [] (const auto& n) { return n.type == "adapt.map"; }));
+    CHECK (std::any_of (nodes.begin(), nodes.end(), [] (const auto& n) { return n.type == "math.map"; }));
 }
 
 // One voice allocator feeding two Voice Sums: a main chain and a separate
@@ -1070,21 +1066,23 @@ TEST_CASE ("Two instance.sum nodes reducing one origin each carry that origin's 
     {
         bazalt::engine::NodeGraph graph;
         graph.addNode ({ "noteIn", "io.noteIn", {}, {}, {} });
-        graph.addNode ({ "alloc", "instance.allocate.voice", {}, {}, {} });
-        graph.addNode ({ "osc", "osc.analog", {}, {}, {} });
-        graph.addNode ({ "sumMain", "instance.sum", {}, {}, {} });
-        graph.addNode ({ "sumLayer", "instance.sum", {}, {}, {} });
-        graph.addNode ({ "gainMain", "mix.gain", {}, { { "gain", mainGain } }, {} });
-        graph.addNode ({ "gainLayer", "mix.gain", {}, { { "gain", layerGain } }, {} });
+        graph.addNode ({ "alloc", "life.voice", {}, {}, {} });
+        graph.addNode (bazalt::engine::withContent ({ "osc", "source.oscillator", {}, {}, {} }, bazalt::engine::CurveDocument::saw()));
+        graph.addNode ({ "sumMain", "life.merge", {}, {}, {} });
+        graph.addNode ({ "sumLayer", "life.merge", {}, {}, {} });
+        graph.addNode ({ "gainMain", "math.multiply", {}, { { "in.1", mainGain } }, {} });
+        graph.addNode ({ "gainLayer", "math.multiply", {}, { { "in.1", layerGain } }, {} });
         graph.addNode ({ "add", "math.add", {}, {}, {} });
         graph.addNode ({ "masterOut", "io.output", {}, {}, {} });
 
         graph.addConnection ({ "noteIn", "notes", "alloc", "spawn" });
-        graph.addConnection ({ "alloc", "pitch", "osc", "pitch" });
+        graph.addNode ({ "oscToFreq", "math.pitchToFrequency", {}, {}, {} });
+        graph.addConnection ({ "alloc", "pitch", "oscToFreq", "pitch" });
+        graph.addConnection ({ "oscToFreq", "frequency", "osc", "source.oscillator.frequency" });
         graph.addConnection ({ "osc", "out", "sumMain", "in" });
         graph.addConnection ({ "osc", "out", "sumLayer", "in" });
-        graph.addConnection ({ "sumMain", "out", "gainMain", "audio" });
-        graph.addConnection ({ "sumLayer", "out", "gainLayer", "audio" });
+        graph.addConnection ({ "sumMain", "out", "gainMain", "in.0" });
+        graph.addConnection ({ "sumLayer", "out", "gainLayer", "in.0" });
         graph.addConnection ({ "gainMain", "out", "add", "in.0" });
         graph.addConnection ({ "gainLayer", "out", "add", "in.1" });
         graph.addConnection ({ "add", "out", "masterOut", "in" });
@@ -1124,4 +1122,72 @@ TEST_CASE ("Two instance.sum nodes reducing one origin each carry that origin's 
     CHECK (std::abs (mainOnly - layerOnly) < 0.01f * mainOnly);
     // The same voice through both sums adds coherently: twice the level.
     CHECK (std::abs (both - 2.0f * mainOnly) < 0.05f * mainOnly);
+}
+
+// wiki/ROADMAP.md stage 0: a wired Listen overrides Master Out, and is never
+// saved with the patch.
+TEST_CASE ("A Listen overrides Master Out and is left out of the saved graph",
+           "[plugin][GraphEditController][listen]")
+{
+    BazaltAudioProcessor processor;
+    processor.prepareToPlay (44100.0, 512);
+    auto& controller = processor.getGraphEditController();
+    REQUIRE (controller.setGraph (bazalt::engine::buildMasterOutOnlyGraph()).success);
+    REQUIRE (controller.addNode ("source.oscillator", "sine", 0.0f, 0.0f).success);
+
+    auto renderRms = [&]
+    {
+        juce::AudioBuffer<float> buffer (2, 512);
+        for (int block = 0; block < 4; ++block)
+        {
+            buffer.clear();
+            juce::MidiBuffer empty;
+            processor.processBlock (buffer, empty);
+        }
+        return rms (buffer, 0);
+    };
+
+    // The sine feeds nothing audible yet: Master Out is unconnected.
+    CHECK (renderRms() < 1.0e-6f);
+
+    REQUIRE (controller.addNode ("view.listen", "listen", 0.0f, 0.0f).success);
+    REQUIRE (controller.connect ("sine", "out", "listen", "in").success);
+    CHECK (renderRms() > 0.1f);
+
+    // The edited graph keeps Master Out as its output; saving drops the Listen.
+    const auto masterOutId = controller.getGraph().getOutputNodeId();
+    CHECK (controller.getGraph().findNode (masterOutId)->type == "io.output");
+    const auto saved = controller.getGraphForSaving();
+    CHECK (saved.findNode ("listen") == nullptr);
+    CHECK (saved.findNode ("sine") != nullptr);
+    CHECK (std::none_of (saved.getConnections().begin(), saved.getConnections().end(),
+                         [] (const auto& c) { return c.toNodeId == "listen"; }));
+
+    // Removing the Listen goes straight back to Master Out (silent here).
+    REQUIRE (controller.deleteNode ("listen").success);
+    CHECK (renderRms() < 1.0e-6f);
+}
+
+// wiki/plans/DataAndWavetable.md 1b: a factory node's content, committed and live.
+TEST_CASE ("setContent stores a node's content and keeps the running node; setContentLive reaches it without an edit",
+           "[plugin][GraphEditController][content]")
+{
+    BazaltAudioProcessor processor;
+    processor.prepareToPlay (44100.0, 512);
+    auto& controller = processor.getGraphEditController();
+    REQUIRE (controller.setGraph (bazalt::engine::buildMasterOutOnlyGraph()).success);
+    REQUIRE (controller.addNode ("source.oscillator", "osc", 0.0f, 0.0f).success);
+
+    const auto* before = processor.getGlobalPlanSwapper().peekCurrentPlan()->getNodeById ("osc");
+    REQUIRE (before != nullptr);
+
+    const auto square = bazalt::engine::CurveDocument::square().toVar();
+    REQUIRE (controller.setContent ("osc", square).success);
+    CHECK (juce::JSON::toString (controller.getGraph().findNode ("osc")->content) == juce::JSON::toString (square));
+    CHECK (processor.getGlobalPlanSwapper().peekCurrentPlan()->getNodeById ("osc") == before); // kept, not rebuilt
+
+    const auto graphBefore = juce::JSON::toString (controller.getGraph().findNode ("osc")->content);
+    CHECK (controller.setContentLive ("osc", bazalt::engine::CurveDocument::saw().toVar()).success);
+    CHECK (juce::JSON::toString (controller.getGraph().findNode ("osc")->content) == graphBefore); // live is not an edit
+    CHECK_FALSE (controller.setContent ("nope", square).success);
 }

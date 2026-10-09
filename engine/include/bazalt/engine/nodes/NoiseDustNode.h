@@ -6,7 +6,7 @@
 
 namespace bazalt::engine::nodes
 {
-    /** Stable type id: "noise.dust" (wiki/plans/SoundPalette.md, Batch 2).
+    /** Stable type id: "source.dust" (wiki/plans/SoundPalette.md, Batch 2).
         Sparse single-sample impulses at random moments — rain, crackle,
         Geiger clicks, the trigger for a swarm of short sounds. `density` is
         the average number of impulses per second (a Poisson process: each
@@ -29,15 +29,15 @@ namespace bazalt::engine::nodes
         int getNumInputPorts() const noexcept override { return 2; }
         int getNumOutputPorts() const noexcept override { return 2; }
         juce::String getTitle() const override { return "Dust"; }
-        juce::String getCategory() const override { return "Generators"; }
+        juce::String getCategory() const override { return "Sources"; }
 
         std::vector<PortDescriptor> getInputPorts() const override
         {
             return {
-                PortDescriptor { .id = "noise.dust.density", .type = SignalType::Control, .label = "Density", .unit = "/s",
+                PortDescriptor { .id = "source.dust.density", .type = SignalType::Signal, .label = "Density", .unit = "/s",
                                   .minValue = 0.1f, .maxValue = 10000.0f, .defaultValue = 20.0f, .isLogScale = true,
                                   .hasFallbackWhenUnconnected = true, .quantity = Quantity::Frequency, .curve = Curve::Logarithmic },
-                PortDescriptor { .id = "noise.dust.randomness", .type = SignalType::Control, .label = "Randomness",
+                PortDescriptor { .id = "source.dust.randomness", .type = SignalType::Signal, .label = "Randomness",
                                   .minValue = 0.0f, .maxValue = 1.0f, .defaultValue = 0.5f, .hasFallbackWhenUnconnected = true,
                                   .quantity = Quantity::Unipolar },
             };
@@ -45,32 +45,32 @@ namespace bazalt::engine::nodes
         std::vector<PortDescriptor> getOutputPorts() const override
         {
             return {
-                PortDescriptor { .id = "out", .type = SignalType::Audio, .label = "Out", .isPrimaryOutput = true },
+                PortDescriptor { .id = "out", .type = SignalType::Signal, .label = "Out", .isPrimaryOutput = true, .quantity = Quantity::Audio },
                 PortDescriptor { .id = "trigger", .type = SignalType::Event, .label = "Trigger" },
             };
         }
         std::vector<ParameterDescriptor> getParameters() const override
         {
             return {
-                ParameterDescriptor { .id = "noise.dust.polarity", .minValue = 0.0f, .maxValue = 1.0f, .defaultValue = 0.0f,
+                ParameterDescriptor { .id = "source.dust.polarity", .minValue = 0.0f, .maxValue = 1.0f, .defaultValue = 0.0f,
                                        .displayName = "Polarity", .isInteger = true, .kind = ValueKind::Enum,
                                        .enumOptions = { { "unipolar", "Unipolar" }, { "bipolar", "Bipolar" } } },
-                ParameterDescriptor { .id = "noise.dust.seed", .minValue = 0.0f, .maxValue = 9999.0f, .defaultValue = 0.0f,
+                ParameterDescriptor { .id = "source.dust.seed", .minValue = 0.0f, .maxValue = 9999.0f, .defaultValue = 0.0f,
                                        .displayName = "Seed", .isInteger = true, .kind = ValueKind::Int, .isStructural = true },
             };
         }
         void setParameter (const juce::String& parameterId, float value) override
         {
-            if (parameterId == "noise.dust.polarity")
+            if (parameterId == "source.dust.polarity")
                 bipolar = value > 0.5f;
-            else if (parameterId == "noise.dust.seed")
+            else if (parameterId == "source.dust.seed")
             {
                 seed = (uint32_t) juce::jmax (0, (int) std::lround (value));
                 reset();
             }
-            else if (parameterId == "noise.dust.density")
+            else if (parameterId == "source.dust.density")
                 storedDensity = value;
-            else if (parameterId == "noise.dust.randomness")
+            else if (parameterId == "source.dust.randomness")
                 storedRandomness = value;
         }
 

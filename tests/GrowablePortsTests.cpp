@@ -19,7 +19,7 @@ namespace
     public:
         int getNumInputPorts() const noexcept override { return 0; }
         int getNumOutputPorts() const noexcept override { return 1; }
-        std::vector<PortDescriptor> getOutputPorts() const override { return { { "out", SignalType::Audio } }; }
+        std::vector<PortDescriptor> getOutputPorts() const override { return { { .id = "out", .type = SignalType::Signal, .quantity = Quantity::Audio } }; }
 
         void setParameter (const juce::String& id, float value) override
         {
@@ -41,7 +41,7 @@ namespace
     public:
         int getNumInputPorts() const noexcept override { return 0; }
         int getNumOutputPorts() const noexcept override { return 1; }
-        std::vector<PortDescriptor> getOutputPorts() const override { return { { "out", SignalType::Boolean } }; }
+        std::vector<PortDescriptor> getOutputPorts() const override { return { { .id = "out", .type = SignalType::Signal, .quantity = Quantity::Boolean } }; }
 
         void setParameter (const juce::String& id, float value) override
         {
@@ -65,10 +65,10 @@ namespace
         {
             std::vector<PortDescriptor> ports;
             for (int i = 0; i < getNumInputPorts(); ++i)
-                ports.push_back ({ "in" + juce::String (i), SignalType::Audio });
+                ports.push_back ({ .id = "in" + juce::String (i), .type = SignalType::Signal, .quantity = Quantity::Audio });
             return ports;
         }
-        std::vector<PortDescriptor> getOutputPorts() const override { return { { "out", SignalType::Audio } }; }
+        std::vector<PortDescriptor> getOutputPorts() const override { return { { .id = "out", .type = SignalType::Signal, .quantity = Quantity::Audio } }; }
         void processSample (const float*, float* outputs) noexcept override { outputs[0] = 0.0f; }
     };
 
@@ -295,11 +295,11 @@ TEST_CASE ("math.add's ports report Audio + the source's quantity once an Audio 
     const auto& node = nodeOf (result, "add");
     for (const auto& port : node.getInputPorts())
     {
-        CHECK (port.type == SignalType::Audio);
+        CHECK (port.quantity == Quantity::Audio);
         CHECK (port.polymorphism == PortPolymorphism::SignalAndQuantity);
     }
     REQUIRE (node.getOutputPorts().size() == 1);
-    CHECK (node.getOutputPorts()[0].type == SignalType::Audio);
+    CHECK (node.getOutputPorts()[0].quantity == Quantity::Audio);
     CHECK (node.getOutputPorts()[0].polymorphism == PortPolymorphism::SignalAndQuantity);
 }
 
@@ -311,9 +311,8 @@ TEST_CASE ("math.add's SIGNAL TYPE still resolves by declaration order when wire
     // InheritingPortsTests.cpp's own "logic.select resolves by port
     // priority..." test does — GraphCompiler's real canConnect validation
     // would (correctly) reject two DIFFERENT SignalTypes disagreeing on one
-    // node's single resolved type as a genuine mismatch (Audio -> a
-    // Control-resolved port needs adapt.audioToControl, not a free wire),
-    // so this tests the resolution rule in isolation. SignalType keeps the
+    // node's single resolved type), so this tests the resolution rule in
+    // isolation. SignalType keeps the
     // strict priority rule (mixing Audio and Control on one sum is rare,
     // and if it happens one of them IS the odd one out) — QUANTITY does
     // NOT, see the sibling test below for why.
@@ -322,8 +321,8 @@ TEST_CASE ("math.add's SIGNAL TYPE still resolves by declaration order when wire
         DYNAMIC_SECTION ("in.1 offered " << (in1First ? "first" : "second"))
         {
             nodes::AddNode node;
-            const PortDescriptor audioSource { "src", SignalType::Audio };
-            const PortDescriptor controlSource { "src", SignalType::Control };
+            const PortDescriptor audioSource { .id = "src", .type = SignalType::Signal, .quantity = Quantity::Audio };
+            const PortDescriptor controlSource { .id = "src", .type = SignalType::Signal };
 
             if (in1First)
             {
@@ -338,8 +337,8 @@ TEST_CASE ("math.add's SIGNAL TYPE still resolves by declaration order when wire
 
             // in.0 declared first wins, regardless of offer order.
             for (const auto& port : node.getInputPorts())
-                CHECK (port.type == SignalType::Audio);
-            CHECK (node.getOutputPorts()[0].type == SignalType::Audio);
+                CHECK (port.quantity == Quantity::Audio);
+            CHECK (node.getOutputPorts()[0].quantity == Quantity::Audio);
         }
     }
 }
@@ -361,11 +360,11 @@ TEST_CASE ("math.add's QUANTITY only resolves when every wired member unanimousl
     // SignalType, quantity has no "one of them is obviously the odd one
     // out" reading for a sum: it needs unanimous agreement, not priority.
     nodes::AddNode node;
-    PortDescriptor frequencySource { "src", SignalType::Control };
+    PortDescriptor frequencySource { .id = "src", .type = SignalType::Signal };
     frequencySource.quantity = Quantity::Frequency;
-    PortDescriptor pitchSource { "src", SignalType::Control };
+    PortDescriptor pitchSource { .id = "src", .type = SignalType::Signal };
     pitchSource.quantity = Quantity::Pitch;
-    PortDescriptor dimensionlessSource { "src", SignalType::Control };
+    PortDescriptor dimensionlessSource { .id = "src", .type = SignalType::Signal };
 
     // Disagreement (Frequency vs Pitch) -> Dimensionless, not either one.
     node.resolveIncomingPort ("in.0", frequencySource);
@@ -411,8 +410,8 @@ TEST_CASE ("math.multiply resolves Audio dynamically too - the real ring-mod cas
     REQUIRE (result.success);
 
     const auto& node = nodeOf (result, "mul");
-    CHECK (node.getInputPorts()[0].type == SignalType::Audio);
-    CHECK (node.getOutputPorts()[0].type == SignalType::Audio);
+    CHECK (node.getInputPorts()[0].quantity == Quantity::Audio);
+    CHECK (node.getOutputPorts()[0].quantity == Quantity::Audio);
     CHECK (finalOutput (result) == 6.0f);
 }
 
@@ -652,19 +651,20 @@ TEST_CASE ("Schema v3 -> v4 preserves mix.sum's level.N as a spliced mix.gain no
             CHECK (node.parameters.find ("level.1") == node.parameters.end());
         }
 
-    // level.1 = 2.0, a plain constant: a real mix.gain node now sits between
+    // level.1 = 2.0, a plain constant: a real gain node (math.multiply since
+    // schema v13) now sits between
     // b and mix, holding that value as its own "gain" parameter — and the
     // old direct b -> mix.in.1 connection is gone (replaced, not duplicated).
     juce::String gain1Id;
     for (const auto& node : result.document.nodes)
-        if (node.type == "mix.gain" && findConnection ("b", "out", node.id, "audio"))
+        if (node.type == "math.multiply" && findConnection ("b", "out", node.id, "in.0"))
             gain1Id = node.id;
     REQUIRE (gain1Id.isNotEmpty());
     CHECK (findConnection (gain1Id, "out", "mix", "in.1"));
     CHECK_FALSE (findConnection ("b", "out", "mix", "in.1"));
     for (const auto& node : result.document.nodes)
         if (node.id == gain1Id)
-            CHECK (node.parameters.at ("gain") == Catch::Approx (2.0f));
+            CHECK (node.parameters.at ("in.1") == Catch::Approx (2.0f));
 
     // level.2 was itself fed by a connection (lfo), not a constant: the
     // spliced mix.gain node's own "gain" INPUT is wired from lfo instead of
@@ -672,11 +672,11 @@ TEST_CASE ("Schema v3 -> v4 preserves mix.sum's level.N as a spliced mix.gain no
     // is gone (its port doesn't exist any more).
     juce::String gain2Id;
     for (const auto& node : result.document.nodes)
-        if (node.type == "mix.gain" && findConnection ("c", "out", node.id, "audio"))
+        if (node.type == "math.multiply" && findConnection ("c", "out", node.id, "in.0"))
             gain2Id = node.id;
     REQUIRE (gain2Id.isNotEmpty());
     CHECK (findConnection (gain2Id, "out", "mix", "in.2"));
-    CHECK (findConnection ("lfo", "out", gain2Id, "gain"));
+    CHECK (findConnection ("lfo", "out", gain2Id, "in.1"));
     CHECK_FALSE (findConnection ("lfo", "out", "mix", "level.2"));
     CHECK_FALSE (findConnection ("c", "out", "mix", "in.2")); // replaced, not left dangling alongside the new one
 

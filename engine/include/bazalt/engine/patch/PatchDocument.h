@@ -97,8 +97,8 @@ namespace bazalt::engine
         // straight onto the new single port.
         //
         // Schema v6 (wiki/plans/DomainRedesign.md Batch 1b): "instance.mix"
-        // renamed to "instance.sum" (its own parameter ids too:
-        // "instance.mix.mode" etc. -> "instance.sum.mode"). Same rule-3-
+        // renamed to "life.merge" (its own parameter ids too:
+        // "instance.mix.mode" etc. -> "life.merge.mode"). Same rule-3-
         // suspended, hygiene-only bump as v5's — see migrateV5ToV6 in
         // PatchSerializer.cpp.
         //
@@ -121,7 +121,24 @@ namespace bazalt::engine
         // Schema v11 (wiki/plans/Decorations.md): util.reroute became
         // deco.reroute (same ports), and patches carry `assets` — the
         // content-addressed files deco.image nodes show.
-        static constexpr int currentSchemaVersion = 11;
+        //
+        // Schema v12 (wiki/plans/DataAndWavetable.md §2): To Mod / To Audio /
+        // From Bool / Normalise and the two polarity converters are gone —
+        // spliced out, or rewritten as math.multiply / adapt.map.
+        //
+        // Schema v13 (same plan, 1a.3): duplicated nodes merged — Gain into
+        // Multiply, Clamp into Clip (low/high), Envelope Follower into Level,
+        // Crossfade and Select into Blend, the three history scopes into Scope.
+        //
+        // Schema v14 (same plan, §3): type ids follow the category —
+        // life.voice / life.merge, time.delay, math.map, channels.downmix, …
+        //
+        // Schema v15 (same plan, 1b): a node may carry `content`, a factory's
+        // editable document (NodeInstance::content).
+        //
+        // Schema v16 (same plan, D5/D6): osc.*, lfo.shape, env.adsr and
+        // data.table become source.oscillator / source.envelope / data.curve.
+        static constexpr int currentSchemaVersion = 16;
 
         int schemaVersion = currentSchemaVersion;
         std::vector<NodeInstance> nodes;

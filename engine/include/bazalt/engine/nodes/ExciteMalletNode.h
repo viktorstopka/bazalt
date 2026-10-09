@@ -67,15 +67,15 @@ namespace bazalt::engine::nodes
                 unipolarPort ("excite.mallet.velocity", "Velocity", 0.8f),
                 unipolarPort ("excite.mallet.mass", "Mass", 0.3f),
                 unipolarPort ("excite.mallet.stiffness", "Stiffness", 0.5f),
-                { "feedback", SignalType::Audio },
+                { .id = "feedback", .type = SignalType::Signal, .quantity = Quantity::Audio },
             };
         }
 
         std::vector<PortDescriptor> getOutputPorts() const override
         {
             return {
-                PortDescriptor { .id = "out", .type = SignalType::Audio, .label = "Out", .isPrimaryOutput = true },
-                PortDescriptor { .id = "contact", .type = SignalType::Boolean, .label = "Contact" },
+                PortDescriptor { .id = "out", .type = SignalType::Signal, .label = "Out", .isPrimaryOutput = true, .quantity = Quantity::Audio },
+                PortDescriptor { .id = "contact", .type = SignalType::Signal, .label = "Contact", .quantity = Quantity::Boolean },
             };
         }
 
@@ -132,7 +132,7 @@ namespace bazalt::engine::nodes
     private:
         static PortDescriptor unipolarPort (juce::String id, juce::String label, float defaultValue)
         {
-            return PortDescriptor { .id = std::move (id), .type = SignalType::Control, .label = std::move (label),
+            return PortDescriptor { .id = std::move (id), .type = SignalType::Signal, .label = std::move (label),
                                      .minValue = 0.0f, .maxValue = 1.0f, .defaultValue = defaultValue,
                                      .hasFallbackWhenUnconnected = true, .quantity = Quantity::Unipolar,
                                      .polarity = Polarity::Unipolar };

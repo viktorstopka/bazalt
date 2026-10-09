@@ -18,8 +18,8 @@ namespace
     public:
         int getNumInputPorts() const noexcept override { return 1; }
         int getNumOutputPorts() const noexcept override { return 1; }
-        std::vector<PortDescriptor> getInputPorts() const override { return { { "in", SignalType::Audio } }; }
-        std::vector<PortDescriptor> getOutputPorts() const override { return { { "out", SignalType::Audio } }; }
+        std::vector<PortDescriptor> getInputPorts() const override { return { { .id = "in", .type = SignalType::Signal, .quantity = Quantity::Audio } }; }
+        std::vector<PortDescriptor> getOutputPorts() const override { return { { .id = "out", .type = SignalType::Signal, .quantity = Quantity::Audio } }; }
 
         void setParameter (const juce::String& id, float value) override
         {
@@ -39,7 +39,7 @@ namespace
     public:
         int getNumInputPorts() const noexcept override { return 0; }
         int getNumOutputPorts() const noexcept override { return 1; }
-        std::vector<PortDescriptor> getOutputPorts() const override { return { { "out", SignalType::Audio } }; }
+        std::vector<PortDescriptor> getOutputPorts() const override { return { { .id = "out", .type = SignalType::Signal, .quantity = Quantity::Audio } }; }
 
         void setParameter (const juce::String& id, float value) override
         {
@@ -60,8 +60,8 @@ namespace
     public:
         int getNumInputPorts() const noexcept override { return 1; }
         int getNumOutputPorts() const noexcept override { return 1; }
-        std::vector<PortDescriptor> getInputPorts() const override { return { { "in", SignalType::Audio } }; }
-        std::vector<PortDescriptor> getOutputPorts() const override { return { { "out", SignalType::Audio } }; }
+        std::vector<PortDescriptor> getInputPorts() const override { return { { .id = "in", .type = SignalType::Signal, .quantity = Quantity::Audio } }; }
+        std::vector<PortDescriptor> getOutputPorts() const override { return { { .id = "out", .type = SignalType::Signal, .quantity = Quantity::Audio } }; }
         bool supportsPerSample() const noexcept override { return false; }
 
         void processBlock (const float* const* inputs, float* const* outputs, int numSamples) noexcept override
@@ -82,7 +82,7 @@ namespace
     public:
         int getNumInputPorts() const noexcept override { return 0; }
         int getNumOutputPorts() const noexcept override { return 1; }
-        std::vector<PortDescriptor> getOutputPorts() const override { return { { "out", SignalType::Audio } }; }
+        std::vector<PortDescriptor> getOutputPorts() const override { return { { .id = "out", .type = SignalType::Signal, .quantity = Quantity::Audio } }; }
         void processSample (const float*, float* outputs) noexcept override { outputs[0] = (float) count++; }
 
         int count = 0;
@@ -99,10 +99,10 @@ namespace
     public:
         int getNumInputPorts() const noexcept override { return 1; }
         int getNumOutputPorts() const noexcept override { return 2; }
-        std::vector<PortDescriptor> getInputPorts() const override { return { { "in", SignalType::Audio } }; }
+        std::vector<PortDescriptor> getInputPorts() const override { return { { .id = "in", .type = SignalType::Signal, .quantity = Quantity::Audio } }; }
         std::vector<PortDescriptor> getOutputPorts() const override
         {
-            return { { "out", SignalType::Audio }, { "notes", SignalType::Note } };
+            return { { .id = "out", .type = SignalType::Signal, .quantity = Quantity::Audio }, { "notes", SignalType::Note } };
         }
         void processSample (const float* inputs, float* outputs) noexcept override { outputs[0] = inputs[0]; }
     };
@@ -124,7 +124,7 @@ namespace
     public:
         int getNumInputPorts() const noexcept override { return 0; }
         int getNumOutputPorts() const noexcept override { return 1; }
-        std::vector<PortDescriptor> getOutputPorts() const override { return { { "out", SignalType::Control } }; }
+        std::vector<PortDescriptor> getOutputPorts() const override { return { { .id = "out", .type = SignalType::Signal } }; }
 
         void setParameter (const juce::String& id, float value) override
         {
@@ -143,8 +143,8 @@ namespace
     public:
         int getNumInputPorts() const noexcept override { return 1; }
         int getNumOutputPorts() const noexcept override { return 1; }
-        std::vector<PortDescriptor> getInputPorts() const override { return { { "in", SignalType::Control } }; }
-        std::vector<PortDescriptor> getOutputPorts() const override { return { { "out", SignalType::Control } }; }
+        std::vector<PortDescriptor> getInputPorts() const override { return { { .id = "in", .type = SignalType::Signal } }; }
+        std::vector<PortDescriptor> getOutputPorts() const override { return { { .id = "out", .type = SignalType::Signal } }; }
 
         void setParameter (const juce::String& id, float value) override
         {
@@ -168,7 +168,7 @@ namespace
         int getNumOutputPorts() const noexcept override { return 2; }
         std::vector<PortDescriptor> getOutputPorts() const override
         {
-            return { { "out", SignalType::Audio }, { "notes", SignalType::Note } };
+            return { { .id = "out", .type = SignalType::Signal, .quantity = Quantity::Audio }, { "notes", SignalType::Note } };
         }
 
         void processSample (const float*, float* outputs) noexcept override
@@ -219,7 +219,7 @@ namespace
         int getNumOutputChannels() const noexcept override { return 2; } // the one descriptor is Stereo
         std::vector<PortDescriptor> getOutputPorts() const override
         {
-            return { PortDescriptor { .id = "out", .type = SignalType::Audio, .isPrimaryOutput = true, .channels = Channels::Stereo } };
+            return { PortDescriptor { .id = "out", .type = SignalType::Signal, .isPrimaryOutput = true, .quantity = Quantity::Audio, .channels = Channels::Stereo } };
         }
 
         void setParameter (const juce::String& id, float value) override
@@ -252,11 +252,11 @@ namespace
         int getNumOutputChannels() const noexcept override { return 2; }
         std::vector<PortDescriptor> getInputPorts() const override
         {
-            return { PortDescriptor { .id = "in", .type = SignalType::Audio, .channels = Channels::Stereo } };
+            return { PortDescriptor { .id = "in", .type = SignalType::Signal, .quantity = Quantity::Audio, .channels = Channels::Stereo } };
         }
         std::vector<PortDescriptor> getOutputPorts() const override
         {
-            return { PortDescriptor { .id = "out", .type = SignalType::Audio, .isPrimaryOutput = true, .channels = Channels::Stereo } };
+            return { PortDescriptor { .id = "out", .type = SignalType::Signal, .isPrimaryOutput = true, .quantity = Quantity::Audio, .channels = Channels::Stereo } };
         }
 
         void processSample (const float* inputs, float* outputs) noexcept override
@@ -281,10 +281,10 @@ namespace
         {
             std::vector<PortDescriptor> ports;
             for (int i = 0; i < 17; ++i)
-                ports.push_back (PortDescriptor { .id = "in" + juce::String (i), .type = SignalType::Audio, .channels = Channels::Stereo });
+                ports.push_back (PortDescriptor { .id = "in" + juce::String (i), .type = SignalType::Signal, .quantity = Quantity::Audio, .channels = Channels::Stereo });
             return ports;
         }
-        std::vector<PortDescriptor> getOutputPorts() const override { return { { "out", SignalType::Audio } }; }
+        std::vector<PortDescriptor> getOutputPorts() const override { return { { .id = "out", .type = SignalType::Signal, .quantity = Quantity::Audio } }; }
         void processSample (const float*, float* outputs) noexcept override { outputs[0] = 0.0f; }
     };
 
@@ -665,7 +665,7 @@ TEST_CASE ("A recompile never reuses a Reroute, so it can't keep a stale type af
 
     auto first = GraphCompiler::compile (connected, factory, { 44100.0, 64 }, 1);
     REQUIRE (first.success);
-    CHECK (first.plan.nodes[(size_t) first.plan.nodeIdToSlot.at ("rr")]->getInputPorts()[0].type == SignalType::Control);
+    CHECK (first.plan.nodes[(size_t) first.plan.nodeIdToSlot.at ("rr")]->getInputPorts()[0].type == SignalType::Signal);
 
     // Same node id/type/params, but nothing feeds it any more. A reused
     // node object would still report Control; a fresh compile's default is
@@ -680,7 +680,7 @@ TEST_CASE ("A recompile never reuses a Reroute, so it can't keep a stale type af
 
     const auto& secondNode = second.plan.nodes[(size_t) second.plan.nodeIdToSlot.at ("rr")];
     CHECK (secondNode != first.plan.nodes[(size_t) first.plan.nodeIdToSlot.at ("rr")]);
-    CHECK (secondNode->getInputPorts()[0].type == SignalType::Audio);
+    CHECK (secondNode->getInputPorts()[0].quantity == Quantity::Audio);
 }
 
 // ---- Real stereo cable redesign: flat-slot allocation, proven against

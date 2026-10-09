@@ -1180,7 +1180,7 @@ TEST_CASE ("A real compiled graph closes excite.mallet<->resonator.string into a
     constexpr int blockSize = 512;
 
     NodeGraph graph;
-    graph.addNode ({ "clock", "clock.pulse", {}, { { "clock.pulse.rate", 50.0f } }, {} });
+    graph.addNode ({ "clock", "time.clock", {}, { { "time.clock.rate", 50.0f } }, {} });
     graph.addNode ({ "mallet", "excite.mallet", {}, { { "excite.mallet.velocity", 0.9f }, { "excite.mallet.stiffness", 0.6f } }, {} });
     graph.addNode ({ "string", "resonator.string", {}, { { "pitch", 69.0f }, { "resonator.string.decay", 2.0f } }, {} });
     graph.addConnection ({ "clock", "tick", "mallet", "trigger" });

@@ -8,9 +8,9 @@
 
 namespace bazalt::engine::nodes
 {
-    /** Stable type id: "instance.allocate.swarmPopulation" (Domain
+    /** Stable type id: "life.swarmPopulation" (Domain
         Extensions batch, `wiki/NODES.Status.md`). Opens an instanced (Poly)
-        region like `instance.allocate.voice`, but "fixed count, always
+        region like `life.voice`, but "fixed count, always
         live" (`archive_docs/DOMAINS.md` §3's own table) — no spawn source
         at all, deliberately NOT implementing `InstanceOriginNode` (there is
         nothing to spawn or release after `prepare()`; every live instance
@@ -65,19 +65,19 @@ namespace bazalt::engine::nodes
         // Same "Domain/Allocate" flyout Voice already nests under
         // (09-29-AddMenu.1) — the Add menu's category tree builds itself
         // dynamically from real descriptors, so this needs no UI-side work.
-        juce::String getCategory() const override { return "Domain/Allocate"; }
+        juce::String getCategory() const override { return "Life-cycle"; }
 
         std::vector<PortDescriptor> getOutputPorts() const override
         {
             return {
-                PortDescriptor { .id = "gate", .type = SignalType::Boolean, .isPrimaryOutput = true },
-                PortDescriptor { .id = "instanceIndex", .type = SignalType::Control, .isInteger = true, .quantity = Quantity::Count, .step = 1.0f },
-                PortDescriptor { .id = "instanceAge", .type = SignalType::Control, .quantity = Quantity::Time },
-                PortDescriptor { .id = "random1", .type = SignalType::Control, .quantity = Quantity::Bipolar, .polarity = Polarity::Bipolar },
-                PortDescriptor { .id = "random2", .type = SignalType::Control, .quantity = Quantity::Bipolar, .polarity = Polarity::Bipolar },
+                PortDescriptor { .id = "gate", .type = SignalType::Signal, .isPrimaryOutput = true, .quantity = Quantity::Boolean },
+                PortDescriptor { .id = "instanceIndex", .type = SignalType::Signal, .isInteger = true, .quantity = Quantity::Count, .step = 1.0f },
+                PortDescriptor { .id = "instanceAge", .type = SignalType::Signal, .quantity = Quantity::Time },
+                PortDescriptor { .id = "random1", .type = SignalType::Signal, .quantity = Quantity::Bipolar, .polarity = Polarity::Bipolar },
+                PortDescriptor { .id = "random2", .type = SignalType::Signal, .quantity = Quantity::Bipolar, .polarity = Polarity::Bipolar },
                 PortDescriptor { .id = "start", .type = SignalType::Event },
                 PortDescriptor { .id = "stop", .type = SignalType::Event },
-                PortDescriptor { .id = "position", .type = SignalType::Control, .quantity = Quantity::Bipolar, .polarity = Polarity::Bipolar },
+                PortDescriptor { .id = "position", .type = SignalType::Signal, .quantity = Quantity::Bipolar, .polarity = Polarity::Bipolar },
             };
         }
 
@@ -87,7 +87,7 @@ namespace bazalt::engine::nodes
                 // NOT named "maxInstances" — there is no demand-driven
                 // ceiling to distinguish from the live count here. This
                 // many instances are ALWAYS live, full stop.
-                ParameterDescriptor { .id = "instance.allocate.swarmPopulation.populationSize",
+                ParameterDescriptor { .id = "life.swarmPopulation.populationSize",
                                        .minValue = 1.0f,
                                        .maxValue = 64.0f,
                                        .defaultValue = 8.0f,
@@ -96,7 +96,7 @@ namespace bazalt::engine::nodes
                                        .quantity = Quantity::Count,
                                        .step = 1.0f,
                                        .isStructural = true },
-                ParameterDescriptor { .id = "instance.allocate.swarmPopulation.seed",
+                ParameterDescriptor { .id = "life.swarmPopulation.seed",
                                        .minValue = 0.0f,
                                        .maxValue = 999999.0f,
                                        .defaultValue = 1.0f,
@@ -110,9 +110,9 @@ namespace bazalt::engine::nodes
 
         void setParameter (const juce::String& parameterId, float value) override
         {
-            if (parameterId == "instance.allocate.swarmPopulation.populationSize")
+            if (parameterId == "life.swarmPopulation.populationSize")
                 populationSize = (int) std::lround (value);
-            else if (parameterId == "instance.allocate.swarmPopulation.seed")
+            else if (parameterId == "life.swarmPopulation.seed")
                 seed = (int) std::lround (value);
         }
 

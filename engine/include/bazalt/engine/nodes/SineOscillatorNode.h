@@ -12,8 +12,11 @@ namespace bazalt::engine::nodes
         PolyBlepOscillator uses, so every oscillator shares one definition. */
     using BasicWaveform = OscillatorWaveform;
 
-    /** Stable type ids: "osc.sine", "osc.saw", "osc.square", "osc.triangle"
-        — one node per classic waveform, all sharing one port set and layout:
+    /** Stable type ids: "source.sine", "source.saw", "source.square",
+        "source.triangle" (were osc.*; removed in 1b.5 and brought back on the
+        user's direct instruction, 2026-10-09: "Yes, you can achieve those
+        with oscillators, but I still want them in there") — one node per
+        classic waveform, all sharing one port set and layout:
 
         - Frequency (Hz, value row, default 440, 0.01-20000 — sub-audio on
           purpose: FM carriers and modal exciters are built from these).
@@ -35,8 +38,10 @@ namespace bazalt::engine::nodes
         6): the increment is derived from `sampleRate`, set in prepare(); no
         block-size dependence anywhere.
 
-        `osc.analog` (one node, switchable shape, pitch input, voice-ready)
-        stays as it is; these are the minimal per-shape primitives.
+        `source.oscillator` plays any drawn shape or a wavetable; these are
+        the quick, fixed classic shapes — closed-form band-limiting (exact at
+        every frequency, no octave mipmap steps), Pulse Width on Square, and
+        a phase-locked preview that renders the shape itself.
     */
     class BasicOscillatorNode : public Node
     {
@@ -113,29 +118,29 @@ namespace bazalt::engine::nodes
             return {};
         }
 
-        juce::String getCategory() const override { return "Generators"; }
+        juce::String getCategory() const override { return "Sources"; }
 
-        /** "osc.sine", "osc.saw", ... — the prefix every port/parameter id of
+        /** "source.sine", "source.saw", ... — the prefix every port/parameter id of
             this node uses. */
-        juce::String typeId() const { return "osc." + getTitle().toLowerCase(); }
+        juce::String typeId() const { return "source." + getTitle().toLowerCase(); }
 
         std::vector<PortDescriptor> getInputPorts() const override
         {
             std::vector<PortDescriptor> ports {
-                PortDescriptor { .id = frequencyId, .type = SignalType::Control, .label = "Frequency",
+                PortDescriptor { .id = frequencyId, .type = SignalType::Signal, .label = "Frequency",
                                  .unit = "Hz", .minValue = 0.01f, .maxValue = 20000.0f, .defaultValue = defaultFrequencyHz,
                                  .isLogScale = true, .hasFallbackWhenUnconnected = true, .quantity = Quantity::Frequency,
                                  .curve = Curve::Logarithmic },
-                PortDescriptor { .id = amplitudeId, .type = SignalType::Control, .label = "Amplitude",
+                PortDescriptor { .id = amplitudeId, .type = SignalType::Signal, .label = "Amplitude",
                                  .minValue = 0.0f, .maxValue = 1.0f, .defaultValue = 1.0f,
                                  .hasFallbackWhenUnconnected = true },
-                PortDescriptor { .id = phaseId, .type = SignalType::Control, .label = "Phase",
+                PortDescriptor { .id = phaseId, .type = SignalType::Signal, .label = "Phase",
                                  .minValue = -1.0f, .maxValue = 1.0f, .defaultValue = 0.0f,
                                  .hasFallbackWhenUnconnected = true, .quantity = Quantity::Bipolar,
                                  .polarity = Polarity::Bipolar },
             };
             if (hasPulseWidth())
-                ports.push_back (PortDescriptor { .id = pulseWidthId, .type = SignalType::Control, .label = "Pulse Width",
+                ports.push_back (PortDescriptor { .id = pulseWidthId, .type = SignalType::Signal, .label = "Pulse Width",
                                                   .minValue = 0.0f, .maxValue = 1.0f, .defaultValue = defaultPulseWidth,
                                                   .hasFallbackWhenUnconnected = true, .quantity = Quantity::Unipolar });
             ports.push_back (PortDescriptor { .id = "sync", .type = SignalType::Event, .label = "Sync" });
@@ -144,7 +149,7 @@ namespace bazalt::engine::nodes
 
         std::vector<PortDescriptor> getOutputPorts() const override
         {
-            return { PortDescriptor { .id = "out", .type = SignalType::Audio, .label = "Out", .isPrimaryOutput = true } };
+            return { PortDescriptor { .id = "out", .type = SignalType::Signal, .label = "Out", .isPrimaryOutput = true, .quantity = Quantity::Audio } };
         }
 
         /** Phase-locked: its own waveform at its current parameters,

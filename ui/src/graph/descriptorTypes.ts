@@ -5,7 +5,10 @@
 // (mockDescriptors.ts) are built by hand in this exact shape — one schema,
 // two producers, per NODE_EDITOR.md §3's own framing.
 
-export type SignalType = 'audio' | 'control' | 'event' | 'note' | 'spectral' | 'boolean' | 'data'
+/** How a value is carried (engine SignalType.h). A sound, a frequency, a
+    modulation and a gate are all 'signal' — what one means is its `quantity`
+    ('audio' for a waveform, 'boolean' for a 0/1 gate, wiki/plans/DataAndWavetable.md D1). */
+export type SignalType = 'signal' | 'event' | 'note' | 'spectral' | 'data'
 
 /** M15, SIGNAL_TYPES.md §2's Data semantic tags — mirrors engine's DataTag
     (Data.h). 'unknown' never satisfies a specific `dataTags`
@@ -33,6 +36,8 @@ export type Quantity =
   | 'bipolar'
   | 'count'
   | 'phase'
+  | 'audio'
+  | 'boolean'
 export type Curve = 'linear' | 'exponential' | 'logarithmic' | 'custom-ref'
 export type Polarity = 'unipolar' | 'bipolar'
 

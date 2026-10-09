@@ -63,7 +63,7 @@ swap" pipeline `wiki/NODES.System.md` §1 describes had zero real callers until
 `setDataInput()` (new `Node.h` virtuals) and `GraphCompiler.cpp`'s new `Data`-connection
 branch now exist for real. Every later `data.*`/`osc.wavetable`/`sampler.*` node rides
 on top of this for free. Similarly, **`NodeContent` (the third value category, §3) still
-doesn't exist as real code** — `data.table`'s own curve content and `seq.steps`' own
+doesn't exist as real code** — `data.table`'s own curve content and `time.steps`' own
 step bank both shipped as a fixed `ParameterDescriptor` bank ahead of it, deliberately,
 rather than waiting; every `factory.*` node still does want the real thing.
 
@@ -85,9 +85,9 @@ rather than waiting; every `factory.*` node still does want the real thing.
 
 | Node | Status | Necessity | Batch | Notes |
 |---|---|---|---|---|
-| `osc.sine` | Implemented | | | |
+| `source.sine` / `saw` / `square` / `triangle` | Implemented | | | Removed in 1b.5, back by request 2026-10-09 (ids moved to `source.*`). |
 | `osc.analog` | Implemented |  | Oscillator Expansion | Done 2026-10-04 (`wiki/plans/SoundPalette.md`) — `fine`, `pulseWidth`, through-zero `phase`, `sync`, real phase-locked preview. |
-| `osc.wavetable` | To be implemented | **B2** | Oscillator Expansion | Needs `Data(wavetable)` — rides the Data pipeline once it exists. |
+| `data.wavetable` → `source.oscillator` | Implemented | | Stage 1c | No separate wavetable oscillator: the table plugs into the Oscillator's Shape (`wiki/plans/DataAndWavetable.md` D7). |
 | `osc.glottal` | To be implemented | **B3** | PM Voice | Correction 1; LF/Rosenberg parametric pulse model — delicate band-limiting. |
 
 ### `sampler.*` — samples and grains — 2 to build
@@ -101,8 +101,8 @@ rather than waiting; every `factory.*` node still does want the real thing.
 
 | Node | Status | Necessity | Batch | Notes |
 |---|---|---|---|---|
-| `noise.colored` | Implemented |  | Noise & Grain | Done 2026-10-04 (`wiki/plans/SoundPalette.md`) — five colours at matched level, optional stereo, seeded. |
-| `noise.dust` | Implemented |  | Noise & Grain | Done 2026-10-04 (`wiki/plans/SoundPalette.md`) — Poisson impulses + `trigger` Event. |
+| `source.noise` | Implemented |  | Noise & Grain | Done 2026-10-04 (`wiki/plans/SoundPalette.md`) — five colours at matched level, optional stereo, seeded. |
+| `source.dust` | Implemented |  | Noise & Grain | Done 2026-10-04 (`wiki/plans/SoundPalette.md`) — Poisson impulses + `trigger` Event. |
 
 ### `excite.*` — physical excitation — 3 Implemented, 1 MVP, 4 to build
 
@@ -154,7 +154,7 @@ rather than waiting; every `factory.*` node still does want the real thing.
 
 ### `delay.*` — 1/1 Implemented
 
-`delay.line` — Implemented.
+`time.delay` — Implemented.
 
 ### `space.*` / `stereo.*` — 6/6 Implemented
 
@@ -162,8 +162,8 @@ rather than waiting; every `factory.*` node still does want the real thing.
 |---|---|---|---|---|
 | `space.pan` | Implemented | | | |
 | `space.width` | Implemented | | | |
-| `stereo.split` | Implemented | | | |
-| `stereo.combine` | Implemented | | | |
+| `channels.split` | Implemented | | | |
+| `channels.combine` | Implemented | | | |
 | `space.diffuser` | Implemented | | Space | Done 2026-10-04 (`wiki/plans/Reverb.md`) — Hadamard multichannel diffuser, shared `ReverbDsp.h` code. |
 | `space.reverb` | Implemented | | Space | Done 2026-10-04 (`wiki/plans/Reverb.md`) — 8/16-line FDN, physical controls, measured quality bar (`tests/ReverbTests.cpp`). 8 lines ≈ 25 % of a core in a Debug build for 10 s stereo; Release is far lower. |
 
@@ -171,13 +171,13 @@ rather than waiting; every `factory.*` node still does want the real thing.
 
 | Node | Status | Necessity | Batch | Notes |
 |---|---|---|---|---|
-| `dyn.compress` | Implemented | | Dynamics | Done 2026-10-04 — stereo-linked, soft knee, sidechain, `gain`/`reduction` outputs. |
-| `dyn.gate` | Implemented | | Dynamics | Done 2026-10-04 — gate/expander, sidechain, `gain`/`open` outputs. |
-| `fx.freqShift` | Implemented | | Modulation FX | Done 2026-10-04 — Hilbert SSB, up + mirror outputs. Chorus/flanger/phaser wait for `stock.*` loading (groups, not nodes). |
+| `dynamics.compress` | Implemented | | Dynamics | Done 2026-10-04 — stereo-linked, soft knee, sidechain, `gain`/`reduction` outputs. |
+| `dynamics.gate` | Implemented | | Dynamics | Done 2026-10-04 — gate/expander, sidechain, `gain`/`open` outputs. |
+| `spectrum.freqShift` | Implemented | | Modulation FX | Done 2026-10-04 — Hilbert SSB, up + mirror outputs. Chorus/flanger/phaser wait for `stock.*` loading (groups, not nodes). |
 
 ### `mix.*` — 3/3 Implemented
 
-`mix.crossfade`, `mix.gain`, `mix.downmix` — all Implemented. `mix.sum` is gone as of
+`mix.crossfade`, `mix.gain`, `channels.downmix` — all Implemented. `mix.sum` is gone as of
 `wiki/plans/DomainRedesign.md` Batch 3 — folded into `math.add` (see the `math.*`
 family below), not a fourth entry here anymore.
 
@@ -203,16 +203,16 @@ family below), not a fourth entry here anymore.
 
 | Node | Status | Notes |
 |---|---|---|
-| `clock.pulse` | Implemented | Phase-accumulator clock; swing/jitter/division mode all real. Gained a `seed` param beyond the catalog spec (jitter determinism), same convention `random.stepped`/`random.drift` already established. |
-| `clock.divide` | Implemented | Output port id is `tickOut` (not catalog's `tick`) — a real engine invariant (no node may reuse a port id across its own inputs/outputs) forced this; display label is still "Tick". |
-| `clock.counter` | Implemented | All 4 modes (up/down/pingPong/random) real; `wrapped` deliberately never fires in `random` mode (documented, not an oversight). Gained a `seed` param, same reasoning as `clock.pulse`. |
+| `time.clock` | Implemented | Phase-accumulator clock; swing/jitter/division mode all real. Gained a `seed` param beyond the catalog spec (jitter determinism), same convention `random.stepped`/`random.drift` already established. |
+| `time.divide` | Implemented | Output port id is `tickOut` (not catalog's `tick`) — a real engine invariant (no node may reuse a port id across its own inputs/outputs) forced this; display label is still "Tick". |
+| `time.counter` | Implemented | All 4 modes (up/down/pingPong/random) real; `wrapped` deliberately never fires in `random` mode (documented, not an oversight). Gained a `seed` param, same reasoning as `time.clock`. |
 
 ### `seq.*` — 1 Implemented, 1 MVP
 
 | Node | Status | Notes |
 |---|---|---|
-| `seq.euclid` | Implemented | Standard Bjorklund-equivalent onset formula; `rotate` real. |
-| `seq.steps` | MVP | Two real, documented deviations from spec: no `Data(curve)` input (nothing in the engine produces `Data` yet — see the cross-cutting note above), and `length` capped at 16 instead of the catalog's 64 (trivial to raise later; these are plain numbered parameters, not a wire-format array size). Real per-step content editing belongs on `NodeContent` (§3) once that exists. |
+| `time.euclid` | Implemented | Standard Bjorklund-equivalent onset formula; `rotate` real. |
+| `time.steps` | MVP | Two real, documented deviations from spec: no `Data(curve)` input (nothing in the engine produces `Data` yet — see the cross-cutting note above), and `length` capped at 16 instead of the catalog's 64 (trivial to raise later; these are plain numbered parameters, not a wire-format array size). Real per-step content editing belongs on `NodeContent` (§3) once that exists. |
 
 ### `note.*` — the note stream — 3 to build (all blocked on the same engine limit)
 
@@ -245,7 +245,7 @@ intended use (an audio input playable as an instrument) once `analysis.pitch`/
 |---|---|---|
 | `note.gate` | Implemented | `count` (not elaborated by the catalog) is this node's own design: a running tally of note-ons since reset. |
 | `note.value` | Implemented | `pressure`/`slide` not built (`NoteEvent` doesn't carry them). `select` genuinely works via a small internal 8-note memory, not just "whatever's live this sample." |
-| `note.transpose` | Implemented | Output port id is `notesOut`, not the catalog's `notes` — same engine invariant `clock.divide`'s `tickOut` already hit. |
+| `note.transpose` | Implemented | Output port id is `notesOut`, not the catalog's `notes` — same engine invariant `time.divide`'s `tickOut` already hit. |
 | `note.filter` | Implemented | **Redesigned** from the catalog's literal `pass`/`reject` (two `Note` outputs) to one `Note` output + a plain `inRange` Boolean — see the batch note above. |
 | `note.humanize` | Implemented | Timing jitter via a small scheduled countdown (sufficient — the stream is monophonic), capped at 50ms; only note-on is jittered, not note-off. |
 | `note.quantize` | Implemented | The flagship Data Foundations consumer — real, tested `data.scale → note.quantize` round trip. `root` is a second, independent knob from `data.scale`'s own root (post-quantization offset, not a duplicate). |
@@ -254,17 +254,17 @@ intended use (an audio input playable as an instrument) once `analysis.pitch`/
 | Node | Status | Necessity | Batch | Notes |
 |---|---|---|---|---|
 | `note.hold` | To be implemented | **A2** | *(blocked)* | Real engine limit, not just unbuilt — needs a multi-note `Note` signal the engine can't represent yet (see the batch note above). |
-| `note.select` | To be implemented | **A2** | *(blocked)* | Same real engine limit as `note.hold` — pairs with `clock.counter` once buildable. |
+| `note.select` | To be implemented | **A2** | *(blocked)* | Same real engine limit as `note.hold` — pairs with `time.counter` once buildable. |
 | `note.chord` | To be implemented | **A2** | *(blocked)* | Same real engine limit — needs to emit several simultaneous notes from one input note. |
 
-### `math.*` / `logic.*` / `adapt.*` — all Implemented (logic grew to 10 on 2026-10-04: and/or/xor replaced boolean; eventGroup, edge, latch added; adapt.remap folded into adapt.map)
+### `math.*` / `logic.*` / `adapt.*` — all Implemented (logic grew to 10 on 2026-10-04: and/or/xor replaced boolean; eventGroup, edge, latch added; adapt.remap folded into math.map)
 
 All done — no rows needed (count unaffected by `wiki/plans/DomainRedesign.md` Batch 3:
 `math.add`/`math.multiply` gained real Audio/Poly polymorphism and absorbed
 `mix.sum`'s job, but neither is a new or removed row here). `adapt.audioToControl` ("To Modulation") was added whole by
 the Audio → Control Bridge (`wiki/plans/AudioControlBridge.md`); `adapt.boolToControl`
-("From Bool"), `adapt.pitchToFrequency`/`adapt.frequencyToPitch`, and
-`adapt.gateLength` were all added whole in a direct-feedback sweep the same session
+("From Bool"), `math.pitchToFrequency`/`math.frequencyToPitch`, and
+`time.gateLength` were all added whole in a direct-feedback sweep the same session
 (a real, previously-wrong linear-remap-for-Pitch↔Frequency correctness fix among
 them) — none of the five were ever moved out of the catalog-only backlog; they never
 were catalog-only.
@@ -288,7 +288,7 @@ edit. Every later `data.*`/`osc.wavetable`/`sampler.*` node rides on this for fr
 | Node | Status | Notes |
 |---|---|---|
 | `data.scale` | Implemented | 12 named scales (everything the catalog asks for except "harmonic series" and "custom", both deliberately deferred — see below); `octaveSize` proportionally rescales the 12-tone patterns. Real, documented RT-safety limit: `root`'s *live* cable value is never read on the audio thread (rebuilding means a heap allocation) — only the value applied via `setParameter()` republishes. |
-| `data.table` | Implemented | Curve content is a fixed 32-point parameter bank (`seq.steps`' own pattern), not real `NodeContent` — that category doesn't exist as code yet. `resolution` (2–32) picks how many points publish. |
+| `data.table` | Implemented | Curve content is a fixed 32-point parameter bank (`time.steps`' own pattern), not real `NodeContent` — that category doesn't exist as code yet. `resolution` (2–32) picks how many points publish. |
 | `data.lookup` | Implemented | 4 modes (nearest/interpolate/index/wrapIndex) with a concrete, tested contract this session had to design (the catalog names the modes, not their exact semantics); `dataB`/`morph` blending with graceful tag-mismatch fallback. |
 | `data.material` | Implemented | Done, PM Core batch 2 (2026-10-02). Publishes `Data(modal-set)`, stride 3 (`ratio`/`amplitudeWeight`/`decayWeight`) per mode; `string`/`tube`/`bar`/`membrane` geometries use real or closely-approximated closed forms, `plate` reuses `membrane`'s table squared (documented simplification), `irregularSolid` is deterministic seeded noise. `size` is a declared port, not yet consumed — a real, deliberate gap. Feeds `resonator.modal` (built same batch) and, later, `filter.formant`. |
 
@@ -312,11 +312,11 @@ edit. Every later `data.*`/`osc.wavetable`/`sampler.*` node rides on this for fr
 
 | Node | Status | Necessity | Batch | Notes |
 |---|---|---|---|---|
-| `instance.allocate.voice` | Implemented | | | |
-| `instance.sum` | Implemented | | | renamed from `instance.mix`, `wiki/plans/DomainRedesign.md` Batch 1b |
-| `instance.allocate.swarmPopulation` | Implemented | **A1** | Domain Extensions | Fixed count, always live — simplest of the three (no spawn logic). Done 2026-10-01. |
-| `instance.allocate.swarmTransient` | Implemented | **A2** | Domain Extensions | Event-triggered spawn, closest to Voice's own shape. Done 2026-10-01. |
-| `instance.allocate.trigger` | Implemented | **A2** | Domain Extensions | Event-triggered, one instance at a time. Done 2026-10-01. |
+| `life.voice` | Implemented | | | |
+| `life.merge` | Implemented | | | renamed from `instance.mix`, `wiki/plans/DomainRedesign.md` Batch 1b |
+| `life.swarmPopulation` | Implemented | **A1** | Domain Extensions | Fixed count, always live — simplest of the three (no spawn logic). Done 2026-10-01. |
+| `life.swarmTransient` | Implemented | **A2** | Domain Extensions | Event-triggered spawn, closest to Voice's own shape. Done 2026-10-01. |
+| `life.trigger` | Implemented | **A2** | Domain Extensions | Event-triggered, one instance at a time. Done 2026-10-01. |
 
 ### `util.*` — 4/4 Implemented
 
@@ -324,7 +324,7 @@ edit. Every later `data.*`/`osc.wavetable`/`sampler.*` node rides on this for fr
 |---|---|---|---|---|
 | `util.constant` | Implemented | | | |
 | `util.macro` | Implemented | | | `wiki/plans/UtilMacro.md` — ADR-0030 amends ADR-0015 (the 32-fixed-slot pool stays; the macro node becomes its own mapping target with a real wireable output, instead of a side-channel poke onto a foreign node). |
-| `util.unipolarToBipolar` | Implemented | | | `wiki/plans/PropsAndMacroRedesign.md` Batch D — new, replacing `random.stepped`/`seq.steps`/`data.lookup`'s old per-node Unipolar/Bipolar selectors. Manual placement only, never auto-inserted. |
+| `util.unipolarToBipolar` | Implemented | | | `wiki/plans/PropsAndMacroRedesign.md` Batch D — new, replacing `random.stepped`/`time.steps`/`data.lookup`'s old per-node Unipolar/Bipolar selectors. Manual placement only, never auto-inserted. |
 | `util.bipolarToUnipolar` | Implemented | | | Same batch, the inverse direction. |
 
 ### `deco.*` — 5/5 Implemented *(2026-10-04, wiki/plans/Decorations.md)*
@@ -364,7 +364,7 @@ building for real, not simplified.
 | Status | Count |
 |---|---|
 | Implemented | 84 |
-| MVP | 1 (`seq.steps`) |
+| MVP | 1 (`time.steps`) |
 | To be implemented | 40 |
 | **Total native node types** | **128** |
 
@@ -404,8 +404,8 @@ tested (`tests/PMCoreNodesTests.cpp`, 10 more cases) — the flagship playable
 Karplus-Strong pair the whole batch was named after. See `wiki/MILESTONES.md`'s own
 entry.
 
-**Clock+Seq batch — done.** `clock.pulse`/`clock.divide`/`clock.counter`/`seq.euclid`/
-`seq.steps` all built and tested — see their family sections above for per-node notes;
+**Clock+Seq batch — done.** `time.clock`/`time.divide`/`time.counter`/`time.euclid`/
+`time.steps` all built and tested — see their family sections above for per-node notes;
 `wiki/MILESTONES.md`'s own entry has the full build record.
 
 **Data Foundations batch — done.** `data.scale`/`data.table`/`data.lookup` all built
@@ -448,7 +448,7 @@ entry.
 
 **Necessity tier is not the same as build order.** `data.scale`/`data.table` are "C"
 but sit at the top of the recommended order below because `note.quantize` (A),
-`env.curve`/`lfo.shape` (B), and `seq.steps` (A) all consume them.
+`env.curve`/`lfo.shape` (B), and `time.steps` (A) all consume them.
 
 ---
 
@@ -456,14 +456,14 @@ but sit at the top of the recommended order below because `note.quantize` (A),
 
 | Batch | Members | Why batched |
 |---|---|---|
-| **Clock+Seq** — done | `clock.pulse`, `clock.divide`, `clock.counter`, `seq.steps`, `seq.euclid` | Chain into each other directly (pulse → divide → counter → steps/euclid); tested as one rhythmic pipeline (`tests/ClockSeqNodesTests.cpp`). |
+| **Clock+Seq** — done | `time.clock`, `time.divide`, `time.counter`, `time.steps`, `time.euclid` | Chain into each other directly (pulse → divide → counter → steps/euclid); tested as one rhythmic pipeline (`tests/ClockSeqNodesTests.cpp`). |
 | **Data Foundations** — done | `data.scale`, `data.table`, `data.lookup` | `data.lookup` literally reads what `data.table`/`data.scale` produce — the pathfinder for the whole Data-publishing pipeline (`tests/DataFoundationsNodesTests.cpp`, 18 cases including two real compiled-graph round trips). |
 | **Note Stream** — done (6/9; `hold`/`select`/`chord` blocked on a real engine limit) | `note.gate`, `note.value`, `note.transpose`, `note.filter`, `note.humanize`, `note.quantize` | All consume/produce `Note`, tested together (`tests/NoteStreamNodesTests.cpp`, including a real compiled-graph round trip through `data.scale → note.quantize → note.value`). |
-| **Domain Extensions** — done | `instance.allocate.swarmPopulation`, `instance.allocate.swarmTransient`, `instance.allocate.trigger` | Share the same instance-context/lifetime runtime machinery `instance.allocate.voice` already proved out. |
+| **Domain Extensions** — done | `life.swarmPopulation`, `life.swarmTransient`, `life.trigger` | Share the same instance-context/lifetime runtime machinery `life.voice` already proved out. |
 | **PM Core** — done | `excite.impulse`, `excite.pluck`, `excite.mallet`, `resonator.comb`, `resonator.modal`, `resonator.string`, `resonator.plate`, `data.material` | The basic excite→resonate pairs (Struck Body, Karplus-Strong) — designed to plug straight into each other; `data.material` feeds `resonator.modal` directly, moved here from the now-closed Data Foundations batch (a stray tag in an earlier pass — it was never one of that batch's 3 actual members). `excite.burst`'s own MVP top-off (`tone`/`shape`) deliberately NOT included — a separate, smaller follow-up, not scoped into this batch. |
 | **PM Friction/Breath** | `excite.stickSlip`, `excite.breath`, `excite.contact`, `resonator.tube` | Friction/breath-driven excitation, tested against tube/string for Bowed String / Breath-Wind. |
 | **PM Voice** | `osc.glottal`, `excite.vocalFolds`, `resonator.junction`, `resonator.tract`, `filter.formant` | Correction 1's vocal-modelling cluster — the hardest batch, targets the "cat purr" reference patch. Build last within Physical Modelling. |
-| **Noise & Grain** | `noise.colored`, `noise.dust`, `sampler.granular` | Stochastic/granular sources sharing test approach. |
+| **Noise & Grain** | `source.noise`, `source.dust`, `sampler.granular` | Stochastic/granular sources sharing test approach. |
 | **Sampler** | `sampler.player`, `data.load` | `sampler.player` needs what `data.load` produces. |
 | **Shaping** | `shape.rectify`, `shape.crush`, `shape.waveshaper`, `shape.fold` | All single-in/single-out nonlinear audio shapers — one shared distortion-test harness. `shape.clip` (its own former member) already shipped separately, direct feedback. |
 | **Space** | `space.diffuser`, `space.reverb` | Spatial effects; diffuser reuses `filter.allpass`. |
@@ -483,9 +483,9 @@ is done — `wiki/plans/UtilMacro.md`).
 Ordered recommendation — not a strict necessity-letter sort, because dependency order
 matters more than the letter for a couple of "C" items:
 
-1. ~~**Clock+Seq**~~ — **done.** `clock.pulse`/`clock.divide`/`clock.counter`/
-   `seq.euclid`/`seq.steps` all built and tested (`tests/ClockSeqNodesTests.cpp`, 21
-   cases). `seq.steps` shipped as MVP (two documented, deliberate spec deviations —
+1. ~~**Clock+Seq**~~ — **done.** `time.clock`/`time.divide`/`time.counter`/
+   `time.euclid`/`time.steps` all built and tested (`tests/ClockSeqNodesTests.cpp`, 21
+   cases). `time.steps` shipped as MVP (two documented, deliberate spec deviations —
    see its own row above); the other four fully match the catalog.
 2. ~~**Data Foundations**~~ — **done.** `data.scale`/`data.table`/`data.lookup` all
    built and tested (`tests/DataFoundationsNodesTests.cpp`, 18 cases, including two
@@ -512,10 +512,10 @@ matters more than the letter for a couple of "C" items:
    whole family (the only node that can PRODUCE a `Note` stream from scratch); it
    doesn't actually need `analysis.pitch` to be useful (accepts any `pitch [audio]`),
    so building it out of order cost nothing.
-4. ~~**Domain Extensions**~~ — **done.** `instance.allocate.swarmPopulation`/
+4. ~~**Domain Extensions**~~ — **done.** `life.swarmPopulation`/
    `swarmTransient`/`trigger` all built and tested (`tests/InstanceSwarmPopulationNodeTests.cpp`/
    `InstanceSwarmTransientNodeTests.cpp`/`InstanceTriggerNodeTests.cpp` + matching
-   `tests-plugin/` integration suites). Reused proven `instance.allocate.voice`
+   `tests-plugin/` integration suites). Reused proven `life.voice`
    machinery as planned — `VoiceManager`, the generalized `InstanceOriginNode`
    interface (new, Batch 1), and `09-28-InstanceAllocator.2`'s own
    `(seed, ordinal)` determinism all carried over with zero Voice regressions.
@@ -576,14 +576,14 @@ not with the A/B/C/D/Batch treatment above.
 | **Init Patch** | ✅ real hand-built graph (not yet a loadable `stock.*` asset) | Nothing for the graph itself; needs `stock.*` loading (M29) and `space.reverb` for its tail. |
 | **Karplus-Strong** | ✅ buildable now | `shape.clip` Implemented (2026-10-03) — every ingredient this patch uses is now real. |
 | **Scale Quantize** | ✅ buildable now | `data.scale` and `note.quantize` both Implemented. |
-| **Arpeggiator** | 📋 — blocked | `clock.pulse`/`clock.counter` Implemented, but `note.hold`/`note.select` hit the real one-Note-port-per-node engine limit (deferred, not just unbuilt). |
+| **Arpeggiator** | 📋 — blocked | `time.clock`/`time.counter` Implemented, but `note.hold`/`note.select` hit the real one-Note-port-per-node engine limit (deferred, not just unbuilt). |
 | **Chord** | 📋 — blocked | `data.scale` Implemented, but `note.chord` hits the same real engine limit as `note.hold`/`note.select`. |
 | **Bubble** | 📋 | `env.curve` (Env/LFO Shapes). |
-| **Water** | 📋 | `noise.dust`, `instance.allocate.swarmTransient` (step 4), Bubble. |
-| **Crackle** | ✅ buildable now (`noise.dust` built 2026-10-04) | `resonator.modal`/`data.material`/`excite.burst` all Implemented now (PM Core done); just `noise.dust` (Noise & Grain) left. |
+| **Water** | 📋 | `source.dust`, `life.swarmTransient` (step 4), Bubble. |
+| **Crackle** | ✅ buildable now (`source.dust` built 2026-10-04) | `resonator.modal`/`data.material`/`excite.burst` all Implemented now (PM Core done); just `source.dust` (Noise & Grain) left. |
 | **Scrape** | 📋 | `excite.contact` (PM Friction/Breath), `space.reverb` — `resonator.modal`/`data.material` now Implemented (PM Core done). |
-| **Cicada** | 📋 | `clock.pulse`/`resonator.modal` now Implemented — `excite.burst` already MVP-usable; still needs `filter.formant` (PM Voice). |
-| **Cicada Field** | 📋 | `instance.allocate.swarmPopulation` (step 4), `random.drift` (already Implemented), Cicada. |
+| **Cicada** | 📋 | `time.clock`/`resonator.modal` now Implemented — `excite.burst` already MVP-usable; still needs `filter.formant` (PM Voice). |
+| **Cicada Field** | 📋 | `life.swarmPopulation` (step 4), `random.drift` (already Implemented), Cicada. |
 | **Breath / Wind** | 📋 | `excite.breath`, `resonator.tube` (PM Friction/Breath), `env.curve`. |
 | **Bowed String** | 📋 — only `excite.stickSlip` missing | `resonator.string` now Implemented (PM Core done, with a real `motion` output ready for the coupling); just `excite.stickSlip` (PM Friction/Breath) left. |
 | **Struck Body** | ✅ buildable now | `excite.mallet` and `resonator.plate`/`modal` all Implemented (PM Core done, 2026-10-02) — the real coupled `excite.mallet`↔`resonator.string` cycle is proven end to end by a real compiled-graph test, same mechanism this patch's own `resonator.plate`/`modal` pairing would use. |

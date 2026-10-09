@@ -11,7 +11,7 @@
 
 namespace bazalt::engine::nodes
 {
-    /** Stable type id: "instance.allocate.swarmTransient" (Domain Extensions
+    /** Stable type id: "life.swarmTransient" (Domain Extensions
         batch, the real test of `InstanceOriginNode`'s generalization —
         `PluginProcessor`'s internal-trigger-relay mechanism now dispatches a
         non-Voice origin for the first time).
@@ -75,7 +75,7 @@ namespace bazalt::engine::nodes
 
         juce::String getTitle() const override { return "Swarm (Transient)"; }
         // "Domain/Allocate" — same flyout as Voice/Swarm-population (09-29-AddMenu.1).
-        juce::String getCategory() const override { return "Domain/Allocate"; }
+        juce::String getCategory() const override { return "Life-cycle"; }
 
         std::vector<PortDescriptor> getInputPorts() const override
         {
@@ -85,31 +85,31 @@ namespace bazalt::engine::nodes
         std::vector<PortDescriptor> getOutputPorts() const override
         {
             return {
-                PortDescriptor { .id = "gate", .type = SignalType::Boolean, .isPrimaryOutput = true },
-                PortDescriptor { .id = "instanceIndex", .type = SignalType::Control, .isInteger = true, .quantity = Quantity::Count, .step = 1.0f },
-                PortDescriptor { .id = "instanceAge", .type = SignalType::Control, .quantity = Quantity::Time },
-                PortDescriptor { .id = "random1", .type = SignalType::Control, .quantity = Quantity::Bipolar, .polarity = Polarity::Bipolar },
-                PortDescriptor { .id = "random2", .type = SignalType::Control, .quantity = Quantity::Bipolar, .polarity = Polarity::Bipolar },
+                PortDescriptor { .id = "gate", .type = SignalType::Signal, .isPrimaryOutput = true, .quantity = Quantity::Boolean },
+                PortDescriptor { .id = "instanceIndex", .type = SignalType::Signal, .isInteger = true, .quantity = Quantity::Count, .step = 1.0f },
+                PortDescriptor { .id = "instanceAge", .type = SignalType::Signal, .quantity = Quantity::Time },
+                PortDescriptor { .id = "random1", .type = SignalType::Signal, .quantity = Quantity::Bipolar, .polarity = Polarity::Bipolar },
+                PortDescriptor { .id = "random2", .type = SignalType::Signal, .quantity = Quantity::Bipolar, .polarity = Polarity::Bipolar },
                 PortDescriptor { .id = "start", .type = SignalType::Event },
                 PortDescriptor { .id = "stop", .type = SignalType::Event },
-                PortDescriptor { .id = "position", .type = SignalType::Control, .quantity = Quantity::Bipolar, .polarity = Polarity::Bipolar },
+                PortDescriptor { .id = "position", .type = SignalType::Signal, .quantity = Quantity::Bipolar, .polarity = Polarity::Bipolar },
             };
         }
 
         std::vector<ParameterDescriptor> getParameters() const override
         {
             return {
-                ParameterDescriptor { .id = "instance.allocate.swarmTransient.maxInstances",
+                ParameterDescriptor { .id = "life.swarmTransient.maxInstances",
                                        .minValue = 1.0f, .maxValue = 64.0f, .defaultValue = 8.0f,
                                        .displayName = "Max Instances", .isInteger = true, .isStructural = true },
-                ParameterDescriptor { .id = "instance.allocate.swarmTransient.seed",
+                ParameterDescriptor { .id = "life.swarmTransient.seed",
                                        .minValue = 0.0f, .maxValue = 999999.0f, .defaultValue = 1.0f,
                                        .displayName = "Seed", .isInteger = true,
                                        .quantity = Quantity::Count, .step = 1.0f, .isStructural = true },
                 // Not structural — purely an internal "when to auto-release"
                 // threshold read every processSample() call, no compiled-plan
                 // shape implication, live-editable like random.stepped.rate.
-                ParameterDescriptor { .id = "instance.allocate.swarmTransient.duration",
+                ParameterDescriptor { .id = "life.swarmTransient.duration",
                                        .minValue = 0.001f, .maxValue = 5.0f, .defaultValue = 0.1f,
                                        .unit = "s", .displayName = "Duration",
                                        .quantity = Quantity::Time, .curve = Curve::Logarithmic },
@@ -118,11 +118,11 @@ namespace bazalt::engine::nodes
 
         void setParameter (const juce::String& parameterId, float value) override
         {
-            if (parameterId == "instance.allocate.swarmTransient.maxInstances")
+            if (parameterId == "life.swarmTransient.maxInstances")
                 maxInstances = (int) std::lround (value);
-            else if (parameterId == "instance.allocate.swarmTransient.seed")
+            else if (parameterId == "life.swarmTransient.seed")
                 seed = (int) std::lround (value);
-            else if (parameterId == "instance.allocate.swarmTransient.duration")
+            else if (parameterId == "life.swarmTransient.duration")
             {
                 durationSeconds = juce::jmax (0.001f, value);
                 recomputeDurationSamples();

@@ -49,10 +49,7 @@ target_sources(engine
             include/bazalt/engine/graph/PlanSwapper.h
             include/bazalt/engine/graph/VoiceManager.h
             include/bazalt/engine/graph/ProofGraphs.h
-            include/bazalt/engine/nodes/OscillatorNode.h
             include/bazalt/engine/nodes/SvfFilterNode.h
-            include/bazalt/engine/nodes/AdsrNode.h
-            include/bazalt/engine/nodes/GainNode.h
             include/bazalt/engine/nodes/NoiseBurstNode.h
             include/bazalt/engine/nodes/DelayNode.h
             include/bazalt/engine/nodes/OnePoleFilterNode.h
@@ -63,7 +60,6 @@ target_sources(engine
             include/bazalt/engine/nodes/MultiplyNode.h
             include/bazalt/engine/nodes/ListenNode.h
             include/bazalt/engine/nodes/OutputNode.h
-            include/bazalt/engine/nodes/NormaliseNode.h
             include/bazalt/engine/nodes/ThresholdNode.h
             include/bazalt/engine/nodes/DownmixNode.h
             include/bazalt/engine/nodes/InstanceVoiceNode.h

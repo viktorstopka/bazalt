@@ -12,13 +12,13 @@ TEST_CASE ("ViewCountNode is a real integer Control in/out pass-through", "[engi
     const auto inputs = node.getInputPorts();
     REQUIRE (inputs.size() == 1);
     CHECK (inputs[0].id == "in");
-    CHECK (inputs[0].type == SignalType::Control);
+    CHECK (inputs[0].type == SignalType::Signal);
     CHECK (inputs[0].isInteger);
 
     const auto outputs = node.getOutputPorts();
     REQUIRE (outputs.size() == 1);
     CHECK (outputs[0].id == "out");
-    CHECK (outputs[0].type == SignalType::Control);
+    CHECK (outputs[0].type == SignalType::Signal);
     CHECK (outputs[0].isInteger);
     CHECK (outputs[0].isPrimaryOutput);
 

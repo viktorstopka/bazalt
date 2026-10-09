@@ -5,11 +5,11 @@
 
 namespace bazalt::engine::nodes
 {
-    /** Stable type id: "clock.divide" (wiki/NODES.md's `clock.*` row, the
+    /** Stable type id: "time.divide" (wiki/NODES.md's `clock.*` row, the
         Clock+Seq batch). Passes through every Nth incoming tick — the
         primitive that turns one clock into a whole family of related
         sub-clocks (half-time, quarter-time, ...) by chaining several of
-        these off one `clock.pulse`.
+        these off one `time.clock`.
 
         **Port id note**: the catalog names both the input and the output
         `tick` — a real, enforced engine invariant
@@ -35,13 +35,13 @@ namespace bazalt::engine::nodes
         int getNumOutputPorts() const noexcept override { return numOutputs; }
 
         juce::String getTitle() const override { return "Divide"; }
-        juce::String getCategory() const override { return "Clock"; }
+        juce::String getCategory() const override { return "Time"; }
 
         std::vector<PortDescriptor> getInputPorts() const override
         {
             return {
                 PortDescriptor { .id = "tick", .type = SignalType::Event, .label = "Tick" },
-                PortDescriptor { .id = "clock.divide.divide", .type = SignalType::Control, .label = "Divide",
+                PortDescriptor { .id = "time.divide.divide", .type = SignalType::Signal, .label = "Divide",
                                   .minValue = 1.0f, .maxValue = 64.0f, .defaultValue = 2.0f, .isInteger = true,
                                   .hasFallbackWhenUnconnected = true, .quantity = Quantity::Count, .step = 1.0f },
                 PortDescriptor { .id = "reset", .type = SignalType::Event, .label = "Reset" },
@@ -55,7 +55,7 @@ namespace bazalt::engine::nodes
 
         void setParameter (const juce::String& parameterId, float value) override
         {
-            if (parameterId == "clock.divide.divide")
+            if (parameterId == "time.divide.divide")
                 storedDivide = juce::jmax (1, (int) std::lround (value));
         }
 

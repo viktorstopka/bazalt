@@ -188,9 +188,9 @@ TEST_CASE ("A per-voice delay tail keeps the voice alive past its envelope's own
         if (withDelayTail)
         {
             auto& controller = processor.getGraphEditController();
-            REQUIRE (controller.addNode ("delay.line", "tail", 0.0f, 0.0f).success);
+            REQUIRE (controller.addNode ("time.delay", "tail", 0.0f, 0.0f).success);
             REQUIRE (controller.connect ("amp", "out", "tail", "in").success);
-            REQUIRE (controller.setParameterValue ("tail", "delay.line.samples", 4000.0f).success); // ~90ms @44.1kHz, near DelayNode's default 4096-sample ceiling
+            REQUIRE (controller.setParameterValue ("tail", "time.delay.samples", 4000.0f).success); // ~90ms @44.1kHz, near DelayNode's default 4096-sample ceiling
             REQUIRE (controller.setOutput ("tail", "out").success);
         }
 

@@ -20,7 +20,7 @@ namespace bazalt::engine::nodes
 
         **`spectrum`** (structural: brown/pink/white-filtered) is an
         honestly-approximate character knob, not a precise 1/f filter design
-        — real colored-noise shaping is `noise.colored`'s job (M23), a
+        — real colored-noise shaping is `source.noise`'s job (M23), a
         different node with a different purpose. Here it's a FIXED one-pole
         smoothing coefficient applied to the raw noise increment before
         integration (`white-filtered`: none, the fastest/least-correlated
@@ -64,14 +64,14 @@ namespace bazalt::engine::nodes
         std::vector<PortDescriptor> getInputPorts() const override
         {
             return {
-                PortDescriptor { .id = "random.drift.rate", .type = SignalType::Control, .label = "Rate",
+                PortDescriptor { .id = "random.drift.rate", .type = SignalType::Signal, .label = "Rate",
                                   .unit = "Hz", .minValue = 0.001f, .maxValue = 20.0f, .defaultValue = defaultRateHz,
                                   .isLogScale = true, .hasFallbackWhenUnconnected = true, .quantity = Quantity::Frequency,
                                   .curve = Curve::Logarithmic },
-                PortDescriptor { .id = "random.drift.amount", .type = SignalType::Control, .label = "Amount",
+                PortDescriptor { .id = "random.drift.amount", .type = SignalType::Signal, .label = "Amount",
                                   .minValue = 0.0f, .maxValue = 1.0f, .defaultValue = defaultAmount,
                                   .hasFallbackWhenUnconnected = true, .quantity = Quantity::Unipolar },
-                PortDescriptor { .id = "random.drift.centering", .type = SignalType::Control, .label = "Centering",
+                PortDescriptor { .id = "random.drift.centering", .type = SignalType::Signal, .label = "Centering",
                                   .minValue = 0.0f, .maxValue = 1.0f, .defaultValue = defaultCentering,
                                   .hasFallbackWhenUnconnected = true, .quantity = Quantity::Unipolar },
             };
@@ -79,7 +79,7 @@ namespace bazalt::engine::nodes
 
         std::vector<PortDescriptor> getOutputPorts() const override
         {
-            return { PortDescriptor { .id = "out", .type = SignalType::Control, .isPrimaryOutput = true,
+            return { PortDescriptor { .id = "out", .type = SignalType::Signal, .isPrimaryOutput = true,
                                        .minValue = -1.0f, .maxValue = 1.0f, .quantity = Quantity::Bipolar,
                                        .polarity = Polarity::Bipolar } };
         }

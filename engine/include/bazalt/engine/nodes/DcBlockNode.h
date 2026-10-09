@@ -13,7 +13,7 @@ namespace bazalt::engine::nodes
         port, not a single fixed constant.
 
         `R = exp(-2*pi*cutoff/sampleRate)`: the same exponential-decay
-        approximation `math.slew`/`adapt.sampleHold` already use for their
+        approximation `time.slew`/`time.sampleHold` already use for their
         own one-pole time constants (CLAUDE.md rule 6: derived from the
         live sample rate in `prepare()`, memoised — `SlewNode.h`'s
         `CoefficientCache` pattern, copied verbatim — so a static or
@@ -48,8 +48,8 @@ namespace bazalt::engine::nodes
         std::vector<PortDescriptor> getInputPorts() const override
         {
             return {
-                perChannel ({ "in", SignalType::Audio }),
-                PortDescriptor { .id = "filter.dcBlock.cutoff", .type = SignalType::Control, .label = "Cutoff",
+                perChannel ({ .id = "in", .type = SignalType::Signal, .quantity = Quantity::Audio }),
+                PortDescriptor { .id = "filter.dcBlock.cutoff", .type = SignalType::Signal, .label = "Cutoff",
                                   .unit = "Hz", .minValue = 1.0f, .maxValue = 100.0f, .defaultValue = defaultCutoffHz,
                                   .isLogScale = true, .hasFallbackWhenUnconnected = true, .quantity = Quantity::Frequency,
                                   .curve = Curve::Logarithmic },
@@ -58,7 +58,7 @@ namespace bazalt::engine::nodes
 
         std::vector<PortDescriptor> getOutputPorts() const override
         {
-            return { perChannel ({ "out", SignalType::Audio }) };
+            return { perChannel ({ .id = "out", .type = SignalType::Signal, .quantity = Quantity::Audio }) };
         }
 
         void setParameter (const juce::String& parameterId, float value) override

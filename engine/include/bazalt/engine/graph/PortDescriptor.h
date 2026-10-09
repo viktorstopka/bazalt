@@ -39,7 +39,12 @@ namespace bazalt::engine
         Unipolar,
         Bipolar,
         Count,
-        Phase
+        Phase,
+        // wiki/plans/DataAndWavetable.md D1: what used to be separate signal
+        // types. Appended, never inserted — util.macro stores this enum's
+        // ordinal.
+        Audio,  // a waveform meant to be heard, nominally ±1
+        Boolean // a 0/1 gate; true is > 0.5
     };
 
     /** curve: how a 0-1 gesture maps onto a bounded value's range
@@ -118,7 +123,7 @@ namespace bazalt::engine
         Audio port defaults to `Mono`, matching what every one of them
         actually is today. `canConnect` (CanConnect.h) treats mono->stereo
         as free (duplicated) and stereo->mono as `NeedsAdapters` via
-        `mix.downmix`, exactly parallel to how `DOMAINS.md` treats
+        `channels.downmix`, exactly parallel to how `DOMAINS.md` treats
         mono/poly. `Inherited` is a forward-looking value for a future
         polymorphic-channel-count node — treated as "always compatible"
         by `canConnect` until a real node uses it.
@@ -203,7 +208,7 @@ namespace bazalt::engine
             to it. The node's own processSample/processBlock must check for
             NaN and substitute whatever it would otherwise have used (its
             own current parameter-driven value) in that case — DelayNode.h's
-            "delay.line.samples" port is the first example and the pattern
+            "time.delay.samples" port is the first example and the pattern
             to copy for any other node doing this.
         */
         bool hasFallbackWhenUnconnected = false;

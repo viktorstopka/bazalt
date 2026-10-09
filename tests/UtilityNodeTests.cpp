@@ -7,11 +7,9 @@
 #include "bazalt/engine/nodes/AddNode.h"
 #include "bazalt/engine/nodes/MultiplyNode.h"
 #include "bazalt/engine/nodes/RoundNode.h"
-#include "bazalt/engine/nodes/ClampNode.h"
 #include "bazalt/engine/nodes/ListenNode.h"
 #include "bazalt/engine/nodes/OutputNode.h"
 #include "bazalt/engine/nodes/InstanceMixNode.h"
-#include "bazalt/engine/nodes/BoolToControlNode.h"
 #include "bazalt/engine/nodes/PitchFrequencyNodes.h"
 #include "bazalt/engine/nodes/GateLengthNode.h"
 #include <algorithm>
@@ -44,15 +42,17 @@ TEST_CASE ("RerouteNode defaults to Audio and adopts the resolved type on both p
 {
     RerouteNode node;
     REQUIRE (node.hasPolymorphicPorts());
-    CHECK (node.getInputPorts()[0].type == SignalType::Audio);
-    CHECK (node.getOutputPorts()[0].type == SignalType::Audio);
+    CHECK (node.getInputPorts()[0].quantity == Quantity::Audio);
+    CHECK (node.getOutputPorts()[0].quantity == Quantity::Audio);
 
-    for (const auto type : { SignalType::Control, SignalType::Boolean, SignalType::Event, SignalType::Note })
+    for (const auto type : { SignalType::Signal, SignalType::Event, SignalType::Note })
     {
         PortDescriptor source { "src", type };
+        source.quantity = Quantity::Frequency;
         node.resolveIncomingPort ("in", source);
         CHECK (node.getInputPorts()[0].type == type);
         CHECK (node.getOutputPorts()[0].type == type);
+        CHECK (node.getOutputPorts()[0].quantity == Quantity::Frequency);
     }
 }
 
@@ -62,11 +62,11 @@ TEST_CASE ("RerouteNode refuses to adopt SignalType::Data, leaving its type unch
     // Data is a DataPublisher-swapped pointer, not a per-sample value —
     // Reroute has no way to forward it, so it must not claim to.
     RerouteNode node;
-    node.resolveIncomingPort ("in", PortDescriptor { "src", SignalType::Control });
+    node.resolveIncomingPort ("in", PortDescriptor { .id = "src", .type = SignalType::Signal });
     node.resolveIncomingPort ("in", PortDescriptor { "src", SignalType::Data });
 
-    CHECK (node.getInputPorts()[0].type == SignalType::Control);
-    CHECK (node.getOutputPorts()[0].type == SignalType::Control);
+    CHECK (node.getInputPorts()[0].type == SignalType::Signal);
+    CHECK (node.getOutputPorts()[0].type == SignalType::Signal);
 }
 
 TEST_CASE ("RerouteNode carries the source's quantity too, so a rerouted Frequency is still a Frequency",
@@ -76,15 +76,15 @@ TEST_CASE ("RerouteNode carries the source's quantity too, so a rerouted Frequen
     // so a Reroute that dropped it would let a Frequency reach a Pitch port
     // with no adapter, exactly the unit mix-up adapt.map exists to prevent.
     RerouteNode node;
-    CHECK (node.getOutputPorts()[0].quantity == Quantity::Dimensionless); // unresolved default
+    CHECK (node.getOutputPorts()[0].quantity == Quantity::Audio); // unresolved default: an audio Reroute
 
-    PortDescriptor source { "f", SignalType::Control };
+    PortDescriptor source { .id = "f", .type = SignalType::Signal };
     source.quantity = Quantity::Frequency;
     node.resolveIncomingPort ("in", source);
 
     CHECK (node.getInputPorts()[0].quantity == Quantity::Frequency);
     CHECK (node.getOutputPorts()[0].quantity == Quantity::Frequency);
-    CHECK (node.getOutputPorts()[0].type == SignalType::Control);
+    CHECK (node.getOutputPorts()[0].type == SignalType::Signal);
 }
 
 TEST_CASE ("AddNode and MultiplyNode compute a+b and a*b", "[engine][nodes][util]")
@@ -214,46 +214,14 @@ TEST_CASE ("RoundNode's output declares isInteger/kind=Int unconditionally, matc
     CHECK (outputs[0].kind == ValueKind::Int);
 }
 
-TEST_CASE ("ClampNode clamps to its low/high ports, swapped if low > high", "[engine][nodes][util][M20]")
-{
-    ClampNode node;
-
-    auto clampOf = [&] (float in, float low, float high)
-    {
-        float out = 0.0f;
-        float inputs[3] = { in, low, high };
-        node.processSample (inputs, &out);
-        return out;
-    };
-
-    CHECK (clampOf (0.5f, 0.0f, 1.0f) == 0.5f);
-    CHECK (clampOf (-1.0f, 0.0f, 1.0f) == 0.0f);
-    CHECK (clampOf (2.0f, 0.0f, 1.0f) == 1.0f);
-    CHECK (clampOf (0.5f, 1.0f, 0.0f) == 0.5f); // swapped low/high still clamps correctly
-}
-
-TEST_CASE ("ClampNode's low/high ports fall back to setParameter's static value exactly when unconnected",
-           "[engine][nodes][util][M20]")
-{
-    ClampNode node;
-    node.setParameter ("math.clamp.low", 10.0f);
-    node.setParameter ("math.clamp.high", 20.0f);
-
-    float out = 0.0f;
-    const auto kNaN = std::numeric_limits<float>::quiet_NaN();
-    float inputs[3] = { 5.0f, kNaN, kNaN };
-    node.processSample (inputs, &out);
-    CHECK (out == 10.0f);
-}
-
 TEST_CASE ("MapNode rescales in..inMin/inMax onto outMin/outMax, clamped, matching Normalise+Map chained",
            "[engine][nodes][util][M20]")
 {
     MapNode node;
-    node.setParameter ("adapt.map.inMin", 0.0f);
-    node.setParameter ("adapt.map.inMax", 127.0f);
-    node.setParameter ("adapt.map.outMin", 20.0f);
-    node.setParameter ("adapt.map.outMax", 20000.0f);
+    node.setParameter ("math.map.inMin", 0.0f);
+    node.setParameter ("math.map.inMax", 127.0f);
+    node.setParameter ("math.map.outMin", 20.0f);
+    node.setParameter ("math.map.outMax", 20000.0f);
 
     const auto kNaN = std::numeric_limits<float>::quiet_NaN();
     auto remapOf = [&] (float in)
@@ -275,52 +243,16 @@ TEST_CASE ("MapNode's range ports live-modulate independently of setParameter's 
            "[engine][nodes][util][M20]")
 {
     MapNode node;
-    node.setParameter ("adapt.map.inMin", 0.0f);
-    node.setParameter ("adapt.map.inMax", 1.0f);
-    node.setParameter ("adapt.map.outMin", 0.0f);
-    node.setParameter ("adapt.map.outMax", 1.0f);
+    node.setParameter ("math.map.inMin", 0.0f);
+    node.setParameter ("math.map.inMax", 1.0f);
+    node.setParameter ("math.map.outMin", 0.0f);
+    node.setParameter ("math.map.outMax", 1.0f);
 
     float out = 0.0f;
     // Live-wired to a completely different range than the static config.
     float inputs[5] = { 5.0f, 0.0f, 10.0f, 100.0f, 200.0f };
     node.processSample (inputs, &out);
     CHECK (out == 150.0f);
-}
-
-// ---- adapt.boolToControl ----
-// Direct feedback: "bool not being pluggable into control and ints...
-// annoying... via select node... doesn't even have editable props."
-
-TEST_CASE ("BoolToControlNode maps false/true to 0/1 by default, and to any two edited values",
-           "[engine][nodes][BoolToControlNode]")
-{
-    BoolToControlNode node;
-    float out = 0.0f;
-
-    float falseIn = 0.0f, trueIn = 1.0f;
-    node.processSample (&falseIn, &out);
-    CHECK (out == 0.0f);
-    node.processSample (&trueIn, &out);
-    CHECK (out == 1.0f);
-
-    node.setParameter ("adapt.boolToControl.whenFalse", -1.0f);
-    node.setParameter ("adapt.boolToControl.whenTrue", 5.0f);
-    node.processSample (&falseIn, &out);
-    CHECK (out == -1.0f);
-    node.processSample (&trueIn, &out);
-    CHECK (out == 5.0f);
-}
-
-TEST_CASE ("canConnect auto-inserts adapt.boolToControl for Boolean -> Control",
-           "[engine][CanConnect][BoolToControlNode]")
-{
-    PortDescriptor boolPort { "in", SignalType::Boolean };
-    PortDescriptor controlPort { "out", SignalType::Control };
-
-    const auto result = canConnect (boolPort, controlPort);
-    REQUIRE (result.outcome == ConnectionOutcome::NeedsAdapters);
-    REQUIRE (result.adapterChain.size() == 1);
-    CHECK (result.adapterChain[0].typeId == "adapt.boolToControl");
 }
 
 // ---- adapt.pitchToFrequency / adapt.frequencyToPitch ----
@@ -365,28 +297,28 @@ TEST_CASE ("FrequencyToPitchNode is the exact inverse of PitchToFrequencyNode",
 TEST_CASE ("canConnect prefers the exact converter over the generic linear remap for Pitch<->Frequency",
            "[engine][CanConnect][PitchToFrequencyNode]")
 {
-    PortDescriptor pitchPort { "p", SignalType::Control };
+    PortDescriptor pitchPort { .id = "p", .type = SignalType::Signal };
     pitchPort.quantity = Quantity::Pitch;
-    PortDescriptor freqPort { "f", SignalType::Control };
+    PortDescriptor freqPort { .id = "f", .type = SignalType::Signal };
     freqPort.quantity = Quantity::Frequency;
 
     const auto toFreq = canConnect (pitchPort, freqPort);
     REQUIRE (toFreq.outcome == ConnectionOutcome::NeedsAdapters);
     REQUIRE (toFreq.adapterChain.size() == 1);
-    CHECK (toFreq.adapterChain[0].typeId == "adapt.pitchToFrequency");
+    CHECK (toFreq.adapterChain[0].typeId == "math.pitchToFrequency");
 
     const auto toPitch = canConnect (freqPort, pitchPort);
     REQUIRE (toPitch.outcome == ConnectionOutcome::NeedsAdapters);
     REQUIRE (toPitch.adapterChain.size() == 1);
-    CHECK (toPitch.adapterChain[0].typeId == "adapt.frequencyToPitch");
+    CHECK (toPitch.adapterChain[0].typeId == "math.frequencyToPitch");
 
     // A different real-quantity pair still falls through to the generic
     // remap - this override is scoped to Pitch<->Frequency specifically.
-    PortDescriptor timePort { "t", SignalType::Control };
+    PortDescriptor timePort { .id = "t", .type = SignalType::Signal };
     timePort.quantity = Quantity::Time;
     const auto pitchToTime = canConnect (pitchPort, timePort);
     REQUIRE (pitchToTime.outcome == ConnectionOutcome::NeedsAdapters);
-    CHECK (pitchToTime.adapterChain[0].typeId == "adapt.map");
+    CHECK (pitchToTime.adapterChain[0].typeId == "math.map");
 }
 
 // ---- adapt.gateLength ----

@@ -5,7 +5,7 @@
 
 namespace bazalt::engine::nodes
 {
-    /** Stable type id: "seq.euclid" (wiki/NODES.md's `seq.*` row, the
+    /** Stable type id: "time.euclid" (wiki/NODES.md's `seq.*` row, the
         Clock+Seq batch). Euclidean rhythm generator: distributes `pulses`
         hits as evenly as possible across `steps`.
 
@@ -29,7 +29,7 @@ namespace bazalt::engine::nodes
         is Boolean (`env.adsr`, `note.gate`, ...), so this follows that
         convention rather than inventing a new one.
 
-        Convention (matches `seq.steps`): holds at step 0 until the first
+        Convention (matches `time.steps`): holds at step 0 until the first
         tick, which advances to step 1 - see that node's own comment for the
         full reasoning.
     */
@@ -45,19 +45,19 @@ namespace bazalt::engine::nodes
         int getNumOutputPorts() const noexcept override { return numOutputs; }
 
         juce::String getTitle() const override { return "Euclidean"; }
-        juce::String getCategory() const override { return "Sequencing"; }
+        juce::String getCategory() const override { return "Time"; }
 
         std::vector<PortDescriptor> getInputPorts() const override
         {
             return {
                 PortDescriptor { .id = "tick", .type = SignalType::Event, .label = "Tick" },
-                PortDescriptor { .id = "seq.euclid.steps", .type = SignalType::Control, .label = "Steps",
+                PortDescriptor { .id = "time.euclid.steps", .type = SignalType::Signal, .label = "Steps",
                                   .minValue = 1.0f, .maxValue = 64.0f, .defaultValue = 16.0f, .isInteger = true,
                                   .hasFallbackWhenUnconnected = true, .quantity = Quantity::Count, .step = 1.0f },
-                PortDescriptor { .id = "seq.euclid.pulses", .type = SignalType::Control, .label = "Pulses",
+                PortDescriptor { .id = "time.euclid.pulses", .type = SignalType::Signal, .label = "Pulses",
                                   .minValue = 0.0f, .maxValue = 64.0f, .defaultValue = 4.0f, .isInteger = true,
                                   .hasFallbackWhenUnconnected = true, .quantity = Quantity::Count, .step = 1.0f },
-                PortDescriptor { .id = "seq.euclid.rotate", .type = SignalType::Control, .label = "Rotate",
+                PortDescriptor { .id = "time.euclid.rotate", .type = SignalType::Signal, .label = "Rotate",
                                   .minValue = -64.0f, .maxValue = 64.0f, .defaultValue = 0.0f, .isInteger = true,
                                   .hasFallbackWhenUnconnected = true, .quantity = Quantity::Count, .step = 1.0f },
                 PortDescriptor { .id = "reset", .type = SignalType::Event, .label = "Reset" },
@@ -68,17 +68,17 @@ namespace bazalt::engine::nodes
         {
             return {
                 PortDescriptor { .id = "trigger", .type = SignalType::Event, .label = "Trigger", .isPrimaryOutput = true },
-                PortDescriptor { .id = "gate", .type = SignalType::Boolean, .label = "Gate", .kind = ValueKind::Bool },
+                PortDescriptor { .id = "gate", .type = SignalType::Signal, .label = "Gate", .kind = ValueKind::Bool, .quantity = Quantity::Boolean },
             };
         }
 
         void setParameter (const juce::String& parameterId, float value) override
         {
-            if (parameterId == "seq.euclid.steps")
+            if (parameterId == "time.euclid.steps")
                 storedSteps = juce::jmax (1, (int) std::lround (value));
-            else if (parameterId == "seq.euclid.pulses")
+            else if (parameterId == "time.euclid.pulses")
                 storedPulses = juce::jmax (0, (int) std::lround (value));
-            else if (parameterId == "seq.euclid.rotate")
+            else if (parameterId == "time.euclid.rotate")
                 storedRotate = (int) std::lround (value);
         }
 
