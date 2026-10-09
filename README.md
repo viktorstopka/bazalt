@@ -83,6 +83,16 @@ it somewhere. Inside you will find:
 - `VST3/Bazalt.vst3`, the plugin. Copy it to `C:\Program Files\Common Files\VST3`
   and rescan plugins in your DAW.
 
+**First launch:**
+
+- Unzip first (right-click → **Extract All**). Running `Bazalt.exe` from inside
+  the zip doesn't work, because it needs its `ui` folder.
+- Windows may say **"Windows protected your PC"**, because the app isn't signed
+  yet. Click **More info** → **Run anyway**.
+- Bazalt draws its interface with Microsoft Edge WebView2, which Windows 10 and
+  11 already include. If the window stays blank, install the
+  [WebView2 Runtime](https://developer.microsoft.com/microsoft-edge/webview2/).
+
 ---
 
 ## Level 0: Before you start
