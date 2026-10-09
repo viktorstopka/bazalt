@@ -253,7 +253,7 @@ TEST_CASE ("A voice-domain preview tap keeps receiving after a graph edit, with 
     const auto beforeEdit = tap->getTotalPushed();
     REQUIRE (beforeEdit > 0);
 
-    REQUIRE (processor.getGraphEditController().setParameterValue ("osc", "osc.analog.shape", 1.0f).success);
+    REQUIRE (processor.getGraphEditController().setParameterValue ("osc", "source.oscillator.amplitude", 0.9f).success);
 
     // The same voice is still held and no note-on arrives, so nothing here can
     // re-point the tap by luck: only the re-attach can keep it alive.

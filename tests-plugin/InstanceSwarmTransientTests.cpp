@@ -41,11 +41,11 @@ namespace
             return false;
         if (! controller.connect ("clock", "tick", "swarm", "spawn").success) // Event -> Event, no adapter needed
             return false;
-        if (! controller.addNode ("osc.analog", "osc", 200.0f, 0.0f).success)
+        if (! controller.addNode ("source.oscillator", "osc", 200.0f, 0.0f).success)
             return false;
         if (! controller.addNode ("life.merge", "sum", 400.0f, 0.0f).success)
             return false;
-        if (! controller.connectWithAutoAdapt ("swarm", "random1", "osc", "pitch").success)
+        if (! controller.connectWithAutoAdapt ("swarm", "random1", "osc", "source.oscillator.frequency").success)
             return false;
         if (! controller.connect ("osc", "out", "sum", "in").success)
             return false;

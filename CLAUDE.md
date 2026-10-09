@@ -197,6 +197,14 @@ ctest --test-dir build -C Debug -R PluginTests --output-on-failure
   (`life.voice`, `life.merge`, `time.delay`, `math.map`, `channels.downmix`, ...,
   table in `PatchSerializer.cpp`'s `migrateV13ToV14`). Older code comments still
   say Audio/Control and the old ids in places — the engine is the truth.
+  **1b:** a node may carry `content` (`NodeInstance::content`, a factory's JSON
+  document; `Node::setContent()` republishes on a running node, no rebuild).
+  Oscillators, the LFO, the ADSR and `data.table` are gone — one curve player
+  (`source.oscillator` / `source.envelope`, `CurvePlayerNode.h`) and `data.curve`
+  (`CurveData.h`) replace them, edited in the Factory window (`ui/src/factory/`);
+  schema v16 migrates old patches. Pitch reaches an oscillator through
+  `math.pitchToFrequency` (the notes below that say `osc.analog`'s "pitch" port
+  describe the pre-1b graph).
 
 - **Fixed, 2026-10-03** — this note used to say the M0 plugin editor's
   release-build WebView always served a hard-coded placeholder HTML string

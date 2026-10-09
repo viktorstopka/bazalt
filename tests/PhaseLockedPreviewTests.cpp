@@ -6,7 +6,7 @@
 #include <catch2/catch_test_macros.hpp>
 #include "bazalt/engine/graph/GraphCompiler.h"
 #include "bazalt/engine/graph/ProofGraphs.h"
-#include "bazalt/engine/nodes/SineOscillatorNode.h"
+#include "bazalt/engine/graph/CurveData.h"
 #include "bazalt/engine/telemetry/AnalysisThread.h"
 #include "bazalt/engine/telemetry/TelemetryHub.h"
 #include <cmath>
@@ -65,10 +65,12 @@ namespace
         }
     };
 
-    NodeGraph oscillatorGraph (const juce::String& type, float frequency, bool throughGain)
+    NodeGraph oscillatorGraph (const CurveDocument& shape, float frequency, bool throughGain, float amplitude = 1.0f)
     {
         NodeGraph graph;
-        graph.addNode ({ "osc", type, {}, { { type + ".frequency", frequency } }, {} });
+        graph.addNode (withContent ({ "osc", "source.oscillator", {},
+                                      { { "source.oscillator.frequency", frequency }, { "source.oscillator.amplitude", amplitude } }, {} },
+                                    shape));
         if (throughGain)
         {
             graph.addNode ({ "gain", "math.multiply", {}, { { "in.1", 0.5f } }, {} });
@@ -81,60 +83,49 @@ namespace
     }
 }
 
-TEST_CASE ("A generator's phase-locked frame is its own waveform over a fixed number of cycles, whatever its rate",
-           "[engine][telemetry][PhaseLocked]")
+TEST_CASE ("An oscillator's own phase-locked frame folds its real output by its phase", "[engine][telemetry][PhaseLocked]")
 {
-    // "A 0.3 Hz square and a 440 Hz square render identically." For a sine,
-    // whose shape carries no band-limiting, that is exact.
-    auto shapeAt = [] (float frequency)
+    // A drawn curve has no closed-form render function (1b), so even the
+    // oscillator's own preview folds: after enough cycles every bin is the
+    // waveform at that phase.
+    Rig rig (oscillatorGraph (CurveDocument::sine(), 441.3f, false), "osc", "out", true);
+    rig.run (400);
+    const auto frame = rig.frame();
+    REQUIRE (frame.size() == (size_t) phaseLockedPoints + 2);
+    CHECK (frame[1] == Catch::Approx (441.3f));
+    CHECK (frame[0] >= 0.0f);
+    CHECK (frame[0] < (float) phaseLockedCycles);
+    for (int i = 0; i < phaseLockedPoints; i += 7)
     {
-        Rig rig (oscillatorGraph ("osc.sine", frequency, false), "osc", "out", false);
-        rig.run (8);
-        return rig.frame();
-    };
-    const auto slow = shapeAt (0.3f);
-    const auto fast = shapeAt (440.0f);
-    REQUIRE (slow.size() == (size_t) phaseLockedPoints + 2);
-    REQUIRE (fast.size() == slow.size());
-
-    CHECK (slow[1] == Catch::Approx (0.3f));
-    CHECK (fast[1] == Catch::Approx (440.0f));
-    for (size_t i = 2; i < slow.size(); ++i)
-        CHECK (slow[i] == Catch::Approx (fast[i]).margin (1.0e-5f));
-
-    // Aligned to phase zero: sin starts at 0, peaks a quarter cycle in.
-    CHECK (slow[2] == Catch::Approx (0.0f).margin (1.0e-5f));
-    CHECK (slow[2 + phaseLockedPointsPerCycle / 4] == Catch::Approx (1.0f).margin (1.0e-4f));
-
-    // The playhead is inside the displayed span.
-    CHECK (fast[0] >= 0.0f);
-    CHECK (fast[0] < (float) phaseLockedCycles);
+        const auto t = (double) i / phaseLockedPointsPerCycle;
+        CHECK (frame[(size_t) i + 2] == Catch::Approx (std::sin (juce::MathConstants<double>::twoPi * t)).margin (0.03)); // a bin is 1/256 of a cycle wide
+    }
 }
 
-TEST_CASE ("The phase-locked frame follows the oscillator's current, modulated parameters",
+TEST_CASE ("Render mode publishes nothing for a source with no render function, rather than a guess",
            "[engine][telemetry][PhaseLocked]")
 {
-    NodeGraph graph;
-    graph.addNode ({ "osc", "osc.square", {}, { { "osc.square.frequency", 2.0f }, { "osc.square.amplitude", 0.5f },
-                                                 { "osc.square.pulseWidth", 0.25f } }, {} });
-    graph.setOutput ("osc", "out");
-    Rig rig (graph, "osc", "out", false);
+    Rig rig (oscillatorGraph (CurveDocument::sine(), 440.0f, false), "osc", "out", false);
     rig.run (8);
+    CHECK (rig.frame().empty());
+}
+
+TEST_CASE ("The folded frame shows the shape's duty and the amplitude", "[engine][telemetry][PhaseLocked]")
+{
+    Rig rig (oscillatorGraph (CurveDocument::square (0.25f), 441.3f, false, 0.5f), "osc", "out", true);
+    rig.run (400);
     const auto frame = rig.frame();
     REQUIRE (frame.size() > 2);
 
-    int high = 0, offLevel = 0;
+    int high = 0;
     for (int i = 0; i < phaseLockedPointsPerCycle; ++i)
     {
         const auto v = frame[(size_t) i + 2];
-        CHECK (std::fabs (v) <= 0.5f + 1.0e-3f); // amplitude 0.5
-        if (std::fabs (std::fabs (v) - 0.5f) > 1.0e-3f)
-            ++offLevel; // only the points exactly on an edge (the band-limited jump's midpoint)
+        CHECK (std::fabs (v) <= 0.5f * 1.2f); // amplitude 0.5, plus the band-limited (Gibbs) overshoot
         if (v > 0.0f)
             ++high;
     }
-    CHECK (offLevel <= 2);
-    CHECK ((double) high / phaseLockedPointsPerCycle == Catch::Approx (0.25).margin (0.01));
+    CHECK ((double) high / phaseLockedPointsPerCycle == Catch::Approx (0.25).margin (0.03));
 }
 
 TEST_CASE ("Phase follows the cable: a non-phase node's output folds against the upstream oscillator's phase",
@@ -142,7 +133,7 @@ TEST_CASE ("Phase follows the cable: a non-phase node's output folds against the
 {
     // A saw through a 0.5 gain, folded by the saw's own phase: after enough
     // cycles every bin is filled and the result is the saw at half height.
-    Rig rig (oscillatorGraph ("osc.saw", 441.3f, true), "gain", "out", true);
+    Rig rig (oscillatorGraph (CurveDocument::saw(), 441.3f, true), "gain", "out", true);
     rig.run (400); // ~2.3 s, ~1000 cycles
     const auto frame = rig.frame();
     REQUIRE (frame.size() == (size_t) phaseLockedPoints + 2);
@@ -154,9 +145,9 @@ TEST_CASE ("Phase follows the cable: a non-phase node's output folds against the
         const auto v = frame[(size_t) i + 2];
         REQUIRE_FALSE (std::isnan (v));
         const auto t = std::fmod ((double) i / phaseLockedPointsPerCycle, 1.0);
-        if (t < 0.03 || t > 0.97)
-            continue; // the band-limited reset
-        CHECK (v == Catch::Approx (0.5 * (2.0 * t - 1.0)).margin (0.02));
+        if (t < 0.1 || t > 0.9)
+            continue; // the band-limited reset and its ringing
+        CHECK (v == Catch::Approx (0.5 * (2.0 * t - 1.0)).margin (0.03));
         ++compared;
     }
     CHECK (compared > phaseLockedPoints / 2);

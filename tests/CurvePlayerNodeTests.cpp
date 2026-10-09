@@ -4,9 +4,7 @@
 #include <catch2/catch_approx.hpp>
 #include "bazalt/engine/graph/GraphCompiler.h"
 #include "bazalt/engine/graph/ProofGraphs.h"
-#include "bazalt/engine/nodes/AdsrNode.h"
 #include "bazalt/engine/nodes/CurvePlayerNode.h"
-#include "bazalt/engine/nodes/SineOscillatorNode.h"
 #include <cmath>
 #include <complex>
 #include <limits>
@@ -66,17 +64,13 @@ namespace
     }
 }
 
-TEST_CASE ("The Oscillator's default sine matches osc.sine", "[engine][curvePlayer]")
+TEST_CASE ("The Oscillator's default sine is a sine", "[engine][curvePlayer]")
 {
     CurveOscillatorNode oscillator;
     oscillator.prepare ({ sampleRate, 64 });
-    SineOscillatorNode reference;
-    reference.prepare ({ sampleRate, 64 });
-
-    const auto ours = render (oscillator, oscillatorInputs (440.0f), 4800);
-    const auto theirs = render (reference, { 440.0f, unwired, unwired, 0.0f }, 4800);
-    for (size_t i = 0; i < ours.size(); ++i)
-        REQUIRE (ours[i] == Catch::Approx (theirs[i]).margin (2.0e-3));
+    const auto out = render (oscillator, oscillatorInputs (440.0f), 4800);
+    for (size_t i = 0; i < out.size(); ++i)
+        REQUIRE (out[i] == Catch::Approx (std::sin (juce::MathConstants<double>::twoPi * 440.0 * (double) i / sampleRate)).margin (2.0e-3));
 }
 
 TEST_CASE ("A saw played high is band-limited: nothing folds back", "[engine][curvePlayer]")
@@ -138,26 +132,30 @@ TEST_CASE ("A shape change mid-note never clicks", "[engine][curvePlayer]")
     CHECK (largestStep < 0.1f);
 }
 
-TEST_CASE ("The Envelope's straight ADSR matches the old env.adsr", "[engine][curvePlayer]")
+TEST_CASE ("The Envelope's straight ADSR is the old env.adsr's linear shape", "[engine][curvePlayer]")
 {
+    // env.adsr was juce::ADSR: straight lines up to 1, down to S, and from S to 0.
     constexpr float attack = 0.01f, decay = 0.1f, sustain = 0.5f, release = 0.2f;
     CurveEnvelopeNode envelope;
     envelope.prepare ({ sampleRate, 64 });
     REQUIRE (envelope.setContent (CurveDocument::adsr (attack, decay, sustain, release, 0.0f).toVar()));
 
-    AdsrNode reference;
-    reference.prepare ({ sampleRate, 64 });
-    reference.setParameter ("env.adsr.attack", attack);
-    reference.setParameter ("env.adsr.decay", decay);
-    reference.setParameter ("env.adsr.sustain", sustain);
-    reference.setParameter ("env.adsr.release", release);
-
-    const auto gateFor = [] (int i, std::vector<float>& in) { in[1] = i < 14400 ? 1.0f : 0.0f; };
-    const auto ours = render (envelope, { 0.0f, 0.0f, unwired, unwired }, 28800, gateFor);
-    const auto theirs = render (reference, { 0.0f, unwired, unwired, unwired, unwired }, 28800,
-                                [] (int i, std::vector<float>& in) { in[0] = i < 14400 ? 1.0f : 0.0f; });
-    for (size_t i = 0; i < ours.size(); i += 16)
-        REQUIRE (ours[i] == Catch::Approx (theirs[i]).margin (0.01));
+    constexpr int releaseAt = 14400; // 300 ms
+    const auto ours = render (envelope, { 0.0f, 0.0f, unwired, unwired }, 28800,
+                              [] (int i, std::vector<float>& in) { in[1] = i < releaseAt ? 1.0f : 0.0f; });
+    const auto expected = [&] (int i)
+    {
+        const auto t = (double) i / sampleRate;
+        if (i >= releaseAt)
+            return std::max (0.0, sustain * (1.0 - ((double) (i - releaseAt) / sampleRate) / release));
+        if (t < attack)
+            return t / attack;
+        if (t < attack + decay)
+            return 1.0 - (1.0 - sustain) * (t - attack) / decay;
+        return (double) sustain;
+    };
+    for (int i = 0; i < (int) ours.size(); i += 16)
+        REQUIRE (ours[(size_t) i] == Catch::Approx (expected (i)).margin (0.002));
     CHECK (ours[10000] == Catch::Approx (sustain).margin (1.0e-4)); // holding at S
     CHECK (ours.back() == Catch::Approx (0.0f).margin (1.0e-4));    // released
 }
@@ -228,4 +226,18 @@ TEST_CASE ("A wired Shape plays the cable's curve; unplugged, the node's own aga
     const auto value = lastSample (unplugged);
     CHECK (value > 0.0f);
     CHECK (value < 0.5f); // its own sine, early in its cycle (the phase kept running) — not the square's 1
+}
+
+TEST_CASE ("A reset envelope hears its next gate as a new note", "[engine][curvePlayer]")
+{
+    // A voice that is reset (its bundle deactivated and reused) while its gate
+    // was high must still start on the next high gate.
+    CurveEnvelopeNode envelope;
+    envelope.prepare ({ sampleRate, 64 });
+    REQUIRE (envelope.setContent (CurveDocument::adsr (0.01f, 0.1f, 0.8f, 0.1f, 0.0f).toVar()));
+    render (envelope, { 0.0f, 1.0f, unwired, unwired }, 4800);
+    envelope.reset();
+    const auto after = render (envelope, { 0.0f, 1.0f, unwired, unwired }, 9600); // past attack + decay
+    CHECK (after[600] > 0.9f); // it started again: past the 10 ms attack
+    CHECK (after.back() == Catch::Approx (0.8f).margin (1.0e-3));
 }

@@ -134,10 +134,11 @@ TEST_CASE ("Only the host-boundary nodes ask for host inputs", "[engine][nodes][
 {
     const auto factory = buildDefaultNodeFactory();
 
-    for (const auto* typeId : { "io.audioIn", "io.control", "io.transport" })
+    // ...and the Oscillator, for tempo sync (what lfo.shape did).
+    for (const auto* typeId : { "io.audioIn", "io.control", "io.transport", "source.oscillator" })
         CHECK (factory.create (typeId)->wantsHostInputs());
 
-    for (const auto* typeId : { "osc.analog", "io.noteIn", "io.output", "math.add", "math.multiply" })
+    for (const auto* typeId : { "source.envelope", "io.noteIn", "io.output", "math.add", "math.multiply" })
         CHECK_FALSE (factory.create (typeId)->wantsHostInputs());
 }
 
@@ -376,7 +377,7 @@ TEST_CASE ("An oscillator with nothing wired to its pitch sounds at its displaye
     auto factory = buildDefaultNodeFactory();
 
     NodeGraph graph;
-    graph.addNode ({ "osc", "osc.analog", {}, {}, {} });
+    graph.addNode (withContent ({ "osc", "source.oscillator", {}, {}, {} }, CurveDocument::saw()));
     graph.setOutput ("osc", "out");
 
     constexpr double sampleRate = 44100.0;
@@ -402,7 +403,7 @@ TEST_CASE ("An oscillator with nothing wired to its pitch sounds at its displaye
 
     // A saved frequency still wins over that starting point.
     NodeGraph saved;
-    saved.addNode ({ "osc", "osc.analog", {}, { { "osc.analog.frequency", 220.0f } }, {} });
+    saved.addNode (withContent ({ "osc", "source.oscillator", {}, { { "source.oscillator.frequency", 220.0f } }, {} }, CurveDocument::saw()));
     saved.setOutput ("osc", "out");
     auto savedCompiled = GraphCompiler::compile (saved, factory, { sampleRate, 4410 }, 1);
     REQUIRE (savedCompiled.success);

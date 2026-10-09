@@ -28,13 +28,15 @@ namespace
         NodeGraph graph;
         graph.addNode ({ "noteIn", "io.noteIn", {}, {}, {} });
         graph.addNode ({ "allocator", "life.voice", {}, {}, {} });
-        graph.addNode ({ "osc", "osc.analog", {}, {}, {} });
+        graph.addNode (withContent ({ "osc", "source.oscillator", {}, {}, {} }, CurveDocument::saw()));
         graph.addNode ({ "svf", "filter.svf", {}, {}, {} });
         graph.addNode ({ "instancesum", "life.merge", {}, {}, {} }); // batch 1b renames this type id to "life.merge"
         graph.addNode ({ "masterout", "io.output", {}, {}, {} });
 
         graph.addConnection ({ "noteIn", "notes", "allocator", "spawn" });
-        graph.addConnection ({ "allocator", "pitch", "osc", "pitch" });
+        graph.addNode ({ "oscToFreq", "math.pitchToFrequency", {}, {}, {} });
+        graph.addConnection ({ "allocator", "pitch", "oscToFreq", "pitch" });
+        graph.addConnection ({ "oscToFreq", "frequency", "osc", "source.oscillator.frequency" });
         graph.addConnection ({ "osc", "out", "svf", "in" });
         graph.addConnection ({ "svf", "out", "instancesum", "in" });
         graph.addConnection ({ "instancesum", "out", "masterout", "in" });
@@ -112,13 +114,13 @@ TEST_CASE ("MultiplicityResolver correctly partitions a graph with one instance.
     REQUIRE (origin.sums.size() == 1);
     CHECK (origin.sums[0].sumNodeId == "instancesum");
 
-    // Voice region: noteIn, allocator, osc, svf — output retargeted to
-    // whatever fed instancesum.in (svf.out).
-    REQUIRE (origin.voiceGraph.getNodes().size() == 4);
+    // Voice region: noteIn, allocator, the pitch converter, osc, svf — output
+    // retargeted to whatever fed instancesum.in (svf.out).
+    REQUIRE (origin.voiceGraph.getNodes().size() == 5);
     CHECK (origin.voiceGraph.getOutputNodeId() == "svf");
     CHECK (origin.voiceGraph.getOutputPortId() == "out");
     for (const auto& node : origin.voiceGraph.getNodes())
-        CHECK ((node.id == "noteIn" || node.id == "allocator" || node.id == "osc" || node.id == "svf"));
+        CHECK ((node.id == "noteIn" || node.id == "allocator" || node.id == "oscToFreq" || node.id == "osc" || node.id == "svf"));
     for (const auto& connection : origin.voiceGraph.getConnections())
         CHECK (connection.toNodeId != "instancesum"); // the boundary edge must not appear in either subgraph verbatim
 
@@ -209,19 +211,23 @@ TEST_CASE ("Two independent origin/instance.sum pairs partition independently - 
     // since this test is about partition mechanics, not audio behaviour.
     NodeGraph graph;
     graph.addNode ({ "allocA", "life.voice", {}, {}, {} });
-    graph.addNode ({ "oscA", "osc.analog", {}, {}, {} });
+    graph.addNode (withContent ({ "oscA", "source.oscillator", {}, {}, {} }, CurveDocument::saw()));
     graph.addNode ({ "sumA", "life.merge", {}, {}, {} });
 
     graph.addNode ({ "allocB", "life.voice", {}, {}, {} });
-    graph.addNode ({ "oscB", "osc.analog", {}, {}, {} });
+    graph.addNode (withContent ({ "oscB", "source.oscillator", {}, {}, {} }, CurveDocument::saw()));
     graph.addNode ({ "sumB", "life.merge", {}, {}, {} });
 
     graph.addNode ({ "mixdown", "math.add", {}, {}, {} });
     graph.addNode ({ "masterout", "io.output", {}, {}, {} });
 
-    graph.addConnection ({ "allocA", "pitch", "oscA", "pitch" });
+    graph.addNode ({ "oscAToFreq", "math.pitchToFrequency", {}, {}, {} });
+    graph.addConnection ({ "allocA", "pitch", "oscAToFreq", "pitch" });
+    graph.addConnection ({ "oscAToFreq", "frequency", "oscA", "source.oscillator.frequency" });
     graph.addConnection ({ "oscA", "out", "sumA", "in" });
-    graph.addConnection ({ "allocB", "pitch", "oscB", "pitch" });
+    graph.addNode ({ "oscBToFreq", "math.pitchToFrequency", {}, {}, {} });
+    graph.addConnection ({ "allocB", "pitch", "oscBToFreq", "pitch" });
+    graph.addConnection ({ "oscBToFreq", "frequency", "oscB", "source.oscillator.frequency" });
     graph.addConnection ({ "oscB", "out", "sumB", "in" });
     graph.addConnection ({ "sumA", "out", "mixdown", "in.0" });
     graph.addConnection ({ "sumB", "out", "mixdown", "in.1" });
@@ -260,14 +266,16 @@ TEST_CASE ("Several instance.sum nodes may reduce the SAME origin, each from its
     // (osc -> svf -> sum2), each summed on its own, then added after.
     NodeGraph graph;
     graph.addNode ({ "alloc", "life.voice", {}, {}, {} });
-    graph.addNode ({ "osc", "osc.analog", {}, {}, {} });
+    graph.addNode (withContent ({ "osc", "source.oscillator", {}, {}, {} }, CurveDocument::saw()));
     graph.addNode ({ "svf", "filter.svf", {}, {}, {} });
     graph.addNode ({ "sum1", "life.merge", {}, {}, {} });
     graph.addNode ({ "sum2", "life.merge", {}, {}, {} });
     graph.addNode ({ "add", "math.add", {}, {}, {} });
     graph.addNode ({ "masterout", "io.output", {}, {}, {} });
 
-    graph.addConnection ({ "alloc", "pitch", "osc", "pitch" });
+    graph.addNode ({ "oscToFreq", "math.pitchToFrequency", {}, {}, {} });
+    graph.addConnection ({ "alloc", "pitch", "oscToFreq", "pitch" });
+    graph.addConnection ({ "oscToFreq", "frequency", "osc", "source.oscillator.frequency" });
     graph.addConnection ({ "osc", "out", "sum1", "in" });
     graph.addConnection ({ "osc", "out", "svf", "in" });
     graph.addConnection ({ "svf", "out", "sum2", "in" });
@@ -297,9 +305,11 @@ TEST_CASE ("More than maxSumsPerOrigin instance.sum nodes on one origin is rejec
 {
     NodeGraph graph;
     graph.addNode ({ "alloc", "life.voice", {}, {}, {} });
-    graph.addNode ({ "osc", "osc.analog", {}, {}, {} });
+    graph.addNode (withContent ({ "osc", "source.oscillator", {}, {}, {} }, CurveDocument::saw()));
     graph.addNode ({ "masterout", "io.output", {}, {}, {} });
-    graph.addConnection ({ "alloc", "pitch", "osc", "pitch" });
+    graph.addNode ({ "oscToFreq", "math.pitchToFrequency", {}, {}, {} });
+    graph.addConnection ({ "alloc", "pitch", "oscToFreq", "pitch" });
+    graph.addConnection ({ "oscToFreq", "frequency", "osc", "source.oscillator.frequency" });
     for (int i = 0; i <= MultiplicityResolver::maxSumsPerOrigin; ++i)
     {
         const auto id = "sum" + juce::String (i);
@@ -414,8 +424,8 @@ TEST_CASE ("The exact motivating repro (section 0): env.adsr -> mix.gain connect
     auto buildBase = [] {
         NodeGraph graph;
         graph.addNode ({ "alloc", "life.voice", {}, {}, {} });
-        graph.addNode ({ "env", "env.adsr", {}, {}, {} });
-        graph.addNode ({ "osc", "osc.analog", {}, {}, {} });
+        graph.addNode (withContent ({ "env", "source.envelope", {}, {}, {} }, CurveDocument::adsr (0.1f, 0.1f, 1.0f, 0.1f, 0.0f)));
+        graph.addNode (withContent ({ "osc", "source.oscillator", {}, {}, {} }, CurveDocument::saw()));
         graph.addNode ({ "gain", "math.multiply", {}, {}, {} });
         graph.addNode ({ "masterout", "io.output", {}, {}, {} });
 
@@ -462,13 +472,15 @@ TEST_CASE ("A mono source that feeds only the global domain joins the global pla
 {
     NodeGraph graph;
     graph.addNode ({ "alloc", "life.voice", {}, {}, {} });
-    graph.addNode ({ "osc", "osc.analog", {}, {}, {} });
+    graph.addNode (withContent ({ "osc", "source.oscillator", {}, {}, {} }, CurveDocument::saw()));
     graph.addNode ({ "sum", "life.merge", {}, {}, {} });
     graph.addNode ({ "audioin", "io.audioIn", {}, {}, {} });
     graph.addNode ({ "mixdown", "math.add", {}, {}, {} });
     graph.addNode ({ "masterout", "io.output", {}, {}, {} });
 
-    graph.addConnection ({ "alloc", "pitch", "osc", "pitch" });
+    graph.addNode ({ "oscToFreq", "math.pitchToFrequency", {}, {}, {} });
+    graph.addConnection ({ "alloc", "pitch", "oscToFreq", "pitch" });
+    graph.addConnection ({ "oscToFreq", "frequency", "osc", "source.oscillator.frequency" });
     graph.addConnection ({ "osc", "out", "sum", "in" });
     graph.addConnection ({ "sum", "out", "mixdown", "in.0" });
     graph.addConnection ({ "audioin", "channel.0", "mixdown", "in.1" });
@@ -545,12 +557,14 @@ TEST_CASE ("09-28-InstanceAllocator.1 (part 4): an unconnected node is folded in
 {
     NodeGraph graph;
     graph.addNode ({ "alloc", "life.voice", {}, {}, {} });
-    graph.addNode ({ "osc", "osc.analog", {}, {}, {} });
+    graph.addNode (withContent ({ "osc", "source.oscillator", {}, {}, {} }, CurveDocument::saw()));
     graph.addNode ({ "sum", "life.merge", {}, {}, {} });
     graph.addNode ({ "masterout", "io.output", {}, {}, {} });
     graph.addNode ({ "orphan", "excite.burst", {}, {}, {} }); // never connected to anything
 
-    graph.addConnection ({ "alloc", "pitch", "osc", "pitch" });
+    graph.addNode ({ "oscToFreq", "math.pitchToFrequency", {}, {}, {} });
+    graph.addConnection ({ "alloc", "pitch", "oscToFreq", "pitch" });
+    graph.addConnection ({ "oscToFreq", "frequency", "osc", "source.oscillator.frequency" });
     graph.addConnection ({ "osc", "out", "sum", "in" });
     graph.addConnection ({ "sum", "out", "masterout", "in" });
     graph.setOutput ("masterout", "out");

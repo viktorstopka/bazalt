@@ -10,8 +10,16 @@ Select into **Blend** (`math.blend`), the three history scopes into one **Scope*
 that inherits both type and quantity never asks for a Map. 1a.4: one `Signal` type
 (Boolean and Audio are quantities), channels on every Signal, colours by meaning (Data
 teal, Notes green, no poly colour), the card stack for poly nodes, and categories with
-ids following them (schema v14). Batch 1a is complete; next is 1b. Still open: the
-Swarm (Transient) and Trigger titles.
+ids following them (schema v14). Batch 1a is complete.
+1b is built: node content (schema v15), the curve model and `data.curve`, one curve
+player as **Oscillator** and **Envelope** (`source.oscillator`, `source.envelope`), the
+Factory window with the curve editor, and schema v16 migrating osc.*, lfo.shape,
+env.adsr and data.table onto them (the old nodes are removed). Known gaps from 1b:
+phase-locked previews of a curve oscillator fold real samples instead of rendering
+its shape; an envelope's single stage times can't be modulated (Time Scale scales
+the whole curve); pulse-width modulation is gone with the fixed shapes; mipmap levels
+are per octave, so a sweep changes brightness in octave steps. Still open: the
+Swarm (Transient) and Trigger titles. Next: 1c (Wavetable).
 
 Builds on `Factories.md` (content, editors, unwrap) and replaces its "docked editor
 panel" with a full Factory window (§1, D10). Stage 2's engine work — one plan with an

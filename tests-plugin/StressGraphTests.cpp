@@ -16,7 +16,7 @@ namespace
         // setOutput call) — deleting "amp" while it's still the graph's
         // designated output would fail to compile (no output node found)
         // and roll back, silently leaving it in place.
-        for (const auto& id : { "noteIn", "allocator", "osc", "svf", "env", "amp" })
+        for (const auto& id : { "noteIn", "allocator", "pitchToFreq", "osc", "svf", "env", "amp" })
             controller.deleteNode (id);
     }
 }

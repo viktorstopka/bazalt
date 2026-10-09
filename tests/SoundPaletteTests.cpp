@@ -8,7 +8,7 @@
 #include "bazalt/engine/nodes/AnalysisLevelNode.h"
 #include "bazalt/engine/nodes/DynamicsNodes.h"
 #include "bazalt/engine/nodes/FreqShiftNode.h"
-#include "bazalt/engine/nodes/LfoNode.h"
+#include "bazalt/engine/nodes/CurvePlayerNode.h"
 #include "bazalt/engine/nodes/NoiseColoredNode.h"
 #include "bazalt/engine/nodes/NoiseDustNode.h"
 #include "bazalt/engine/nodes/ShapeNodes.h"
@@ -272,36 +272,36 @@ TEST_CASE ("shape.crush quantises to its bit depth and holds at its rate", "[eng
 }
 
 //==============================================================================
-TEST_CASE ("lfo.shape runs at its rate, in its polarity", "[engine][palette][lfo]")
+TEST_CASE ("The Oscillator as an LFO: its rate, a unipolar curve", "[engine][palette][lfo]")
 {
-    auto node = make<LfoNode> ({ { "lfo.shape.rate", 2.0f } });
+    auto node = make<CurveOscillatorNode> ({ { "source.oscillator.frequency", 2.0f } });
     const auto out = run (*node, {}, (int) fs)[0];
     CHECK (out[0] == Catch::Approx (0.0f).margin (1e-6));
     CHECK (out[6000] == Catch::Approx (1.0f).margin (1e-4)); // a quarter cycle at 2 Hz
     CHECK (out[24000] == Catch::Approx (0.0f).margin (1e-3)); // a full cycle
 
-    auto unipolar = make<LfoNode> ({ { "lfo.shape.polarity", 1.0f }, { "lfo.shape.shape", 4.0f } });
-    const auto square = run (*unipolar, {}, (int) fs)[0];
-    CHECK (*std::min_element (square.begin(), square.end()) == 0.0f);
-    CHECK (*std::max_element (square.begin(), square.end()) == 1.0f);
-
-    auto held = make<LfoNode> ({ { "lfo.shape.shape", 5.0f }, { "lfo.shape.rate", 10.0f } });
-    const auto sh = run (*held, {}, (int) fs)[0];
-    std::set<float> distinct (sh.begin(), sh.end());
-    CHECK (distinct.size() >= 9);
-    CHECK (distinct.size() <= 11); // one value per cycle
+    // Unipolar is just a curve drawn 0..1 (what lfo.shape's polarity did).
+    auto unipolar = make<CurveOscillatorNode> ({ { "source.oscillator.frequency", 1.0f } });
+    auto square = CurveDocument::square();
+    for (auto& point : square.points)
+        point.y = 0.5f * (point.y + 1.0f);
+    REQUIRE (unipolar->setContent (square.toVar()));
+    const auto squareOut = run (*unipolar, {}, (int) fs)[0];
+    CHECK (*std::min_element (squareOut.begin() + 100, squareOut.end()) == Catch::Approx (0.0f).margin (1e-6));
+    CHECK (*std::max_element (squareOut.begin() + 100, squareOut.end()) == Catch::Approx (1.0f).margin (1e-6));
 }
 
-TEST_CASE ("lfo.shape synced to a playing host is locked to the timeline", "[engine][palette][lfo]")
+TEST_CASE ("The Oscillator synced to a playing host is locked to the timeline", "[engine][palette][lfo]")
 {
-    auto node = make<LfoNode> ({ { "lfo.shape.sync", 1.0f }, { "lfo.shape.division", 5.0f }, { "lfo.shape.shape", 2.0f } }); // 1/4 = 1 beat, saw
+    auto node = make<CurveOscillatorNode> ({ { "source.oscillator.sync", 1.0f }, { "source.oscillator.division", 5.0f } }); // 1/4 = 1 beat
+    REQUIRE (node->setContent (CurveDocument::saw().toVar()));
     HostInputs host;
     host.transportPlaying = true;
     host.tempoBpm = 120.0;
     host.ppqPosition = 10.25; // a quarter into a beat
     node->setHostInputs (host);
     const auto out = run (*node, {}, 1)[0];
-    CHECK (out[0] == Catch::Approx (2.0 * 0.25 - 1.0).margin (1e-4)); // saw at phase 0.25
+    CHECK (out[0] == Catch::Approx (2.0 * 0.25 - 1.0).margin (1e-3)); // saw at phase 0.25
 }
 
 TEST_CASE ("analysis.level reads RMS and peak, in dB too", "[engine][palette][analysis]")
@@ -369,8 +369,8 @@ TEST_CASE ("Every Sound Palette node is block-size invariant", "[engine][palette
 {
     auto factory = buildDefaultNodeFactory();
     for (const auto* type : { "source.noise", "source.dust", "shape.rectify", "shape.crush", "shape.waveshaper", "shape.fold",
-                              "lfo.shape", "analysis.level", "dynamics.compress", "dynamics.gate", "spectrum.freqShift",
-                              "filter.svf", "osc.analog", "excite.burst" })
+                              "source.oscillator", "source.envelope", "analysis.level", "dynamics.compress", "dynamics.gate",
+                              "spectrum.freqShift", "filter.svf", "excite.burst" })
     {
         const auto render = [&] (int blockSize)
         {
@@ -390,7 +390,6 @@ TEST_CASE ("Every Sound Palette node is block-size invariant", "[engine][palette
 //==============================================================================
 // Batch 2: the three MVPs closed.
 #include "bazalt/engine/nodes/NoiseBurstNode.h"
-#include "bazalt/engine/nodes/OscillatorNode.h"
 #include "bazalt/engine/nodes/SvfFilterNode.h"
 
 TEST_CASE ("filter.svf gives all five responses at once", "[engine][palette][svf]")
@@ -414,26 +413,6 @@ TEST_CASE ("filter.svf gives all five responses at once", "[engine][palette][svf
     CHECK (at[1] == Catch::Approx (0.7071).margin (0.02)); // this form's bandpass peaks at Q (constant-skirt)
     CHECK (at[3] < 0.02);                                          // notch nulls the cutoff
     CHECK (low[3] == Catch::Approx (1.0).margin (0.02));
-}
-
-TEST_CASE ("osc.analog: fine tune, pulse width and sync", "[engine][palette][osc]")
-{
-    auto tuned = make<OscillatorNode> ({ { "osc.analog.shape", 0.0f }, { "osc.analog.frequency", 1000.0f }, { "osc.analog.fine", 100.0f } });
-    const auto out = run (*tuned, {}, (int) fs)[0];
-    CHECK (amplitudeAt (out, 1000.0 * std::exp2 (100.0 / 1200.0)) == Catch::Approx (1.0).margin (0.02)); // +100 cents = a semitone up
-
-    auto pulse = make<OscillatorNode> ({ { "osc.analog.shape", 2.0f }, { "osc.analog.frequency", 100.0f }, { "osc.analog.pulseWidth", 0.25f } });
-    const auto square = run (*pulse, {}, (int) fs)[0];
-    const auto high = std::count_if (square.begin(), square.end(), [] (float v) { return v > 0.0f; });
-    CHECK ((double) high / (double) square.size() == Catch::Approx (0.25).margin (0.01));
-
-    auto synced = make<OscillatorNode> ({ { "osc.analog.shape", 1.0f }, { "osc.analog.frequency", 100.0f } });
-    Signal sync ((size_t) 1000, 0.0f);
-    sync[500] = 1.0f;
-    const auto saw = run (*synced, { {}, {}, {}, {}, {}, sync }, 1000)[0];
-    auto fresh = make<OscillatorNode> ({ { "osc.analog.shape", 1.0f }, { "osc.analog.frequency", 100.0f } });
-    const auto start = run (*fresh, {}, 1)[0];
-    CHECK (saw[500] == start[0]); // sync restarts the cycle
 }
 
 TEST_CASE ("excite.burst: tone tilts the spectrum, shape bends the decay", "[engine][palette][burst]")

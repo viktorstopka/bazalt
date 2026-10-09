@@ -135,7 +135,10 @@ namespace bazalt::engine
         //
         // Schema v15 (same plan, 1b): a node may carry `content`, a factory's
         // editable document (NodeInstance::content).
-        static constexpr int currentSchemaVersion = 15;
+        //
+        // Schema v16 (same plan, D5/D6): osc.*, lfo.shape, env.adsr and
+        // data.table become source.oscillator / source.envelope / data.curve.
+        static constexpr int currentSchemaVersion = 16;
 
         int schemaVersion = currentSchemaVersion;
         std::vector<NodeInstance> nodes;

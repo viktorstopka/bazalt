@@ -15,7 +15,7 @@ namespace
     NodeGraph leftOnlySineThrough (std::vector<NodeInstance> chain, float cutoff = 1000.0f)
     {
         NodeGraph graph;
-        graph.addNode ({ "osc", "osc.sine", {}, { { "osc.sine.frequency", 220.0f } }, {} });
+        graph.addNode ({ "osc", "source.oscillator", {}, { { "source.oscillator.frequency", 220.0f } }, {} });
         graph.addNode ({ "combine", "channels.combine", {}, {}, {} });
         graph.addConnection ({ "osc", "out", "combine", "left" });
 
@@ -85,7 +85,7 @@ TEST_CASE ("A mono chain keeps one lane per node", "[engine][GraphCompiler][ster
 {
     auto factory = buildDefaultNodeFactory();
     NodeGraph graph;
-    graph.addNode ({ "osc", "osc.sine", {}, {}, {} });
+    graph.addNode ({ "osc", "source.oscillator", {}, {}, {} });
     graph.addNode ({ "svf", "filter.svf", {}, {}, {} });
     graph.addNode ({ "master", "io.output", {}, {}, {} });
     graph.addConnection ({ "osc", "out", "svf", "in" });
@@ -107,7 +107,7 @@ TEST_CASE ("A stereo feedback loop keeps its channels apart and publishes both",
     // combine -> add.in.0; add -> delay; delay -> add.in.1 (the loop) and -> master.
     auto factory = buildDefaultNodeFactory();
     NodeGraph graph;
-    graph.addNode ({ "osc", "osc.sine", {}, { { "osc.sine.frequency", 220.0f } }, {} });
+    graph.addNode ({ "osc", "source.oscillator", {}, { { "source.oscillator.frequency", 220.0f } }, {} });
     graph.addNode ({ "combine", "channels.combine", {}, {}, {} });
     graph.addNode ({ "add", "math.add", {}, {}, {} });
     graph.addNode ({ "delay", "time.delay", {}, { { "time.delay.samples", 10.0f } }, {} });

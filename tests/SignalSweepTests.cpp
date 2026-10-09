@@ -1,6 +1,8 @@
 // wiki/plans/DataAndWavetable.md §2: nodes removed or merged by the stage 1
 // sweep load from older patches as their replacements.
 #include <catch2/catch_test_macros.hpp>
+#include <catch2/catch_approx.hpp>
+#include "bazalt/engine/graph/CurveData.h"
 #include "bazalt/engine/patch/PatchSerializer.h"
 #include <algorithm>
 
@@ -230,4 +232,89 @@ TEST_CASE ("A v13 patch's ids move to their categories, parameters and ports wit
     CHECK (hasConnection (doc, "k", "out", "hold", "time.sampleHold.glide"));
     CHECK (hasConnection (doc, "alloc", "gate", "sum", "in"));
     CHECK (findNode (doc, "k")->type == "util.constant"); // unchanged ids stay
+}
+
+TEST_CASE ("A v15 patch's oscillators, LFO, ADSR and table load as the curve nodes", "[engine][PatchSerializer][sweep]")
+{
+    const auto json = R"({ "schemaVersion": 15,
+        "nodes": [
+            { "id": "alloc", "type": "life.voice", "position": { "x": 0, "y": 0 }, "parameters": {}, "properties": {} },
+            { "id": "osc", "type": "osc.analog", "position": { "x": 300, "y": 0 },
+              "parameters": { "osc.analog.shape": 2, "osc.analog.pulseWidth": 0.3, "osc.analog.fine": 50 }, "properties": {} },
+            { "id": "sine", "type": "osc.sine", "parameters": { "osc.sine.frequency": 220 }, "properties": {} },
+            { "id": "lfo", "type": "lfo.shape", "parameters": { "lfo.shape.rate": 3, "lfo.shape.shape": 4, "lfo.shape.polarity": 1 }, "properties": {} },
+            { "id": "sh", "type": "lfo.shape", "parameters": { "lfo.shape.shape": 5, "lfo.shape.rate": 8 }, "properties": {} },
+            { "id": "env", "type": "env.adsr", "parameters": { "env.adsr.attack": 0.02, "env.adsr.sustain": 0.5 }, "properties": {} },
+            { "id": "table", "type": "data.table", "parameters": { "data.table.resolution": 3, "data.table.point.1": 1 }, "properties": {} },
+            { "id": "lookup", "type": "data.lookup", "parameters": {}, "properties": {} }
+        ],
+        "connections": [
+            { "fromNodeId": "alloc", "fromPortId": "pitch", "toNodeId": "osc", "toPortId": "pitch" },
+            { "fromNodeId": "lfo", "fromPortId": "out", "toNodeId": "osc", "toPortId": "osc.analog.pulseWidth" },
+            { "fromNodeId": "alloc", "fromPortId": "gate", "toNodeId": "env", "toPortId": "gate" },
+            { "fromNodeId": "lfo", "fromPortId": "out", "toNodeId": "env", "toPortId": "env.adsr.decay" },
+            { "fromNodeId": "table", "fromPortId": "data", "toNodeId": "lookup", "toPortId": "data" },
+            { "fromNodeId": "sh", "fromPortId": "out", "toNodeId": "sine", "toPortId": "sync" }
+        ],
+        "outputNodeId": "osc", "outputPortId": "out" })";
+
+    const auto parsed = parsePatchFromJson (json);
+    REQUIRE (parsed.success);
+    const auto& doc = parsed.document;
+    CHECK (doc.schemaVersion == PatchDocument::currentSchemaVersion);
+
+    // osc.analog: a square with the old duty; Pitch now goes through a converter
+    // (plus the fine tune, in semitones); pulse-width modulation is gone.
+    const auto* osc = findNode (doc, "osc");
+    REQUIRE (osc != nullptr);
+    CHECK (osc->type == "source.oscillator");
+    const auto shape = CurveDocument::fromVar (osc->content);
+    REQUIRE (shape.points.size() == 2);
+    CHECK (shape.points[1].x == Catch::Approx (0.3f));
+    CHECK_FALSE (std::any_of (doc.connections.begin(), doc.connections.end(), [] (const auto& c) { return c.toNodeId == "osc" && c.toPortId != "source.oscillator.frequency"; }));
+    const auto converter = std::find_if (doc.nodes.begin(), doc.nodes.end(), [] (const auto& n) { return n.type == "math.pitchToFrequency"; });
+    const auto fine = std::find_if (doc.nodes.begin(), doc.nodes.end(), [] (const auto& n) { return n.type == "math.add"; });
+    REQUIRE (converter != doc.nodes.end());
+    REQUIRE (fine != doc.nodes.end());
+    CHECK (fine->parameters.at ("in.1") == Catch::Approx (0.5f)); // 50 cents
+    CHECK (hasConnection (doc, "alloc", "pitch", fine->id, "in.0"));
+    CHECK (hasConnection (doc, fine->id, "out", converter->id, "pitch"));
+    CHECK (hasConnection (doc, converter->id, "frequency", "osc", "source.oscillator.frequency"));
+
+    const auto* sine = findNode (doc, "sine");
+    CHECK (sine->type == "source.oscillator");
+    CHECK (sine->parameters.at ("source.oscillator.frequency") == 220.0f);
+    CHECK (hasConnection (doc, "sh", "out", "sine", "trigger")); // sync is Trigger now
+
+    // A unipolar square LFO is a square drawn 0..1.
+    const auto* lfo = findNode (doc, "lfo");
+    CHECK (lfo->type == "source.oscillator");
+    CHECK (lfo->parameters.at ("source.oscillator.frequency") == 3.0f);
+    const auto lfoShape = CurveDocument::fromVar (lfo->content);
+    CHECK (lfoShape.points[0].y == 1.0f);
+    CHECK (lfoShape.points[1].y == 0.0f);
+
+    // Sample & hold has no curve: it is a stepped random now.
+    const auto* sh = findNode (doc, "sh");
+    CHECK (sh->type == "random.stepped");
+    CHECK (sh->parameters.at ("random.stepped.rate") == 8.0f);
+
+    // The ADSR is a straight curve; juce::ADSR's own defaults fill what was never set.
+    const auto* env = findNode (doc, "env");
+    CHECK (env->type == "source.envelope");
+    const auto adsr = CurveDocument::fromVar (env->content);
+    CHECK (adsr.points[1].x == Catch::Approx (0.02f));
+    CHECK (adsr.points[2].x == Catch::Approx (0.12f)); // + decay 0.1
+    CHECK (adsr.points[2].y == Catch::Approx (0.5f));
+    CHECK (adsr.points[1].tension == 0.0f);
+    CHECK (hasConnection (doc, "alloc", "gate", "env", "gate"));
+    CHECK_FALSE (hasConnection (doc, "lfo", "out", "env", "env.adsr.decay")); // a modulated stage time has nowhere to go
+
+    const auto* table = findNode (doc, "table");
+    CHECK (table->type == "data.curve");
+    const auto points = CurveDocument::fromVar (table->content);
+    REQUIRE (points.points.size() == 3);
+    CHECK (points.points[1].x == Catch::Approx (0.5f));
+    CHECK (points.points[1].y == 1.0f);
+    CHECK (hasConnection (doc, "table", "curve", "lookup", "data"));
 }

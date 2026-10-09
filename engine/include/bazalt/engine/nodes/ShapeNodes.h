@@ -1,6 +1,7 @@
 #pragma once
 
 #include "bazalt/engine/graph/Node.h"
+#include <juce_audio_basics/juce_audio_basics.h>
 #include <cmath>
 
 namespace bazalt::engine::nodes

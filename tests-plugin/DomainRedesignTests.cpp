@@ -5,6 +5,7 @@
 // spawn, no io.noteIn anywhere) genuinely plays with zero MIDI input —
 // the concrete fix for the MIDI-independence bug §10.3 diagnoses.
 #include <catch2/catch_test_macros.hpp>
+#include "bazalt/engine/graph/ProofGraphs.h"
 #include "PluginProcessor.h"
 #include "bazalt/engine/graph/NodeGraph.h"
 #include "bazalt/engine/nodes/InstanceVoiceNode.h"
@@ -36,13 +37,15 @@ namespace
         graph.addNode ({ idPrefix + "gateLen", "time.gateLength", {}, { { "length", 0.5f } }, {} });
         graph.addNode ({ idPrefix + "assemble", "note.assemble", {}, { { "pitch", pitch } }, {} });
         graph.addNode ({ idPrefix + "alloc", "life.voice", {}, {}, {} });
-        graph.addNode ({ idPrefix + "osc", "osc.analog", {}, {}, {} });
+        graph.addNode (bazalt::engine::withContent ({ idPrefix + "osc", "source.oscillator", {}, {}, {} }, bazalt::engine::CurveDocument::saw()));
         graph.addNode ({ idPrefix + "sum", "life.merge", {}, {}, {} }); // instance.sum, DomainRedesign.md Batch 1b's rename
 
         graph.addConnection ({ idPrefix + "clock", "tick", idPrefix + "gateLen", "trigger" });
         graph.addConnection ({ idPrefix + "gateLen", "gate", idPrefix + "assemble", "gate" });
         graph.addConnection ({ idPrefix + "assemble", "notes", idPrefix + "alloc", "spawn" });
-        graph.addConnection ({ idPrefix + "alloc", "pitch", idPrefix + "osc", "pitch" });
+        graph.addNode ({ (idPrefix + "osc") + "ToFreq", "math.pitchToFrequency", {}, {}, {} });
+        graph.addConnection ({ idPrefix + "alloc", "pitch", (idPrefix + "osc") + "ToFreq", "pitch" });
+        graph.addConnection ({ (idPrefix + "osc") + "ToFreq", "frequency", idPrefix + "osc", "source.oscillator.frequency" });
         graph.addConnection ({ idPrefix + "osc", "out", idPrefix + "sum", "in" });
     }
 }
@@ -154,17 +157,21 @@ TEST_CASE ("getNodeDomains() labels nodes correctly across two simultaneous orig
 {
     NodeGraph graph;
     graph.addNode ({ "allocA", "life.voice", {}, {}, {} });
-    graph.addNode ({ "oscA", "osc.analog", {}, {}, {} });
+    graph.addNode (bazalt::engine::withContent ({ "oscA", "source.oscillator", {}, {}, {} }, bazalt::engine::CurveDocument::saw()));
     graph.addNode ({ "sumA", "life.merge", {}, {}, {} });
     graph.addNode ({ "allocB", "life.voice", {}, {}, {} });
-    graph.addNode ({ "oscB", "osc.analog", {}, {}, {} });
+    graph.addNode (bazalt::engine::withContent ({ "oscB", "source.oscillator", {}, {}, {} }, bazalt::engine::CurveDocument::saw()));
     graph.addNode ({ "sumB", "life.merge", {}, {}, {} });
     graph.addNode ({ "mixdown", "math.add", {}, {}, {} });
     graph.addNode ({ "masterout", "io.output", {}, {}, {} });
 
-    graph.addConnection ({ "allocA", "pitch", "oscA", "pitch" });
+    graph.addNode ({ "oscAToFreq", "math.pitchToFrequency", {}, {}, {} });
+    graph.addConnection ({ "allocA", "pitch", "oscAToFreq", "pitch" });
+    graph.addConnection ({ "oscAToFreq", "frequency", "oscA", "source.oscillator.frequency" });
     graph.addConnection ({ "oscA", "out", "sumA", "in" });
-    graph.addConnection ({ "allocB", "pitch", "oscB", "pitch" });
+    graph.addNode ({ "oscBToFreq", "math.pitchToFrequency", {}, {}, {} });
+    graph.addConnection ({ "allocB", "pitch", "oscBToFreq", "pitch" });
+    graph.addConnection ({ "oscBToFreq", "frequency", "oscB", "source.oscillator.frequency" });
     graph.addConnection ({ "oscB", "out", "sumB", "in" });
     graph.addConnection ({ "sumA", "out", "mixdown", "in.0" });
     graph.addConnection ({ "sumB", "out", "mixdown", "in.1" });
@@ -193,9 +200,11 @@ TEST_CASE ("An origin that disappears from the graph deactivates its bundle; a n
 {
     NodeGraph graph;
     graph.addNode ({ "alloc", "life.voice", {}, {}, {} });
-    graph.addNode ({ "osc", "osc.analog", {}, {}, {} });
+    graph.addNode (bazalt::engine::withContent ({ "osc", "source.oscillator", {}, {}, {} }, bazalt::engine::CurveDocument::saw()));
     graph.addNode ({ "masterout", "io.output", {}, {}, {} });
-    graph.addConnection ({ "alloc", "pitch", "osc", "pitch" });
+    graph.addNode ({ "oscToFreq", "math.pitchToFrequency", {}, {}, {} });
+    graph.addConnection ({ "alloc", "pitch", "oscToFreq", "pitch" });
+    graph.addConnection ({ "oscToFreq", "frequency", "osc", "source.oscillator.frequency" });
     graph.addConnection ({ "osc", "out", "masterout", "in" });
     graph.setOutput ("masterout", "out");
 
@@ -233,10 +242,12 @@ TEST_CASE ("getPortMultiplicity() reports poly for a voice-region node's ports (
 {
     NodeGraph graph;
     graph.addNode ({ "alloc", "life.voice", {}, {}, {} });
-    graph.addNode ({ "osc", "osc.analog", {}, {}, {} });
+    graph.addNode (bazalt::engine::withContent ({ "osc", "source.oscillator", {}, {}, {} }, bazalt::engine::CurveDocument::saw()));
     graph.addNode ({ "sum", "life.merge", {}, {}, {} });
     graph.addNode ({ "masterout", "io.output", {}, {}, {} });
-    graph.addConnection ({ "alloc", "pitch", "osc", "pitch" });
+    graph.addNode ({ "oscToFreq", "math.pitchToFrequency", {}, {}, {} });
+    graph.addConnection ({ "alloc", "pitch", "oscToFreq", "pitch" });
+    graph.addConnection ({ "oscToFreq", "frequency", "osc", "source.oscillator.frequency" });
     graph.addConnection ({ "osc", "out", "sum", "in" });
     graph.addConnection ({ "sum", "out", "masterout", "in" });
     graph.setOutput ("masterout", "out");
@@ -281,10 +292,12 @@ TEST_CASE ("A recompile enforces instance.allocate.voice.maxInstances for real, 
     NodeGraph graph;
     graph.addNode ({ "noteIn", "io.noteIn", {}, {}, {} });
     graph.addNode ({ "alloc", "life.voice", {}, { { "life.voice.maxInstances", 2.0f } }, {} });
-    graph.addNode ({ "osc", "osc.analog", {}, {}, {} });
+    graph.addNode (bazalt::engine::withContent ({ "osc", "source.oscillator", {}, {}, {} }, bazalt::engine::CurveDocument::saw()));
     graph.addNode ({ "masterout", "io.output", {}, {}, {} });
     graph.addConnection ({ "noteIn", "notes", "alloc", "spawn" });
-    graph.addConnection ({ "alloc", "pitch", "osc", "pitch" });
+    graph.addNode ({ "oscToFreq", "math.pitchToFrequency", {}, {}, {} });
+    graph.addConnection ({ "alloc", "pitch", "oscToFreq", "pitch" });
+    graph.addConnection ({ "oscToFreq", "frequency", "osc", "source.oscillator.frequency" });
     graph.addConnection ({ "osc", "out", "masterout", "in" });
     graph.setOutput ("masterout", "out");
 
@@ -329,12 +342,14 @@ TEST_CASE ("Disconnecting a Note source from instance.allocate.voice.spawn WHILE
     graph.addNode ({ "scale", "data.scale", {}, {}, {} });
     graph.addNode ({ "quantize", "note.quantize", {}, {}, {} });
     graph.addNode ({ "alloc", "life.voice", {}, {}, {} });
-    graph.addNode ({ "osc", "osc.analog", {}, {}, {} });
+    graph.addNode (bazalt::engine::withContent ({ "osc", "source.oscillator", {}, {}, {} }, bazalt::engine::CurveDocument::saw()));
     graph.addNode ({ "masterout", "io.output", {}, {}, {} });
     graph.addConnection ({ "noteIn", "notes", "quantize", "notes" });
     graph.addConnection ({ "scale", "data", "quantize", "scale" });
     graph.addConnection ({ "quantize", "notesOut", "alloc", "spawn" });
-    graph.addConnection ({ "alloc", "pitch", "osc", "pitch" });
+    graph.addNode ({ "oscToFreq", "math.pitchToFrequency", {}, {}, {} });
+    graph.addConnection ({ "alloc", "pitch", "oscToFreq", "pitch" });
+    graph.addConnection ({ "oscToFreq", "frequency", "osc", "source.oscillator.frequency" });
     graph.addConnection ({ "osc", "out", "masterout", "in" });
     graph.setOutput ("masterout", "out");
 

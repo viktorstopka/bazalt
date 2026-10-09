@@ -5,7 +5,7 @@
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/catch_approx.hpp>
 #include "bazalt/engine/nodes/DataScaleNode.h"
-#include "bazalt/engine/nodes/DataTableNode.h"
+#include "bazalt/engine/graph/CurveData.h"
 #include "bazalt/engine/nodes/DataLookupNode.h"
 #include "bazalt/engine/graph/GraphCompiler.h"
 #include "bazalt/engine/graph/ProofGraphs.h"
@@ -122,35 +122,6 @@ TEST_CASE ("DataScaleNode's read side (getCurrentForAudioThread) is allocation-f
     CHECK (buffer->tag() == DataTag::Scale);
 }
 
-// ---- data.table ----
-
-TEST_CASE ("DataTableNode defaults to 8 zero-valued points", "[engine][nodes][DataTableNode][DataFoundations]")
-{
-    DataTableNode node;
-    node.prepare ({ 44100.0, 512 });
-    CHECK (currentValues (*node.getDataPublisher()) == std::vector<float> (8, 0.0f));
-}
-
-TEST_CASE ("DataTableNode publishes edited points, truncated to the current resolution",
-           "[engine][nodes][DataTableNode][DataFoundations]")
-{
-    DataTableNode node;
-    node.prepare ({ 44100.0, 512 });
-    node.setParameter ("data.table.point.0", 0.25f);
-    node.setParameter ("data.table.point.1", -0.5f);
-    node.setParameter ("data.table.point.4", 1.0f); // beyond resolution=4, below - won't show once truncated
-    node.setParameter ("data.table.resolution", 4.0f);
-
-    CHECK (currentValues (*node.getDataPublisher()) == std::vector<float> { 0.25f, -0.5f, 0.0f, 0.0f });
-}
-
-TEST_CASE ("DataTableNode's data tag is Curve", "[engine][nodes][DataTableNode][DataFoundations]")
-{
-    DataTableNode node;
-    node.prepare ({ 44100.0, 512 });
-    CHECK (node.getDataPublisher()->getCurrentForAudioThread()->tag() == DataTag::Curve);
-}
-
 // ---- data.lookup ----
 
 TEST_CASE ("DataLookupNode nearest/interpolate modes read a bipolar -1..1 position across the buffer",
@@ -263,20 +234,21 @@ TEST_CASE ("A real compiled graph wires data.scale's publisher into data.lookup 
     CHECK (output == Catch::Approx (4.0f)); // major scale's own degree index 2 is semitone 4
 }
 
-TEST_CASE ("A real compiled graph wires data.table's publisher into data.lookup via GraphCompiler",
+TEST_CASE ("A real compiled graph wires data.curve's publisher into data.lookup via GraphCompiler",
            "[engine][GraphCompiler][DataFoundations]")
 {
     auto factory = buildDefaultNodeFactory();
 
     NodeGraph graph;
-    graph.addNode ({ "table", "data.table", {}, { { "data.table.point.0", -1.0f }, { "data.table.point.1", 1.0f },
-                                                    { "data.table.resolution", 2.0f } },
-                      {} });
+    CurveDocument ramp; // what a two-point data.table was (schema v16 migrates it the same way)
+    ramp.timeBase = CurveDocument::TimeBase::Time;
+    ramp.points = { { 0.0f, -1.0f }, { 1.0f, 1.0f } };
+    graph.addNode (withContent ({ "table", "data.curve", {}, {}, {} }, ramp));
     // position is bipolar (-1..1 -> 0..1, wiki/plans/PropsAndMacroRedesign.md
     // Batch D) - 0.0 is the midpoint now, not 0.5.
     graph.addNode ({ "position", "util.constant", {}, { { "util.constant.value", 0.0f } }, {} }); // midpoint
     graph.addNode ({ "lookup", "data.lookup", {}, {}, {} }); // interpolate mode (default)
-    graph.addConnection ({ "table", "data", "lookup", "data" });
+    graph.addConnection ({ "table", "curve", "lookup", "data" });
     graph.addConnection ({ "position", "out", "lookup", "in" });
     graph.setOutput ("lookup", "out");
 

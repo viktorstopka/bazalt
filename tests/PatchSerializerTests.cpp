@@ -288,7 +288,7 @@ TEST_CASE ("v8 -> v9 migration drops view.scope and splices view.glance out of i
     REQUIRE (result.success);
     REQUIRE (result.document.nodes.size() == 2);
     for (const auto& node : result.document.nodes)
-        CHECK ((node.type == "osc.sine" || node.type == "math.multiply")); // mix.gain became math.multiply in v13
+        CHECK ((node.type == "source.oscillator" || node.type == "math.multiply")); // later migrations: v13 mix.gain, v16 osc.sine
 
     REQUIRE (result.document.connections.size() == 1);
     const auto& c = result.document.connections[0];

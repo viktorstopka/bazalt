@@ -3,7 +3,7 @@
 #include "NodeDescriptorJson.h"
 #include "bazalt/engine/graph/ProofGraphs.h"
 #include "bazalt/engine/nodes/ConstantNode.h"
-#include "bazalt/engine/nodes/OscillatorNode.h"
+#include "bazalt/engine/nodes/CurvePlayerNode.h"
 #include "bazalt/engine/nodes/RerouteNode.h"
 #include "bazalt/engine/nodes/InstanceMixNode.h"
 #include "bazalt/engine/nodes/ViewCycleNode.h"
@@ -166,26 +166,25 @@ TEST_CASE ("nodeDescriptorToVar serializes InstanceMixNode's port metadata intac
     REQUIRE (! inputs->isEmpty());
 }
 
-TEST_CASE ("nodeDescriptorToVar serializes osc.analog.shape's M14 enum metadata end to end",
+TEST_CASE ("nodeDescriptorToVar serializes source.oscillator.division's M14 enum metadata end to end",
            "[plugin][NodeDescriptorJson][M14]")
 {
-    const auto descriptor = describeNode ("osc.analog", nodes::OscillatorNode {});
+    const auto descriptor = describeNode ("source.oscillator", nodes::CurveOscillatorNode {});
     const auto var = nodeDescriptorToVar (descriptor);
 
     const auto* parameters = var["parameters"].getArray();
     REQUIRE (parameters != nullptr);
     const auto it = std::find_if (parameters->begin(), parameters->end(), [] (const juce::var& p)
-                                   { return p["id"].toString() == "osc.analog.shape"; });
+                                   { return p["id"].toString() == "source.oscillator.division"; });
     REQUIRE (it != parameters->end());
 
     CHECK ((*it)["kind"].toString() == "enum");
-    CHECK ((bool) (*it)["isStructural"]);
     const auto* options = (*it)["enumOptions"].getArray();
     REQUIRE (options != nullptr);
-    REQUIRE (options->size() == 4);
-    CHECK ((*options)[0]["id"].toString() == "sine");
-    CHECK ((*options)[0]["label"].toString() == "Sine");
-    CHECK ((*options)[3]["id"].toString() == "triangle");
+    REQUIRE (options->size() == 9);
+    CHECK ((*options)[0]["id"].toString() == "8bars");
+    CHECK ((*options)[0]["label"].toString() == "8 bars");
+    CHECK ((*options)[8]["id"].toString() == "1/32");
 }
 
 TEST_CASE ("nodeDescriptorToVar serializes an empty previews[] for a node that declares none",
@@ -253,8 +252,8 @@ TEST_CASE ("nodeDescriptorToVar flags a polymorphic-port node, and only that one
 
     CHECK (flagFor ("deco.reroute").isBool());
     CHECK ((bool) flagFor ("deco.reroute"));
-    CHECK (flagFor ("osc.analog").isBool());
-    CHECK_FALSE ((bool) flagFor ("osc.analog"));
+    CHECK (flagFor ("source.oscillator").isBool());
+    CHECK_FALSE ((bool) flagFor ("source.oscillator"));
 }
 
 TEST_CASE ("nodeDescriptorToVar reports each port's polymorphism, so the UI adopts a type only where the engine does",
@@ -288,5 +287,5 @@ TEST_CASE ("nodeDescriptorToVar reports each port's polymorphism, so the UI adop
     CHECK (polymorphismOf ("time.sampleHold", "inputs", "in") == "quantity");
     CHECK (polymorphismOf ("time.sampleHold", "inputs", "trigger") == "none");
 
-    CHECK (polymorphismOf ("osc.analog", "outputs", "out") == "none");
+    CHECK (polymorphismOf ("source.oscillator", "outputs", "out") == "none");
 }

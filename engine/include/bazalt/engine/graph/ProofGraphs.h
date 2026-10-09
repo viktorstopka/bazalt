@@ -2,9 +2,7 @@
 
 #include "bazalt/engine/graph/NodeGraph.h"
 #include "bazalt/engine/graph/NodeFactory.h"
-#include "bazalt/engine/nodes/OscillatorNode.h"
 #include "bazalt/engine/nodes/SvfFilterNode.h"
-#include "bazalt/engine/nodes/AdsrNode.h"
 #include "bazalt/engine/nodes/NoiseBurstNode.h"
 #include "bazalt/engine/nodes/DelayNode.h"
 #include "bazalt/engine/nodes/OnePoleFilterNode.h"
@@ -50,7 +48,6 @@
 #include "bazalt/engine/nodes/IoAudioInNode.h"
 #include "bazalt/engine/nodes/IoControlNode.h"
 #include "bazalt/engine/nodes/IoTransportNode.h"
-#include "bazalt/engine/nodes/SineOscillatorNode.h"
 #include "bazalt/engine/nodes/DcBlockNode.h"
 #include "bazalt/engine/nodes/PeakFilterNode.h"
 #include "bazalt/engine/nodes/ShelfFilterNode.h"
@@ -65,7 +62,6 @@
 #include "bazalt/engine/nodes/NoiseColoredNode.h"
 #include "bazalt/engine/nodes/NoiseDustNode.h"
 #include "bazalt/engine/nodes/ShapeNodes.h"
-#include "bazalt/engine/nodes/LfoNode.h"
 #include "bazalt/engine/nodes/AnalysisLevelNode.h"
 #include "bazalt/engine/nodes/DynamicsNodes.h"
 #include "bazalt/engine/nodes/FreqShiftNode.h"
@@ -79,7 +75,6 @@
 #include "bazalt/engine/nodes/SeqStepsNode.h"
 #include "bazalt/engine/nodes/SeqEuclidNode.h"
 #include "bazalt/engine/nodes/DataScaleNode.h"
-#include "bazalt/engine/nodes/DataTableNode.h"
 #include "bazalt/engine/nodes/DataCurveNode.h"
 #include "bazalt/engine/nodes/CurvePlayerNode.h"
 #include "bazalt/engine/nodes/DataLookupNode.h"
@@ -111,9 +106,7 @@ namespace bazalt::engine
     inline NodeFactory buildDefaultNodeFactory()
     {
         NodeFactory factory;
-        factory.registerType ("osc.analog", [] { return std::make_unique<nodes::OscillatorNode>(); });
         factory.registerType ("filter.svf", [] { return std::make_unique<nodes::SvfFilterNode>(); });
-        factory.registerType ("env.adsr", [] { return std::make_unique<nodes::AdsrNode>(); });
         factory.registerType ("excite.burst", [] { return std::make_unique<nodes::NoiseBurstNode>(); });
         factory.registerType ("time.delay", [] { return std::make_unique<nodes::DelayNode>(); });
         factory.registerType ("filter.onepole", [] { return std::make_unique<nodes::OnePoleFilterNode>(); });
@@ -176,10 +169,6 @@ namespace bazalt::engine
         factory.registerType ("io.control", [] { return std::make_unique<nodes::IoControlNode>(); });
         factory.registerType ("io.transport", [] { return std::make_unique<nodes::IoTransportNode>(); });
         // M22 (Basic synthesis), wave 1 — cheap wins needing no new DSP primitive.
-        factory.registerType ("osc.sine", [] { return std::make_unique<nodes::SineOscillatorNode>(); });
-        factory.registerType ("osc.saw", [] { return std::make_unique<nodes::SawOscillatorNode>(); });
-        factory.registerType ("osc.square", [] { return std::make_unique<nodes::SquareOscillatorNode>(); });
-        factory.registerType ("osc.triangle", [] { return std::make_unique<nodes::TriangleOscillatorNode>(); });
         factory.registerType ("filter.dcBlock", [] { return std::make_unique<nodes::DcBlockNode>(); });
         // M22 wave 2 — the Biquad family.
         factory.registerType ("filter.peak", [] { return std::make_unique<nodes::PeakFilterNode>(); });
@@ -206,7 +195,6 @@ namespace bazalt::engine
         factory.registerType ("shape.crush", [] { return std::make_unique<nodes::ShapeCrushNode>(); });
         factory.registerType ("shape.waveshaper", [] { return std::make_unique<nodes::ShapeWaveshaperNode>(); });
         factory.registerType ("shape.fold", [] { return std::make_unique<nodes::ShapeFoldNode>(); });
-        factory.registerType ("lfo.shape", [] { return std::make_unique<nodes::LfoNode>(); });
         factory.registerType ("analysis.level", [] { return std::make_unique<nodes::AnalysisLevelNode>(); });
         factory.registerType ("dynamics.compress", [] { return std::make_unique<nodes::DynCompressNode>(); });
         factory.registerType ("dynamics.gate", [] { return std::make_unique<nodes::DynGateNode>(); });
@@ -227,7 +215,6 @@ namespace bazalt::engine
         factory.registerType ("time.euclid", [] { return std::make_unique<nodes::SeqEuclidNode>(); });
         // Data Foundations batch — the first real Data-producing/consuming nodes.
         factory.registerType ("data.scale", [] { return std::make_unique<nodes::DataScaleNode>(); });
-        factory.registerType ("data.table", [] { return std::make_unique<nodes::DataTableNode>(); });
         factory.registerType ("source.oscillator", [] { return std::make_unique<nodes::CurveOscillatorNode>(); }); // one curve player, two entries (DataAndWavetable.md D5/D6)
         factory.registerType ("source.envelope", [] { return std::make_unique<nodes::CurveEnvelopeNode>(); });
         factory.registerType ("data.curve", [] { return std::make_unique<nodes::DataCurveNode>(); }); // the curve factory (wiki/plans/DataAndWavetable.md 1b)
@@ -312,6 +299,14 @@ namespace bazalt::engine
         wins) — so injecting the "base" amount has to happen INSIDE the
         modulation chain, not on the destination node itself.
     */
+    /** A node carrying a curve as its content (a source.oscillator, a
+        source.envelope, a data.curve). */
+    inline NodeInstance withContent (NodeInstance node, const CurveDocument& curve)
+    {
+        node.content = curve.toVar();
+        return node;
+    }
+
     inline NodeGraph buildInitPatchGraph()
     {
         NodeGraph graph;
@@ -319,15 +314,16 @@ namespace bazalt::engine
         graph.addNode ({ "noteIn", "io.noteIn", { 40.0f, 260.0f }, {}, {} });
         graph.addNode ({ "allocator", "life.voice", { 340.0f, 260.0f }, {}, {} });
 
-        graph.addNode ({ "osc1", "osc.analog", { 640.0f, 40.0f }, { { "osc.analog.shape", 1.0f } }, {} }); // saw
+        graph.addNode ({ "pitch1", "math.pitchToFrequency", { 640.0f, 40.0f }, {}, {} });
+        graph.addNode (withContent ({ "osc1", "source.oscillator", { 940.0f, 40.0f }, {}, {} }, CurveDocument::saw()));
         graph.addNode ({ "detuneConst", "util.constant", { 340.0f, 460.0f }, { { "util.constant.value", 0.07f } }, {} });
         graph.addNode ({ "detuneSum", "math.add", { 640.0f, 460.0f }, {}, {} });
-        graph.addNode ({ "osc2", "osc.analog", { 940.0f, 460.0f }, { { "osc.analog.shape", 1.0f } }, {} }); // saw, detuned
+        graph.addNode ({ "pitch2", "math.pitchToFrequency", { 790.0f, 460.0f }, {}, {} });
+        graph.addNode (withContent ({ "osc2", "source.oscillator", { 940.0f, 460.0f }, {}, {} }, CurveDocument::saw())); // detuned
         graph.addNode ({ "oscMix", "math.add", { 1240.0f, 250.0f }, {}, {} });
 
-        graph.addNode ({ "filterEnv", "env.adsr", { 640.0f, 640.0f },
-                          { { "env.adsr.attack", 0.005f }, { "env.adsr.decay", 0.3f },
-                            { "env.adsr.sustain", 0.3f }, { "env.adsr.release", 0.3f } }, {} });
+        graph.addNode (withContent ({ "filterEnv", "source.envelope", { 640.0f, 640.0f }, {}, {} },
+                                    CurveDocument::adsr (0.005f, 0.3f, 0.3f, 0.3f, 0.0f)));
         graph.addNode ({ "baseCutoff", "util.constant", { 940.0f, 720.0f }, { { "util.constant.value", 300.0f } }, {} });
         graph.addNode ({ "cutoffMap", "math.map", { 940.0f, 850.0f },
                           { { "math.map.min", 0.0f }, { "math.map.max", 5000.0f } }, {} });
@@ -336,9 +332,8 @@ namespace bazalt::engine
         graph.addNode ({ "ladder", "filter.ladder", { 1540.0f, 250.0f },
                           { { "filter.ladder.resonance", 0.25f }, { "filter.ladder.keyTrack", 0.3f } }, {} });
 
-        graph.addNode ({ "ampEnv", "env.adsr", { 1540.0f, 640.0f },
-                          { { "env.adsr.attack", 0.005f }, { "env.adsr.decay", 0.15f },
-                            { "env.adsr.sustain", 0.8f }, { "env.adsr.release", 0.3f } }, {} });
+        graph.addNode (withContent ({ "ampEnv", "source.envelope", { 1540.0f, 640.0f }, {}, {} },
+                                    CurveDocument::adsr (0.005f, 0.15f, 0.8f, 0.3f, 0.0f)));
         graph.addNode ({ "ampVCA", "math.multiply", { 1840.0f, 250.0f }, {}, {} });
 
         graph.addNode ({ "voiceMix", "life.merge", { 2140.0f, 250.0f }, {}, {} });
@@ -353,10 +348,12 @@ namespace bazalt::engine
 
         graph.addConnection ({ "noteIn", "notes", "allocator", "spawn" });
 
-        graph.addConnection ({ "allocator", "pitch", "osc1", "pitch" });
+        graph.addConnection ({ "allocator", "pitch", "pitch1", "pitch" });
+        graph.addConnection ({ "pitch1", "frequency", "osc1", "source.oscillator.frequency" });
         graph.addConnection ({ "allocator", "pitch", "detuneSum", "in.0" });
         graph.addConnection ({ "detuneConst", "out", "detuneSum", "in.1" });
-        graph.addConnection ({ "detuneSum", "out", "osc2", "pitch" });
+        graph.addConnection ({ "detuneSum", "out", "pitch2", "pitch" });
+        graph.addConnection ({ "pitch2", "frequency", "osc2", "source.oscillator.frequency" });
         graph.addConnection ({ "osc1", "out", "oscMix", "in.0" });
         graph.addConnection ({ "osc2", "out", "oscMix", "in.1" });
         graph.addConnection ({ "oscMix", "out", "ladder", "in" });
@@ -430,13 +427,16 @@ namespace bazalt::engine
         // beside them; osc -> svf -> amp; env -> amp.
         graph.addNode ({ "noteIn", "io.noteIn", { 40.0f, 40.0f }, {}, {} });
         graph.addNode ({ "allocator", "life.voice", { 340.0f, 40.0f }, {}, {} });
-        graph.addNode ({ "env", "env.adsr", { 640.0f, 40.0f }, {}, {} });
-        graph.addNode ({ "osc", "osc.analog", { 340.0f, 420.0f }, {}, {} });
+        // juce::ADSR's own defaults — what env.adsr played here before 1b.
+        graph.addNode (withContent ({ "env", "source.envelope", { 640.0f, 40.0f }, {}, {} }, CurveDocument::adsr (0.1f, 0.1f, 1.0f, 0.1f, 0.0f)));
+        graph.addNode ({ "pitchToFreq", "math.pitchToFrequency", { 190.0f, 420.0f }, {}, {} });
+        graph.addNode (withContent ({ "osc", "source.oscillator", { 340.0f, 420.0f }, {}, {} }, CurveDocument::saw()));
         graph.addNode ({ "svf", "filter.svf", { 640.0f, 420.0f }, { { "filter.svf.cutoff", 3000.0f }, { "filter.svf.resonance", 0.9f } }, {} });
         graph.addNode ({ "amp", "math.multiply", { 940.0f, 230.0f }, {}, {} });
 
         graph.addConnection ({ "noteIn", "notes", "allocator", "spawn" });
-        graph.addConnection ({ "allocator", "pitch", "osc", "pitch" });
+        graph.addConnection ({ "allocator", "pitch", "pitchToFreq", "pitch" });
+        graph.addConnection ({ "pitchToFreq", "frequency", "osc", "source.oscillator.frequency" });
         graph.addConnection ({ "allocator", "gate", "env", "gate" });
         graph.addConnection ({ "osc", "out", "svf", "in" });
         graph.addConnection ({ "svf", "out", "amp", "in.0" });

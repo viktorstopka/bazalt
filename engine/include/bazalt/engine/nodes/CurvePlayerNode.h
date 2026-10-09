@@ -1,10 +1,13 @@
 #pragma once
 
 #include "bazalt/engine/graph/CurveData.h"
+#include "bazalt/engine/graph/HostInputs.h"
+#include "bazalt/engine/telemetry/PhaseSnapshot.h"
 #include "bazalt/engine/graph/ValueTypes.h"
 #include "bazalt/engine/nodes/DataCurveNode.h"
 #include <atomic>
 #include <cmath>
+#include <vector>
 
 namespace bazalt::engine::nodes
 {
@@ -24,7 +27,11 @@ namespace bazalt::engine::nodes
         and the curve exactly as drawn below ~20 Hz, so the same node is a
         clean LFO and an alias-free oscillator. Trigger restarts the cycle
         (hard sync); with Loop off it plays one cycle per trigger and holds.
-        Phase offsets the read, never the running phase.
+        Phase offsets the read, never the running phase. **Sync** ties the
+        cycle to the host tempo instead of Frequency (Division: 8 bars …
+        1/32), and while the host plays the phase IS the host position — it
+        lands on the same point of the cycle at the same bar every time (what
+        lfo.shape did).
 
         **Envelope** (Time base, x in seconds): a rising Gate starts the curve
         from wherever the output is (no click on a retrigger); it holds at the
@@ -32,6 +39,11 @@ namespace bazalt::engine::nodes
         S to the end, starting from the current level. No S marker: the whole
         curve plays on each rising gate (a one-shot). A loop range repeats
         while the gate is held. Time Scale stretches the whole curve.
+
+        The Oscillator is a phase source (Node::isPhaseSource), so view.cycle
+        and every phase-locked preview downstream fold their real samples by
+        its phase. Its snapshot carries no render function — a drawn curve
+        does not fit one — so its previews fold rather than render.
 
         Sample-rate handling (CLAUDE.md rule 6): increments derive from the
         sample rate set in prepare(); nothing depends on the block size.
@@ -52,6 +64,8 @@ namespace bazalt::engine::nodes
               phaseId (prefix + ".phase"),
               loopId (prefix + ".loop"),
               timeScaleId (prefix + ".timeScale"),
+              syncId (prefix + ".sync"),
+              divisionId (prefix + ".division"),
               ownCurve (modeToUse == Mode::Oscillator ? CurveDocument::TimeBase::Cycle : CurveDocument::TimeBase::Time)
         {
         }
@@ -60,15 +74,18 @@ namespace bazalt::engine::nodes
         {
             sampleRate = info.sampleRate;
             declickCoeff = (float) std::exp (-1.0 / (declickSeconds * sampleRate));
+            phaseTrack.assign ((size_t) std::max (1, info.maxBlockSize), 0.0f);
             ownCurve.ensurePublished();
         }
 
         void reset() override
         {
             phase = 0.0;
+            cycleCount = 0;
             oneShotDone = false;
             stage = Stage::Idle;
             finished = false;
+            previousGate = false; // a reset voice must see its next gate as a rising edge
             time = 0.0;
             output = 0.0f;
             offset = 0.0f;
@@ -76,6 +93,41 @@ namespace bazalt::engine::nodes
         }
 
         int getNumInputPorts() const noexcept override { return mode == Mode::Oscillator ? 6 : 4; }
+
+        bool wantsHostInputs() const noexcept override { return mode == Mode::Oscillator; }
+
+        // ---- Phase source (fold-only: PhaseSnapshot::render stays null) -----
+        bool isPhaseSource() const noexcept override { return mode == Mode::Oscillator; }
+        const float* getPhaseTrack() const noexcept override { return phaseTrack.data(); }
+        void capturePhaseSnapshot (PhaseSnapshot& snapshot) const noexcept override
+        {
+            snapshot.render = nullptr;
+            snapshot.frequencyHz = lastFrequency;
+            snapshot.sampleRate = sampleRate;
+            snapshot.playhead = (float) ((double) cycleCount + phase);
+        }
+        void setHostInputs (const HostInputs& inputs) noexcept override
+        {
+            tempoBpm = inputs.tempoBpm > 0.0 ? inputs.tempoBpm : 120.0;
+            hostPlaying = inputs.transportPlaying;
+            hostPpq = inputs.ppqPosition;
+            hostPositionFresh = true;
+        }
+
+        std::vector<ParameterDescriptor> getParameters() const override
+        {
+            if (mode != Mode::Oscillator)
+                return {};
+            return {
+                ParameterDescriptor { .id = syncId, .minValue = 0.0f, .maxValue = 1.0f, .defaultValue = 0.0f,
+                                      .displayName = "Sync", .isInteger = true, .kind = ValueKind::Bool },
+                ParameterDescriptor { .id = divisionId, .minValue = 0.0f, .maxValue = 8.0f, .defaultValue = 4.0f,
+                                      .displayName = "Division", .isInteger = true, .kind = ValueKind::Enum,
+                                      .enumOptions = { { "8bars", "8 bars" }, { "4bars", "4 bars" }, { "2bars", "2 bars" },
+                                                       { "1bar", "1 bar" }, { "1/2", "1/2" }, { "1/4", "1/4" },
+                                                       { "1/8", "1/8" }, { "1/16", "1/16" }, { "1/32", "1/32" } } },
+            };
+        }
         int getNumOutputPorts() const noexcept override { return 1; }
 
         juce::String getTitle() const override { return mode == Mode::Oscillator ? "Oscillator" : "Envelope"; }
@@ -140,6 +192,13 @@ namespace bazalt::engine::nodes
                 storedLoop = value;
             else if (parameterId == timeScaleId)
                 storedTimeScale = value;
+            else if (parameterId == syncId)
+                synced = value > 0.5f;
+            else if (parameterId == divisionId)
+            {
+                constexpr double beats[] = { 32.0, 16.0, 8.0, 4.0, 2.0, 1.0, 0.5, 0.25, 0.125 };
+                beatsPerCycle = beats[juce::jlimit (0, 8, (int) std::lround (value))];
+            }
         }
 
         bool setContent (const juce::var& content) override { return ownCurve.setContent (content); }
@@ -160,6 +219,7 @@ namespace bazalt::engine::nodes
                 lastBuffer = buffer;
             }
             view = CurveView (buffer);
+            trackIndex = 0;
             Node::processBlock (inputs, outputs, numSamples);
         }
 
@@ -189,7 +249,7 @@ namespace bazalt::engine::nodes
 
         float oscillatorSample (const float* inputs) noexcept
         {
-            const auto frequency = read (inputs, 1, storedFrequency);
+            const auto frequency = synced ? (float) (tempoBpm / 60.0 / beatsPerCycle) : read (inputs, 1, storedFrequency);
             const auto amplitude = read (inputs, 2, storedAmplitude);
             const auto phaseOffset = read (inputs, 3, storedPhase);
             const auto loop = read (inputs, 5, storedLoop) > 0.5f;
@@ -199,8 +259,18 @@ namespace bazalt::engine::nodes
                 phase = 0.0;
                 oneShotDone = false;
             }
+            else if (synced && hostPlaying && hostPositionFresh)
+            {
+                // Locked to the timeline: the cycle position IS the host position.
+                const auto cycles = hostPpq / beatsPerCycle;
+                phase = cycles - std::floor (cycles);
+            }
+            hostPositionFresh = false;
 
             const auto increment = sampleRate > 0.0 ? (double) frequency / sampleRate : 0.0;
+            lastFrequency = frequency;
+            if (trackIndex < phaseTrack.size())
+                phaseTrack[trackIndex++] = (float) ((double) cycleCount + phase);
             float value = 0.0f;
             if (view.isValid())
             {
@@ -216,6 +286,8 @@ namespace bazalt::engine::nodes
                 {
                     if (! loop && phase >= 1.0)
                         oneShotDone = true;
+                    const auto wraps = (long long) std::floor (phase);
+                    cycleCount = (int) ((((long long) cycleCount + wraps) % phaseLockedCycles + phaseLockedCycles) % phaseLockedCycles);
                     phase -= std::floor (phase);
                 }
             }
@@ -295,7 +367,7 @@ namespace bazalt::engine::nodes
         }
 
         Mode mode;
-        juce::String prefix, frequencyId, amplitudeId, phaseId, loopId, timeScaleId;
+        juce::String prefix, frequencyId, amplitudeId, phaseId, loopId, timeScaleId, syncId, divisionId;
         CurvePublisher ownCurve;
         std::atomic<DataPublisher*> shapeInput { nullptr };
         CurveView view { nullptr };
@@ -308,7 +380,13 @@ namespace bazalt::engine::nodes
 
         // Oscillator
         double phase = 0.0;
+        int cycleCount = 0; // completed cycles mod phaseLockedCycles — the preview's cycle index
+        std::vector<float> phaseTrack;
+        size_t trackIndex = 0;
+        float lastFrequency = defaultFrequencyHz;
         bool oneShotDone = false;
+        bool synced = false, hostPlaying = false, hostPositionFresh = false;
+        double tempoBpm = 120.0, hostPpq = 0.0, beatsPerCycle = 2.0; // Division 1/2, the default
 
         // Envelope
         Stage stage = Stage::Idle;

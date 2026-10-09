@@ -49,7 +49,7 @@ TEST_CASE ("MacroParameters::applyToPlans skips a null plan instead of dereferen
     MacroParameters macros;
     macros.addParametersTo (dummy);
     macros.prepare (44100.0);
-    macros.setMappings ({ { 0, "osc", "osc.analog.frequency", 100.0f, 2000.0f } });
+    macros.setMappings ({ { 0, "osc", "source.oscillator.frequency", 100.0f, 2000.0f } });
     macros.getParameter (0).setValueNotifyingHost (0.5f);
 
     auto graph = bazalt::engine::buildVoiceProofGraph();

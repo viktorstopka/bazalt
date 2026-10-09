@@ -35,9 +35,10 @@ function emptyPatchJson(): string {
 
 function sinePatchJson(): string {
   return JSON.stringify({
-    schemaVersion: 7,
+    schemaVersion: 16,
     nodes: [
-      { id: 'sine1', type: 'osc.sine', position: { x: 300, y: 360 }, parameters: {}, properties: {} },
+      // A source.oscillator with no content plays its default curve: a sine.
+      { id: 'sine1', type: 'source.oscillator', position: { x: 300, y: 360 }, parameters: {}, properties: {} },
       { id: 'masterOut', type: 'io.output', position: { x: 640, y: 360 }, parameters: {}, properties: {} },
     ],
     connections: [{ fromNodeId: 'sine1', fromPortId: 'out', toNodeId: 'masterOut', toPortId: 'in' }],

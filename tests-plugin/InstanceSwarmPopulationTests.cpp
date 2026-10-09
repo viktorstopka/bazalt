@@ -46,11 +46,14 @@ namespace
         if (! controller.setParameterValue (
                 "swarm", "life.swarmPopulation.populationSize", (float) populationSize).success)
             return false;
-        if (! controller.addNode ("osc.analog", "osc", 200.0f, 0.0f).success)
+        if (! controller.addNode ("source.oscillator", "osc", 200.0f, 0.0f).success)
+            return false;
+        // Quiet enough that four of them stay clear of the output limiter.
+        if (! controller.setParameterValue ("osc", "source.oscillator.amplitude", 0.15f).success)
             return false;
         if (! controller.addNode ("life.merge", "sum", 400.0f, 0.0f).success)
             return false;
-        if (! controller.connectWithAutoAdapt ("swarm", "random1", "osc", "pitch").success)
+        if (! controller.connectWithAutoAdapt ("swarm", "random1", "osc", "source.oscillator.frequency").success)
             return false;
         if (! controller.connect ("osc", "out", "sum", "in").success)
             return false;

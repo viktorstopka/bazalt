@@ -94,28 +94,23 @@ Exposes the host's transport — tempo, play state, song position, and a beat pu
 
 ## osc — oscillators
 
-#### `osc.analog` — Analog Oscillator ✅
-One switchable band-limited oscillator (sine/saw/square/triangle), voice-ready. **In:** `pitch` (semitones, wins when wired); `frequency` (Hz); `fine` (cents ±100); `pulseWidth` (Square); `phase` (through-zero phase modulation in cycles — offsets the read point, never the accumulator); `sync : Event` (restarts the cycle). **Out:** `out` — `Audio`. **Structural:** `shape`. **Behavior:** every shape from `bandLimited::evaluate` (PolyBLEP/PolyBLAMP), the same definition its phase-locked preview draws — a real phase source now (the preview was declared but never drew before). Completed 2026-10-04 (`wiki/plans/SoundPalette.md` Batch 2).
-
-#### `osc.sine`, `osc.saw`, `osc.square`, `osc.triangle` — Sine / Saw / Square / Triangle ✅ *(restructured / new 2026-10-04)*
-Four minimal per-shape oscillators sharing one class (`SineOscillatorNode.h`'s
-`BasicOscillatorNode`), one port set and one layout; they differ only in the
-waveform. **In:** `frequency` — value row, Hz, 0.01–20000 (sub-audio on
-purpose), default 440; `amplitude` — value row, 0–1, default 1.00; `phase` —
-Modulation (Bipolar) row, in cycles, default 0.00 — an ordinary modulatable
-port with its own inline value, offsetting the read point (through-zero,
-never detunes the accumulator); it replaced osc.sine's bare `phaseMod` input;
-`pulseWidth` — **Square only**, Unipolar, default 0.5 (clamped 0.01–0.99);
-`sync : Event` — resets phase. **Out:** `out` — `Audio`. **Band-limited:**
-Sine is exact; Saw and Square use PolyBLEP; Triangle uses PolyBLAMP (stateless,
-so a modulated Phase can't make it drift — unlike `osc.analog`'s leaky-
-integrated triangle).
-**Preview:** phase-locked (`PreviewKind::PhaseLocked`) — 4 cycles aligned to
-phase zero, the node's own band-limited function evaluated at its current,
-fully modulated parameters every frame, fixed ±1 scale with headroom (clip
-marked), playhead Auto (shown below 30 Hz) / On / Off. Shared by every phase
-source (`PhaseLockedPreview.tsx`), `osc.analog` included.
-**Native:** inner-loop primitives — FM stacks and modal excitation use many.
+#### `source.oscillator` — Oscillator ✅ *(stage 1, 1b — replaces osc.analog, osc.sine/saw/square/triangle and lfo.shape)*
+One node that plays a curve as a waveform (`wiki/plans/DataAndWavetable.md` D5). **In:**
+`shape` — `Data(curve)`: wired, it plays the cable's curve; unwired, the node's own
+curve (its content, edited in the Factory window — Sine, Triangle, Saw, Ramp, Square,
+Steps or anything drawn); `frequency` (Hz, 0.01–20000, default 440 — pitch arrives
+through `math.pitchToFrequency`); `amplitude`; `phase` (offset in cycles, never
+detunes); `trigger : Event` (restarts the cycle — hard sync); `loop` (off: one cycle
+per trigger, then holds). **Parameters:** `sync` + `division` (8 bars … 1/32): the
+cycle follows the host tempo and, while the host plays, IS the host position — what
+`lfo.shape` did. **Out:** `out` — audio. **Behavior:** band-limited from the curve's
+mipmap (one level per octave, FFT-built when the curve is published); below ~20 Hz
+the curve exactly as drawn, so the same node is a clean LFO and an alias-free
+oscillator. A shape change is smoothed over ~5 ms. A phase source: `view.cycle` and
+downstream previews fold real samples by its phase (no render function — a drawn
+curve does not fit one). **Gone with the old nodes:** fine tune (add semitones before
+the converter), pulse-width *modulation* (a fixed width is the square's duty), the
+LFO's random shapes (now `random.stepped`). Schema v16 migrates all of them.
 
 #### `osc.wavetable` — Wavetable Oscillator 📋
 Scans across a table of single-cycle waveform frames as it plays, using `position`
@@ -326,13 +321,17 @@ Moves every partial by the same number of Hz (harmonic → inharmonic, bell-like
 
 ## env — envelopes
 
-#### `env.adsr` — Envelope ✅
-The standard attack/decay/sustain/release envelope generator, driven by a gate or
-trigger — shapes amplitude, filter cutoff, or any other modulation target over the
-life of a note. **In:** `gate : bool`; `trigger : Event`; `delay`; `attack [audio]`; `hold`; `decay`; `sustain`; `release`; `velocity`. **Out:** `out` — `float·Unipolar·0–1 [audio]`; `finished` — `Event`. **Structural:** `attackCurve`/`decayCurve`/`releaseCurve` (enum: linear, exponential, logarithmic, s-curve), `mode` (enum: normal, loop, one-shot).
-
-#### `env.curve` — Curve Envelope 📋
-**In:** `curve` — `Data(curve)`, required; `trigger : Event`; `gate : bool`; `time`; `sustainPoint`. **Out:** `out` — `float·Unipolar [audio]`; `finished` — `Event`. **Behavior:** plays a drawn multi-segment shape.
+#### `source.envelope` — Envelope ✅ *(stage 1, 1b — replaces env.adsr)*
+The same curve player in Time mode (`DataAndWavetable.md` D6): the curve's x is
+seconds, its points carry markers (A, D, S, H, R …). **In:** `shape` (as above, own
+curve by default: an ADSR); `gate`; `amplitude`; `timeScale` (stretches the whole
+curve). **Out:** `out` — 0..1. **Behavior:** a rising gate starts the curve from
+wherever the output is (no click on a retrigger); it holds at the point marked S
+while the gate is high; on release it continues from S to the end, starting from the
+current level. No S marker: the whole curve plays on each rising gate (a one-shot). A
+loop range repeats while the gate is held. A straight ADSR curve is exactly the old
+`env.adsr` (`juce::ADSR`'s linear segments). Modulating a stage time is not possible
+yet (env.adsr's stage ports are gone; `timeScale` scales them all).
 
 #### `env.follower` — Envelope Follower ✅
 Tracks how loud a signal is, smoothed — rectifies and applies independent attack/
@@ -341,8 +340,8 @@ slow-moving loudness contour. **In:** `in` — `Audio`; `attack`; `release`. **O
 
 ## lfo
 
-#### `lfo.shape` — LFO ✅ *(v1 — the `Data(curve)` input joins with `factory.curve`)*
-A Control-rate modulation source. **In:** `rate` (Hz, when free); `phase` (offset, cycles); `reset : Event`. **Out:** `out` — `Control` (bipolar or unipolar). **Parameters:** `shape` (sine, triangle, saw, ramp, square, S&H, smooth random); `polarity` (structural); `sync`; `division` (8 bars … 1/32). **Behavior:** synced and with the host playing, the cycle position IS the host position (lands on the same point at the same bar every play); a phase source with the oscillators' phase-locked preview (random shapes show their recent values); seeded randomness.
+`lfo.shape` became `source.oscillator` (above) — an LFO is an oscillator at a low
+frequency, or synced to the host.
 
 ## random — controlled unpredictability
 
@@ -616,8 +615,13 @@ remaining five (`load`/`material`/`analyseModes`/`record`/`eqToCurve`) stay cata
 Reads a file from disk into a `Data` buffer, tagged by what it's interpreted as
 — the on-ramp for real samples, wavetables, and impulse responses. **Out:** `data` — `Data`, tagged by content. **Structural:** `file`, `interpretAs` (enum: sample, wavetable, impulse response), `frameSize`, `normalise`, `rootNote`. **M27.**
 
-#### `data.table` — Table / Curve ✅
-**Out:** `data` — `Data(curve)`. **Structural:** `resolution` (2–32, not the full generality the name might suggest — see below), `loop` (carried, not yet consumed by anything), plus a fixed bank `point.0`…`point.31`. **Behavior:** the shared curve source of envelopes, surface profiles, sequencer lanes, LFO shapes, waveshaper transfer functions, remapping curves — editing it updates every place it's used. **Deliberate interim shape:** "the curve itself" is a fixed 32-point parameter bank (same pattern `time.steps`' own step bank uses), not real `NodeContent` — that third category (`NODES.System.md` §3) doesn't exist as code yet; this node ships ahead of it rather than waiting, same reasoning `time.steps` already documents.
+#### `data.curve` — Curve ✅ *(stage 1, 1b — replaces data.table)*
+A curve drawn in the Factory window, shared by every node it is wired into (an
+oscillator's shape, an envelope, a Lookup). **Out:** `curve` — `Data(curve)`.
+**Content:** points with a per-segment shape (curve + tension, smooth, hold), markers,
+a Cycle or Time base, a loop range (`CurveData.h`). Pure content — no inputs. The
+published buffer carries the points (read exactly) and, in Cycle mode, the
+band-limited mipmap levels. `data.lookup` reads it by position or by point index.
 
 #### `data.scale` — Scale ✅
 **In:** `root`. **Out:** `data` — `Data(scale)`. **Structural:** `scale` (enum: major, the church modes, pentatonics, blues, whole tone, chromatic — **12 named scales**; "harmonic series" and "custom" are the two catalog items deliberately deferred, both real gaps not silent ones — see below), `octaveSize` (generalizes the 12-tone patterns to other divisions by proportional scaling, not just padding). **A real, documented RT-safety limit:** `root` is a genuine wireable port, but its *live* cable value is never read on the audio thread — rebuilding a `Data` buffer means a heap allocation, forbidden there (CLAUDE.md rule 2); only the value applied via `setParameter()` (the node's own inline slider) actually republishes. A real worker-thread content-rebuild pipeline (`NODES.System.md` §8's own still-open item) is what closes this properly — not built as a side effect of this one node.

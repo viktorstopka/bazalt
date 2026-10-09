@@ -359,7 +359,7 @@ TEST_CASE ("A graph snapshot round-trips through PatchDocument/PatchSerializer a
 
     REQUIRE (controller.getGraph().findNode ("extra") != nullptr);
     CHECK (controller.getGraph().findNode ("svf")->parameters.at ("filter.svf.cutoff") == 1234.0f);
-    CHECK (controller.getGraph().getNodes().size() == 7); // noteIn, allocator, osc, svf, env, amp, extra
+    CHECK (controller.getGraph().getNodes().size() == 8); // noteIn, allocator, pitchToFreq, osc, svf, env, amp, extra
 }
 
 TEST_CASE ("exportSnapshotToFile writes the live graph as pretty-printed, parseable JSON",
@@ -674,7 +674,7 @@ TEST_CASE ("getNodeDomains() classifies every node as voice/global/mono after a 
     // already-settled graph) wouldn't actually exercise the rollback path,
     // since nothing about node membership would differ regardless.
     REQUIRE (controller.setGraph (bazalt::engine::buildInitPatchGraph()).success);
-    REQUIRE (controller.addNode ("osc.analog", "orphanOsc", 0.0f, 0.0f).success);
+    REQUIRE (controller.addNode ("source.oscillator", "orphanOsc", 0.0f, 0.0f).success);
     REQUIRE (controller.getNodeDomains().count ("orphanOsc") == 1);
     CHECK (controller.getNodeDomains().at ("orphanOsc") == "global"); // unconnected, fed by nothing
 
@@ -790,7 +790,7 @@ TEST_CASE ("A Trigger-type util.macro connects directly into a real Event-typed 
     REQUIRE (controller.addNode ("util.macro", "boolMacro", 0.0f, 100.0f).success);
     REQUIRE (controller.setParameterValue ("boolMacro", "util.macro.slot", 11.0f).success);
     REQUIRE (controller.setParameterValue ("boolMacro", "util.macro.type", 1.0f).success);
-    REQUIRE (controller.addNode ("env.adsr", "env1", 200.0f, 100.0f).success);
+    REQUIRE (controller.addNode ("source.envelope", "env1", 200.0f, 100.0f).success);
 
     REQUIRE (controller.connectWithAutoAdapt ("boolMacro", "out", "env1", "gate").success);
 }
@@ -1067,7 +1067,7 @@ TEST_CASE ("Two instance.sum nodes reducing one origin each carry that origin's 
         bazalt::engine::NodeGraph graph;
         graph.addNode ({ "noteIn", "io.noteIn", {}, {}, {} });
         graph.addNode ({ "alloc", "life.voice", {}, {}, {} });
-        graph.addNode ({ "osc", "osc.analog", {}, {}, {} });
+        graph.addNode (bazalt::engine::withContent ({ "osc", "source.oscillator", {}, {}, {} }, bazalt::engine::CurveDocument::saw()));
         graph.addNode ({ "sumMain", "life.merge", {}, {}, {} });
         graph.addNode ({ "sumLayer", "life.merge", {}, {}, {} });
         graph.addNode ({ "gainMain", "math.multiply", {}, { { "in.1", mainGain } }, {} });
@@ -1076,7 +1076,9 @@ TEST_CASE ("Two instance.sum nodes reducing one origin each carry that origin's 
         graph.addNode ({ "masterOut", "io.output", {}, {}, {} });
 
         graph.addConnection ({ "noteIn", "notes", "alloc", "spawn" });
-        graph.addConnection ({ "alloc", "pitch", "osc", "pitch" });
+        graph.addNode ({ "oscToFreq", "math.pitchToFrequency", {}, {}, {} });
+        graph.addConnection ({ "alloc", "pitch", "oscToFreq", "pitch" });
+        graph.addConnection ({ "oscToFreq", "frequency", "osc", "source.oscillator.frequency" });
         graph.addConnection ({ "osc", "out", "sumMain", "in" });
         graph.addConnection ({ "osc", "out", "sumLayer", "in" });
         graph.addConnection ({ "sumMain", "out", "gainMain", "in.0" });
@@ -1131,7 +1133,7 @@ TEST_CASE ("A Listen overrides Master Out and is left out of the saved graph",
     processor.prepareToPlay (44100.0, 512);
     auto& controller = processor.getGraphEditController();
     REQUIRE (controller.setGraph (bazalt::engine::buildMasterOutOnlyGraph()).success);
-    REQUIRE (controller.addNode ("osc.sine", "sine", 0.0f, 0.0f).success);
+    REQUIRE (controller.addNode ("source.oscillator", "sine", 0.0f, 0.0f).success);
 
     auto renderRms = [&]
     {

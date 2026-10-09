@@ -23,7 +23,7 @@ TEST_CASE ("A live edit glides the running node to the dragged value, then frees
            "[plugin][LiveParameterEdits]")
 {
     NodeGraph graph;
-    graph.addNode ({ "osc", "osc.sine", {}, { { "osc.sine.frequency", 100.0f } }, {} });
+    graph.addNode ({ "osc", "source.oscillator", {}, { { "source.oscillator.frequency", 100.0f } }, {} });
     graph.setOutput ("osc", "out");
     auto factory = buildDefaultNodeFactory();
     auto compiled = GraphCompiler::compile (graph, factory, { 48000.0, 64 }, 1);
@@ -42,12 +42,12 @@ TEST_CASE ("A live edit glides the running node to the dragged value, then frees
     };
 
     // The first value of a drag applies at once...
-    REQUIRE (live.set ("osc", "osc.sine.frequency", 200.0f));
+    REQUIRE (live.set ("osc", "source.oscillator.frequency", 200.0f));
     block();
     CHECK (liveFrequency (compiled.plan) == Catch::Approx (200.0));
 
     // ...later ones glide: one block (1.3 ms) moves only part of the way.
-    live.set ("osc", "osc.sine.frequency", 400.0f);
+    live.set ("osc", "source.oscillator.frequency", 400.0f);
     block();
     const auto partway = liveFrequency (compiled.plan);
     CHECK (partway > 200.0);
@@ -58,8 +58,8 @@ TEST_CASE ("A live edit glides the running node to the dragged value, then frees
     CHECK (liveFrequency (compiled.plan) == Catch::Approx (400.0));
 
     // Still held: the slot stays. Released: it frees itself once arrived.
-    CHECK (live.isActive ("osc", "osc.sine.frequency"));
-    live.release ("osc", "osc.sine.frequency");
+    CHECK (live.isActive ("osc", "source.oscillator.frequency"));
+    live.release ("osc", "source.oscillator.frequency");
     block();
-    CHECK_FALSE (live.isActive ("osc", "osc.sine.frequency"));
+    CHECK_FALSE (live.isActive ("osc", "source.oscillator.frequency"));
 }

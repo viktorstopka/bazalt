@@ -10,7 +10,7 @@ TEST_CASE ("NodeFactory::describeAll() returns a descriptor for every registered
     auto factory = buildDefaultNodeFactory();
     const auto descriptors = factory.describeAll();
 
-    REQUIRE (descriptors.size() == 114); // + data.curve, source.oscillator, source.envelope (1b) // - mix.crossfade, logic.select, view.scope.control/modulation, view.gate + math.blend, logic.switch, view.scope // - mix.gain, math.clamp, env.follower (merged into Multiply/Clip/Level) // - To Mod/To Audio/From Bool/Normalise/Unipolar to Bipolar/Bipolar to Unipolar (wiki/plans/DataAndWavetable.md §2) // + deco.header/comment/box/image (wiki/plans/Decorations.md) // + view.tune (design/Visualization/Tune.png) // + 11 Sound Palette nodes (wiki/plans/SoundPalette.md) + space.diffuser, space.reverb (wiki/plans/Reverb.md). 93 as of util.bipolarToUnipolar (see git history for the full running tally before this) + view.ripple (design/Visualization/Ripple.png) + view.count (design/Visualization/Count.png) + view.scope.control (design/Visualization/Scope1.png) + view.scope.modulation (ScopeMod.png) + view.gate (Gate.png) - adapt.remap (became adapt.map, replacing the old Map — design/Map.png) + osc.saw, osc.square, osc.triangle - view.scope - view.glance + view.cycle - logic.boolean + logic.and/or/xor/eventGroup/edge/latch
+    REQUIRE (descriptors.size() == 106); // - osc.analog/sine/saw/square/triangle, lfo.shape, env.adsr, data.table (curve nodes, 1b) // + data.curve, source.oscillator, source.envelope (1b) // - mix.crossfade, logic.select, view.scope.control/modulation, view.gate + math.blend, logic.switch, view.scope // - mix.gain, math.clamp, env.follower (merged into Multiply/Clip/Level) // - To Mod/To Audio/From Bool/Normalise/Unipolar to Bipolar/Bipolar to Unipolar (wiki/plans/DataAndWavetable.md §2) // + deco.header/comment/box/image (wiki/plans/Decorations.md) // + view.tune (design/Visualization/Tune.png) // + 11 Sound Palette nodes (wiki/plans/SoundPalette.md) + space.diffuser, space.reverb (wiki/plans/Reverb.md). 93 as of util.bipolarToUnipolar (see git history for the full running tally before this) + view.ripple (design/Visualization/Ripple.png) + view.count (design/Visualization/Count.png) + view.scope.control (design/Visualization/Scope1.png) + view.scope.modulation (ScopeMod.png) + view.gate (Gate.png) - adapt.remap (became adapt.map, replacing the old Map — design/Map.png) + osc.saw, osc.square, osc.triangle - view.scope - view.glance + view.cycle - logic.boolean + logic.and/or/xor/eventGroup/edge/latch
 
     auto findByTypeId = [&] (const juce::String& typeId) -> const NodeDescriptor*
     {
@@ -20,19 +20,24 @@ TEST_CASE ("NodeFactory::describeAll() returns a descriptor for every registered
         return nullptr;
     };
 
-    const auto* osc = findByTypeId ("osc.analog");
+    const auto* osc = findByTypeId ("source.oscillator");
     REQUIRE (osc != nullptr);
     CHECK (osc->title == "Oscillator");
     CHECK (osc->category == "Sources");
     CHECK (osc->layoutVariant == NodeLayoutVariant::Standard);
-    REQUIRE (osc->inputs.size() == 6); // "pitch" (M18, ADR-0024), "osc.analog.frequency" (M20), fine, pulseWidth, phase, sync (SoundPalette.md Batch 2)
-    CHECK (osc->inputs[0].id == "pitch");
-    CHECK (osc->inputs[0].type == SignalType::Signal);
-    CHECK (osc->inputs[1].id == "osc.analog.frequency");
+    REQUIRE (osc->inputs.size() == 6); // shape, frequency, amplitude, phase, trigger, loop (DataAndWavetable.md D5)
+    CHECK (osc->inputs[0].id == "shape");
+    CHECK (osc->inputs[0].type == SignalType::Data);
+    CHECK (osc->inputs[1].id == "source.oscillator.frequency");
     REQUIRE (osc->outputs.size() == 1);
     CHECK (osc->outputs[0].id == "out");
     CHECK (osc->outputs[0].quantity == Quantity::Audio);
-    REQUIRE (osc->parameters.size() == 1); // "shape" only — "frequency" is a port now (M20)
+    REQUIRE (osc->parameters.size() == 2); // tempo sync and its division
+
+    const auto* envelope = findByTypeId ("source.envelope");
+    REQUIRE (envelope != nullptr);
+    CHECK (envelope->title == "Envelope");
+    CHECK (envelope->inputs[1].id == "gate");
 
     const auto* svf = findByTypeId ("filter.svf");
     REQUIRE (svf != nullptr);

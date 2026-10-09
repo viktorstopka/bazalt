@@ -50,7 +50,6 @@ add_executable(EngineTests
     RtAllocationTrapTests.cpp
     SampleRateCoverageTests.cpp
     ShapeClipNodeTests.cpp
-    SineOscillatorNodeTests.cpp
     SmoothedParameterTests.cpp
     SpaceNodesTests.cpp
     SvfFilterTests.cpp
