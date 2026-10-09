@@ -241,3 +241,32 @@ TEST_CASE ("A reset envelope hears its next gate as a new note", "[engine][curve
     CHECK (after[600] > 0.9f); // it started again: past the 10 ms attack
     CHECK (after.back() == Catch::Approx (0.8f).margin (1.0e-3));
 }
+
+TEST_CASE ("A one-shot holds where its cycle ended, not where it started", "[engine][curvePlayer]")
+{
+    // A saw rising from -1 to 1, played once (Loop off) as an envelope-like
+    // movement: after the cycle it must stay at the top.
+    for (const auto frequency : { 2.0f, 200.0f }) // drawn as is, and band-limited
+    {
+        CurveOscillatorNode oscillator;
+        oscillator.prepare ({ sampleRate, 64 });
+        REQUIRE (oscillator.setContent (CurveDocument::saw().toVar()));
+        auto inputs = oscillatorInputs (frequency);
+        inputs[5] = 0.0f; // Loop off
+        const auto cycle = (int) (sampleRate / frequency);
+        const auto out = render (oscillator, inputs, cycle * 3);
+        INFO (frequency);
+        CHECK (out[(size_t) (cycle / 2)] == Catch::Approx (0.0f).margin (0.05f));
+        CHECK (out.back() == Catch::Approx (1.0f).margin (0.02f));
+    }
+}
+
+TEST_CASE ("A one-shot wavetable holds the end of its cycle too", "[engine][curvePlayer][wavetable]")
+{
+    WavetableDocument doc;
+    doc.keyframes = { WavetableKeyframe::ofCurve (0.0f, CurveDocument::saw()) };
+    const auto buffer = buildWavetableBuffer (doc);
+    const WavetableView view (buffer.get());
+    CHECK (view.readHeld (1.0 - 1.0e-6, 0.0f) == Catch::Approx (1.0f).margin (0.01f));
+    CHECK (view.read (0, 1.0 - 1.0e-6, 0.0f) < 0.0f); // the periodic read blends back into the start
+}

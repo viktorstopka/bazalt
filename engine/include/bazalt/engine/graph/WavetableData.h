@@ -253,6 +253,19 @@ namespace bazalt::engine
             return mix <= 0.0f ? a : a + (sample (upper) - a) * mix;
         }
 
+        /** The table as drawn (level 0) at `phase`, without interpolating
+            across the cycle's wrap — what a finished one-shot holds. */
+        float readHeld (double phase, float frame) const noexcept
+        {
+            int lower = 0, upper = 0;
+            float mix = 0.0f;
+            locate (frame, lower, upper, mix);
+            phase -= std::floor (phase);
+            const auto index = juce::jmin (CurveView::tableSize - 1, (int) (phase * (double) CurveView::tableSize));
+            const auto a = table (lower, 0)[index];
+            return mix <= 0.0f ? a : a + (table (upper, 0)[index] - a) * mix;
+        }
+
     private:
         const float* data = nullptr;
         int numFrames = 0;

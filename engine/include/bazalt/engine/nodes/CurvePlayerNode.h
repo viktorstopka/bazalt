@@ -280,17 +280,26 @@ namespace bazalt::engine::nodes
             if (trackIndex < phaseTrack.size())
                 phaseTrack[trackIndex++] = (float) ((double) cycleCount + phase);
             float value = 0.0f;
+            // A finished one-shot holds where the cycle ended: just before the
+            // wrap, read as drawn. A band-limited table is periodic, so reading
+            // it at the very end would blend back into the start.
+            const auto heldPosition = 1.0 - 1.0e-6 + (double) phaseOffset;
             if (wavetable.isValid())
             {
-                const auto position = oneShotDone ? 1.0 - 1.0e-9 : phase + (double) phaseOffset;
                 const auto frame = framesFrom != nullptr ? framesFrom->readCompanion (sampleIndex, 0.0f) : 0.0f;
-                value = wavetable.read (CurveView::levelFor (increment), position, frame);
+                value = oneShotDone ? wavetable.readHeld (heldPosition, frame)
+                                    : wavetable.read (CurveView::levelFor (increment), phase + (double) phaseOffset, frame);
             }
             else if (view.isValid())
             {
-                const auto position = oneShotDone ? 1.0 - 1.0e-9 : phase + (double) phaseOffset;
-                value = view.hasBandLimitedTables() ? view.read (CurveView::levelFor (increment), position)
-                                                    : view.evaluate ((float) (position - std::floor (position)));
+                if (oneShotDone)
+                    value = view.evaluate ((float) (heldPosition - std::floor (heldPosition)));
+                else
+                {
+                    const auto position = phase + (double) phaseOffset;
+                    value = view.hasBandLimitedTables() ? view.read (CurveView::levelFor (increment), position)
+                                                        : view.evaluate ((float) (position - std::floor (position)));
+                }
             }
 
             if (! oneShotDone)
