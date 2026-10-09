@@ -349,6 +349,9 @@ A **Wavetable** is a row of shapes (**keyframes**) that blend into each other.
 
 **Goal:** play your synth from a MIDI keyboard.
 
+> **UNDER CONSTRUCTION.** Playing from MIDI works, but not perfectly yet. Notes may
+> not always end as cleanly as they should. This level will get smoother.
+
 Make sure your keyboard is ticked under **Active MIDI inputs** (Level 0). Then build
 this chain:
 
@@ -366,6 +369,10 @@ this chain:
 Play a few notes at once.
 
 ![A playable synth](wiki/guide/images/07-midi.png)
+
+*In this screenshot the Sine and the Envelope meet in an **Add**. Use a
+**Multiply**, as in the table: adding the Envelope only shifts the sound, so the note
+never goes quiet.*
 <!-- SCREENSHOT: the whole MIDI chain, with the stacked voice cards and the ×N badge visible -->
 
 What's happening:
