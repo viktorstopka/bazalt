@@ -1,6 +1,7 @@
 #include <catch2/catch_test_macros.hpp>
 #include "PluginProcessor.h"
 #include "bazalt/engine/graph/ProofGraphs.h"
+#include "bazalt/engine/graph/CurveData.h"
 #include "bazalt/engine/patch/PatchSerializer.h"
 #include <algorithm>
 #include <atomic>
@@ -1163,4 +1164,28 @@ TEST_CASE ("A Listen overrides Master Out and is left out of the saved graph",
     // Removing the Listen goes straight back to Master Out (silent here).
     REQUIRE (controller.deleteNode ("listen").success);
     CHECK (renderRms() < 1.0e-6f);
+}
+
+// wiki/plans/DataAndWavetable.md 1b: a factory node's content, committed and live.
+TEST_CASE ("setContent stores a node's content and keeps the running node; setContentLive reaches it without an edit",
+           "[plugin][GraphEditController][content]")
+{
+    BazaltAudioProcessor processor;
+    processor.prepareToPlay (44100.0, 512);
+    auto& controller = processor.getGraphEditController();
+    REQUIRE (controller.setGraph (bazalt::engine::buildMasterOutOnlyGraph()).success);
+    REQUIRE (controller.addNode ("source.oscillator", "osc", 0.0f, 0.0f).success);
+
+    const auto* before = processor.getGlobalPlanSwapper().peekCurrentPlan()->getNodeById ("osc");
+    REQUIRE (before != nullptr);
+
+    const auto square = bazalt::engine::CurveDocument::square().toVar();
+    REQUIRE (controller.setContent ("osc", square).success);
+    CHECK (juce::JSON::toString (controller.getGraph().findNode ("osc")->content) == juce::JSON::toString (square));
+    CHECK (processor.getGlobalPlanSwapper().peekCurrentPlan()->getNodeById ("osc") == before); // kept, not rebuilt
+
+    const auto graphBefore = juce::JSON::toString (controller.getGraph().findNode ("osc")->content);
+    CHECK (controller.setContentLive ("osc", bazalt::engine::CurveDocument::saw().toVar()).success);
+    CHECK (juce::JSON::toString (controller.getGraph().findNode ("osc")->content) == graphBefore); // live is not an edit
+    CHECK_FALSE (controller.setContent ("nope", square).success);
 }

@@ -2,6 +2,7 @@
 
 #include "bazalt/engine/graph/CurveData.h"
 #include "bazalt/engine/graph/Node.h"
+#include <atomic>
 #include <cmath>
 
 namespace bazalt::engine::nodes
@@ -107,9 +108,9 @@ namespace bazalt::engine::nodes
         void setDataInput (const juce::String& inputPortId, DataPublisher* publisher) noexcept override
         {
             if (inputPortId == "data")
-                dataPublisherA = publisher;
+                dataPublisherA.store (publisher, std::memory_order_release);
             else if (inputPortId == "dataB")
-                dataPublisherB = publisher;
+                dataPublisherB.store (publisher, std::memory_order_release);
         }
 
         void processBlock (const float* const* inputs, float* const* outputs, int numSamples) noexcept override
@@ -118,8 +119,10 @@ namespace bazalt::engine::nodes
             // changes mid-block (only ever swapped between blocks by a
             // discrete edit), and getCurrentForAudioThread() is cheap but
             // there's still no reason to call it more than once here.
-            currentA = dataPublisherA != nullptr ? dataPublisherA->getCurrentForAudioThread() : nullptr;
-            currentB = dataPublisherB != nullptr ? dataPublisherB->getCurrentForAudioThread() : nullptr;
+            auto* publisherA = dataPublisherA.load (std::memory_order_acquire);
+            auto* publisherB = dataPublisherB.load (std::memory_order_acquire);
+            currentA = publisherA != nullptr ? publisherA->getCurrentForAudioThread() : nullptr;
+            currentB = publisherB != nullptr ? publisherB->getCurrentForAudioThread() : nullptr;
             Node::processBlock (inputs, outputs, numSamples);
         }
 
@@ -212,8 +215,9 @@ namespace bazalt::engine::nodes
             }
         }
 
-        DataPublisher* dataPublisherA = nullptr;
-        DataPublisher* dataPublisherB = nullptr;
+        // Atomic: a recompile may rewire a node the audio thread is running.
+        std::atomic<DataPublisher*> dataPublisherA { nullptr };
+        std::atomic<DataPublisher*> dataPublisherB { nullptr };
         const DataBuffer* currentA = nullptr;
         const DataBuffer* currentB = nullptr;
         float storedMorph = 0.0f;

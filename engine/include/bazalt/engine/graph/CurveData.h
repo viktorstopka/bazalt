@@ -104,9 +104,10 @@ namespace bazalt::engine
             return doc;
         }
         /** An ADSR in Time mode: attack to 1, decay to `sustain` (held while
-            the gate is high, marker S), release to 0. Tension bends attack
-            up and decay/release down, the classic shape. */
-        static CurveDocument adsr (float attack, float decay, float sustain, float release)
+            the gate is high, marker S), release to 0. `bend` shapes decay and
+            release (negative: a fast start and a long tail, the classic
+            shape); 0 is straight lines, exactly the old env.adsr. */
+        static CurveDocument adsr (float attack, float decay, float sustain, float release, float bend = -0.5f)
         {
             CurveDocument doc;
             doc.timeBase = TimeBase::Time;
@@ -114,8 +115,8 @@ namespace bazalt::engine
             decay = juce::jmax (0.0f, decay);
             release = juce::jmax (0.0f, release);
             doc.points = { { 0.0f, 0.0f, 0.0f, CurvePoint::Shape::Curve, 0 },
-                           { attack, 1.0f, -0.5f, CurvePoint::Shape::Curve, 'A' },
-                           { attack + decay, juce::jlimit (0.0f, 1.0f, sustain), -0.5f, CurvePoint::Shape::Curve, 'S' },
+                           { attack, 1.0f, bend, CurvePoint::Shape::Curve, 'A' },
+                           { attack + decay, juce::jlimit (0.0f, 1.0f, sustain), bend, CurvePoint::Shape::Curve, 'S' },
                            { attack + decay + release, 0.0f, 0.0f, CurvePoint::Shape::Curve, 'R' } };
             doc.lengthSeconds = juce::jmax (0.001f, attack + decay + release);
             return doc;

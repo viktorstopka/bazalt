@@ -15,10 +15,12 @@ namespace bazalt::engine::nodes
     public:
         explicit CurvePublisher (CurveDocument::TimeBase defaultTimeBaseIn) noexcept : defaultTimeBase (defaultTimeBaseIn) {}
 
-        void setContent (const juce::var& content)
+        /** False if every slot is still held by the audio thread (a voice
+            that has not played since several edits). */
+        bool setContent (const juce::var& content)
         {
             document = CurveDocument::fromVar (content, defaultTimeBase);
-            publishDocument();
+            return publishDocument();
         }
 
         /** Publishes the default shape if nothing has been published yet. */
@@ -35,10 +37,12 @@ namespace bazalt::engine::nodes
         const CurveDocument& getDocument() const noexcept { return document; }
 
     private:
-        void publishDocument()
+        bool publishDocument()
         {
             publisher.reclaim();
-            published = publisher.publish (buildCurveBuffer (document)) || published;
+            const auto ok = publisher.publish (buildCurveBuffer (document));
+            published = published || ok;
+            return ok;
         }
 
         CurveDocument::TimeBase defaultTimeBase;
@@ -72,7 +76,7 @@ namespace bazalt::engine::nodes
                                       .dataTags = { DataTag::Curve } } };
         }
 
-        void setContent (const juce::var& content) override { curve.setContent (content); }
+        bool setContent (const juce::var& content) override { return curve.setContent (content); }
         DataPublisher* getDataPublisher() noexcept override { return &curve.getPublisher(); }
 
     private:

@@ -412,6 +412,22 @@ namespace bazalt::engine
                 }
             }
 
+            // Content (Node::setContent()): a reused node gets it only when it
+            // changed — republishing its buffer keeps the running node, so a
+            // content edit never resets its state. One that cannot take it
+            // (Node::setContent() returned false) is built fresh instead.
+            const auto contentJson = instance.content.isVoid() ? juce::String() : juce::JSON::toString (instance.content, true);
+            if (reused)
+            {
+                const auto previous = previousPlan->nodeIdToAppliedContent.find (instance.id);
+                const auto previousJson = previous != previousPlan->nodeIdToAppliedContent.end() ? previous->second : juce::String();
+                if (previousJson != contentJson && ! node->setContent (instance.content))
+                {
+                    reused = false;
+                    node = nullptr;
+                }
+            }
+
             if (reused)
             {
                 // A value-only edit: the new values ride with the plan and the
@@ -455,22 +471,8 @@ namespace bazalt::engine
 
                 for (const auto& [paramId, value] : instance.parameters)
                     node->setParameter (paramId, value);
-            }
 
-            // Content (Node::setContent()): a fresh node always gets it; a
-            // reused one only when it changed — republishing its buffer keeps
-            // the running node, so a content edit never resets its state.
-            const auto contentJson = instance.content.isVoid() ? juce::String() : juce::JSON::toString (instance.content, true);
-            if (! reused)
-            {
                 if (! instance.content.isVoid())
-                    node->setContent (instance.content);
-            }
-            else
-            {
-                const auto previous = previousPlan->nodeIdToAppliedContent.find (instance.id);
-                const auto previousJson = previous != previousPlan->nodeIdToAppliedContent.end() ? previous->second : juce::String();
-                if (previousJson != contentJson)
                     node->setContent (instance.content);
             }
 
@@ -896,6 +898,21 @@ namespace bazalt::engine
 
             if (successorSet[(size_t) fromIt->second].insert (toIt->second).second)
                 successors[(size_t) fromIt->second].push_back (toIt->second);
+        }
+
+        // A reused node keeps whatever Data publisher it was last handed: one
+        // whose Data cable is gone must be told so, or it reads a producer that
+        // may no longer exist. Consumers hold it atomically (the old plan may
+        // still be running the node) and fall back to their own content.
+        for (int slot = 0; slot < numNodes; ++slot)
+        {
+            if (! reusedBySlot[(size_t) slot])
+                continue;
+            const auto& inputs = inputPortsBySlot[(size_t) slot];
+            for (int p = 0; p < (int) inputs.size(); ++p)
+                if (inputs[(size_t) p].type == SignalType::Data && dataInputsUsed.find ({ slot, p }) == dataInputsUsed.end())
+                    for (const auto laneSlot : plan.laneSlotsBySlot[(size_t) slot])
+                        plan.nodes[(size_t) laneSlot]->setDataInput (inputs[(size_t) p].id, nullptr);
         }
 
         // ---- Note buffers (M18, ADR-0024) ---------------------------------

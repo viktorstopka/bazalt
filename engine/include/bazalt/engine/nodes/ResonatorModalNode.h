@@ -1,5 +1,7 @@
 #pragma once
 
+#include <atomic>
+
 #include "bazalt/engine/graph/Node.h"
 #include "bazalt/engine/graph/ValueTypes.h"
 #include <algorithm>
@@ -184,7 +186,7 @@ namespace bazalt::engine::nodes
         void setDataInput (const juce::String& inputPortId, DataPublisher* publisher) noexcept override
         {
             if (inputPortId == "modes")
-                modesPublisher = publisher;
+                modesPublisher.store (publisher, std::memory_order_release);
         }
 
         void processSample (const float* inputs, float* outputs) noexcept override
@@ -192,10 +194,11 @@ namespace bazalt::engine::nodes
             outputs[0] = 0.0f;
             outputs[1] = 0.0f;
 
-            if (modesPublisher == nullptr)
+            auto* publisher = modesPublisher.load (std::memory_order_acquire);
+            if (publisher == nullptr)
                 return;
 
-            const auto* buffer = modesPublisher->getCurrentForAudioThread();
+            const auto* buffer = publisher->getCurrentForAudioThread();
             if (buffer == nullptr || buffer->tag() != DataTag::ModalSet || buffer->stride() != 3)
                 return;
 
@@ -264,7 +267,7 @@ namespace bazalt::engine::nodes
         double sampleRate = 44100.0;
         int maxModesParam = defaultMaxModes;
         std::vector<float> state1, state2;
-        DataPublisher* modesPublisher = nullptr;
+        std::atomic<DataPublisher*> modesPublisher { nullptr }; // a recompile may rewire a running node
 
         float storedDecay = 1.5f;
         float storedBrightness = 1.0f;

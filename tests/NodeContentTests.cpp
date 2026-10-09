@@ -18,10 +18,11 @@ namespace
         {
             return { PortDescriptor { .id = "out", .type = SignalType::Signal, .isPrimaryOutput = true } };
         }
-        void setContent (const juce::var& content) override
+        bool setContent (const juce::var& content) override
         {
             ++setContentCalls;
             value = (float) content.getProperty ("value", 0.0f);
+            return true;
         }
         void processSample (const float*, float* outputs) noexcept override { outputs[0] = value; }
 

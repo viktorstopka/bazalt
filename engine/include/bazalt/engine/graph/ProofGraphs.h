@@ -81,6 +81,7 @@
 #include "bazalt/engine/nodes/DataScaleNode.h"
 #include "bazalt/engine/nodes/DataTableNode.h"
 #include "bazalt/engine/nodes/DataCurveNode.h"
+#include "bazalt/engine/nodes/CurvePlayerNode.h"
 #include "bazalt/engine/nodes/DataLookupNode.h"
 #include "bazalt/engine/nodes/NoteGateNode.h"
 #include "bazalt/engine/nodes/NoteValueNode.h"
@@ -227,6 +228,8 @@ namespace bazalt::engine
         // Data Foundations batch — the first real Data-producing/consuming nodes.
         factory.registerType ("data.scale", [] { return std::make_unique<nodes::DataScaleNode>(); });
         factory.registerType ("data.table", [] { return std::make_unique<nodes::DataTableNode>(); });
+        factory.registerType ("source.oscillator", [] { return std::make_unique<nodes::CurveOscillatorNode>(); }); // one curve player, two entries (DataAndWavetable.md D5/D6)
+        factory.registerType ("source.envelope", [] { return std::make_unique<nodes::CurveEnvelopeNode>(); });
         factory.registerType ("data.curve", [] { return std::make_unique<nodes::DataCurveNode>(); }); // the curve factory (wiki/plans/DataAndWavetable.md 1b)
         factory.registerType ("data.lookup", [] { return std::make_unique<nodes::DataLookupNode>(); });
         // Note Stream batch — note.hold/note.select/note.chord deferred (a

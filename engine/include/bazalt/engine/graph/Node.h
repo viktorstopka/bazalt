@@ -266,8 +266,13 @@ namespace bazalt::engine
             only state the audio thread reads through a `DataPublisher`
             (build the new buffer here, publish it, never mutate one in use).
             That is what lets a content edit keep the running node: no fresh
-            state, no click. A void var means "no content": use the default. */
-        virtual void setContent (const juce::var& content) { juce::ignoreUnused (content); }
+            state, no click. A void var means "no content": use the default.
+
+            Returns false if the content could not be applied to this running
+            node (its publisher's slots are all still held — a voice that has
+            not played since several edits); the compiler then builds a fresh
+            node instead of reusing this one. */
+        virtual bool setContent (const juce::var& content) { juce::ignoreUnused (content); return true; }
 
         virtual bool supportsPerSample() const noexcept { return true; }
 
