@@ -198,7 +198,7 @@ TEST_CASE ("canConnect: stereo into a mono value port asks for a Downmix, then M
 }
 
 
-TEST_CASE ("canConnect: a real-quantity value into Audio needs a Map onto ±1",
+TEST_CASE ("canConnect: a real-quantity value into Audio needs a Map onto +-1",
            "[engine][CanConnect]")
 {
     const auto result = canConnect (controlPort (Quantity::Frequency, 20.0f, 20000.0f), audioPort());

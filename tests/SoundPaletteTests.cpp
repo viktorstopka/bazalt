@@ -246,7 +246,7 @@ TEST_CASE ("shape.waveshaper follows its curve and removes the bias DC", "[engin
     CHECK (std::abs (run (*biased, { constant (0.0f, 0.1) }, 4800)[0].back()) < 1.0e-6f); // silence stays silence
 }
 
-TEST_CASE ("shape.fold folds back past ±1", "[engine][palette][shape]")
+TEST_CASE ("shape.fold folds back past +-1", "[engine][palette][shape]")
 {
     auto node = make<ShapeFoldNode> ({ { "shape.fold.fold", 2.0f } });
     const auto out = run (*node, { constant (0.75f, 0.05) }, 2400)[0];

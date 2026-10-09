@@ -265,7 +265,7 @@ TEST_CASE ("connectWithAutoAdapt wires raw Audio straight into a modulation port
     CHECK (hasConnection (controller.getGraph(), "osc", "out", "destTest", "in"));
 }
 
-TEST_CASE ("connectWithAutoAdapt inserts one Map for raw Audio into a real-quantity port, reading the audio as ±1",
+TEST_CASE ("connectWithAutoAdapt inserts one Map for raw Audio into a real-quantity port, reading the audio as +-1",
            "[plugin][GraphEditController][CanConnect]")
 {
     // The FM use case: a raw waveform into a filter's cutoff, at audio rate.
@@ -331,7 +331,7 @@ TEST_CASE ("connectWithAutoAdapt wires a Bipolar modulation source straight into
     CHECK (hasConnection (controller.getGraph(), "allocator", "random1", "destTest", "in"));
 }
 
-TEST_CASE ("connectWithAutoAdapt inserts one Map from a real-quantity source onto an Audio port's ±1",
+TEST_CASE ("connectWithAutoAdapt inserts one Map from a real-quantity source onto an Audio port's +-1",
            "[plugin][GraphEditController][CanConnect]")
 {
     BazaltAudioProcessor processor;
