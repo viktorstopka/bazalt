@@ -58,9 +58,6 @@ picked correctly on their own, and then you hear nothing.
    [Level 7](#level-7-play-it).
 6. If you hear a howl or feedback, tick **Mute audio input**.
 
-![Audio/MIDI Settings](wiki/guide/images/00-settings.png)
-<!-- SCREENSHOT: the Options menu open, and the Audio/MIDI Settings dialog with Output, Input and Active MIDI inputs visible -->
-
 In a DAW you don't need any of this: the DAW decides where the sound goes.
 
 ### Find your way around
@@ -187,7 +184,7 @@ Click the button a few times and watch both. The trigger is an instant. The gate
 lasts as long as **Length** says (0.2 s at first).
 
 ![Scope showing the gate, Ripple showing the triggers](wiki/guide/images/03-scope-ripple.png)
-<!-- SCREENSHOT: Scope with TRUE/FALSE blocks and Ripple with a ring, both next to Gate Length and the Macro -->
+<!-- SCREENSHOT: Ripple on the Macro's Trigger, next to Gate Length -->
 
 > **Ctrl+click any output to look at it.** Bazalt picks the right viewer for you:
 > - **Scope** for values and gates
@@ -202,8 +199,8 @@ lasts as long as **Length** says (0.2 s at first).
 
 1. Add an **Envelope** (Shift+A → Envelope).
 2. Wire **Gate** from Gate Length into the Envelope's **Gate** input.
-3. Splice a second **Multiply** into the cable between your first Multiply and
-   Master Out: press **M** and click on the cable.
+3. Splice a second **Multiply** into the cable between Sine and your first
+   Multiply: press **M** and click on the cable.
 4. Wire the Envelope's **Out** into the new Multiply's **In 2**.
 
 Now press the button. The tone fades in, holds while the gate is on, and fades out.
@@ -211,9 +208,13 @@ The Envelope is the volume over time. Ctrl+click its **Out** to see the shape on
 Scope.
 
 ![The full Level 3 patch](wiki/guide/images/03-envelope.png)
-<!-- SCREENSHOT: Macro → Gate Length → Envelope → Multiply; Sine → Multiply → Multiply → Master Out; Scopes on the gate and the envelope -->
+<!-- SCREENSHOT: Macro → Gate Length → Envelope → Multiply; Sine → Multiply → Multiply → Master Out -->
 
 ### Edit the envelope
+
+> **BETA.** The Factory window (the Curve, Oscillator, Envelope and Wavetable
+> editors) is new. It works, but not everything in it is polished yet, so expect
+> rough edges.
 
 Click **Edit** on the Envelope (or double-click its little curve). The **Factory**
 window opens.
@@ -258,9 +259,6 @@ More shortcuts that save a lot of clicking:
 - **Ctrl+C / Ctrl+X / Ctrl+V** copy, cut and paste.
 - **Ctrl+A** selects everything. **Ctrl+R** renames the selected node.
 
-![Ctrl+drag one Sine onto another](wiki/guide/images/04-ctrl-drag-add.png)
-<!-- SCREENSHOT: Ctrl+dragging one Sine onto another (the green line with +), and the resulting Add -->
-
 ---
 
 ## Level 5: Wobble
@@ -277,10 +275,15 @@ A Sine doesn't have to be a sound. Slowed down, it is a movement.
    hear).
 4. On the Map, set **Out Min** to `300` and **Out Max** to `600`.
 
-The tone now glides between 300 and 600 Hz. A siren.
+The tone now glides up to 600 Hz and back. A siren.
+
+Notice that it rests at 300 Hz for a while on every swing. A Sine goes from -1 to 1,
+but the Map's input range (**In Min** to **In Max**) is 0 to 1, so everything below 0
+is held at the bottom. Set **In Min** to `-1` and the glide becomes smooth all the
+way.
 
 ![A slow Sine through Map into Frequency](wiki/guide/images/05-map.png)
-<!-- SCREENSHOT: slow Sine → Map (with its mapping diagram) → Frequency of the audible Sine -->
+<!-- SCREENSHOT: slow Sine → Map (In 0..1, Out 300..600) → Frequency of the audible Sine -->
 
 **Map** takes a range in (**In Min**, **In Max**) and turns it into a range out
 (**Out Min**, **Out Max**). The diagram in the node shows exactly how. Whenever a
@@ -298,6 +301,10 @@ Try:
 
 **Goal:** stop using ready-made waves and draw your own.
 
+> **BETA.** The Factory window (the Curve, Oscillator, Envelope and Wavetable
+> editors) is new. It works, but not everything in it is polished yet, so expect
+> rough edges.
+
 ### Oscillator
 
 The **Oscillator** plays any shape you draw.
@@ -313,7 +320,7 @@ Oscillator's **Frequency** to `2` Hz and the same node becomes a slow movement f
 modulation, like the Sine in Level 5.
 
 ![Editing an Oscillator's cycle](wiki/guide/images/06-oscillator.png)
-<!-- SCREENSHOT: the Factory window in Cycle mode with a hand-drawn shape -->
+<!-- SCREENSHOT: the Factory window in Cycle mode -->
 
 ### Curve
 
