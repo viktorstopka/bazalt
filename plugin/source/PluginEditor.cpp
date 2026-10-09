@@ -345,6 +345,20 @@ namespace bazalt
             completion (true);
         });
 
+        // A factory node's content (a curve, a wavetable), as JSON text: one
+        // undoable edit. graphSetContentLive streams it to the running nodes
+        // while an editor drags, without recompiling; the release commits.
+        options = options.withNativeFunction ("graphSetContent", [&processor] (Args args, Completion completion)
+        {
+            const auto result = processor.getGraphEditController().setContent (argString (args, 0), juce::JSON::parse (argString (args, 1)));
+            completion (commandResultToVar (result));
+        });
+        options = options.withNativeFunction ("graphSetContentLive", [&processor] (Args args, Completion completion)
+        {
+            const auto result = processor.getGraphEditController().setContentLive (argString (args, 0), juce::JSON::parse (argString (args, 1)));
+            completion (result.success);
+        });
+
         options = options.withNativeFunction ("graphSetOutput", [&processor] (Args args, Completion completion)
         {
             auto& controller = processor.getGraphEditController();

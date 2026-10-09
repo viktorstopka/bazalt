@@ -132,7 +132,10 @@ namespace bazalt::engine
         //
         // Schema v14 (same plan, §3): type ids follow the category —
         // life.voice / life.merge, time.delay, math.map, channels.downmix, …
-        static constexpr int currentSchemaVersion = 14;
+        //
+        // Schema v15 (same plan, 1b): a node may carry `content`, a factory's
+        // editable document (NodeInstance::content).
+        static constexpr int currentSchemaVersion = 15;
 
         int schemaVersion = currentSchemaVersion;
         std::vector<NodeInstance> nodes;

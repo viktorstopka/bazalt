@@ -201,6 +201,11 @@ namespace bazalt::engine
         // up a real within-block discontinuity — this field is the fix.
         std::unordered_map<juce::String, std::unordered_map<juce::String, float>> nodeIdToAppliedParameters;
 
+        /** Each node's content as last handed to setContent(), as JSON text —
+            a reused node gets setContent() again only when this differs
+            (Node::setContent()'s contract makes that safe on a running node). */
+        std::unordered_map<juce::String, juce::String> nodeIdToAppliedContent;
+
         // Empty (each entry) for an ordinary plan. Set once, by whoever
         // compiles this plan, before it's ever published (PlanSwapper) —
         // never mutated after, so reading it from the audio thread via a

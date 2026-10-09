@@ -68,6 +68,8 @@ namespace bazalt::engine
             obj->setProperty ("position", positionToVar (node.position));
             obj->setProperty ("parameters", parametersToVar (node.parameters));
             obj->setProperty ("properties", propertiesToVar (node.properties));
+            if (! node.content.isVoid())
+                obj->setProperty ("content", node.content);
             return juce::var (obj);
         }
 
@@ -79,6 +81,7 @@ namespace bazalt::engine
             node.position = positionFromVar (value["position"]);
             node.parameters = parametersFromVar (value["parameters"]);
             node.properties = propertiesFromVar (value["properties"]);
+            node.content = value["content"].clone();
             return node;
         }
 
@@ -1086,6 +1089,15 @@ namespace bazalt::engine
             return root;
         }
 
+        // Schema v15 (wiki/plans/DataAndWavetable.md 1b): nodes may carry
+        // `content` (a factory's document). Optional, so nothing to rewrite.
+        juce::var migrateV14ToV15 (juce::var v14Root)
+        {
+            auto root = v14Root.clone();
+            root.getDynamicObject()->setProperty ("schemaVersion", 15);
+            return root;
+        }
+
         // vN -> vN+1 migrations, keyed by the version they migrate FROM.
         using Migration = std::function<juce::var (juce::var)>;
 
@@ -1105,6 +1117,7 @@ namespace bazalt::engine
                 { 11, migrateV11ToV12 },
                 { 12, migrateV12ToV13 },
                 { 13, migrateV13ToV14 },
+                { 14, migrateV14ToV15 },
             };
             return migrations;
         }

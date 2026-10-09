@@ -77,6 +77,8 @@ import {
   graphSetParameterLive,
   graphReleaseParameterLive,
   graphSetProperty,
+  graphSetContent,
+  graphSetContentLive,
   type CommandResult,
   type NodeMultiplicityBadge,
   type PortMultiplicityInfo,
@@ -111,6 +113,9 @@ export interface GraphNode {
       mirrors the engine's own NodeInstance.parameters for this node.
   */
   parameterValues?: Record<string, number>
+  /** A factory node's content (NodeInstance::content) — a curve, a wavetable —
+      exactly as the engine stores it; undefined for every ordinary node. */
+  content?: unknown
   /** wiki/plans/PropsAndMacroRedesign.md Batch E / design/Macro.png: an
       Enum-typed macro's own option labels — a cosmetic property, not a
       real engine parameter (properties["util.macro.enumOptions"], a JSON
@@ -312,6 +317,7 @@ interface PatchNodeJson {
   position?: { x: number; y: number }
   parameters?: Record<string, number>
   properties?: Record<string, unknown>
+  content?: unknown
 }
 interface PatchConnectionJson {
   fromNodeId: string
@@ -389,6 +395,7 @@ function patchJsonToLocalState(json: string): { nodes: Map<string, GraphNode>; w
       titleOverride: typeof title === 'string' && title.length > 0 ? title : undefined,
       bypassed: properties.bypassed === true,
       parameterValues: n.parameters && Object.keys(n.parameters).length > 0 ? { ...n.parameters } : undefined,
+      content: n.content,
       macroEnumOptionLabels,
       countMinOverride: typeof countMin === 'number' ? countMin : undefined,
       countMaxOverride: typeof countMax === 'number' ? countMax : undefined,
@@ -1227,6 +1234,33 @@ export function setParameterValue(nodeId: string, parameterId: string, value: nu
       if (node) nodes.set(nodeId, { ...node, parameterValues: { ...node.parameterValues, [parameterId]: value } })
     },
   )
+}
+
+/** A factory editor's edit, committed: one undo step (graphSetContent). */
+export function setNodeContent(nodeId: string, content: unknown): void {
+  void withHistory(
+    () => fireCommand(() => graphSetContent(nodeId, content)).then(() => undefined),
+    () => {
+      const node = nodes.get(nodeId)
+      if (node) nodes.set(nodeId, { ...node, content })
+    },
+  )
+}
+
+/** A factory editor mid-drag: the content goes straight to the running nodes
+    (no recompile, no undo step), coalesced to one message per animation frame.
+    The release commits with setNodeContent. */
+const pendingLiveContent = new Map<string, unknown>()
+let liveContentFlushScheduled = false
+export function setNodeContentLive(nodeId: string, content: unknown): void {
+  pendingLiveContent.set(nodeId, content)
+  if (liveContentFlushScheduled) return
+  liveContentFlushScheduled = true
+  requestAnimationFrame(() => {
+    liveContentFlushScheduled = false
+    for (const [id, value] of pendingLiveContent) graphSetContentLive(id, value).catch(() => undefined)
+    pendingLiveContent.clear()
+  })
 }
 
 /** A slider mid-drag (value) or just released (null): streams the value to

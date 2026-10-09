@@ -457,6 +457,23 @@ namespace bazalt::engine
                     node->setParameter (paramId, value);
             }
 
+            // Content (Node::setContent()): a fresh node always gets it; a
+            // reused one only when it changed — republishing its buffer keeps
+            // the running node, so a content edit never resets its state.
+            const auto contentJson = instance.content.isVoid() ? juce::String() : juce::JSON::toString (instance.content, true);
+            if (! reused)
+            {
+                if (! instance.content.isVoid())
+                    node->setContent (instance.content);
+            }
+            else
+            {
+                const auto previous = previousPlan->nodeIdToAppliedContent.find (instance.id);
+                const auto previousJson = previous != previousPlan->nodeIdToAppliedContent.end() ? previous->second : juce::String();
+                if (previousJson != contentJson)
+                    node->setContent (instance.content);
+            }
+
             portIdIndexBySlot[(size_t) slot] = buildPortIdIndex (*node);
             inputPortsBySlot[(size_t) slot] = node->getInputPorts();
             outputPortsBySlot[(size_t) slot] = node->getOutputPorts();
@@ -479,6 +496,7 @@ namespace bazalt::engine
             plan.nodeIdToSlot[instance.id] = slot;
             plan.nodeIdToType[instance.id] = instance.type;
             plan.nodeIdToAppliedParameters[instance.id] = instance.parameters;
+            plan.nodeIdToAppliedContent[instance.id] = contentJson;
 
             // ExecutionPlan::noteInNodeId's own comment has the full story:
             // resolved once here, by type, instead of PluginProcessor

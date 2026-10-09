@@ -43,6 +43,13 @@ namespace bazalt::engine
         NodePosition position;
         std::unordered_map<juce::String, float> parameters;
         std::unordered_map<juce::String, juce::var> properties;
+
+        /** A factory node's editable document (wiki/plans/Factories.md §1,
+            DataAndWavetable.md D10) — a curve, a wavetable, an EQ — as JSON.
+            Void for every ordinary node. Content is what is EDITED (in the
+            Factory window); ports and parameters are what is PLAYED. Saved
+            with the patch, never modulated or host-automated. */
+        juce::var content;
     };
 
     /** One connection, referencing endpoints by node id + stable port ID

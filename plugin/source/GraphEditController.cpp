@@ -853,6 +853,39 @@ namespace bazalt
         return result;
     }
 
+    GraphEditController::CommandResult GraphEditController::setContent (const juce::String& nodeId, juce::var content)
+    {
+        auto* node = graph.findNode (nodeId);
+        if (node == nullptr)
+            return { false, "No such node: " + nodeId };
+
+        const auto previousGraph = graph;
+        node->content = std::move (content);
+
+        auto result = recompileAndPublish();
+        if (! result.success)
+            graph = previousGraph;
+        return result;
+    }
+
+    GraphEditController::CommandResult GraphEditController::setContentLive (const juce::String& nodeId, const juce::var& content)
+    {
+        if (graph.findNode (nodeId) == nullptr)
+            return { false, "No such node: " + nodeId };
+
+        auto apply = [&] (const bazalt::engine::ExecutionPlan* plan)
+        {
+            if (plan != nullptr)
+                if (auto* running = plan->getNodeById (nodeId))
+                    running->setContent (content);
+        };
+        apply (processor.getGlobalPlanSwapper().peekCurrentPlan());
+        for (int slot = 0; slot < BazaltAudioProcessor::maxOrigins; ++slot)
+            for (int i = 0; i < BazaltAudioProcessor::numVoices; ++i)
+                apply (processor.getOriginVoicePlanSwapper (slot, i).peekCurrentPlan());
+        return { true, {} };
+    }
+
     GraphEditController::CommandResult GraphEditController::addImage (const juce::String& nodeId, float x, float y,
                                                                        const juce::String& mimeType, const juce::String& base64,
                                                                        float width, float height)

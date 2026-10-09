@@ -119,6 +119,19 @@ export function graphSetProperty(nodeId: string, propertyKey: string, value: str
   return callCommand('graphSetProperty', nodeId, propertyKey, value)
 }
 
+/** A factory node's content (a curve, a wavetable), sent as JSON text — one
+    undoable edit (GraphEditController::setContent). */
+export function graphSetContent(nodeId: string, content: unknown): Promise<CommandResult> {
+  return callCommand('graphSetContent', nodeId, JSON.stringify(content))
+}
+
+/** While an editor drags: the content goes straight to the running nodes, no
+    recompile, no undo step. Commit with graphSetContent on release. */
+export async function graphSetContentLive(nodeId: string, content: unknown): Promise<boolean> {
+  if (typeof window.__JUCE__ === 'undefined') return false
+  return (await getNativeFunction('graphSetContentLive')(nodeId, JSON.stringify(content))) as boolean
+}
+
 /** Returns the current graph as a JSON string (a PatchDocument with empty
     macro/view/meta fields — see ADR-0025), or null outside the real WebView.
 */

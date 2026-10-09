@@ -144,6 +144,17 @@ namespace bazalt
         */
         CommandResult setProperty (const juce::String& nodeId, const juce::String& propertyKey, juce::var value);
 
+        /** A factory node's content (NodeInstance::content): one undoable
+            edit, recompiled like any other — the running node is kept and
+            republishes its buffer (Node::setContent()), so it never clicks. */
+        CommandResult setContent (const juce::String& nodeId, juce::var content);
+
+        /** WHILE an editor drags: hands the content straight to every running
+            copy of the node (each voice's, and the global plan's) without
+            recompiling or touching the graph. The release commits it with
+            setContent(). Same idea as the live slider path (LiveParameterEdits.h). */
+        CommandResult setContentLive (const juce::String& nodeId, const juce::var& content);
+
         /** The most image data one patch may carry (wiki/plans/Decorations.md
             §4): an image that would take it past this is refused. */
         static constexpr size_t maxPatchAssetBytes = 5 * 1024 * 1024;

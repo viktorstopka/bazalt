@@ -70,6 +70,7 @@ add_executable(EngineTests
     SoundPaletteTests.cpp
     DecorationTests.cpp
     SignalSweepTests.cpp
+    NodeContentTests.cpp
     VoiceManagerTests.cpp
 )
 
