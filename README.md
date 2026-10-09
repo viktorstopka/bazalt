@@ -1,5 +1,7 @@
 # Bazalt
 
+![Bazalt](wiki/guide/images/00-bazalt.png)
+
 A node-based modular synthesizer. Every sound is a small graph: sources, math,
 envelopes and effects wired together on an infinite canvas. You hear every change
 while you make it.
