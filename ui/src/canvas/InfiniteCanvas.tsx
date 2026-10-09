@@ -1,3 +1,4 @@
+import { isFactoryOpen } from '../factory/factoryStore'
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState, useSyncExternalStore } from 'react'
 import type { ReactNode } from 'react'
 import { tokens } from '../theme/tokens'
@@ -861,6 +862,8 @@ export const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, InfiniteCanvasPro
     }
 
     const onKeyDown = (e: KeyboardEvent): void => {
+      // A Factory window replaces the canvas: its keys are its own.
+      if (isFactoryOpen()) return
       if (isTypingTarget(e.target)) {
         if (e.code === 'Space') return // let text fields type spaces normally
       } else if (e.code === 'Space') {

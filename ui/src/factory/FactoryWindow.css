@@ -1,0 +1,108 @@
+.factory-window {
+  position: fixed;
+  inset: 0;
+  z-index: 1500;
+  display: flex;
+  flex-direction: column;
+  background: var(--color-background, var(--color-nodeFill));
+  color: var(--color-textPrimary);
+}
+
+.factory-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--color-nodeBorder);
+}
+
+.factory-title {
+  font-family: var(--font-secondary);
+  font-size: 12px;
+  letter-spacing: 0.08em;
+}
+.factory-subtitle {
+  color: var(--color-textSecondary);
+  letter-spacing: normal;
+  margin-left: 6px;
+}
+.factory-timebase {
+  color: var(--color-textSecondary);
+  font-size: 11px;
+  border: 1px solid var(--color-nodeBorder);
+  border-radius: var(--radius-sm);
+  padding: 1px 6px;
+}
+.factory-spacer {
+  flex: 1;
+}
+
+.factory-button {
+  background: none;
+  border: 1px solid var(--color-nodeBorder);
+  border-radius: var(--radius-sm);
+  color: var(--color-textPrimary);
+  padding: 4px 10px;
+  cursor: pointer;
+  font-size: 12px;
+}
+.factory-button:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+.factory-button.active {
+  border-color: var(--color-accent);
+  color: var(--color-accent);
+}
+
+.factory-name-input {
+  background: var(--color-nodeFill);
+  border: 1px solid var(--color-accent);
+  border-radius: var(--radius-sm);
+  color: var(--color-textPrimary);
+  padding: 4px 8px;
+  font-size: 12px;
+  width: 140px;
+}
+
+.factory-presets {
+  position: relative;
+}
+.factory-presets-menu {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 4px);
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  min-width: 150px;
+  padding: 4px;
+  background: var(--color-nodeFill);
+  border: 1px solid var(--color-nodeBorder);
+  border-radius: var(--radius-sm);
+}
+.factory-presets-item {
+  display: flex;
+  justify-content: space-between;
+  background: none;
+  border: none;
+  color: var(--color-textPrimary);
+  text-align: left;
+  padding: 5px 8px;
+  cursor: pointer;
+  border-radius: var(--radius-sm);
+}
+.factory-presets-item:hover {
+  background: rgba(255, 255, 255, 0.06);
+}
+.factory-presets-user {
+  color: var(--color-textSecondary);
+  font-size: 10px;
+}
+
+.factory-footer {
+  padding: 6px 12px;
+  border-top: 1px solid var(--color-nodeBorder);
+  color: var(--color-textSecondary);
+  font-size: 11px;
+}

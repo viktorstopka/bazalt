@@ -1,3 +1,4 @@
+import { FactoryWindow } from './factory/FactoryWindow'
 import { useRef, useState } from 'react'
 import { InfiniteCanvas, type InfiniteCanvasHandle, type SnapSettings } from './canvas/InfiniteCanvas'
 import { AnalysisPanel } from './analysis/AnalysisPanel'
@@ -257,6 +258,7 @@ function App() {
         <MacroPanel nodes={nodes} />
       </InfiniteCanvas>
       {analysisOpen && <AnalysisPanel />}
+      <FactoryWindow />
     </div>
   )
 }

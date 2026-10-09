@@ -23,6 +23,8 @@ import { RippleBody } from './RippleBody'
 import { CountBody } from './CountBody'
 import { TuneBody } from './TuneBody'
 import { ScopeBody } from './ScopeBody'
+import { CurveThumbnail } from '../factory/CurveThumbnail'
+import { CURVE_FACTORY_TYPES, curveFromContent } from '../factory/curveModel'
 import { MapDiagram } from './MapDiagram'
 import { CycleBody } from './CycleBody'
 import './NodeCard.css'
@@ -43,6 +45,8 @@ function humanizeId(id: string): string {
 }
 
 export interface NodeCardState {
+  /** A factory node's content (GraphNode.content). */
+  content?: unknown
   selected?: boolean
   bypassed?: boolean
   listening?: boolean
@@ -718,8 +722,18 @@ function StandardBody({ descriptor, state, instanceId }: { descriptor: NodeDescr
       })
   }
 
+  const curveTimeBase = CURVE_FACTORY_TYPES[descriptor.typeId]
+
   return (
     <>
+      {/* A curve factory's own curve, with the Edit button (DataAndWavetable.md D10). */}
+      {curveTimeBase && (
+        <CurveThumbnail
+          doc={curveFromContent(state.content, curveTimeBase)}
+          nodeId={instanceId}
+          overridden={connected.has('shape')}
+        />
+      )}
       {merged && <MergedRowView row={merged} instanceId={instanceId} connected={connected.has(merged.id)} />}
       {inputs.map((row) => (
         <Fragment key={row.port.id}>
