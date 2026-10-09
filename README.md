@@ -12,8 +12,42 @@ keyboard.
 
 ---
 
+## Legend
+
+Every port and cable is coloured by **what the signal means**. The symbol next to a
+port says the same thing in shape, so you can tell them apart without colour.
+
+| | Kind | Symbol | What it carries |
+|---|---|---|---|
+| ![](wiki/guide/images/legend/audio.svg) | **Audio** | → | A sound wave you can hear. |
+| ![](wiki/guide/images/legend/modulation.svg) | **Modulation** | → | A movement between 0 and 1 or −1 and 1 (an envelope, a slow wobble). |
+| ![](wiki/guide/images/legend/value.svg) | **Value** | → | A number with a unit: Hz, seconds, decibels. |
+| ![](wiki/guide/images/legend/integer.svg) | **Integer** | → | A whole number (a count, an index). |
+| ![](wiki/guide/images/legend/trigger.svg) | **Trigger** | ! | An instant: "now". A click, a beat, a note start. |
+| ![](wiki/guide/images/legend/boolean.svg) | **Gate** | ? | On or off. True while a key is held. |
+| ![](wiki/guide/images/legend/note.svg) | **Notes** | ♪ | Notes from a keyboard: pitch, velocity, start, stop. |
+| ![](wiki/guide/images/legend/data.svg) | **Data** | ≡ | A whole shape at once: a curve, a wavetable, a scale. |
+
+**Dot or symbol?** An input with a **dot** (●) has its own value: a slider, a
+switch or a menu right next to it. Plug a cable into it and the dot turns into the
+symbol, and the cable takes over. Unplug it and the slider comes back. An input
+showing only the symbol has no value of its own: it does nothing until a cable arrives.
+
+**Cables:**
+
+| | |
+|---|---|
+| ![Mono cable](wiki/guide/images/legend/cable-mono.svg) | **Mono:** one line. |
+| ![Stereo cable](wiki/guide/images/legend/cable-stereo.svg) | **Stereo:** two thin parallel lines, left and right. |
+| ![Poly node](wiki/guide/images/legend/poly-node.svg) | **Poly:** a node playing once per note is drawn as a **stack of cards** with a **×N** badge (N copies). Its cables look normal: poly shows on the node, never on the cable. See [Level 7](#level-7-play-it). |
+
+A red, dashed cable while you drag means the two ports can't be connected.
+
+---
+
 ## Contents
 
+- [Legend](#legend)
 - [Getting Bazalt](#getting-bazalt)
 - [Level 0: Before you start](#level-0-before-you-start)
 - [Level 1: Sine](#level-1-sine)
