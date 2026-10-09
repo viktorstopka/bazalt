@@ -87,7 +87,7 @@ Press **Shift+A**, or right-click on an empty spot. The node gallery opens.
 - Press **Esc** or right-click to cancel.
 
 ![The node gallery](wiki/guide/images/00-add-menu.png)
-<!-- SCREENSHOT: the Shift+A menu open, with a search typed in -->
+<!-- SCREENSHOT: the Shift+A menu open, browsing the categories -->
 
 ---
 
@@ -135,13 +135,13 @@ special node for it: you use **Multiply**.
 2. Move the ghost over the cable between Sine and Master Out. The cable lights up
    and says **click to insert here**.
 3. Click. The Multiply is **spliced** into the cable: Sine → Multiply → Master Out.
-4. On the Multiply, drag **In 2** down to about `0.2`.
+4. On the Multiply, drag **In 2** down to about `0.1`.
 
 ![Splicing a Multiply into a cable](wiki/guide/images/02-splice.png)
 <!-- SCREENSHOT: the Multiply ghost over the Sine→Master Out cable, the cable highlighted with "click to insert here" -->
 
 ![Sine → Multiply → Master Out](wiki/guide/images/02-gain.png)
-<!-- SCREENSHOT: the finished chain with In 2 at 0.2 -->
+<!-- SCREENSHOT: the finished chain with In 2 at 0.1 -->
 
 > **Splicing** works with any node you are placing: from the gallery, from a letter
 > key, or from a duplicate. Drop it on a cable and it goes in between. If the cable
@@ -166,7 +166,7 @@ that from three ideas: a **button**, a **gate** and an **envelope**.
 3. Click the Macro's **Trigger** button.
 
 ![A Trigger Macro wired into Gate Length](wiki/guide/images/03-button.png)
-<!-- SCREENSHOT: dragging out of the Trigger input (dashed cable, "release on empty space to create a Macro"), then the Trigger Macro wired to Gate Length -->
+<!-- SCREENSHOT: the Trigger Macro wired to Gate Length -->
 
 > **Dragging an unwired input out to empty space creates a Macro for it.** That works
 > on almost any input: a number becomes a slider, an on/off becomes a toggle, a

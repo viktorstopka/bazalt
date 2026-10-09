@@ -12,7 +12,8 @@ name: Package Windows build
 on:
   push:
     branches-ignore: [main, master]
-    paths-ignore: ['Bazalt-Standalone-Windows.zip']
+    # Docs and screenshots don't change the build.
+    paths-ignore: ['Bazalt-Standalone-Windows.zip', '**.md', 'wiki/**']
   workflow_dispatch:
 
 concurrency:
