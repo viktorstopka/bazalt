@@ -1,0 +1,85 @@
+name: Package Windows build
+
+# Builds a Release Standalone (Bazalt.exe + its ui/ folder) and the VST3, zips
+# them, and commits the zip to the root of the branch that was pushed — so a
+# branch under review always carries a build that can be downloaded and run
+# without a toolchain (the user's request, 2026-10-09: "a built version in the
+# root (in zip with exe) so I can test it").
+#
+# The commit is made with GITHUB_TOKEN, which never triggers another workflow
+# run, so this cannot loop. Pushes that change only the zip are ignored too.
+
+on:
+  push:
+    branches-ignore: [main, master]
+    paths-ignore: ['Bazalt-Standalone-Windows.zip']
+  workflow_dispatch:
+
+concurrency:
+  group: package-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+
+jobs:
+  package:
+    runs-on: windows-2022
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Cache CMake FetchContent deps (JUCE, Catch2)
+        uses: actions/cache@v4
+        with:
+          path: build/_deps
+          key: ${{ runner.os }}-fetchcontent-${{ hashFiles('CMakeLists.txt') }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: ui/package-lock.json
+
+      # Before the C++ build: the post-build step copies ui/dist next to the
+      # binaries (cmake/CopyUiDist.cmake).
+      - name: UI install + build
+        working-directory: ui
+        run: |
+          npm ci
+          npm run build
+
+      - name: Configure
+        run: cmake -S . -B build -G "Visual Studio 17 2022" -A x64
+
+      - name: Build (Release)
+        run: cmake --build build --config Release --parallel --target BazaltPlugin_Standalone BazaltPlugin_VST3
+
+      - name: Zip
+        shell: pwsh
+        run: |
+          $artefacts = "build/plugin/BazaltPlugin_artefacts/Release"
+          $stage = "package"
+          New-Item -ItemType Directory -Force -Path $stage | Out-Null
+          Copy-Item "$artefacts/Standalone/Bazalt.exe" $stage
+          Copy-Item -Recurse "$artefacts/Standalone/ui" "$stage/ui"
+          New-Item -ItemType Directory -Force -Path "$stage/VST3" | Out-Null
+          Copy-Item -Recurse "$artefacts/VST3/Bazalt.vst3" "$stage/VST3/Bazalt.vst3"
+          if (-not (Test-Path "$stage/ui/index.html")) { throw "ui/dist was not copied next to Bazalt.exe" }
+          Remove-Item -ErrorAction SilentlyContinue Bazalt-Standalone-Windows.zip
+          Compress-Archive -Path "$stage/*" -DestinationPath Bazalt-Standalone-Windows.zip
+
+      - name: Commit the zip to the branch
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add Bazalt-Standalone-Windows.zip
+          git commit -m "Update packaged Windows build (${GITHUB_SHA::7})"
+          # The branch may have moved on while this built; the zip is the only
+          # file this commit touches, so a rebase onto it is always clean.
+          for attempt in 1 2 3; do
+            git pull --rebase origin "${GITHUB_REF_NAME}" && git push origin "HEAD:${GITHUB_REF_NAME}" && exit 0
+            sleep 5
+          done
+          exit 1
