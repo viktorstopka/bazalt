@@ -6,7 +6,7 @@ import { hexToRgb, type Camera } from './webgl/webglUtils'
 import { GraphSurface } from '../graph/GraphSurface'
 import { AddMenu } from '../graph/AddMenu'
 import { buildAnchorMap, measureNodeLocalPortOffsets, portKey, type PortAnchor } from '../graph/portAnchors'
-import { portUiStyleForEndpoint, resolvePortIsPoly } from '../graph/portUiKind'
+import { portUiStyleForEndpoint } from '../graph/portUiKind'
 import { canConnect, type ConnectionEndpoint } from '../graph/canConnect'
 import { importImage } from '../graph/imageImport'
 import {
@@ -508,13 +508,8 @@ export const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, InfiniteCanvasPro
 
     const endpointColorRgb = (endpoint: ConnectionEndpoint | undefined): readonly [number, number, number] => {
       if (!endpoint) return hexToRgb(tokens.color.portValue)
-      // wiki/plans/DomainRedesign.md Batch 4: live per-port multiplicity,
-      // not just the mock-only isPolyPlaceholder placeholder — a REAL Poly
-      // Audio cable (endpoint.nodeId/portId keyed into the current
-      // snapshot's `multiplicity` map) now renders green too, not only a
-      // gallery/mock cable.
-      const isPoly = resolvePortIsPoly(endpoint.port, getGraphSnapshot().multiplicity.get(endpoint.nodeId)?.ports)
-      return hexToRgb(portUiStyleForEndpoint(endpoint, isPoly).color)
+      // Colour is what the signal means; poly shows on the node, never on the cable (DataAndWavetable.md D3/D4).
+      return hexToRgb(portUiStyleForEndpoint(endpoint).color)
     }
 
     const distanceToSegment = (p: Point, a: Point, b: Point): number => {

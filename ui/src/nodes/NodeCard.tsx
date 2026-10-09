@@ -7,7 +7,7 @@
 // source of truth.
 import { Fragment, useMemo, useState, type ReactNode } from 'react'
 import type { NodeDescriptor, ParameterDescriptor, PortDescriptor, Quantity } from '../graph/descriptorTypes'
-import { classifyPortUiKind, portUiStyle, portUiStyleForEndpoint, parameterUiColor, resolvePortIsPoly, type PortUiStyle } from '../graph/portUiKind'
+import { classifyPortUiKind, portUiStyle, portUiStyleForEndpoint, parameterUiColor, type PortUiStyle } from '../graph/portUiKind'
 import { getEndpoint } from '../graph/graphStore'
 import type { NodeMultiplicityBadge, PortMultiplicityInfo } from '../graph/graphCommands'
 import { tokens } from '../theme/tokens'
@@ -286,12 +286,12 @@ function hasNumericFallback(port: PortDescriptor): boolean {
     nothing for the overwhelming majority of ports it's now also called
     for.
 */
-function resolvedPortStyle(port: PortDescriptor, instanceId: string | undefined, direction: 'input' | 'output', isPoly?: boolean) {
+function resolvedPortStyle(port: PortDescriptor, instanceId: string | undefined, direction: 'input' | 'output') {
   if (instanceId) {
     const endpoint = getEndpoint(instanceId, port.id, direction)
-    if (endpoint) return portUiStyleForEndpoint(endpoint, isPoly)
+    if (endpoint) return portUiStyleForEndpoint(endpoint)
   }
-  return portUiStyle(port, isPoly)
+  return portUiStyle(port)
 }
 
 /** A port's glyph has two states, independent of its type colour: an
@@ -315,14 +315,12 @@ export function PortGlyph({
   side,
   instanceId,
   connected,
-  isPoly,
   styleOverride,
 }: {
   port: PortDescriptor
   side: 'left' | 'right'
   instanceId?: string
   connected: boolean
-  isPoly?: boolean
   /** A viewer body whose whole panel is drawn in one type's colour
       (design/Visualization/ScopeMod.png: "Everything is orange") fixes its
       glyph to that style instead of the live-resolved one — a quantity-
@@ -332,7 +330,7 @@ export function PortGlyph({
   // "side" is a 1:1 proxy for direction at every call site in this file
   // (input always renders left, output always right).
   const direction = side === 'left' ? 'input' : 'output'
-  const style = styleOverride ?? resolvedPortStyle(port, instanceId, direction, isPoly)
+  const style = styleOverride ?? resolvedPortStyle(port, instanceId, direction)
   const color = style.color
   const showDot = direction === 'input' && !connected && isEditableInNode(port)
   // Every port glyph is the SAME size everywhere, full stop — no per-row
@@ -364,16 +362,14 @@ function PortLabel({
   instanceId,
   connected,
   demoValue,
-  isPoly,
 }: {
   port: PortDescriptor
   direction: 'input' | 'output'
   instanceId?: string
   connected: boolean
   demoValue?: string
-  isPoly?: boolean
 }) {
-  const style = resolvedPortStyle(port, instanceId, direction, isPoly)
+  const style = resolvedPortStyle(port, instanceId, direction)
   return (
     <span className="node-port-label" style={{ color: style.color }}>
       {port.label || humanizeId(port.id)}
@@ -403,7 +399,6 @@ function PortRow({
   value,
   onCommit,
   onLiveChange,
-  isPoly,
 }: {
   direction: 'input' | 'output'
   port: PortDescriptor
@@ -413,7 +408,6 @@ function PortRow({
   value?: number
   onCommit?: (value: number) => void
   onLiveChange?: (value: number | null) => void
-  isPoly?: boolean
 }) {
   // Only an unconnected, editable-in-node INPUT falls back to a shown
   // control — an output has nothing to "fall back" to (it always drives
@@ -431,11 +425,11 @@ function PortRow({
   // value/onCommit slot.
   const editable = direction === 'input' && !connected && isEditableInNode(port)
   const showSlider = editable && hasNumericFallback(port)
-  const showToggle = editable && !showSlider && classifyPortUiKind(port, isPoly) === 'boolean'
+  const showToggle = editable && !showSlider && classifyPortUiKind(port) === 'boolean'
   const showTriggerSelect = editable && !showSlider && !showToggle && port.type === 'event' && !!port.options?.length
   return (
     <div className={`node-row node-row-port node-row-${direction}`}>
-      {direction === 'input' && <PortGlyph port={port} side="left" instanceId={instanceId} connected={connected} isPoly={isPoly} />}
+      {direction === 'input' && <PortGlyph port={port} side="left" instanceId={instanceId} connected={connected} />}
       {showSlider ? (
         <ValueSlider
           label={port.label || humanizeId(port.id)}
@@ -448,7 +442,7 @@ function PortRow({
           isInteger={port.isInteger}
           unit={port.unit}
           logarithmic={isLogarithmicCurve(port.curve)}
-          color={portUiStyle(port, isPoly).color}
+          color={portUiStyle(port).color}
           onCommit={onCommit}
           onLiveChange={onLiveChange}
         />
@@ -456,7 +450,7 @@ function PortRow({
         <ToggleSwitch
           label={port.label || humanizeId(port.id)}
           value={value ?? port.defaultValue}
-          color={portUiStyle(port, isPoly).color}
+          color={portUiStyle(port).color}
           onCommit={onCommit}
         />
       ) : showTriggerSelect ? (
@@ -464,13 +458,13 @@ function PortRow({
           label={port.label || humanizeId(port.id)}
           options={port.options!}
           selectedIndex={value ?? port.defaultValue}
-          color={portUiStyle(port, isPoly).color}
+          color={portUiStyle(port).color}
           onCommit={onCommit}
         />
       ) : (
-        <PortLabel port={port} direction={direction} instanceId={instanceId} connected={connected} demoValue={demoValue} isPoly={isPoly} />
+        <PortLabel port={port} direction={direction} instanceId={instanceId} connected={connected} demoValue={demoValue} />
       )}
-      {direction === 'output' && <PortGlyph port={port} side="right" instanceId={instanceId} connected isPoly={isPoly} />}
+      {direction === 'output' && <PortGlyph port={port} side="right" instanceId={instanceId} connected />}
     </div>
   )
 }
@@ -479,12 +473,10 @@ function MergedRowView({
   row,
   instanceId,
   connected,
-  multiplicity,
 }: {
   row: MergedRow
   instanceId?: string
   connected: boolean
-  multiplicity?: ReadonlyMap<string, PortMultiplicityInfo>
 }) {
   // The output's own label/id is normally the more meaningful name
   // (Predelay's "Audio"); fall back to the input's if the output never got
@@ -497,14 +489,13 @@ function MergedRowView({
   // so the line reads as one continuous stroke broken only where the label
   // text covers it.
   const label = row.output.label || row.input.label || humanizeId(row.output.id)
-  const isPolyOutput = resolvePortIsPoly(row.output, multiplicity)
-  const lineColor = resolvedPortStyle(row.output, instanceId, 'output', isPolyOutput).color
+  const lineColor = resolvedPortStyle(row.output, instanceId, 'output').color
   return (
     <div className="node-row node-row-port node-row-merged">
       <span className="node-merged-line" aria-hidden="true" style={{ background: lineColor }} />
-      <PortGlyph port={row.input} side="left" instanceId={instanceId} connected={connected} isPoly={resolvePortIsPoly(row.input, multiplicity)} />
+      <PortGlyph port={row.input} side="left" instanceId={instanceId} connected={connected} />
       <span className="node-port-label node-port-label-merged">{label}</span>
-      <PortGlyph port={row.output} side="right" instanceId={instanceId} connected isPoly={isPolyOutput} />
+      <PortGlyph port={row.output} side="right" instanceId={instanceId} connected />
     </div>
   )
 }
@@ -729,7 +720,7 @@ function StandardBody({ descriptor, state, instanceId }: { descriptor: NodeDescr
 
   return (
     <>
-      {merged && <MergedRowView row={merged} instanceId={instanceId} connected={connected.has(merged.id)} multiplicity={state.portMultiplicity} />}
+      {merged && <MergedRowView row={merged} instanceId={instanceId} connected={connected.has(merged.id)} />}
       {inputs.map((row) => (
         <Fragment key={row.port.id}>
           <PortRow
@@ -741,7 +732,6 @@ function StandardBody({ descriptor, state, instanceId }: { descriptor: NodeDescr
             value={paramValue(state, row.port.id, row.port.defaultValue)}
             onCommit={paramCommit(state, row.port.id)}
             onLiveChange={liveChangeFor(row.port.id)}
-            isPoly={resolvePortIsPoly(row.port, state.portMultiplicity)}
           />
           {diagram?.afterPortId === row.port.id && diagram.render({ descriptor, state, instanceId, liveValues })}
         </Fragment>
@@ -775,7 +765,6 @@ function StandardBody({ descriptor, state, instanceId }: { descriptor: NodeDescr
           connected={connected.has(row.port.id)}
           demoValue={state.demoConnectedValue}
           instanceId={instanceId}
-          isPoly={resolvePortIsPoly(row.port, state.portMultiplicity)}
         />
       ))}
       {instanceId && descriptor.previews?.map((preview) => (
@@ -833,7 +822,6 @@ function HorizontalBody({ descriptor, state, instanceId }: { descriptor: NodeDes
             instanceId={instanceId}
             value={paramValue(state, port.id, port.defaultValue)}
             onCommit={paramCommit(state, port.id)}
-            isPoly={resolvePortIsPoly(port, state.portMultiplicity)}
           />
         ))}
         {descriptor.parameters.map((p) => (
@@ -871,7 +859,6 @@ function HorizontalBody({ descriptor, state, instanceId }: { descriptor: NodeDes
             port={primaryOutput}
             connected={connected.has(primaryOutput.id)}
             instanceId={instanceId}
-            isPoly={resolvePortIsPoly(primaryOutput, state.portMultiplicity)}
           />
         </div>
       )}
@@ -884,15 +871,13 @@ function SingletonGlyph({
   direction,
   instanceId,
   connected,
-  isPoly,
 }: {
   port: PortDescriptor
   direction: 'input' | 'output'
   instanceId?: string
   connected: boolean
-  isPoly?: boolean
 }) {
-  const style = resolvedPortStyle(port, instanceId, direction, isPoly)
+  const style = resolvedPortStyle(port, instanceId, direction)
   const color = style.color
   const showDot = direction === 'input' && !connected && isEditableInNode(port)
   // Deliberately NOT the border-piercing PortGlyph used elsewhere: adjacent
@@ -921,14 +906,14 @@ function SingletonBody({ descriptor, state, instanceId }: { descriptor: NodeDesc
   const output = descriptor.outputs[0]
   return (
     <div className="node-singleton-body">
-      {input && <SingletonGlyph port={input} direction="input" instanceId={instanceId} connected={connected.has(input.id)} isPoly={resolvePortIsPoly(input, state.portMultiplicity)} />}
+      {input && <SingletonGlyph port={input} direction="input" instanceId={instanceId} connected={connected.has(input.id)} />}
       {/* `node-title` (shared with every other layout variant, not just
           `node-singleton-title`) is what lets GraphSurface.tsx's generic
           `.closest('.node-title')` double-click/rename targeting work here
           too — previously this layout had no element carrying that class
           at all, so rename silently did nothing on it. */}
       <span className="node-singleton-title node-title">{descriptor.title}</span>
-      {output && <SingletonGlyph port={output} direction="output" instanceId={instanceId} connected={connected.has(output.id)} isPoly={resolvePortIsPoly(output, state.portMultiplicity)} />}
+      {output && <SingletonGlyph port={output} direction="output" instanceId={instanceId} connected={connected.has(output.id)} />}
     </div>
   )
 }
@@ -966,7 +951,7 @@ function GlanceBody({ descriptor, state, instanceId }: { descriptor: NodeDescrip
   const preview = descriptor.previews?.[0]
   return (
     <div className="node-glance-body">
-      {input && <SingletonGlyph port={input} direction="input" instanceId={instanceId} connected={connected.has(input.id)} isPoly={resolvePortIsPoly(input, state.portMultiplicity)} />}
+      {input && <SingletonGlyph port={input} direction="input" instanceId={instanceId} connected={connected.has(input.id)} />}
       <div className="node-glance-preview">
         {instanceId && preview && frameTypeForPreviewKind(preview.kind) !== undefined ? (
           <NodePreview nodeId={instanceId} preview={preview} />
@@ -974,7 +959,7 @@ function GlanceBody({ descriptor, state, instanceId }: { descriptor: NodeDescrip
           <PlaceholderPreview />
         )}
       </div>
-      {output && <SingletonGlyph port={output} direction="output" instanceId={instanceId} connected={connected.has(output.id)} isPoly={resolvePortIsPoly(output, state.portMultiplicity)} />}
+      {output && <SingletonGlyph port={output} direction="output" instanceId={instanceId} connected={connected.has(output.id)} />}
     </div>
   )
 }

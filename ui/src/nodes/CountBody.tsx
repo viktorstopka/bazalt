@@ -147,10 +147,10 @@ export function CountBody({ descriptor, state, instanceId }: { descriptor: NodeD
   return (
     <div className={classNames} ref={rootRef}>
       <div className="view-count-port view-count-port-left">
-        <PortGlyph port={inputPort} side="left" instanceId={instanceId} connected={inputConnected} isPoly={false} />
+        <PortGlyph port={inputPort} side="left" instanceId={instanceId} connected={inputConnected} />
       </div>
       <div className="view-count-port view-count-port-right">
-        <PortGlyph port={outputPort} side="right" instanceId={instanceId} connected={outputConnected} isPoly={false} />
+        <PortGlyph port={outputPort} side="right" instanceId={instanceId} connected={outputConnected} />
       </div>
       <div className="view-count-value-area">
         <span ref={valueRef} className="view-count-value" style={{ color }}>

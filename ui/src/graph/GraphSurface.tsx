@@ -55,13 +55,48 @@ interface NodeWrapperProps {
   selection: ReadonlySet<string>
   connectedPortIds: ReadonlySet<string> | undefined
   multiplicity: NodeMultiplicity | undefined
+  /** This node runs once per instance: drawn as a stack of cards (null: it runs once). */
+  stack: InstanceStack | null
   overlayTarget: HTMLElement | null
   ghostActive: boolean
   /** A Listen is fed from this node — it is what you hear. */
   listening: boolean
 }
 
-function NodeWrapper({ node, descriptor, selected, selection, connectedPortIds, multiplicity, overlayTarget, ghostActive, listening }: NodeWrapperProps) {
+/** wiki/plans/DataAndWavetable.md D4: a node that runs once per instance is
+    drawn with offset outline copies behind it and a ×N badge — local to the
+    node, so moving it anywhere changes nothing, and cables stay clean. `side`
+    marks a boundary node: Merge (was Voice Sum) has the stack on its input
+    side only, the allocator on its output side only. */
+export interface InstanceStack {
+  count: number
+  side: 'both' | 'in' | 'out'
+}
+
+export function instanceStackFor(
+  descriptor: NodeDescriptor,
+  own: NodeMultiplicity | undefined,
+  all: ReadonlyMap<string, NodeMultiplicity>,
+): InstanceStack | null {
+  if (!own) return null
+  const polyOrigin = (ids: readonly string[]) => {
+    for (const id of ids) {
+      const info = own.ports.get(id)
+      if (info?.kind === 'poly') return info.originId ?? ''
+    }
+    return undefined
+  }
+  const inOrigin = polyOrigin(descriptor.inputs.map((p) => p.id))
+  const outOrigin = polyOrigin(descriptor.outputs.map((p) => p.id))
+  const origin = inOrigin ?? outOrigin
+  if (origin === undefined) return null
+  const count = all.get(origin)?.badge?.maxCount ?? own.badge?.maxCount ?? 0
+  if (count <= 1) return null
+  const side = inOrigin !== undefined && outOrigin !== undefined ? 'both' : inOrigin !== undefined ? 'in' : 'out'
+  return { count, side }
+}
+
+function NodeWrapper({ node, descriptor, selected, selection, connectedPortIds, multiplicity, stack, overlayTarget, ghostActive, listening }: NodeWrapperProps) {
   const [editing, setEditing] = useState(false)
   const [menuPos, setMenuPos] = useState<{ x: number; y: number } | null>(null)
   const wrapperRef = useRef<HTMLDivElement | null>(null)
@@ -198,6 +233,16 @@ function NodeWrapper({ node, descriptor, selected, selection, connectedPortIds, 
         setMenuPos({ x: e.clientX, y: e.clientY })
       }}
     >
+      {stack && (
+        <>
+          <div className={`graph-node-stack graph-node-stack-${stack.side}`} aria-hidden>
+            <div className="graph-node-stack-card graph-node-stack-card-2" />
+            <div className="graph-node-stack-card graph-node-stack-card-1" />
+          </div>
+          {/* The allocator shows its own live "active/max" readout instead. */}
+          {!multiplicity?.badge && <span className="graph-node-stack-badge">×{stack.count}</span>}
+        </>
+      )}
       {DECORATION_TYPES.has(node.typeId) || node.typeId === 'deco.reroute' ? (
         <DecorationCard node={node} descriptor={descriptor} selected={selected} connectedPortIds={connectedPortIds} />
       ) : (
@@ -336,6 +381,7 @@ export function GraphSurface({ nodes, wires, selection, getDescriptor, multiplic
             selection={selection}
             connectedPortIds={connectionsByNode.get(node.id)}
             multiplicity={multiplicity.get(node.id)}
+            stack={instanceStackFor(descriptor, multiplicity.get(node.id), multiplicity)}
             overlayTarget={overlayTarget}
             ghostActive={ghostActive}
             listening={listenedNodeIds.has(node.id)}

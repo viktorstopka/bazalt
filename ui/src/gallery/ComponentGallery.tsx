@@ -17,7 +17,7 @@ import './ComponentGallery.css'
 // here, not the separate "poly (placeholder)" swatch this list used to
 // carry alongside it — both halves of the Scalar/Poly split are ordinary
 // PORT_UI_STYLE lookups now.
-const PORT_KIND_ORDER: PortUiKind[] = ['audio-scalar', 'audio-poly', 'modulation', 'value', 'integer', 'trigger', 'boolean', 'note', 'data']
+const PORT_KIND_ORDER: PortUiKind[] = ['audio', 'modulation', 'value', 'integer', 'trigger', 'boolean', 'note', 'data']
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
@@ -45,7 +45,7 @@ function ChainGlyph({ port }: { port: PortDescriptor }) {
   // The gallery has no live graph, hence no live per-port multiplicity data
   // — `isPolyPlaceholder` is the mock-only stand-in classifyPortUiKind's own
   // doc comment names for exactly this case.
-  const style = portUiStyle(port, port.isPolyPlaceholder)
+  const style = portUiStyle(port)
   return (
     <span className="chain-glyph" style={{ color: style.color }}>
       {style.glyph}

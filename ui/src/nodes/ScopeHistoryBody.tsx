@@ -502,10 +502,10 @@ export function ScopeHistoryBody({
   return (
     <div className={classNames} ref={rootRef}>
       <div className="scope-history-port scope-history-port-left">
-        <PortGlyph port={inputPort} side="left" instanceId={instanceId} connected={inputConnected} isPoly={false} styleOverride={portStyle} />
+        <PortGlyph port={inputPort} side="left" instanceId={instanceId} connected={inputConnected} styleOverride={portStyle} />
       </div>
       <div className="scope-history-port scope-history-port-right">
-        <PortGlyph port={outputPort} side="right" instanceId={instanceId} connected={outputConnected} isPoly={false} styleOverride={portStyle} />
+        <PortGlyph port={outputPort} side="right" instanceId={instanceId} connected={outputConnected} styleOverride={portStyle} />
       </div>
       <svg className="scope-history-visual" ref={svgRef} viewBox={`0 0 ${PANEL_WIDTH} ${PANEL_HEIGHT}`}>
         {variant === 'centred' && (

@@ -9,6 +9,48 @@
 .graph-node-wrapper {
   position: absolute;
   cursor: grab;
+  /* Keeps the card stack's negative z-index inside this node. */
+  isolation: isolate;
+}
+
+/* wiki/plans/DataAndWavetable.md D4 — a node that runs once per instance:
+   two offset outline copies behind it. Clipped to one half for a boundary
+   node (Merge's input side, the allocator's output side). */
+.graph-node-stack {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+}
+.graph-node-stack-in {
+  clip-path: inset(-20px 50% -20px -20px);
+}
+.graph-node-stack-out {
+  clip-path: inset(-20px -20px -20px 50%);
+}
+.graph-node-stack-card {
+  position: absolute;
+  inset: 0;
+  border: 1px solid var(--color-nodeBorder);
+  border-radius: var(--radius-sm);
+  background: var(--color-nodeFill);
+}
+.graph-node-stack-card-1 {
+  transform: translate(4px, -4px);
+}
+.graph-node-stack-card-2 {
+  transform: translate(8px, -8px);
+  opacity: 0.6;
+}
+.graph-node-stack-badge {
+  position: absolute;
+  top: -22px;
+  right: 0;
+  color: var(--color-textFaint);
+  font-family: var(--font-secondary);
+  font-size: 10px;
+  line-height: 1;
+  pointer-events: none;
 }
 
 .graph-node-wrapper:active {
