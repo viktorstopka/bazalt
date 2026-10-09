@@ -7,7 +7,7 @@
 
 namespace bazalt::engine::nodes
 {
-    /** Stable type id: "delay.line". One Audio input, one Audio output,
+    /** Stable type id: "time.delay". One Audio input, one Audio output,
         plus a Control input for the delay length (samples) — a plain
         circular-buffer delay line. Generic primitive; the Karplus-Strong
         proof graph's feedback loop closes through this (ARCHITECTURE.md
@@ -55,13 +55,13 @@ namespace bazalt::engine::nodes
         int getNumOutputPorts() const noexcept override { return numOutputs; }
 
         juce::String getTitle() const override { return "Delay"; }
-        juce::String getCategory() const override { return "Effects"; }
+        juce::String getCategory() const override { return "Time"; }
 
         std::vector<PortDescriptor> getInputPorts() const override
         {
             return {
                 perChannel ({ .id = "in", .type = SignalType::Signal, .quantity = Quantity::Audio }),
-                ValueTypes::timeSamplesPort ("delay.line.samples", "By", maxDelaySamples, 200.0f),
+                ValueTypes::timeSamplesPort ("time.delay.samples", "By", maxDelaySamples, 200.0f),
             };
         }
 
@@ -74,7 +74,7 @@ namespace bazalt::engine::nodes
 
         void setParameter (const juce::String& parameterId, float value) override
         {
-            if (parameterId == "delay.line.samples")
+            if (parameterId == "time.delay.samples")
                 delaySamples = juce::jlimit (1, maxDelaySamples, (int) std::lround (value));
         }
 

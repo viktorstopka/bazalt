@@ -25,7 +25,7 @@ import { TelemetryFrameType } from '../telemetry/parseTelemetryFrame'
 import { registerPreviewRenderer, unregisterPreviewRenderer } from '../analysis/previewRenderLoop'
 import './MapDiagram.css'
 
-const RANGE_PORTS = ['adapt.map.inMin', 'adapt.map.inMax', 'adapt.map.outMin', 'adapt.map.outMax'] as const
+const RANGE_PORTS = ['math.map.inMin', 'math.map.inMax', 'math.map.outMin', 'math.map.outMax'] as const
 type RangePort = (typeof RANGE_PORTS)[number]
 
 // The diagram's own coordinate space — MUST match .map-diagram-svg's CSS
@@ -110,7 +110,7 @@ export function MapDiagram({
     const render = () => {
       const values = { ...latestRef.current }
       for (const portId of wiredPorts) values[portId] = latestTapValue(instanceId, portId) ?? values[portId]
-      pathRef.current?.setAttribute('d', mapDiagramPath(values['adapt.map.inMin'], values['adapt.map.inMax'], values['adapt.map.outMin'], values['adapt.map.outMax']))
+      pathRef.current?.setAttribute('d', mapDiagramPath(values['math.map.inMin'], values['math.map.inMax'], values['math.map.outMin'], values['math.map.outMax']))
     }
     registerPreviewRenderer(id, render)
     return () => unregisterPreviewRenderer(id)
@@ -118,7 +118,7 @@ export function MapDiagram({
 
   // The initial/gallery shape comes straight from React; the render loop
   // above takes over (same element) once the node is live and visible.
-  const d = mapDiagramPath(staticValues['adapt.map.inMin'], staticValues['adapt.map.inMax'], staticValues['adapt.map.outMin'], staticValues['adapt.map.outMax'])
+  const d = mapDiagramPath(staticValues['math.map.inMin'], staticValues['math.map.inMax'], staticValues['math.map.outMin'], staticValues['math.map.outMax'])
 
   return (
     <div className="map-diagram" ref={rootRef}>

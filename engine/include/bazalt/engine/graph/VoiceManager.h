@@ -66,7 +66,7 @@ namespace bazalt::engine
             maxActiveVoices.store (numVoices, std::memory_order_relaxed);
         }
 
-        /** wiki/plans/DomainRedesign.md Batch 4: "instance.allocate.voice.
+        /** wiki/plans/DomainRedesign.md Batch 4: "life.voice.
             maxInstances" — declared since M17, read nowhere until now
             (confirmed against the real source: this pool was always
             hardcoded to `numVoices`, independent of it). Lanes at or past

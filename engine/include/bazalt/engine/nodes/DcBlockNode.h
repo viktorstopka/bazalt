@@ -13,7 +13,7 @@ namespace bazalt::engine::nodes
         port, not a single fixed constant.
 
         `R = exp(-2*pi*cutoff/sampleRate)`: the same exponential-decay
-        approximation `math.slew`/`adapt.sampleHold` already use for their
+        approximation `time.slew`/`time.sampleHold` already use for their
         own one-pole time constants (CLAUDE.md rule 6: derived from the
         live sample rate in `prepare()`, memoised — `SlewNode.h`'s
         `CoefficientCache` pattern, copied verbatim — so a static or

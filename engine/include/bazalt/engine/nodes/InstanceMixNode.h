@@ -5,7 +5,7 @@
 
 namespace bazalt::engine::nodes
 {
-    /** Stable type id: "instance.sum" (M17, renamed from "instance.mix" in
+    /** Stable type id: "life.merge" (M17, renamed from "instance.mix" in
         wiki/plans/DomainRedesign.md Batch 1b — "Mix" was genuinely
         overloaded with the unrelated, real `mix.sum`/`math.add` node;
         "Sum" names what this literally does and pairs with the
@@ -40,7 +40,7 @@ namespace bazalt::engine::nodes
         `VoiceManager`/`PluginProcessor` against whatever a voice's own
         designated output is — it does not require reading this node at
         all, so it works whether or not a real graph even has an
-        `instance.sum` node in it (this node's own
+        `life.merge` node in it (this node's own
         threshold/hold-time parameters are for UI/schema completeness and
         future per-graph configurability; the M17 detector uses its own
         sensible constants — see `VoiceManager.h`).
@@ -54,8 +54,8 @@ namespace bazalt::engine::nodes
         int getNumInputPorts() const noexcept override { return numInputs; }
         int getNumOutputPorts() const noexcept override { return numOutputs; }
 
-        juce::String getTitle() const override { return "Voice Sum"; }
-        juce::String getCategory() const override { return "Domain"; }
+        juce::String getTitle() const override { return "Merge"; }
+        juce::String getCategory() const override { return "Life-cycle"; }
 
         std::vector<PortDescriptor> getInputPorts() const override
         {
@@ -80,13 +80,13 @@ namespace bazalt::engine::nodes
             a per-voice stereo chain (a per-voice pan, a stereo resonator)
             reaches the global domain intact instead of losing its right
             channel. */
-        static constexpr const char* channelsParameterId = "instance.sum.channels";
+        static constexpr const char* channelsParameterId = "life.merge.channels";
 
         bool supportsPerSample() const noexcept override { return false; } // domain seam, same as VoiceSumNode
 
         std::vector<ParameterDescriptor> getParameters() const override
         {
-            return { ParameterDescriptor { .id = "instance.sum.mode",
+            return { ParameterDescriptor { .id = "life.merge.mode",
                                             .minValue = 0.0f,
                                             .maxValue = 1.0f,
                                             .defaultValue = 0.0f,
@@ -95,13 +95,13 @@ namespace bazalt::engine::nodes
                                             .kind = ValueKind::Enum,
                                             .enumOptions = { { "sum", "Sum" }, { "average", "Average" } },
                                             .isStructural = true },
-                     ParameterDescriptor { .id = "instance.sum.silenceThresholdDb",
+                     ParameterDescriptor { .id = "life.merge.silenceThresholdDb",
                                             .minValue = -120.0f,
                                             .maxValue = -20.0f,
                                             .defaultValue = -80.0f,
                                             .unit = "dB",
                                             .displayName = "Silence Threshold" },
-                     ParameterDescriptor { .id = "instance.sum.silenceHoldTimeMs",
+                     ParameterDescriptor { .id = "life.merge.silenceHoldTimeMs",
                                             .minValue = 0.0f,
                                             .maxValue = 5000.0f,
                                             .defaultValue = 200.0f,
@@ -111,11 +111,11 @@ namespace bazalt::engine::nodes
 
         void setParameter (const juce::String& parameterId, float value) override
         {
-            if (parameterId == "instance.sum.mode")
+            if (parameterId == "life.merge.mode")
                 mode = value < 0.5f ? Mode::Sum : Mode::Average;
-            else if (parameterId == "instance.sum.silenceThresholdDb")
+            else if (parameterId == "life.merge.silenceThresholdDb")
                 silenceThresholdDb = value;
-            else if (parameterId == "instance.sum.silenceHoldTimeMs")
+            else if (parameterId == "life.merge.silenceHoldTimeMs")
                 silenceHoldTimeMs = value;
             else if (parameterId == channelsParameterId)
                 stereo = value > 1.5f;

@@ -32,18 +32,18 @@ namespace
     // same spirit as InstanceSwarmPopulationTests.cpp's own test graph.
     bool buildSwarmTransientGraph (GraphEditController& controller, int maxInstances)
     {
-        if (! controller.addNode ("instance.allocate.swarmTransient", "swarm", 0.0f, 0.0f).success)
+        if (! controller.addNode ("life.swarmTransient", "swarm", 0.0f, 0.0f).success)
             return false;
         if (! controller.setParameterValue (
-                "swarm", "instance.allocate.swarmTransient.maxInstances", (float) maxInstances).success)
+                "swarm", "life.swarmTransient.maxInstances", (float) maxInstances).success)
             return false;
-        if (! controller.addNode ("clock.pulse", "clock", -200.0f, 0.0f).success)
+        if (! controller.addNode ("time.clock", "clock", -200.0f, 0.0f).success)
             return false;
         if (! controller.connect ("clock", "tick", "swarm", "spawn").success) // Event -> Event, no adapter needed
             return false;
         if (! controller.addNode ("osc.analog", "osc", 200.0f, 0.0f).success)
             return false;
-        if (! controller.addNode ("instance.sum", "sum", 400.0f, 0.0f).success)
+        if (! controller.addNode ("life.merge", "sum", 400.0f, 0.0f).success)
             return false;
         if (! controller.connectWithAutoAdapt ("swarm", "random1", "osc", "pitch").success)
             return false;
@@ -53,7 +53,7 @@ namespace
     }
 }
 
-TEST_CASE ("instance.allocate.swarmTransient's own spawn Event dispatches through the real "
+TEST_CASE ("life.swarmTransient's own spawn Event dispatches through the real "
            "InstanceOriginNode-generalized relay - a genuine VoiceManager voice gets allocated "
            "(not just the node's own internal gate flag), and real audio reaches the output",
            "[plugin][InstanceSwarmTransient]")
@@ -90,7 +90,7 @@ TEST_CASE ("instance.allocate.swarmTransient's own spawn Event dispatches throug
     CHECK (rms (buffer, 0) > 0.001f);
 }
 
-TEST_CASE ("instance.allocate.swarmTransient's instance-count badge reports VoiceManager's own real "
+TEST_CASE ("life.swarmTransient's instance-count badge reports VoiceManager's own real "
            "active count (0 before any spawn) and the real, configured maxInstances ceiling",
            "[plugin][InstanceSwarmTransient]")
 {

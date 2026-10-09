@@ -175,7 +175,7 @@ export async function graphGetNodeDomains(): Promise<Record<string, 'voice' | 'g
 }
 
 /** Per-port Scalar/Poly multiplicity plus the live instance-count badge data
-    for every "instance.allocate.voice" node — DomainDot's real replacement
+    for every "life.voice" node — DomainDot's real replacement
     (wiki/plans/DomainRedesign.md Batch 4). `kind` is `'scalar'` or `'poly'`;
     `originId` is only ever set when `kind === 'poly'`. `badges` has an entry
     only for allocator nodes, and its two numbers are read fresh off the

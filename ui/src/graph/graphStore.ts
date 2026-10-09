@@ -275,7 +275,7 @@ export interface GraphSnapshot {
       alongside every nodes/wires resync (ensureInitialized, withHistory,
       undo, redo); absent for a node the engine hasn't compiled yet, or
       entirely outside the real WebView. `badge` is present only for
-      "instance.allocate.voice" nodes.
+      "life.voice" nodes.
   */
   multiplicity: ReadonlyMap<string, NodeMultiplicity>
   canUndo: boolean
@@ -1802,11 +1802,11 @@ export function addMapFromMainOutput(nodeId: string, x: number, y: number): stri
   const mapId = makeId('node')
   void withHistory(
     async () => {
-      if (!(await fireCommand(() => graphAddNode('adapt.map', mapId, x, y)))) return
+      if (!(await fireCommand(() => graphAddNode('math.map', mapId, x, y)))) return
       await fireCommand(() => graphConnectWithAutoAdapt(nodeId, portId, mapId, 'in'))
     },
     () => {
-      nodes.set(mapId, { id: mapId, typeId: 'adapt.map', x, y, bypassed: false })
+      nodes.set(mapId, { id: mapId, typeId: 'math.map', x, y, bypassed: false })
       selection = new Set([mapId])
     },
   )

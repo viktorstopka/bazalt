@@ -334,7 +334,7 @@ TEST_CASE ("adapt.sampleHold glides to a new held value over `glide`, at any sam
         NodePrepareInfo info;
         info.sampleRate = sampleRate;
         node.prepare (info);
-        node.setParameter ("adapt.sampleHold.glide", 0.010f);
+        node.setParameter ("time.sampleHold.glide", 0.010f);
 
         float out = 0.0f;
         float inputs[3] = { 1.0f, 1.0f, unwired };
@@ -378,12 +378,12 @@ TEST_CASE ("adapt.sampleHold ignores a non-finite input at a trigger, and reset(
     CHECK (out == 0.0f); // back to "nothing sampled yet"
 }
 
-TEST_CASE ("adapt.sampleHold's in and out share the source's quantity; trigger and glide do not influence it",
+TEST_CASE ("time.sampleHold's in and out share the source's quantity; trigger and glide do not influence it",
            "[engine][nodes][adapt][M21][inheriting]")
 {
     SampleHoldNode node;
     node.resolveIncomingPort ("trigger", sourcePort (SignalType::Event));
-    node.resolveIncomingPort ("adapt.sampleHold.glide", sourcePort (SignalType::Signal, Quantity::Time));
+    node.resolveIncomingPort ("time.sampleHold.glide", sourcePort (SignalType::Signal, Quantity::Time));
     CHECK (portNamed (node.getOutputPorts(), "out").quantity == Quantity::Dimensionless);
 
     node.resolveIncomingPort ("in", sourcePort (SignalType::Signal, Quantity::Frequency));

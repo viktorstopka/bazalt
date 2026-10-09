@@ -517,7 +517,7 @@ namespace bazalt
         // { "ports": { nodeId: { portId: { "kind": "poly"|"scalar",
         // "originId"?: string } } },
         //   "badges": { nodeId: { "activeCount": n, "maxCount": n } } } —
-        // "badges" entries exist only for "instance.allocate.voice" nodes,
+        // "badges" entries exist only for "life.voice" nodes,
         // and their two numbers are read FRESH off the processor's live
         // atomics on every call (they change on every voice on/off, far
         // more often than a recompile), not cached on the controller.

@@ -23,7 +23,7 @@ namespace
     {
         InstanceVoiceNode node;
         node.prepare ({ 44100.0, 64 });
-        node.setParameter ("instance.allocate.voice.seed", seed);
+        node.setParameter ("life.voice.seed", seed);
         node.reset();
         node.noteOn (60.0f, 1.0f);
 
@@ -75,7 +75,7 @@ TEST_CASE ("09-28-InstanceAllocator.2: random1/random2 are deterministic per spa
     // ("a pure function of (patch seed, spawn ordinal)").
     InstanceVoiceNode node;
     node.prepare ({ 44100.0, 64 });
-    node.setParameter ("instance.allocate.voice.seed", 7.0f);
+    node.setParameter ("life.voice.seed", 7.0f);
     node.reset();
 
     node.noteOn (60.0f, 1.0f);
@@ -94,7 +94,7 @@ TEST_CASE ("09-28-InstanceAllocator.2: random1/random2 are deterministic per spa
     // first one.
     InstanceVoiceNode replay;
     replay.prepare ({ 44100.0, 64 });
-    replay.setParameter ("instance.allocate.voice.seed", 7.0f);
+    replay.setParameter ("life.voice.seed", 7.0f);
     replay.reset();
 
     replay.noteOn (60.0f, 1.0f);
@@ -118,7 +118,7 @@ TEST_CASE ("InstanceVoiceNode declares a real, structural seed parameter default
     const auto parameters = node.getParameters();
 
     const auto it = std::find_if (parameters.begin(), parameters.end(),
-                                   [] (const ParameterDescriptor& p) { return p.id == "instance.allocate.voice.seed"; });
+                                   [] (const ParameterDescriptor& p) { return p.id == "life.voice.seed"; });
     REQUIRE (it != parameters.end());
     CHECK (it->isStructural);
     CHECK (it->isInteger);

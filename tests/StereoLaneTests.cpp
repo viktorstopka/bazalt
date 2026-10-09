@@ -16,7 +16,7 @@ namespace
     {
         NodeGraph graph;
         graph.addNode ({ "osc", "osc.sine", {}, { { "osc.sine.frequency", 220.0f } }, {} });
-        graph.addNode ({ "combine", "stereo.combine", {}, {}, {} });
+        graph.addNode ({ "combine", "channels.combine", {}, {}, {} });
         graph.addConnection ({ "osc", "out", "combine", "left" });
 
         juce::String previous = "combine";
@@ -108,9 +108,9 @@ TEST_CASE ("A stereo feedback loop keeps its channels apart and publishes both",
     auto factory = buildDefaultNodeFactory();
     NodeGraph graph;
     graph.addNode ({ "osc", "osc.sine", {}, { { "osc.sine.frequency", 220.0f } }, {} });
-    graph.addNode ({ "combine", "stereo.combine", {}, {}, {} });
+    graph.addNode ({ "combine", "channels.combine", {}, {}, {} });
     graph.addNode ({ "add", "math.add", {}, {}, {} });
-    graph.addNode ({ "delay", "delay.line", {}, { { "delay.line.samples", 10.0f } }, {} });
+    graph.addNode ({ "delay", "time.delay", {}, { { "time.delay.samples", 10.0f } }, {} });
     graph.addNode ({ "master", "io.output", {}, {}, {} });
     graph.addConnection ({ "osc", "out", "combine", "left" });
     graph.addConnection ({ "combine", "out", "add", "in.0" });

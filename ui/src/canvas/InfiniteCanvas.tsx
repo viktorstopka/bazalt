@@ -973,7 +973,7 @@ export const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, InfiniteCanvasPro
       }
       // Single keys arm a placement, exactly like picking from the Add menu.
       if (!mod && !e.altKey && !e.shiftKey) {
-        const typeId = key === 'r' ? 'adapt.map' : key === 'a' ? 'math.add' : key === 's' || key === 'm' ? 'math.multiply' : null
+        const typeId = key === 'r' ? 'math.map' : key === 'a' ? 'math.add' : key === 's' || key === 'm' ? 'math.multiply' : null
         if (typeId) {
           e.preventDefault()
           setAddMenu(null)

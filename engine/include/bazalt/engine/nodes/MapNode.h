@@ -6,7 +6,7 @@
 
 namespace bazalt::engine::nodes
 {
-    /** Stable type id: "adapt.map" — Map (design/Map.png). Formerly
+    /** Stable type id: "math.map" — Map (design/Map.png). Formerly
         `adapt.remap` ("Remap"); renamed 2026-10-04 on direct instruction
         ("The new name of remap is Map and it completely replaces Map node
         which should cease to exist"). The old two-parameter Map (a fixed
@@ -49,7 +49,7 @@ namespace bazalt::engine::nodes
         int getNumOutputPorts() const noexcept override { return numOutputs; }
 
         juce::String getTitle() const override { return "Map"; }
-        juce::String getCategory() const override { return "Adapters"; }
+        juce::String getCategory() const override { return "Math"; }
 
         std::vector<PortDescriptor> getInputPorts() const override
         {
@@ -64,16 +64,16 @@ namespace bazalt::engine::nodes
             // fallback slider background happened to show.
             return {
                 PortDescriptor { .id = "in", .type = SignalType::Signal, .label = "In" }, // design/Map.png: the merged pass-through row reads "In"
-                PortDescriptor { .id = "adapt.map.inMin", .type = SignalType::Signal, .label = "In Min",
+                PortDescriptor { .id = "math.map.inMin", .type = SignalType::Signal, .label = "In Min",
                                   .minValue = -100000.0f, .maxValue = 100000.0f, .defaultValue = 0.0f,
                                   .hasFallbackWhenUnconnected = true, .softMin = 0.0f, .softMax = 1.0f },
-                PortDescriptor { .id = "adapt.map.inMax", .type = SignalType::Signal, .label = "In Max",
+                PortDescriptor { .id = "math.map.inMax", .type = SignalType::Signal, .label = "In Max",
                                   .minValue = -100000.0f, .maxValue = 100000.0f, .defaultValue = 1.0f,
                                   .hasFallbackWhenUnconnected = true, .softMin = 0.0f, .softMax = 1.0f },
-                PortDescriptor { .id = "adapt.map.outMin", .type = SignalType::Signal, .label = "Out Min",
+                PortDescriptor { .id = "math.map.outMin", .type = SignalType::Signal, .label = "Out Min",
                                   .minValue = -100000.0f, .maxValue = 100000.0f, .defaultValue = 0.0f,
                                   .hasFallbackWhenUnconnected = true, .softMin = 0.0f, .softMax = 1.0f },
-                PortDescriptor { .id = "adapt.map.outMax", .type = SignalType::Signal, .label = "Out Max",
+                PortDescriptor { .id = "math.map.outMax", .type = SignalType::Signal, .label = "Out Max",
                                   .minValue = -100000.0f, .maxValue = 100000.0f, .defaultValue = 1.0f,
                                   .hasFallbackWhenUnconnected = true, .softMin = 0.0f, .softMax = 1.0f },
             };
@@ -86,13 +86,13 @@ namespace bazalt::engine::nodes
 
         void setParameter (const juce::String& parameterId, float value) override
         {
-            if (parameterId == "adapt.map.inMin")
+            if (parameterId == "math.map.inMin")
                 inMinValue = value;
-            else if (parameterId == "adapt.map.inMax")
+            else if (parameterId == "math.map.inMax")
                 inMaxValue = value;
-            else if (parameterId == "adapt.map.outMin")
+            else if (parameterId == "math.map.outMin")
                 outMinValue = value;
-            else if (parameterId == "adapt.map.outMax")
+            else if (parameterId == "math.map.outMax")
                 outMaxValue = value;
         }
 

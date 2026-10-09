@@ -113,12 +113,12 @@ namespace bazalt::engine
         factory.registerType ("filter.svf", [] { return std::make_unique<nodes::SvfFilterNode>(); });
         factory.registerType ("env.adsr", [] { return std::make_unique<nodes::AdsrNode>(); });
         factory.registerType ("excite.burst", [] { return std::make_unique<nodes::NoiseBurstNode>(); });
-        factory.registerType ("delay.line", [] { return std::make_unique<nodes::DelayNode>(); });
+        factory.registerType ("time.delay", [] { return std::make_unique<nodes::DelayNode>(); });
         factory.registerType ("filter.onepole", [] { return std::make_unique<nodes::OnePoleFilterNode>(); });
         factory.registerType ("util.constant", [] { return std::make_unique<nodes::ConstantNode>(); });
         factory.registerType ("util.macro", [] { return std::make_unique<nodes::MacroNode>(); });
         factory.registerType ("deco.reroute", [] { return std::make_unique<nodes::RerouteNode>(); });
-        factory.registerType ("adapt.map", [] { return std::make_unique<nodes::MapNode>(); });
+        factory.registerType ("math.map", [] { return std::make_unique<nodes::MapNode>(); });
         factory.registerType ("math.add", [] { return std::make_unique<nodes::AddNode>(); });
         factory.registerType ("math.multiply", [] { return std::make_unique<nodes::MultiplyNode>(); });
         factory.registerType ("math.round", [] { return std::make_unique<nodes::RoundNode>(); });
@@ -130,7 +130,7 @@ namespace bazalt::engine
         factory.registerType ("view.count", [] { return std::make_unique<nodes::ViewCountNode>(); }); // design/Visualization/Count.png
         factory.registerType ("view.scope", [] { return std::make_unique<nodes::ViewScopeNode>(); }); // one Scope for any value (wiki/plans/DataAndWavetable.md §2)
         factory.registerType ("io.output", [] { return std::make_unique<nodes::OutputNode>(); });
-        factory.registerType ("adapt.threshold", [] { return std::make_unique<nodes::ThresholdNode>(); });
+        factory.registerType ("logic.threshold", [] { return std::make_unique<nodes::ThresholdNode>(); });
         // Audio -> Control Bridge (wiki/plans/AudioControlBridge.md) — the
         // mechanical adapter canConnect auto-inserts for Audio -> Control.
         // Boolean -> Control (direct feedback: "bool not being pluggable
@@ -138,17 +138,17 @@ namespace bazalt::engine
         // Exact Pitch<->Frequency conversion (direct feedback found the
         // generic adapt.map fallback was quietly wrong for this pair —
         // linear where the real relationship is exponential).
-        factory.registerType ("adapt.pitchToFrequency", [] { return std::make_unique<nodes::PitchToFrequencyNode>(); });
-        factory.registerType ("adapt.frequencyToPitch", [] { return std::make_unique<nodes::FrequencyToPitchNode>(); });
+        factory.registerType ("math.pitchToFrequency", [] { return std::make_unique<nodes::PitchToFrequencyNode>(); });
+        factory.registerType ("math.frequencyToPitch", [] { return std::make_unique<nodes::FrequencyToPitchNode>(); });
         // Trigger -> timed Boolean gate (direct feedback: "duration for the
         // note held... using 2 clocks... too complicated").
-        factory.registerType ("adapt.gateLength", [] { return std::make_unique<nodes::GateLengthNode>(); });
-        factory.registerType ("mix.downmix", [] { return std::make_unique<nodes::DownmixNode>(); });
-        factory.registerType ("instance.allocate.voice", [] { return std::make_unique<nodes::InstanceVoiceNode>(); }); // 09-28-InstanceAllocator.3 — renamed from "instance.allocator"; 09-29-AddMenu.1 — renamed again from "instance.voice"
-        factory.registerType ("instance.allocate.swarmPopulation", [] { return std::make_unique<nodes::InstanceSwarmPopulationNode>(); }); // Domain Extensions batch
-        factory.registerType ("instance.allocate.swarmTransient", [] { return std::make_unique<nodes::InstanceSwarmTransientNode>(); }); // Domain Extensions batch
-        factory.registerType ("instance.allocate.trigger", [] { return std::make_unique<nodes::InstanceTriggerNode>(); }); // Domain Extensions batch
-        factory.registerType ("instance.sum", [] { return std::make_unique<nodes::InstanceMixNode>(); }); // DomainRedesign.md Batch 1b — renamed from "instance.mix" (C++ class name unchanged)
+        factory.registerType ("time.gateLength", [] { return std::make_unique<nodes::GateLengthNode>(); });
+        factory.registerType ("channels.downmix", [] { return std::make_unique<nodes::DownmixNode>(); });
+        factory.registerType ("life.voice", [] { return std::make_unique<nodes::InstanceVoiceNode>(); }); // 09-28-InstanceAllocator.3 — renamed from "instance.allocator"; 09-29-AddMenu.1 — renamed again from "instance.voice"
+        factory.registerType ("life.swarmPopulation", [] { return std::make_unique<nodes::InstanceSwarmPopulationNode>(); }); // Domain Extensions batch
+        factory.registerType ("life.swarmTransient", [] { return std::make_unique<nodes::InstanceSwarmTransientNode>(); }); // Domain Extensions batch
+        factory.registerType ("life.trigger", [] { return std::make_unique<nodes::InstanceTriggerNode>(); }); // Domain Extensions batch
+        factory.registerType ("life.merge", [] { return std::make_unique<nodes::InstanceMixNode>(); }); // DomainRedesign.md Batch 1b — renamed from "instance.mix" (C++ class name unchanged)
         factory.registerType ("io.noteIn", [] { return std::make_unique<nodes::IoNoteInNode>(); });
         // M21 Batch A, wave 1 — fixed-arity nodes needing no new infrastructure.
         factory.registerType ("math.subtract", [] { return std::make_unique<nodes::SubtractNode>(); });
@@ -157,7 +157,7 @@ namespace bazalt::engine
         factory.registerType ("math.minmax", [] { return std::make_unique<nodes::MinMaxNode>(); });
         factory.registerType ("math.power", [] { return std::make_unique<nodes::PowerNode>(); });
         factory.registerType ("math.modulo", [] { return std::make_unique<nodes::ModuloNode>(); });
-        factory.registerType ("math.slew", [] { return std::make_unique<nodes::SlewNode>(); });
+        factory.registerType ("time.slew", [] { return std::make_unique<nodes::SlewNode>(); });
         factory.registerType ("math.blend", [] { return std::make_unique<nodes::BlendNode>(); }); // replaces mix.crossfade and logic.select (D8)
         factory.registerType ("logic.not", [] { return std::make_unique<nodes::LogicNotNode>(); });
         factory.registerType ("logic.toggle", [] { return std::make_unique<nodes::LogicToggleNode>(); });
@@ -169,7 +169,7 @@ namespace bazalt::engine
         factory.registerType ("logic.latch", [] { return std::make_unique<nodes::LogicLatchNode>(); });
         factory.registerType ("logic.switch", [] { return std::make_unique<nodes::LogicSwitchNode>(); }); // A/B comparison (D8)
         factory.registerType ("logic.compare", [] { return std::make_unique<nodes::LogicCompareNode>(); });
-        factory.registerType ("adapt.sampleHold", [] { return std::make_unique<nodes::SampleHoldNode>(); });
+        factory.registerType ("time.sampleHold", [] { return std::make_unique<nodes::SampleHoldNode>(); });
         factory.registerType ("io.audioIn", [] { return std::make_unique<nodes::IoAudioInNode>(); });
         factory.registerType ("io.control", [] { return std::make_unique<nodes::IoControlNode>(); });
         factory.registerType ("io.transport", [] { return std::make_unique<nodes::IoTransportNode>(); });
@@ -198,31 +198,31 @@ namespace bazalt::engine
         factory.registerType ("space.diffuser", [] { return std::make_unique<nodes::DiffuserNode>(); });
         factory.registerType ("space.reverb", [] { return std::make_unique<nodes::ReverbNode>(); });
         // wiki/plans/SoundPalette.md
-        factory.registerType ("noise.colored", [] { return std::make_unique<nodes::NoiseColoredNode>(); });
-        factory.registerType ("noise.dust", [] { return std::make_unique<nodes::NoiseDustNode>(); });
+        factory.registerType ("source.noise", [] { return std::make_unique<nodes::NoiseColoredNode>(); });
+        factory.registerType ("source.dust", [] { return std::make_unique<nodes::NoiseDustNode>(); });
         factory.registerType ("shape.rectify", [] { return std::make_unique<nodes::ShapeRectifyNode>(); });
         factory.registerType ("shape.crush", [] { return std::make_unique<nodes::ShapeCrushNode>(); });
         factory.registerType ("shape.waveshaper", [] { return std::make_unique<nodes::ShapeWaveshaperNode>(); });
         factory.registerType ("shape.fold", [] { return std::make_unique<nodes::ShapeFoldNode>(); });
         factory.registerType ("lfo.shape", [] { return std::make_unique<nodes::LfoNode>(); });
         factory.registerType ("analysis.level", [] { return std::make_unique<nodes::AnalysisLevelNode>(); });
-        factory.registerType ("dyn.compress", [] { return std::make_unique<nodes::DynCompressNode>(); });
-        factory.registerType ("dyn.gate", [] { return std::make_unique<nodes::DynGateNode>(); });
-        factory.registerType ("fx.freqShift", [] { return std::make_unique<nodes::FreqShiftNode>(); });
+        factory.registerType ("dynamics.compress", [] { return std::make_unique<nodes::DynCompressNode>(); });
+        factory.registerType ("dynamics.gate", [] { return std::make_unique<nodes::DynGateNode>(); });
+        factory.registerType ("spectrum.freqShift", [] { return std::make_unique<nodes::FreqShiftNode>(); });
         factory.registerType ("view.tune", [] { return std::make_unique<nodes::ViewTuneNode>(); }); // design/Visualization/Tune.png
         // wiki/plans/Decorations.md — canvas-only, never compiled
         factory.registerDecoration ("deco.header", [] { return std::make_unique<nodes::DecorationNode> ("Header", "heading"); });
         factory.registerDecoration ("deco.comment", [] { return std::make_unique<nodes::DecorationNode> ("Comment", "comment"); });
         factory.registerDecoration ("deco.box", [] { return std::make_unique<nodes::DecorationNode> ("Box", "box"); });
         factory.registerDecoration ("deco.image", [] { return std::make_unique<nodes::DecorationNode> ("Image", "image"); });
-        factory.registerType ("stereo.split", [] { return std::make_unique<nodes::StereoSplitNode>(); });
-        factory.registerType ("stereo.combine", [] { return std::make_unique<nodes::StereoCombineNode>(); });
+        factory.registerType ("channels.split", [] { return std::make_unique<nodes::StereoSplitNode>(); });
+        factory.registerType ("channels.combine", [] { return std::make_unique<nodes::StereoCombineNode>(); });
         // Clock+Seq batch (wiki/NODES.Status.md's own build-next order, step 1).
-        factory.registerType ("clock.pulse", [] { return std::make_unique<nodes::ClockPulseNode>(); });
-        factory.registerType ("clock.divide", [] { return std::make_unique<nodes::ClockDivideNode>(); });
-        factory.registerType ("clock.counter", [] { return std::make_unique<nodes::ClockCounterNode>(); });
-        factory.registerType ("seq.steps", [] { return std::make_unique<nodes::SeqStepsNode>(); });
-        factory.registerType ("seq.euclid", [] { return std::make_unique<nodes::SeqEuclidNode>(); });
+        factory.registerType ("time.clock", [] { return std::make_unique<nodes::ClockPulseNode>(); });
+        factory.registerType ("time.divide", [] { return std::make_unique<nodes::ClockDivideNode>(); });
+        factory.registerType ("time.counter", [] { return std::make_unique<nodes::ClockCounterNode>(); });
+        factory.registerType ("time.steps", [] { return std::make_unique<nodes::SeqStepsNode>(); });
+        factory.registerType ("time.euclid", [] { return std::make_unique<nodes::SeqEuclidNode>(); });
         // Data Foundations batch — the first real Data-producing/consuming nodes.
         factory.registerType ("data.scale", [] { return std::make_unique<nodes::DataScaleNode>(); });
         factory.registerType ("data.table", [] { return std::make_unique<nodes::DataTableNode>(); });
@@ -279,7 +279,7 @@ namespace bazalt::engine
         OWN envelope (so the tone brightens and settles independently of the
         amp envelope — what actually makes a subtractive synth feel alive,
         not just "does it compile"), key-tracked so higher notes stay
-        proportionally bright, into a VCA, into `instance.sum` — the first
+        proportionally bright, into a VCA, into `life.merge` — the first
         time this node is exercised by a real, non-synthetic graph rather
         than a test-only one built just to exercise `hasGlobalDomain`.
 
@@ -312,7 +312,7 @@ namespace bazalt::engine
         NodeGraph graph;
 
         graph.addNode ({ "noteIn", "io.noteIn", { 40.0f, 260.0f }, {}, {} });
-        graph.addNode ({ "allocator", "instance.allocate.voice", { 340.0f, 260.0f }, {}, {} });
+        graph.addNode ({ "allocator", "life.voice", { 340.0f, 260.0f }, {}, {} });
 
         graph.addNode ({ "osc1", "osc.analog", { 640.0f, 40.0f }, { { "osc.analog.shape", 1.0f } }, {} }); // saw
         graph.addNode ({ "detuneConst", "util.constant", { 340.0f, 460.0f }, { { "util.constant.value", 0.07f } }, {} });
@@ -324,8 +324,8 @@ namespace bazalt::engine
                           { { "env.adsr.attack", 0.005f }, { "env.adsr.decay", 0.3f },
                             { "env.adsr.sustain", 0.3f }, { "env.adsr.release", 0.3f } }, {} });
         graph.addNode ({ "baseCutoff", "util.constant", { 940.0f, 720.0f }, { { "util.constant.value", 300.0f } }, {} });
-        graph.addNode ({ "cutoffMap", "adapt.map", { 940.0f, 850.0f },
-                          { { "adapt.map.min", 0.0f }, { "adapt.map.max", 5000.0f } }, {} });
+        graph.addNode ({ "cutoffMap", "math.map", { 940.0f, 850.0f },
+                          { { "math.map.min", 0.0f }, { "math.map.max", 5000.0f } }, {} });
         graph.addNode ({ "cutoffSum", "math.add", { 1240.0f, 780.0f }, {}, {} });
 
         graph.addNode ({ "ladder", "filter.ladder", { 1540.0f, 250.0f },
@@ -336,7 +336,7 @@ namespace bazalt::engine
                             { "env.adsr.sustain", 0.8f }, { "env.adsr.release", 0.3f } }, {} });
         graph.addNode ({ "ampVCA", "math.multiply", { 1840.0f, 250.0f }, {}, {} });
 
-        graph.addNode ({ "voiceMix", "instance.sum", { 2140.0f, 250.0f }, {}, {} });
+        graph.addNode ({ "voiceMix", "life.merge", { 2140.0f, 250.0f }, {}, {} });
         // Milestone 0.2 (wiki/NODES.System.md §9): a real stereo signal path
         // at last, closing archive_docs/CLEANUP.md P1 #6's long-logged gap —
         // centered/full-width by default (law defaults to constant power,
@@ -403,7 +403,7 @@ namespace bazalt::engine
     /** ARCHITECTURE.md §3.4's example voice path, M18-rewired (ADR-0024):
         MIDI -> io.noteIn -> instance.allocate.voice -> PolyBLEP osc (pitch) ->
         SVF -> ADSR-gated amp (gate) -> out. Purely acyclic — every node
-        schedules as an ordinary block-rate step. `instance.allocate.voice`'s
+        schedules as an ordinary block-rate step. `life.voice`'s
         "spawn" input is a real Note-typed connection now, not the inert
         placeholder M17 shipped it with; `osc`/`env`'s "pitch"/"gate" ports
         are real too — `PluginProcessor::triggerVoiceNote`/`handleMidiEvent`
@@ -424,7 +424,7 @@ namespace bazalt::engine
         // right: noteIn/allocator feed osc (pitch) and env (gate) below/
         // beside them; osc -> svf -> amp; env -> amp.
         graph.addNode ({ "noteIn", "io.noteIn", { 40.0f, 40.0f }, {}, {} });
-        graph.addNode ({ "allocator", "instance.allocate.voice", { 340.0f, 40.0f }, {}, {} });
+        graph.addNode ({ "allocator", "life.voice", { 340.0f, 40.0f }, {}, {} });
         graph.addNode ({ "env", "env.adsr", { 640.0f, 40.0f }, {}, {} });
         graph.addNode ({ "osc", "osc.analog", { 340.0f, 420.0f }, {}, {} });
         graph.addNode ({ "svf", "filter.svf", { 640.0f, 420.0f }, { { "filter.svf.cutoff", 3000.0f }, { "filter.svf.resonance", 0.9f } }, {} });
@@ -457,7 +457,7 @@ namespace bazalt::engine
 
         graph.addNode ({ "excite", "excite.burst", {}, {}, {} });
         graph.addNode ({ "mix", "math.add", {}, {}, {} });
-        graph.addNode ({ "delay", "delay.line", {}, { { "delay.line.samples", 200.0f } }, {} });
+        graph.addNode ({ "delay", "time.delay", {}, { { "time.delay.samples", 200.0f } }, {} });
         graph.addNode ({ "damp", "filter.onepole", {}, { { "filter.onepole.coefficient", 0.5f } }, {} });
 
         graph.addConnection ({ "excite", "out", "mix", "in.0" });

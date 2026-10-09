@@ -998,6 +998,94 @@ namespace bazalt::engine
             return root;
         }
 
+        // Schema v14 (wiki/plans/DataAndWavetable.md §3): type ids follow the
+        // category (`life.voice`, `time.delay`, …). A renamed node's own
+        // parameter keys and port ids carry its type id as their prefix
+        // ("adapt.map.inMin"), so they move with it.
+        juce::var migrateV13ToV14 (juce::var v13Root)
+        {
+            static const std::unordered_map<juce::String, juce::String> renamed {
+                { "noise.colored", "source.noise" },
+                { "noise.dust", "source.dust" },
+                { "dyn.compress", "dynamics.compress" },
+                { "dyn.gate", "dynamics.gate" },
+                { "fx.freqShift", "spectrum.freqShift" },
+                { "mix.downmix", "channels.downmix" },
+                { "stereo.split", "channels.split" },
+                { "stereo.combine", "channels.combine" },
+                { "delay.line", "time.delay" },
+                { "clock.pulse", "time.clock" },
+                { "clock.divide", "time.divide" },
+                { "clock.counter", "time.counter" },
+                { "seq.steps", "time.steps" },
+                { "seq.euclid", "time.euclid" },
+                { "math.slew", "time.slew" },
+                { "adapt.sampleHold", "time.sampleHold" },
+                { "adapt.gateLength", "time.gateLength" },
+                { "adapt.map", "math.map" },
+                { "adapt.pitchToFrequency", "math.pitchToFrequency" },
+                { "adapt.frequencyToPitch", "math.frequencyToPitch" },
+                { "adapt.threshold", "logic.threshold" },
+                { "instance.allocate.voice", "life.voice" },
+                { "instance.allocate.swarmPopulation", "life.swarmPopulation" },
+                { "instance.allocate.swarmTransient", "life.swarmTransient" },
+                { "instance.allocate.trigger", "life.trigger" },
+                { "instance.sum", "life.merge" }
+            };
+
+            auto root = v13Root.clone();
+            std::unordered_map<juce::String, std::pair<juce::String, juce::String>> prefixByNodeId; // id -> (old., new.)
+
+            if (auto* nodes = root["nodes"].getArray())
+            {
+                for (auto& node : *nodes)
+                {
+                    auto* object = node.getDynamicObject();
+                    if (object == nullptr)
+                        continue;
+                    const auto it = renamed.find (object->getProperty ("type").toString());
+                    if (it == renamed.end())
+                        continue;
+
+                    object->setProperty ("type", it->second);
+                    const auto oldPrefix = it->first + ".", newPrefix = it->second + ".";
+                    prefixByNodeId[object->getProperty ("id").toString()] = { oldPrefix, newPrefix };
+
+                    if (auto* parameters = object->getProperty ("parameters").getDynamicObject())
+                    {
+                        auto* moved = new juce::DynamicObject();
+                        for (const auto& property : parameters->getProperties())
+                        {
+                            const auto key = property.name.toString();
+                            moved->setProperty (key.startsWith (oldPrefix) ? newPrefix + key.substring (oldPrefix.length()) : key, property.value);
+                        }
+                        object->setProperty ("parameters", juce::var (moved));
+                    }
+                }
+            }
+
+            auto renamePort = [&] (const juce::String& nodeId, const juce::String& portId) -> juce::String
+            {
+                const auto it = prefixByNodeId.find (nodeId);
+                if (it == prefixByNodeId.end() || ! portId.startsWith (it->second.first))
+                    return portId;
+                return it->second.second + portId.substring (it->second.first.length());
+            };
+
+            if (auto* connections = root["connections"].getArray())
+                for (auto& c : *connections)
+                    if (auto* connection = c.getDynamicObject())
+                    {
+                        connection->setProperty ("toPortId", renamePort (c["toNodeId"].toString(), c["toPortId"].toString()));
+                        connection->setProperty ("fromPortId", renamePort (c["fromNodeId"].toString(), c["fromPortId"].toString()));
+                    }
+            if (root.getDynamicObject()->hasProperty ("outputNodeId"))
+                root.getDynamicObject()->setProperty ("outputPortId", renamePort (root["outputNodeId"].toString(), root["outputPortId"].toString()));
+
+            root.getDynamicObject()->setProperty ("schemaVersion", 14);
+            return root;
+        }
+
         // vN -> vN+1 migrations, keyed by the version they migrate FROM.
         using Migration = std::function<juce::var (juce::var)>;
 
@@ -1016,6 +1104,7 @@ namespace bazalt::engine
                 { 10, migrateV10ToV11 },
                 { 11, migrateV11ToV12 },
                 { 12, migrateV12ToV13 },
+                { 13, migrateV13ToV14 },
             };
             return migrations;
         }

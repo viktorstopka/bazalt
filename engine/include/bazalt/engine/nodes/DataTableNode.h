@@ -20,7 +20,7 @@ namespace bazalt::engine::nodes
         situation here — `NodeContent` doesn't exist as real code yet, so
         this node's curve is a fixed bank of up to `maxPoints` (32) plain
         `ParameterDescriptor` points, `data.table.point.0`..`.31`, the same
-        pattern `seq.steps`' own step bank already established. `resolution`
+        pattern `time.steps`' own step bank already established. `resolution`
         (structural, 2–32) picks how many of those 32 are actually
         published, truncating from the front — raising the cap later is
         trivial, these are individually-numbered parameters, not a

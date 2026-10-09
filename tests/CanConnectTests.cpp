@@ -62,7 +62,7 @@ TEST_CASE ("canConnect: Unipolar/Bipolar into a real quantity needs Map, seeded 
 
     REQUIRE (result.outcome == ConnectionOutcome::NeedsAdapters);
     REQUIRE (result.adapterChain.size() == 1);
-    CHECK (result.adapterChain[0].typeId == "adapt.map");
+    CHECK (result.adapterChain[0].typeId == "math.map");
     CHECK (result.adapterChain[0].seedFromDestinationRange);
     CHECK (result.adapterChain[0].seedFromSourceRange); // adapt.map seeds its input range too (design/Map.png)
 
@@ -80,7 +80,7 @@ TEST_CASE ("canConnect: a real quantity into Unipolar/Bipolar needs a Map, seede
 
     REQUIRE (result.outcome == ConnectionOutcome::NeedsAdapters);
     REQUIRE (result.adapterChain.size() == 1);
-    CHECK (result.adapterChain[0].typeId == "adapt.map");
+    CHECK (result.adapterChain[0].typeId == "math.map");
     CHECK (result.adapterChain[0].seedFromSourceRange);
     CHECK (result.adapterChain[0].seedFromDestinationRange);
 }
@@ -100,7 +100,7 @@ TEST_CASE ("canConnect: two different real quantities insert adapt.map, seeded f
     REQUIRE (result.outcome == ConnectionOutcome::NeedsAdapters);
     REQUIRE (result.adapterChain.size() == 1);
 
-    CHECK (result.adapterChain[0].typeId == "adapt.map");
+    CHECK (result.adapterChain[0].typeId == "math.map");
     CHECK (result.adapterChain[0].seedFromSourceRange);
     CHECK (result.adapterChain[0].seedFromDestinationRange);
     CHECK (result.reason.isNotEmpty());
@@ -115,7 +115,7 @@ TEST_CASE ("canConnect: Pitch<->Frequency gets the exact converter, not the gene
     const auto toFrequency = canConnect (pitch, frequency);
     REQUIRE (toFrequency.outcome == ConnectionOutcome::NeedsAdapters);
     REQUIRE (toFrequency.adapterChain.size() == 1);
-    CHECK (toFrequency.adapterChain[0].typeId == "adapt.pitchToFrequency");
+    CHECK (toFrequency.adapterChain[0].typeId == "math.pitchToFrequency");
     CHECK (toFrequency.adapterChain[0].inputPortId == "pitch");
     CHECK (toFrequency.adapterChain[0].outputPortId == "frequency");
     // No seeding at all - the conversion is a fixed formula, not range-dependent.
@@ -125,7 +125,7 @@ TEST_CASE ("canConnect: Pitch<->Frequency gets the exact converter, not the gene
     const auto toPitch = canConnect (frequency, pitch);
     REQUIRE (toPitch.outcome == ConnectionOutcome::NeedsAdapters);
     REQUIRE (toPitch.adapterChain.size() == 1);
-    CHECK (toPitch.adapterChain[0].typeId == "adapt.frequencyToPitch");
+    CHECK (toPitch.adapterChain[0].typeId == "math.frequencyToPitch");
 }
 
 TEST_CASE ("canConnect: a Boolean is a plain 0/1 value - it wires straight into any value port",
@@ -144,7 +144,7 @@ TEST_CASE ("canConnect: Control into Event needs Threshold, wired into 'by' not 
     const auto result = canConnect (controlPort(), PortDescriptor { "e", SignalType::Event });
     REQUIRE (result.outcome == ConnectionOutcome::NeedsAdapters);
     REQUIRE (result.adapterChain.size() == 1);
-    CHECK (result.adapterChain[0].typeId == "adapt.threshold");
+    CHECK (result.adapterChain[0].typeId == "logic.threshold");
     CHECK (result.adapterChain[0].inputPortId == "by");
 }
 
@@ -175,7 +175,7 @@ TEST_CASE ("canConnect: Audio into a real-quantity port needs a Map, one step",
 
     REQUIRE (result.outcome == ConnectionOutcome::NeedsAdapters);
     REQUIRE (result.adapterChain.size() == 1);
-    CHECK (result.adapterChain[0].typeId == "adapt.map");
+    CHECK (result.adapterChain[0].typeId == "math.map");
     CHECK (result.adapterChain[0].seedFromSourceRange); // the audio side reads as ±1
     CHECK (result.adapterChain[0].seedFromDestinationRange);
 }
@@ -186,14 +186,14 @@ TEST_CASE ("canConnect: stereo into a mono value port asks for a Downmix, then M
     const auto modulation = canConnect (audioPort (Channels::Stereo), controlPort());
     REQUIRE (modulation.outcome == ConnectionOutcome::NeedsAdapters);
     REQUIRE (modulation.adapterChain.size() == 1);
-    CHECK (modulation.adapterChain[0].typeId == "mix.downmix");
+    CHECK (modulation.adapterChain[0].typeId == "channels.downmix");
     CHECK_FALSE (modulation.choices.empty());
 
     const auto realQuantity = canConnect (audioPort (Channels::Stereo), controlPort (Quantity::Frequency, 20.0f, 20000.0f));
     REQUIRE (realQuantity.outcome == ConnectionOutcome::NeedsAdapters);
     REQUIRE (realQuantity.adapterChain.size() == 2);
-    CHECK (realQuantity.adapterChain[0].typeId == "mix.downmix");
-    CHECK (realQuantity.adapterChain[1].typeId == "adapt.map");
+    CHECK (realQuantity.adapterChain[0].typeId == "channels.downmix");
+    CHECK (realQuantity.adapterChain[1].typeId == "math.map");
     CHECK_FALSE (realQuantity.choices.empty());
 }
 
@@ -205,7 +205,7 @@ TEST_CASE ("canConnect: a real-quantity value into Audio needs a Map onto ±1",
 
     REQUIRE (result.outcome == ConnectionOutcome::NeedsAdapters);
     REQUIRE (result.adapterChain.size() == 1);
-    CHECK (result.adapterChain[0].typeId == "adapt.map");
+    CHECK (result.adapterChain[0].typeId == "math.map");
     CHECK (result.adapterChain[0].seedFromSourceRange);
     CHECK (result.adapterChain[0].seedFromDestinationRange);
 }
@@ -229,7 +229,7 @@ TEST_CASE ("canConnect: stereo->mono needs mix.downmix, and the user's choice of
     const auto result = canConnect (audioPort (Channels::Stereo), audioPort (Channels::Mono));
     REQUIRE (result.outcome == ConnectionOutcome::NeedsAdapters);
     REQUIRE (result.adapterChain.size() == 1);
-    CHECK (result.adapterChain[0].typeId == "mix.downmix");
+    CHECK (result.adapterChain[0].typeId == "channels.downmix");
     CHECK (result.choices == std::vector<juce::String> { "mid", "left", "right", "side" });
 }
 

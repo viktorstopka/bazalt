@@ -12,7 +12,7 @@ namespace bazalt
     /** Owns the live, editable NodeGraph and applies commands to it
         (NODE_EDITOR.md §6) — message-thread only. Every graph-shaped
         command recompiles and republishes fresh plans: 8 voice plans per
-        active "instance.allocate.voice" origin (up to
+        active "life.voice" origin (up to
         MultiplicityResolver::maxOrigins simultaneously,
         wiki/plans/DomainRedesign.md Batch 2), plus one shared global plan
         whenever the graph has real Scalar-resolved content (supersedes the
@@ -242,7 +242,7 @@ namespace bazalt
             return portMultiplicity;
         }
 
-        /** Every "instance.allocate.voice" node id -> the origin bundle
+        /** Every "life.voice" node id -> the origin bundle
             slot it currently occupies on the processor, as of the last
             successful recompile — the instance-count badge's own LIVE
             activeCount/maxCount are deliberately NOT cached here (they

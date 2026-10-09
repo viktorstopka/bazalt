@@ -214,7 +214,7 @@ namespace bazalt::engine
         //
         // wiki/plans/DomainRedesign.md Batch 2: generalized from a single
         // juce::String to one entry per possible origin — the ONE shared
-        // global plan can now contain several "instance.sum" nodes at once
+        // global plan can now contain several "life.merge" nodes at once
         // (one per origin bridging into it, DomainRedesign.md §4's multiple
         // independent voice regions), each needing its own driver hand-off.
         // Indexed by origin BUNDLE slot (BazaltAudioProcessor::OriginBundle),

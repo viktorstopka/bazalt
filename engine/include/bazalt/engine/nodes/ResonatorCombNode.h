@@ -9,7 +9,7 @@ namespace bazalt::engine::nodes
 {
     /** Stable type id: "resonator.comb" (wiki/NODES.md's `resonator.*` row,
         the PM Core batch). The cheapest resonator in the catalog, and —
-        unlike plain `delay.line` (a generic building block with no feedback
+        unlike plain `time.delay` (a generic building block with no feedback
         of its own, for hand-built feedback networks) — a real, self-
         contained resonant filter: feedback and damping are baked in here,
         the same way `filter.ladder` bakes in its own resonance rather than
@@ -39,7 +39,7 @@ namespace bazalt::engine::nodes
         sampleRate / frequency`), read and reclamped every sample — the
         established pattern this catalog already uses for every other
         audio-rate-modulatable filter parameter (`filter.ladder.cutoff`,
-        `delay.line.samples`'s own cable). No fractional-delay interpolation
+        `time.delay.samples`'s own cable). No fractional-delay interpolation
         (plain integer sample indexing, rounded) — the same simplification
         `DelayNode.h` itself already makes; a sub-sample-accurate version is
         real, separate future work if pitch-accuracy at this node's own
@@ -48,7 +48,7 @@ namespace bazalt::engine::nodes
         **`feedback`** is hard-limited to `(-0.999, 0.999)` regardless of
         the raw input — the catalog's own "hard-limited below 1" spec — so
         the feedback-mode loop can never literally reach or exceed unity
-        gain and diverge, matching `delay.line`'s own catalog note for the
+        gain and diverge, matching `time.delay`'s own catalog note for the
         same reason.
     */
     class ResonatorCombNode : public Node

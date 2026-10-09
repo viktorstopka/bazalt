@@ -46,7 +46,7 @@ namespace bazalt::engine::nodes
         }
     }
 
-    /** Stable type id: "dyn.compress" (wiki/plans/SoundPalette.md, Batch 3).
+    /** Stable type id: "dynamics.compress" (wiki/plans/SoundPalette.md, Batch 3).
         A stereo-linked feed-forward compressor with a soft knee (Giannoulis,
         Massberg & Reiss 2012): above `threshold`, every `ratio` dB in gives
         1 dB out; `knee` rounds the corner; attack/release smooth the gain in
@@ -82,13 +82,13 @@ namespace bazalt::engine::nodes
                 PortDescriptor { .id = "in", .type = SignalType::Signal, .quantity = Quantity::Audio, .channels = Channels::Stereo },
                 PortDescriptor { .id = "sidechain", .type = SignalType::Signal, .label = "Sidechain",
                                   .hasFallbackWhenUnconnected = true, .quantity = Quantity::Audio, .channels = Channels::Stereo },
-                controlPort ("dyn.compress.threshold", "Threshold", "dB", -60.0f, 0.0f, -18.0f, Quantity::Gain),
-                controlPort ("dyn.compress.ratio", "Ratio", ":1", 1.0f, 20.0f, 4.0f, Quantity::Ratio),
-                controlPort ("dyn.compress.knee", "Knee", "dB", 0.0f, 24.0f, 6.0f, Quantity::Gain),
-                ValueTypes::timeMsPort ("dyn.compress.attack", "Attack", 10.0f, 200.0f),
-                ValueTypes::timeMsPort ("dyn.compress.release", "Release", 120.0f, 2000.0f),
-                controlPort ("dyn.compress.makeup", "Makeup", "dB", 0.0f, 24.0f, 0.0f, Quantity::Gain),
-                controlPort ("dyn.compress.mix", "Mix", "", 0.0f, 1.0f, 1.0f, Quantity::Unipolar),
+                controlPort ("dynamics.compress.threshold", "Threshold", "dB", -60.0f, 0.0f, -18.0f, Quantity::Gain),
+                controlPort ("dynamics.compress.ratio", "Ratio", ":1", 1.0f, 20.0f, 4.0f, Quantity::Ratio),
+                controlPort ("dynamics.compress.knee", "Knee", "dB", 0.0f, 24.0f, 6.0f, Quantity::Gain),
+                ValueTypes::timeMsPort ("dynamics.compress.attack", "Attack", 10.0f, 200.0f),
+                ValueTypes::timeMsPort ("dynamics.compress.release", "Release", 120.0f, 2000.0f),
+                controlPort ("dynamics.compress.makeup", "Makeup", "dB", 0.0f, 24.0f, 0.0f, Quantity::Gain),
+                controlPort ("dynamics.compress.mix", "Mix", "", 0.0f, 1.0f, 1.0f, Quantity::Unipolar),
             };
         }
         std::vector<PortDescriptor> getOutputPorts() const override
@@ -156,9 +156,9 @@ namespace bazalt::engine::nodes
     private:
         static const std::array<juce::String, 7>& ids()
         {
-            static const std::array<juce::String, 7> list { "dyn.compress.threshold", "dyn.compress.ratio", "dyn.compress.knee",
-                                                            "dyn.compress.attack", "dyn.compress.release", "dyn.compress.makeup",
-                                                            "dyn.compress.mix" };
+            static const std::array<juce::String, 7> list { "dynamics.compress.threshold", "dynamics.compress.ratio", "dynamics.compress.knee",
+                                                            "dynamics.compress.attack", "dynamics.compress.release", "dynamics.compress.makeup",
+                                                            "dynamics.compress.mix" };
             return list;
         }
 
@@ -167,7 +167,7 @@ namespace bazalt::engine::nodes
         dynamics::Coefficient attack, release, detectorRelease;
     };
 
-    /** Stable type id: "dyn.gate" (wiki/plans/SoundPalette.md, Batch 3).
+    /** Stable type id: "dynamics.gate" (wiki/plans/SoundPalette.md, Batch 3).
         A stereo-linked gate / expander: opens when the (side)chain level rises
         above `threshold`, closes `hold` ms after it falls 3 dB below it
         (hysteresis, so it doesn't chatter at the edge). Closed means `range`
@@ -204,11 +204,11 @@ namespace bazalt::engine::nodes
                 PortDescriptor { .id = "in", .type = SignalType::Signal, .quantity = Quantity::Audio, .channels = Channels::Stereo },
                 PortDescriptor { .id = "sidechain", .type = SignalType::Signal, .label = "Sidechain",
                                   .hasFallbackWhenUnconnected = true, .quantity = Quantity::Audio, .channels = Channels::Stereo },
-                controlPort ("dyn.gate.threshold", "Threshold", "dB", -80.0f, 0.0f, -40.0f, Quantity::Gain),
-                controlPort ("dyn.gate.range", "Range", "dB", 0.0f, 80.0f, 60.0f, Quantity::Gain),
-                ValueTypes::timeMsPort ("dyn.gate.attack", "Attack", 1.0f, 50.0f),
-                ValueTypes::timeMsPort ("dyn.gate.hold", "Hold", 20.0f, 500.0f),
-                ValueTypes::timeMsPort ("dyn.gate.release", "Release", 100.0f, 2000.0f),
+                controlPort ("dynamics.gate.threshold", "Threshold", "dB", -80.0f, 0.0f, -40.0f, Quantity::Gain),
+                controlPort ("dynamics.gate.range", "Range", "dB", 0.0f, 80.0f, 60.0f, Quantity::Gain),
+                ValueTypes::timeMsPort ("dynamics.gate.attack", "Attack", 1.0f, 50.0f),
+                ValueTypes::timeMsPort ("dynamics.gate.hold", "Hold", 20.0f, 500.0f),
+                ValueTypes::timeMsPort ("dynamics.gate.release", "Release", 100.0f, 2000.0f),
             };
         }
         std::vector<PortDescriptor> getOutputPorts() const override
@@ -222,7 +222,7 @@ namespace bazalt::engine::nodes
         }
         void setParameter (const juce::String& parameterId, float value) override
         {
-            static const juce::String ids[] = { "dyn.gate.threshold", "dyn.gate.range", "dyn.gate.attack", "dyn.gate.hold", "dyn.gate.release" };
+            static const juce::String ids[] = { "dynamics.gate.threshold", "dynamics.gate.range", "dynamics.gate.attack", "dynamics.gate.hold", "dynamics.gate.release" };
             for (int i = 0; i < 5; ++i)
                 if (parameterId == ids[i])
                     stored[(size_t) i] = value;

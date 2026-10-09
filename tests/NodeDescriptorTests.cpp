@@ -23,7 +23,7 @@ TEST_CASE ("NodeFactory::describeAll() returns a descriptor for every registered
     const auto* osc = findByTypeId ("osc.analog");
     REQUIRE (osc != nullptr);
     CHECK (osc->title == "Oscillator");
-    CHECK (osc->category == "Generators");
+    CHECK (osc->category == "Sources");
     CHECK (osc->layoutVariant == NodeLayoutVariant::Standard);
     REQUIRE (osc->inputs.size() == 6); // "pitch" (M18, ADR-0024), "osc.analog.frequency" (M20), fine, pulseWidth, phase, sync (SoundPalette.md Batch 2)
     CHECK (osc->inputs[0].id == "pitch");
@@ -129,13 +129,13 @@ TEST_CASE ("09-28-InstanceAllocator.3: instance.allocate.voice (renamed from ins
     CHECK (findByTypeId ("instance.allocator") == nullptr);
     CHECK (findByTypeId ("instance.voice") == nullptr); // 09-29-AddMenu.1's own rename
 
-    const auto* voice = findByTypeId ("instance.allocate.voice");
+    const auto* voice = findByTypeId ("life.voice");
     REQUIRE (voice != nullptr);
     CHECK (voice->title == "Voice");
     // "Domain/Allocate", not flat "Domain" - 09-29-AddMenu.1 nests Voice (and
     // its future Swarm/Trigger siblings) under an Add-menu flyout, one level
     // deeper than instance.sum, which deliberately stays flat "Domain".
-    CHECK (voice->category == "Domain/Allocate");
+    CHECK (voice->category == "Life-cycle");
 
     bool sawConfiguration = false;
     bool sawMaxInstances = false;
@@ -143,8 +143,8 @@ TEST_CASE ("09-28-InstanceAllocator.3: instance.allocate.voice (renamed from ins
     for (const auto& p : voice->parameters)
     {
         if (p.id.containsIgnoreCase ("configuration")) sawConfiguration = true;
-        if (p.id == "instance.allocate.voice.maxInstances") sawMaxInstances = true;
-        if (p.id == "instance.allocate.voice.seed") sawSeed = true;
+        if (p.id == "life.voice.maxInstances") sawMaxInstances = true;
+        if (p.id == "life.voice.seed") sawSeed = true;
     }
     CHECK_FALSE (sawConfiguration);
     CHECK (sawMaxInstances);

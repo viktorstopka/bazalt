@@ -137,10 +137,10 @@ plain playhead can't produce. **In:** `sample` — `Data(sample)`, required; `po
 
 ## noise — stochastic sources
 
-#### `noise.colored` — Noise ✅
+#### `source.noise` — Noise ✅
 White, pink, brown, blue or violet noise (0, −3, −6, +3, +6 dB/oct, measured ±0.1 dB/oct), each at about the same loudness so switching colour changes tone, not level. **In:** `level`. **Out:** `out` — `Audio` (Stereo when `stereo` is on). **Parameters:** `colour`; `stereo` (structural — a second, decorrelated generator: a source declares its own width); `seed` (structural). **Behavior:** xorshift white; Kellet pink; leaky-integrated brown (5 Hz corner from the sample rate); blue/violet = first difference of pink/white. Seeded, so reproducible.
 
-#### `noise.dust` — Dust ✅
+#### `source.dust` — Dust ✅
 Sparse single-sample impulses at random moments — rain, crackle, clicks, a swarm trigger. **In:** `density` (impulses/s, 0.1–10000, log); `randomness` (0 fixed height … 1 fully random). **Out:** `out` — `Audio`; `trigger` — `Event` (every impulse). **Parameters:** `polarity` (unipolar/bipolar); `seed` (structural). **Behavior:** a per-sample Poisson process (probability density/sampleRate), sample-accurate and block-size independent.
 
 ## excite — physical excitation
@@ -202,7 +202,7 @@ A 2D waveguide mesh — the resonating body behind drum heads, plates, and gongs
 with a pickup point placed anywhere on the surface. **In:** `excite` — `Audio`; `size`; `tension`; `decay`; `damping`; `positionX`, `positionY`. **Out:** `out` — `Audio` (`Channels::Stereo`, primary — one real stereo cable, the modern catalog-wide shape, not the stale `left`/`right` pair this entry predates). **Structural:** `quality` (enum: low, medium, high → 8/16/32 modes). **Native:** inner loop scales with mode count. **Not a literal 2D mesh solve** — a real, documented simplification: self-contained (no `modes` input, unlike `resonator.modal`), reusing `resonator.modal`'s own two-pole-resonator-bank technique over the SAME membrane-Bessel-zero table `data.material`'s own `plate` geometry already uses, squared the same way. No `pitch` input — `size`/`tension` together set its own absolute fundamental (smaller/tenser rings higher). `positionX`/`positionY` generalize `resonator.modal`'s own mode-shape weighting into two axes; stereo spread is unconditional (no `spread` knob exists for this node) via the same golden-angle constant `resonator.modal` uses.
 
 #### `resonator.comb` — Comb ✅ *(PM Core batch 1)*
-The cheap resonator, and the building block for hand-built feedback experiments. **In:** `in` — `Audio`; `frequency [audio]`; `feedback` (hard-limited to ±0.999); `damping`. **Out:** `out` — `Audio`. **Structural:** `type` (enum: feedforward, feedback; default feedback). **Behavior:** `feedback` mode is the real IIR loop (`y[n] = x[n] + g·damped(y[n-M])`, the textbook Karplus-Strong-style absorption comb — damping sits INSIDE the loop); `feedforward` mode taps the input only (`y[n] = x[n] + g·damped(x[n-M])`), unconditionally stable, pure notch/peak comb-filtering with no possible ring-up. `damping` reuses `filter.onepole`'s own "Damping" port convention exactly: `0` = darkest/most damped, `1` = brightest/no damping. No fractional-delay interpolation, same simplification `delay.line` itself already makes.
+The cheap resonator, and the building block for hand-built feedback experiments. **In:** `in` — `Audio`; `frequency [audio]`; `feedback` (hard-limited to ±0.999); `damping`. **Out:** `out` — `Audio`. **Structural:** `type` (enum: feedforward, feedback; default feedback). **Behavior:** `feedback` mode is the real IIR loop (`y[n] = x[n] + g·damped(y[n-M])`, the textbook Karplus-Strong-style absorption comb — damping sits INSIDE the loop); `feedforward` mode taps the input only (`y[n] = x[n] + g·damped(x[n-M])`), unconditionally stable, pure notch/peak comb-filtering with no possible ring-up. `damping` reuses `filter.onepole`'s own "Damping" port convention exactly: `0` = darkest/most damped, `1` = brightest/no damping. No fractional-delay interpolation, same simplification `time.delay` itself already makes.
 
 #### `resonator.junction` — Scattering Junction 📋 *(Correction 1)*
 A multi-way junction where waveguides meet — a branch closed at its far end acts as a side cavity that removes energy at its own resonances, producing the spectral notches a plain band-pass filter cannot create. **In:** `in` — `Audio`; port group `branch.0…branch.N` — `Audio` (growable, min 2, max 8, bidirectional); `impedance.0…N [audio]` (modulating one is opening/closing a valve, e.g. a soft palate); `loss`. **Out:** `out` — `Audio`; the branch group returns reflected waves. **Structural:** `branches` (2–8). **Native:** single-sample feedback across several paths (Kelly–Lochbaum scattering).
@@ -259,7 +259,7 @@ Bit depth and sample-rate reduction — deliberately not antialiased. **In:** `i
 
 ## delay
 
-#### `delay.line` — Delay ✅
+#### `time.delay` — Delay ✅
 A single tap of delayed signal with feedback and damping — the basic echo/comb
 building block behind delays, chorus, and feedback networks. **In:** `in` — `Audio`; `time [audio]`; `feedback` (hard-limited); `damping`; `mix`. **Out:** `out` — `Audio`. **Structural:** `maxTime`, `interpolation` (enum: linear, allpass, cubic), `timeMode` (enum: free, tempo-synced, samples). **Native:** the delay at the heart of every feedback structure.
 
@@ -281,11 +281,11 @@ real stereo cable — the standard mono/stereo-to-stereo panner. **In:** `in` �
 Widens or narrows an existing stereo signal's image — mid/side cross-mixing with
 a crossover so bass stays mono and phase-coherent. **In:** `in` — `Audio` (`Channels::Stereo`); `width`; `bassMonoBelow`. **Out:** `out` — `Audio` (`Channels::Stereo`, primary). **Behavior:** the same mid/side cross-mix `space.pan` uses, plus a one-pole crossover so `width` only touches the band above `bassMonoBelow` (keeps bass phase-coherent, an ordinary mastering-chain technique).
 
-#### `stereo.split` — Stereo Split ✅
+#### `channels.split` — Stereo Split ✅
 **In:** `in` — `Audio` (`Channels::Stereo`). **Out:** `left`, `right` — `Audio` (ordinary, independently-wireable mono outputs). **Behavior:** exact passthrough — re-exposes each side of a stereo cable as a separate mono signal, e.g. to send only one channel into a different filter. Adapters category, Pattern B inline DSP.
 
-#### `stereo.combine` — Stereo Combine ✅
-**In:** `left`, `right` — `Audio` (two ordinary, independently-wireable mono inputs). **Out:** `out` — `Audio` (`Channels::Stereo`, primary). **Behavior:** exact passthrough — the inverse of `stereo.split`; lets two unrelated mono sources feed one stereo-shaped destination (e.g. `io.output`'s `in`) as one cable. Adapters category, Pattern B inline DSP.
+#### `channels.combine` — Stereo Combine ✅
+**In:** `left`, `right` — `Audio` (two ordinary, independently-wireable mono inputs). **Out:** `out` — `Audio` (`Channels::Stereo`, primary). **Behavior:** exact passthrough — the inverse of `channels.split`; lets two unrelated mono sources feed one stereo-shaped destination (e.g. `io.output`'s `in`) as one cable. Adapters category, Pattern B inline DSP.
 
 ## mix
 
@@ -307,21 +307,21 @@ at one extreme to an even blend at the mid-point. **In:** `a`, `b` — `Audio`; 
 #### `mix.gain` — Gain ✅ *(fixed — wiki/NODES_Gaps.md's `jargon-naming` + `modulation-only-port`)*
 **In:** `audio` — `Audio`; `gain [audio]·0–4×·log·1` (displayed in dB). **Out:** `out` — `Audio`. **Behavior:** audio-rate `gain` makes it a ring modulator too. Now titled "Gain" in the running engine (was "VCA"), and `gain` has a real unconnected default (unity, 1.0) — leaving it unpatched is genuinely "just as loud as before."
 
-#### `mix.downmix` — Downmix ✅
+#### `channels.downmix` — Downmix ✅
 Collapses a stereo signal down to mono by a chosen rule (sum, one side, mid, or
-side) — the explicit stereo-to-mono adapter `canConnect` reaches for automatically. **In:** `in` — `Audio` (`Channels::Stereo`). **Out:** `out` — `Audio` (mono). **Structural:** `mode` (enum: sum, left, right, mid, side). Genuine 1-in-1-out shape now (`NODES.System.md` §9.2) — `connectWithAutoAdapt` auto-inserts it for a stereo source into a mono-only port, the same way `adapt.map`/`adapt.normalise`/`adapt.threshold` already do.
+side) — the explicit stereo-to-mono adapter `canConnect` reaches for automatically. **In:** `in` — `Audio` (`Channels::Stereo`). **Out:** `out` — `Audio` (mono). **Structural:** `mode` (enum: sum, left, right, mid, side). Genuine 1-in-1-out shape now (`NODES.System.md` §9.2) — `connectWithAutoAdapt` auto-inserts it for a stereo source into a mono-only port, the same way `math.map`/`adapt.normalise`/`logic.threshold` already do.
 
 ## dyn — dynamics ✅ *(new family, wiki/plans/SoundPalette.md Batch 3)*
 
-#### `dyn.compress` — Compressor ✅
+#### `dynamics.compress` — Compressor ✅
 Stereo-linked feed-forward compressor with a soft knee (Giannoulis/Massberg/Reiss). **In:** `in` — `Audio` (Stereo); `sidechain` — `Audio` (Stereo, optional — when wired it decides the gain: ducking); `threshold`; `ratio`; `knee`; `attack`; `release`; `makeup`; `mix`. **Out:** `out` (Stereo); `gain` — `Control` (the linear multiplier being applied); `reduction` — `Control` (dB). **Behavior:** peak detector → static curve → gain smoothed in dB. The gain is an output, so the same envelope can duck anything else in the patch by wiring.
 
-#### `dyn.gate` — Gate ✅
+#### `dynamics.gate` — Gate ✅
 Stereo-linked gate / expander. **In:** `in` (Stereo); `sidechain` (Stereo, optional); `threshold`; `range` (dB down when closed — 80 hard gate, 10 gentle expander); `attack`; `hold`; `release`. **Out:** `out` (Stereo); `gain` — `Control`; `open` — `Boolean`. 3 dB hysteresis so it doesn't chatter.
 
 ## fx — other effects
 
-#### `fx.freqShift` — Frequency Shift ✅
+#### `spectrum.freqShift` — Frequency Shift ✅
 Moves every partial by the same number of Hz (harmonic → inharmonic, bell-like; a few Hz = barber-pole phasing). **In:** `in` (per channel); `shift` (±5000 Hz); `mix`. **Out:** `out` (shifted up by `shift`); `mirror` (shifted down). **Behavior:** Hilbert transformer (Niemitalo's two 4-section allpass chains) + quadrature oscillator, single sideband; measured 49 dB rejection of the other sideband. Chorus/flanger/phaser ship as stock groups once `stock.*` loading exists (SoundPalette.md Batch 4).
 
 ## env — envelopes
@@ -357,24 +357,24 @@ Slow, correlated, natural wander. **In:** `rate`; `amount`; `centering` (0 = fre
 
 ## clock and seq
 
-#### `clock.pulse` — Clock ✅
+#### `time.clock` — Clock ✅
 The master clock — a free-running or tempo-synced pulse generator with swing
 and jitter, the timing source everything else in the `clock.*`/`seq.*` family
 ticks from. **In:** `rate [audio]`; `swing`; `jitter`; `run : bool·true`; `reset : Event`. **Out:** `tick` — `Event`; `phase`. **Structural:** `rateMode` (enum: free, division), `division` (enum: 1/1…1/32), `seed` (not in the original catalog spec — added for the same reason `random.stepped`/`random.drift` have one: `jitter`'s randomness needs to be reproducible for a deterministic render, matching this codebase's universal convention for any node with internal randomness). **Behavior:** a phase accumulator that fires ticks at successive integer thresholds `k = 0, 1, 2, ...`; `swing` delays every odd-numbered tick's threshold by up to half a period (`k + swing*0.5`), which — because the next even threshold is always the next plain integer — preserves the pair's average period automatically, no separate compensation needed. `jitter` perturbs each threshold by a random offset redrawn once per tick (stable for the whole upcoming interval, not resampled every sample). In `division` mode, `rate` is read as beats/sec (wire `io.transport.tempo` straight in) scaled by the selected division — this node's own concrete design choice for a tempo-sync contract the catalog named but didn't pin down.
 
-#### `clock.divide` — Divide ✅
+#### `time.divide` — Divide ✅
 Divides an incoming clock down by an integer factor — the standard
 clock-divider for deriving slower rates from one master clock. **In:** `tick : Event`; `divide`; `reset : Event`. **Out:** `tick` — `Event` (engine port id `tickOut` — the catalog names both ports `tick`, but a same-id input/output pair on one node is a real, enforced engine invariant; the display label stays "Tick"). **Behavior:** fires every Nth incoming tick; `divide = 1` is a plain passthrough.
 
-#### `clock.counter` — Counter ✅
+#### `time.counter` — Counter ✅
 Counts incoming ticks into an index (up, down, ping-pong, or random) — the
-generic sequencing engine behind step sequencers and arpeggiators. **In:** `tick : Event`; `reset : Event`; `length`; `step`. **Out:** `index`; `normalised`; `wrapped` — `Event`. **Structural:** `mode` (enum: up, down, ping-pong, random), `seed` (same reasoning as `clock.pulse`'s — needed for `random` mode's determinism, not in the original catalog spec). **Behavior:** the generic sequencer engine — with `note.select`, an arpeggiator; with `data.lookup`, a step sequencer. `wrapped` fires once per lap in `up`/`down`/`pingPong` (crossing the boundary / bouncing off either end); it never fires in `random` mode — there's no meaningful "wrapped" for an independent uniform draw each tick, so this node doesn't invent one.
+generic sequencing engine behind step sequencers and arpeggiators. **In:** `tick : Event`; `reset : Event`; `length`; `step`. **Out:** `index`; `normalised`; `wrapped` — `Event`. **Structural:** `mode` (enum: up, down, ping-pong, random), `seed` (same reasoning as `time.clock`'s — needed for `random` mode's determinism, not in the original catalog spec). **Behavior:** the generic sequencer engine — with `note.select`, an arpeggiator; with `data.lookup`, a step sequencer. `wrapped` fires once per lap in `up`/`down`/`pingPong` (crossing the boundary / bouncing off either end); it never fires in `random` mode — there's no meaningful "wrapped" for an independent uniform draw each tick, so this node doesn't invent one.
 
-#### `seq.steps` — Step Sequencer 🚧
+#### `time.steps` — Step Sequencer 🚧
 A classic step sequencer — a bank of per-step values stepped through by an
 incoming clock, with gate derived from whether each step is non-zero. **In:** `tick : Event`; `reset : Event`. **Out:** `value` — `float·Bipolar [audio]`; `gate`; `trigger` — `Event`; `index`. **Structural:** `length` (1–**16**, not the catalog's 1–64 — see below), plus `step.0`…`step.15` (the node's own editable step bank, always bipolar as of `wiki/plans/PropsAndMacroRedesign.md` Batch D — the old `range` selector is gone). **Two deliberate, documented deviations from the catalog spec** (not silently narrower): the catalog's `steps` input (`Data(curve)`, optional) isn't built — no node in the engine produces a real `Data` value yet (`wiki/NODES.Status.md`'s cross-cutting prerequisite note) — so this node only has the fallback the catalog itself names, "the node's own editable step data," as fixed `ParameterDescriptor`s rather than a real `NodeContent`-backed bank; and `length` is capped at 16 instead of 64 (trivial to raise later — these are plain, individually-numbered parameters, not a wire-format array size). **Behavior:** `gate` is `abs(currentStepValue) > epsilon` — a step storing exactly 0.0 is a rest, since this data model has no separate per-step enable flag. Holds at step 0 until the first tick (which advances to step 1) — classic hardware step-sequencer "power-on shows step 1" behaviour, not an off-by-one bug.
 
-#### `seq.euclid` — Euclidean ✅
+#### `time.euclid` — Euclidean ✅
 Generates an evenly-spread (Euclidean) rhythm of pulses across a step count —
 the standard algorithmic-rhythm generator, from four-on-the-floor to complex
 polyrhythms depending on `rotate`. **In:** `tick : Event`; `steps`; `pulses`; `rotate`; `reset : Event`. **Out:** `trigger` — `Event`; `gate` (Boolean — the catalog leaves this port's type unmarked; every other "gate" port in the catalog is Boolean, so this follows that convention). **Behavior:** the standard `floor(i·pulses/steps) != floor((i-1)·pulses/steps)` construction (Bjorklund-equivalent onset pattern, no recursion needed); `rotate` shifts which step of the fixed pattern is read without moving the sequencer's own advancing index.
@@ -413,16 +413,16 @@ just needs on/off and edges. **In:** `notes` — `Note`. **Out:** `noteOn`/`note
 
 #### `note.value` — Note Value ✅
 Reads pitch and velocity out of a note stream as plain Control signals — the
-bridge from `Note`-typed wiring to ordinary knobs and modulation. **In:** `notes` — `Note`. **Out:** `pitch`; `velocity` (`pressure`/`slide` not built — `NoteEvent` doesn't carry them, same "deliberately narrower, add a field once something drives it" reasoning `instance.allocate.voice` already established). **Structural:** `select` (enum: last, lowest, highest, first). **Behavior:** the mono-domain way to read a note stream — genuinely meaningful even against today's strictly-monophonic `io.noteIn`, since this node maintains its own small internal memory (up to 8 concurrently-held notes) by watching the incoming stream's start/stop edges over time, not just "whatever's live this sample." Inside an instanced region, the allocator's own outputs are used instead.
+bridge from `Note`-typed wiring to ordinary knobs and modulation. **In:** `notes` — `Note`. **Out:** `pitch`; `velocity` (`pressure`/`slide` not built — `NoteEvent` doesn't carry them, same "deliberately narrower, add a field once something drives it" reasoning `life.voice` already established). **Structural:** `select` (enum: last, lowest, highest, first). **Behavior:** the mono-domain way to read a note stream — genuinely meaningful even against today's strictly-monophonic `io.noteIn`, since this node maintains its own small internal memory (up to 8 concurrently-held notes) by watching the incoming stream's start/stop edges over time, not just "whatever's live this sample." Inside an instanced region, the allocator's own outputs are used instead.
 
 #### `note.quantize` — Scale Quantize ✅
 Snaps incoming note pitches to a given scale in real time — the actual
 "auto-scale" effect, whether on live MIDI or an algorithmically generated
-stream. **In:** `notes`; `scale` — `Data(scale)`, required; `root`; `strength`. **Out:** `notes` (engine port id `notesOut` — see `note.transpose`'s own note on this). **Structural:** `direction` (enum: nearest, up, down), `applyTo` (enum: continuous, onNoteOnOnly). **Behavior:** the flagship consumer the Data Foundations batch was built for — `io.noteIn → note.quantize ← data.scale → instance.allocate.voice` is reference patch #2 ("MIDI remapped to a scale"), genuinely buildable now. `root` here is a *second*, independent knob from `data.scale`'s own `root` — a deliberate design, not a duplicate: `data.scale.root` rotates which pitch-classes are IN the published scale; this node's `root` is a plain post-quantization semitone offset, the same "movable key centre without touching the scale table" knob real quantizer modules commonly have. Assumes a standard 12-semitone octave for pitch reconstruction — a `data.scale` wired in with `octaveSize != 12` isn't meaningfully quantizable against absolute pitch by this node.
+stream. **In:** `notes`; `scale` — `Data(scale)`, required; `root`; `strength`. **Out:** `notes` (engine port id `notesOut` — see `note.transpose`'s own note on this). **Structural:** `direction` (enum: nearest, up, down), `applyTo` (enum: continuous, onNoteOnOnly). **Behavior:** the flagship consumer the Data Foundations batch was built for — `io.noteIn → note.quantize ← data.scale → life.voice` is reference patch #2 ("MIDI remapped to a scale"), genuinely buildable now. `root` here is a *second*, independent knob from `data.scale`'s own `root` — a deliberate design, not a duplicate: `data.scale.root` rotates which pitch-classes are IN the published scale; this node's `root` is a plain post-quantization semitone offset, the same "movable key centre without touching the scale table" knob real quantizer modules commonly have. Assumes a standard 12-semitone octave for pitch reconstruction — a `data.scale` wired in with `octaveSize != 12` isn't meaningfully quantizable against absolute pitch by this node.
 
 #### `note.transpose` — Transpose ✅
 Shifts a note stream's pitch by a fixed number of semitones and/or octaves —
-the note-stream equivalent of a transpose knob. **In:** `notes`; `semitones`; `octaves`. **Out:** `notes` (engine port id `notesOut`, not the catalog's literal `notes` — the catalog names both the input and output port `notes`, but a same-id input/output pair on one node is a real, enforced engine invariant, same as `clock.divide`'s own `tickOut`; the display label stays "Notes"). This port-id note applies identically to `note.quantize`, `note.filter`'s `notes` output, and `note.humanize` below — not repeated per entry.
+the note-stream equivalent of a transpose knob. **In:** `notes`; `semitones`; `octaves`. **Out:** `notes` (engine port id `notesOut`, not the catalog's literal `notes` — the catalog names both the input and output port `notes`, but a same-id input/output pair on one node is a real, enforced engine invariant, same as `time.divide`'s own `tickOut`; the display label stays "Notes"). This port-id note applies identically to `note.quantize`, `note.filter`'s `notes` output, and `note.humanize` below — not repeated per entry.
 
 #### `note.chord` — Chord 📋 *(deferred — see the shared engine-limit note above)*
 Turns one incoming note into several simultaneous notes at fixed intervals or
@@ -452,7 +452,7 @@ at all. **Revised from its first cut, same session**: the catalog's own
 `trigger : Event`/`release : Event` pair fought the grain — `gate` (Boolean) is the
 convention every other note-adjacent thing here uses (`env.adsr`, `io.noteIn`'s own
 translated MIDI, `note.gate`'s own "gate" output) — so this node now takes one `gate`
-input instead of two Events; `adapt.gateLength` (new, below) turns a bare trigger into
+input instead of two Events; `time.gateLength` (new, below) turns a bare trigger into
 a timed gate for whoever needs one. **In:** `gate : bool`; `pitch [audio]`; `velocity`; `confidence`; `confidenceGate`. **Out:** `notes` — `Note`. **Behavior — this node's own concrete design** (the catalog names the ports, not their exact contract): a note starts on `gate`'s rising edge, re-checked every sample the gate stays high (not just once, at the edge) — so a note whose confidence hasn't stabilized yet still starts the moment it becomes confident, without needing the gate to re-open — suppressed entirely while `confidence < confidenceGate`, so a low-confidence pitch-tracker reading can't spawn a bogus note. `pitch` is tracked continuously while held (vibrato/bend, or an algorithmically modulated pitch), `velocity` is captured once at the start instant. A note ends on `gate`'s falling edge, or — since a monophonic pitch tracker has no discrete note-off of its own — automatically once `confidence` drops back below `confidenceGate` while `gate` is still high; with neither wired (the plain generative case), `confidence`'s own unconnected fallback (1.0) never drops, so `gate` alone drives everything — ordinary MIDI semantics, no invented auto-timeout.
 
 ## math — all ✅
@@ -460,7 +460,7 @@ a timed gate for whoever needs one. **In:** `gate : bool`; `pitch [audio]`; `vel
 **Add-menu category: Math** (top level). Until 2026-10-04 every `math.*` node
 reported `getCategory() == "Utility"`, so they were buried under Utility
 despite their own ids; the same sweep also moved `excite.burst` (was
-Generators) to Excite, `adapt.map` (was Utility) to Adapters, `view.listen`
+Generators) to Excite, `math.map` (was Utility) to Adapters, `view.listen`
 (was Utility) to View and `io.output` (was Utility) to IO. Rule: a node's
 Add-menu category follows its id family unless there's a stated reason not to.
 
@@ -481,7 +481,7 @@ rejected by `canConnect`.
 | `math.power` | `in`, `exponent` | curve shaping for modulation |
 | `math.round` | `in`, `step`; structural `mode` (floor, ceil, nearest) | quantizes a continuous value to a step size |
 | `math.modulo` | `in`, `divisor` | wrapping phase, cycling indices |
-| `math.slew` | `in`, `rise`, `fall` | portamento, smoothing |
+| `time.slew` | `in`, `rise`, `fall` | portamento, smoothing |
 
 ## logic — all ✅
 
@@ -502,7 +502,7 @@ These are the nodes `canConnect` inserts automatically where it can (see
 `NODES.System.md` §4's matrix for exactly which pairs really auto-insert today vs.
 still need placing by hand). Ordinary nodes the user can also place directly.
 
-#### `adapt.map` — Map ✅ *(design/Map.png — redesigned 2026-10-04)*
+#### `math.map` — Map ✅ *(design/Map.png — redesigned 2026-10-04)*
 The one rescaling adapter: `in` mapped linearly from **In Min…In Max** onto
 **Out Min…Out Max**, clamped. Formerly `adapt.remap` ("Remap"); the old
 two-parameter Map (a fixed 0–1 / −1–1 input onto `min`/`max`) was the special
@@ -511,7 +511,7 @@ exists. `canConnect` auto-inserts it for modulation → real quantity and for tw
 different real quantities (Pitch ↔ Frequency excepted), and
 `connectWithAutoAdapt` seeds **both** ranges: the input range from whatever
 feeds it (its declared bounds, else its polarity: Bipolar −1…1, Unipolar 0…1 —
-for `adapt.audioToControl → adapt.map` that's the bridge's own Bipolar output),
+for `adapt.audioToControl → math.map` that's the bridge's own Bipolar output),
 the output range from the destination. Patches saved with either old node are
 rewritten on load (`PatchSerializer` v7 → v8; an old Map fed by a Bipolar
 source comes back with In Min 0 and needs it set to −1 by hand).
@@ -530,11 +530,11 @@ Rescales a real-quantity value down into the 0–1 Unipolar range — the invers
 Map, and what `canConnect` auto-inserts when a real-quantity source feeds a
 modulation-range port. **In:** `in` (real quantity), `low`, `high`. **Out:** `out` — `float·Unipolar`. The inverse of Map.
 
-#### `adapt.threshold` — Threshold
+#### `logic.threshold` — Threshold
 Watches a Control signal cross a threshold and fires an Event on the way up and
 down — the Control → Event adapter `canConnect` auto-inserts. **In:** `in`; `threshold` (default: mid-range of the source); `hysteresis`. **Out:** `rise`/`fall` — `Event`; `above` — `bool`. The Control → Event adapter.
 
-#### `adapt.sampleHold` — Sample & Hold
+#### `time.sampleHold` — Sample & Hold
 Freezes the input's value at each trigger and holds it steady until the next one
 — turns a continuous signal into a stepped one, with optional glide between
 steps. **In:** `in`; `trigger : Event`; `glide`. **Out:** `out`.
@@ -543,7 +543,7 @@ steps. **In:** `in`; `trigger : Event`; `glide`. **Out:** `out`.
 Reads a raw waveform's instantaneous per-sample value and hands it out as an
 ordinary Bipolar Control signal, scaled by `depth` — the mechanical Audio →
 Control bridge `canConnect` auto-inserts for exactly that crossing (chained into
-`adapt.map` when the destination is a real-quantity port). Deliberately NOT
+`math.map` when the destination is a real-quantity port). Deliberately NOT
 `env.follower`: that node rectifies and smooths on purpose, throwing away the
 very thing this node exists to keep — the waveform's instant-by-instant value,
 which IS the modulator for FM, ring-mod, and audio-rate parameter modulation.
@@ -551,7 +551,7 @@ which IS the modulator for FM, ring-mod, and audio-rate parameter modulation.
 hand-placed only — the two nodes answer genuinely different questions ("how
 loud is this, smoothed" vs. "use the actual waveform"), see `NODES.System.md`
 §4 and its own entry above. **In:** `in` — `Audio`, mono only (a stereo source
-needs `mix.downmix` first — a 3-adapter chain would exceed the two-adapter
+needs `channels.downmix` first — a 3-adapter chain would exceed the two-adapter
 ceiling); `depth : float·Unipolar·0–1·linear·1.0` (unpatched = full-strength
 passthrough, the same "just as loud as before" contract `mix.gain.gain`
 established). **Out:** `out` — `float·Bipolar` (clamped to −1…1).
@@ -562,10 +562,10 @@ out as an Audio signal, closing the "open symmetric question for later"
 `AudioControlBridge.md` §6 explicitly deferred. Same mechanical/opinion-free
 spirit as every other `adapt.*` node, never a creative DSP effect. **In:**
 `in` — `Control`, polymorphic on quantity (`Unipolar` by default, `Bipolar`
-once resolved — same mechanism `adapt.map`'s own `in` already uses). A real
+once resolved — same mechanism `math.map`'s own `in` already uses). A real
 quantity source (e.g. `Frequency`) is chained through `adapt.normalise`
 first, seeded from the *source's* own range — the mirror image of
-`adapt.audioToControl → adapt.map`'s own two-step shape, just with the
+`adapt.audioToControl → math.map`'s own two-step shape, just with the
 real-quantity step on the source side instead of the destination side.
 **Out:** `out` — `Audio`, mono (a Control source has no stereo concept to
 spread; the existing mono → stereo free broadcast handles a destination that
@@ -580,19 +580,19 @@ Maps a Boolean to either of two editable numbers — the mechanical Boolean → 
 bridge `canConnect` auto-inserts, replacing the `logic.select` + two `util.constant`
 workaround outright rather than just easing it. **In:** `in` — `Boolean`. **Out:** `out` — `Control` (Dimensionless — a free pass into any destination, since the two edited values are what actually target it). **Structural:** `whenFalse` (default 0), `whenTrue` (default 1) — plain numbers, not wireable ports, matching `adapt.normalise`'s own `min`/`max` convention.
 
-#### `adapt.pitchToFrequency` — Pitch to Frequency ✅ *(new — a real correctness fix, see below)*
-#### `adapt.frequencyToPitch` — Frequency to Pitch ✅ *(new, the inverse)*
+#### `math.pitchToFrequency` — Pitch to Frequency ✅ *(new — a real correctness fix, see below)*
+#### `math.frequencyToPitch` — Frequency to Pitch ✅ *(new, the inverse)*
 The exact exponential MIDI-pitch↔Hz conversion (A4 = pitch 69 = 440Hz) — `canConnect`
-now prefers these over the generic `adapt.map` specifically for a `Pitch ↔
+now prefers these over the generic `math.map` specifically for a `Pitch ↔
 Frequency` connection. Direct feedback surfaced a real, previously undiscovered
-correctness gap: `adapt.map` is a plain *linear* interpolation between two seeded
+correctness gap: `math.map` is a plain *linear* interpolation between two seeded
 endpoints, but pitch-to-Hz is exponential (each semitone is ×2^(1/12)) — the old
 auto-inserted remap was quietly wrong for every pitch value between its two seed
 points. **In:** `pitch : float·Pitch·0–127·60` / **In:** `frequency : float·Frequency·0.01–20000Hz·440`.
 **Out:** `frequency` / **Out:** `pitch` respectively. No seeding needed at all — the
 formula is fixed, not range-dependent.
 
-#### `adapt.gateLength` — Gate Length ✅ *(new — direct feedback: "duration for the note held... using 2 clocks... too complicated")*
+#### `time.gateLength` — Gate Length ✅ *(new — direct feedback: "duration for the note held... using 2 clocks... too complicated")*
 A monostable trigger-to-gate — opens a Boolean gate for a set number of seconds from
 an incoming trigger, the standard "Gate Length" utility every modular rack has one of.
 **In:** `trigger : Event`; `length : float·Time·0–10s·0.2s`. **Out:** `gate` —
@@ -617,7 +617,7 @@ Reads a file from disk into a `Data` buffer, tagged by what it's interpreted as
 — the on-ramp for real samples, wavetables, and impulse responses. **Out:** `data` — `Data`, tagged by content. **Structural:** `file`, `interpretAs` (enum: sample, wavetable, impulse response), `frameSize`, `normalise`, `rootNote`. **M27.**
 
 #### `data.table` — Table / Curve ✅
-**Out:** `data` — `Data(curve)`. **Structural:** `resolution` (2–32, not the full generality the name might suggest — see below), `loop` (carried, not yet consumed by anything), plus a fixed bank `point.0`…`point.31`. **Behavior:** the shared curve source of envelopes, surface profiles, sequencer lanes, LFO shapes, waveshaper transfer functions, remapping curves — editing it updates every place it's used. **Deliberate interim shape:** "the curve itself" is a fixed 32-point parameter bank (same pattern `seq.steps`' own step bank uses), not real `NodeContent` — that third category (`NODES.System.md` §3) doesn't exist as code yet; this node ships ahead of it rather than waiting, same reasoning `seq.steps` already documents.
+**Out:** `data` — `Data(curve)`. **Structural:** `resolution` (2–32, not the full generality the name might suggest — see below), `loop` (carried, not yet consumed by anything), plus a fixed bank `point.0`…`point.31`. **Behavior:** the shared curve source of envelopes, surface profiles, sequencer lanes, LFO shapes, waveshaper transfer functions, remapping curves — editing it updates every place it's used. **Deliberate interim shape:** "the curve itself" is a fixed 32-point parameter bank (same pattern `time.steps`' own step bank uses), not real `NodeContent` — that third category (`NODES.System.md` §3) doesn't exist as code yet; this node ships ahead of it rather than waiting, same reasoning `time.steps` already documents.
 
 #### `data.scale` — Scale ✅
 **In:** `root`. **Out:** `data` — `Data(scale)`. **Structural:** `scale` (enum: major, the church modes, pentatonics, blues, whole tone, chromatic — **12 named scales**; "harmonic series" and "custom" are the two catalog items deliberately deferred, both real gaps not silent ones — see below), `octaveSize` (generalizes the 12-tone patterns to other divisions by proportional scaling, not just padding). **A real, documented RT-safety limit:** `root` is a genuine wireable port, but its *live* cable value is never read on the audio thread — rebuilding a `Data` buffer means a heap allocation, forbidden there (CLAUDE.md rule 2); only the value applied via `setParameter()` (the node's own inline slider) actually republishes. A real worker-thread content-rebuild pipeline (`NODES.System.md` §8's own still-open item) is what closes this properly — not built as a side effect of this one node.
@@ -664,7 +664,7 @@ How loud a signal is. **In:** `in` — `Audio` (Stereo; mono broadcasts, both ch
 Full domain model (configurations, instance context, lifetime, events-across-boundary)
 lives in `wiki/NODES.System.md` §5. Node specs only, here:
 
-#### `instance.allocate.voice` — Voice ✅ *(renamed from `instance.allocator`, 09-28-InstanceAllocator.3; renamed again from `instance.voice`, 09-29-AddMenu.1, to make room for `instance.allocate.swarmPopulation`/`swarmTransient`/`trigger` as siblings under one Add-menu category)*
+#### `life.voice` — Voice ✅ *(renamed from `instance.allocator`, 09-28-InstanceAllocator.3; renamed again from `instance.voice`, 09-29-AddMenu.1, to make room for `life.swarmPopulation`/`swarmTransient`/`trigger` as siblings under one Add-menu category)*
 Opens an instanced region. Was "one node, several configurations" (a `configuration`
 enum for Voice/Swarm-population/Swarm-transient/Trigger); three of those four options
 never did anything, and the four don't even share a port shape (Voice needs a `Note`
@@ -680,7 +680,7 @@ Swarm/Trigger runtime machinery exists — not empty shells bolted onto this one
 `09-28-InstanceAllocator.2` — each spawn draws from a fresh generator seeded by
 `(seed, instanceIndex)`, not a wall-clock-seeded persistent one).
 
-#### `instance.allocate.swarmPopulation` — Swarm (Population) ✅ *(new, Domain Extensions batch, 2026-10-01)*
+#### `life.swarmPopulation` — Swarm (Population) ✅ *(new, Domain Extensions batch, 2026-10-01)*
 Opens an instanced region with a fixed, always-live count — no spawn/release
 mechanism at all (unlike Voice, nothing ever calls `noteOn`/`noteOff` for
 this origin; `populationSize` of its physical slots simply report `gate =
@@ -696,7 +696,7 @@ demand-driven ceiling to distinguish from the live count, this many are
 `09-28-InstanceAllocator.2` built for Voice, reused verbatim via the shared
 `combineInstanceSeed` helper).
 
-#### `instance.allocate.swarmTransient` — Swarm (Transient) ✅ *(new, Domain Extensions batch, 2026-10-01)*
+#### `life.swarmTransient` — Swarm (Transient) ✅ *(new, Domain Extensions batch, 2026-10-01)*
 Opens an instanced region whose spawn source is a plain `Event` (`spawn`), not
 a `Note` — no pitch/velocity concept (the shared `InstanceOriginNode`
 interface's `spawnInstance()` accepts but ignores them). Each firing restarts
@@ -719,7 +719,7 @@ only represent one lifecycle), so rapid overlapping spawns beyond that
 degrade gracefully to ordinary voice-stealing rather than a true leak — not
 a correctness issue for the realistic case (spawning slower than `duration`).
 
-#### `instance.allocate.trigger` — Trigger ✅ *(new, Domain Extensions batch, 2026-10-01)*
+#### `life.trigger` — Trigger ✅ *(new, Domain Extensions batch, 2026-10-01)*
 Opens an instanced region with exactly one instance at a time — no
 `maxInstances` parameter at all (implicitly 1, matching Voice's own
 precedent of only exposing parameters that actually do something). Spawn
@@ -727,12 +727,12 @@ source is a plain `Event` (`trigger`), not `Note`. No `position` output —
 not a swarm type. Deliberately no auto-release (unlike Swarm-transient's own
 `duration`): the gate stays asserted until the next trigger fires. "A second
 trigger re-triggers the same instance" falls out of `maxInstances == 1` for
-free, via `instance.sum`'s shared `VoiceManager`'s own existing stealing
+free, via `life.merge`'s shared `VoiceManager`'s own existing stealing
 policy — no special-casing needed in the node itself. **In:** `trigger` —
 `Event`. **Out** (all `polyOnly`): `gate`, `instanceIndex`, `instanceAge`,
 `random1`, `random2`, `start`, `stop` — 7 ports. **Structural:** `seed` only.
 
-#### `instance.sum` — Voice Sum ✅ *(renamed from `instance.mix`, wiki/plans/DomainRedesign.md Batch 1b — C++ class name (`InstanceMixNode`) unchanged)*
+#### `life.merge` — Voice Sum ✅ *(renamed from `instance.mix`, wiki/plans/DomainRedesign.md Batch 1b — C++ class name (`InstanceMixNode`) unchanged)*
 Closes an instanced region. **In:** `in` — `Audio`, `polyOnly`. **Out:** `out` —
 `Audio` (Scalar). **Structural:** `mode` (enum: sum, average). `DomainSplitter` (one
 allocator/one mix region per graph, full stop) is gone — `MultiplicityResolver`
@@ -769,12 +769,12 @@ further step needed.
 Thin, explicit, self-labeled converters between the two normalised modulation
 ranges — `in [0..1] -> out [-1..1]` and the inverse, clamped not extrapolated.
 **In:** `in`. **Out:** `out`. No structural parameters. Added alongside
-removing `random.stepped`/`seq.steps`/`data.lookup`'s old per-node Unipolar/
+removing `random.stepped`/`time.steps`/`data.lookup`'s old per-node Unipolar/
 Bipolar selectors (modulation is always bipolar by default now) — a thin
-wrapper over what `adapt.map` already does (same shape as `adapt.normalise`/
-`adapt.map`/`adapt.pitchToFrequency`), for readability in the Add-menu rather
+wrapper over what `math.map` already does (same shape as `adapt.normalise`/
+`math.map`/`math.pitchToFrequency`), for readability in the Add-menu rather
 than filling a capability gap: a Unipolar<->Bipolar quantity mismatch already
-auto-resolves via `adapt.map`'s own generic fallback. **Deliberately not
+auto-resolves via `math.map`'s own generic fallback. **Deliberately not
 auto-inserted** by `connectWithAutoAdapt` — manual placement only.
 
 ## deco — decorations ✅ *(wiki/plans/Decorations.md)*
@@ -882,7 +882,7 @@ A multi-band parametric EQ with its own editor, that unwraps into ordinary
 
 #### `factory.curve` — Curve Factory
 A drawn-curve editor that publishes a `Data(curve)` and unwraps into
-`data.table` plus whatever reads it. **Content:** points + per-segment tension, loop/polarity, optional morph-target shape. **In:** `morph [audio]`. **Out:** `data` — `Data(curve)`. **Structural:** `resolution`. **Unwrap:** → `data.table` + the implied consumer (`lfo.shape`/`env.curve`/`adapt.map`/`shape.waveshaper`).
+`data.table` plus whatever reads it. **Content:** points + per-segment tension, loop/polarity, optional morph-target shape. **In:** `morph [audio]`. **Out:** `data` — `Data(curve)`. **Structural:** `resolution`. **Unwrap:** → `data.table` + the implied consumer (`lfo.shape`/`env.curve`/`math.map`/`shape.waveshaper`).
 
 #### `factory.wave` — Wave Factory
 A single-cycle waveform/harmonic editor for building a wavetable, unwrapping
@@ -895,7 +895,7 @@ A sample/slice editor with playback built in, unwrapping into one
 #### `factory.notes` — Notes Factory
 An editor for chords, arpeggios, step patterns, and scales in one place,
 unwrapping into the ordinary `note.*`/`clock.*`/`data.scale` nodes that
-actually play them. **Content:** chord definitions, arpeggio patterns, step patterns, scale definitions. **In:** `notes` — `Note`; `tick` — `Event` (external clock; internal when unconnected); `rate [audio]`; `gateLength`; `swing`; `humanize`. **Out:** `notes` — `Note` (always — a second representation of a note is exactly the parallel-truth problem `RECONCILIATION.md` warned about; plain pitch/gate values come from `note.value` or the allocator, both already in the catalog); `scale` — `Data(scale)`. **Unwrap:** arpeggio → `note.hold`+`clock.pulse`+`clock.counter`+`note.select`; chord → `note.chord`; scale → `data.scale`+`note.quantize`; humanise → `note.humanize`. **Deferred within this factory:** MIDI clips (needs a timeline/piano-roll/host transport sync — a project of its own).
+actually play them. **Content:** chord definitions, arpeggio patterns, step patterns, scale definitions. **In:** `notes` — `Note`; `tick` — `Event` (external clock; internal when unconnected); `rate [audio]`; `gateLength`; `swing`; `humanize`. **Out:** `notes` — `Note` (always — a second representation of a note is exactly the parallel-truth problem `RECONCILIATION.md` warned about; plain pitch/gate values come from `note.value` or the allocator, both already in the catalog); `scale` — `Data(scale)`. **Unwrap:** arpeggio → `note.hold`+`time.clock`+`time.counter`+`note.select`; chord → `note.chord`; scale → `data.scale`+`note.quantize`; humanise → `note.humanize`. **Deferred within this factory:** MIDI clips (needs a timeline/piano-roll/host transport sync — a project of its own).
 
 #### `factory.material` — Material Factory
 An editor for a resonating object's material, with hand-tunable per-mode
@@ -915,37 +915,37 @@ group).
 
 | Group | What it is | Built from | Status |
 |---|---|---|---|
-| **Karplus-Strong** | The textbook plucked loop, as a teaching patch | `excite.burst` → `delay.line` → `filter.onepole` → `mix.gain` → back into the delay, `shape.clip` for safety | 📋 |
+| **Karplus-Strong** | The textbook plucked loop, as a teaching patch | `excite.burst` → `time.delay` → `filter.onepole` → `mix.gain` → back into the delay, `shape.clip` for safety | 📋 |
 | **Scale Quantize** | Pitch snapped to a scale | `data.scale` → `note.quantize` | 📋 |
-| **Arpeggiator** | Cycles held notes | `note.hold` → `clock.pulse` → `clock.counter` → `note.select` | 📋 |
+| **Arpeggiator** | Cycles held notes | `note.hold` → `time.clock` → `time.counter` → `note.select` | 📋 |
 | **Chord** | One note becomes several | `note.chord` with `data.scale` | 📋 |
 | **Bubble** | A single water bubble | `osc.sine` with pitch from `env.curve` (rising chirp) × `env.adsr` (short decay) | 📋 |
-| **Water** | Rain, a stream, a boil | `noise.dust` → `instance.allocate.swarmTransient` (real as of the Domain Extensions batch, 2026-10-01) → Bubble per instance, radius from `random` → `instance.sum` | 📋 — the allocator is real now; Bubble itself still isn't built |
-| **Crackle** | Fire, static, ice | `noise.dust` → `excite.burst` → `resonator.modal` with a small stone/ceramic set | 📋 |
+| **Water** | Rain, a stream, a boil | `source.dust` → `life.swarmTransient` (real as of the Domain Extensions batch, 2026-10-01) → Bubble per instance, radius from `random` → `life.merge` | 📋 — the allocator is real now; Bubble itself still isn't built |
+| **Crackle** | Fire, static, ice | `source.dust` → `excite.burst` → `resonator.modal` with a small stone/ceramic set | 📋 |
 | **Scrape** | Stone dragged across asphalt | `excite.contact` → `resonator.modal` with `data.material` (stone, irregular) → `space.reverb` | 📋 |
-| **Cicada** | One insect | `clock.pulse` with jitter → `excite.burst` → `filter.formant` → body from `resonator.modal` | 📋 |
-| **Cicada Field** | A population of them | `instance.allocate.swarmPopulation` (real now, see the Water row above) → Cicada per instance, rate/pitch from `random.drift`, placement from `panPosition` | 📋 — the allocator is real now; Cicada itself still isn't built |
+| **Cicada** | One insect | `time.clock` with jitter → `excite.burst` → `filter.formant` → body from `resonator.modal` | 📋 |
+| **Cicada Field** | A population of them | `life.swarmPopulation` (real now, see the Water row above) → Cicada per instance, rate/pitch from `random.drift`, placement from `panPosition` | 📋 — the allocator is real now; Cicada itself still isn't built |
 | **Breath / Wind** | Wind, breathing, flutes | `excite.breath` → `resonator.tube`, contour from `env.curve` | 📋 |
 | **Bowed String** | Violin-like | `excite.stickSlip` ↔ `resonator.string`, coupling loop closed through `motion` | 📋 |
 | **Struck Body** | Drum, bell, plate | `excite.mallet` ↔ `resonator.plate` or `resonator.modal` | 📋 |
 | **Hex Guitar Front End** | Six strings to six note streams | six `io.audioIn` channels → `analysis.onset` + `analysis.pitch` → `note.assemble` per string | 📋 |
-| **Init Patch** | Ordinary subtractive synth | `io.noteIn` → `instance.allocate.voice` → `osc.analog` ×2 → `filter.ladder` → `env.adsr` (×2: amp + filter cutoff) → `instance.sum` → `space.pan` → `io.output` (one real stereo cable, `pan.out` → `masterOut.in`) | ✅ real hand-built graph, genuinely stereo; 📋 not yet a loadable `stock.*` asset — no `space.reverb` tail yet (M28) |
-| **Voiced self-oscillation (cat purr)** *(Correction 1's new coverage item)* | The hardest test in the set | `env.curve` (breath pressure) → `random.drift` (stiffness jitter) + `lfo.shape` (~26Hz stiffness modulation, for entrainment) → `excite.vocalFolds` → `flow` gates `noise.colored` through `mix.gain` (aspiration) → `resonator.junction` splits `resonator.tract` (nasal route) vs. a closed branch (antiresonances) vs. `resonator.modal` (body conduction) → `mix.crossfade` (microphone position) | 📋 — exercises audio-rate physical-parameter modulation, emergent oscillation thresholds, source–resonator coupling, branched waveguides, `Data` as a geometric profile, flow-gated noise, two sources sharing one tract, sub-30Hz fundamentals. **Testing note:** self-oscillating/chaotic models are deterministic but rounding-sensitive — two compilers or an enabled FMA path diverge within seconds, so bit-exact golden renders don't work here; verify statistically (measured f₀/spectral envelope/jitter/shimmer within tolerance, oscillation threshold within a pressure window) or CI failures become indistinguishable from physics. |
+| **Init Patch** | Ordinary subtractive synth | `io.noteIn` → `life.voice` → `osc.analog` ×2 → `filter.ladder` → `env.adsr` (×2: amp + filter cutoff) → `life.merge` → `space.pan` → `io.output` (one real stereo cable, `pan.out` → `masterOut.in`) | ✅ real hand-built graph, genuinely stereo; 📋 not yet a loadable `stock.*` asset — no `space.reverb` tail yet (M28) |
+| **Voiced self-oscillation (cat purr)** *(Correction 1's new coverage item)* | The hardest test in the set | `env.curve` (breath pressure) → `random.drift` (stiffness jitter) + `lfo.shape` (~26Hz stiffness modulation, for entrainment) → `excite.vocalFolds` → `flow` gates `source.noise` through `mix.gain` (aspiration) → `resonator.junction` splits `resonator.tract` (nasal route) vs. a closed branch (antiresonances) vs. `resonator.modal` (body conduction) → `mix.crossfade` (microphone position) | 📋 — exercises audio-rate physical-parameter modulation, emergent oscillation thresholds, source–resonator coupling, branched waveguides, `Data` as a geometric profile, flow-gated noise, two sources sharing one tract, sub-30Hz fundamentals. **Testing note:** self-oscillating/chaotic models are deterministic but rounding-sensitive — two compilers or an enabled FMA path diverge within seconds, so bit-exact golden renders don't work here; verify statistically (measured f₀/spectral envelope/jitter/shimmer within tolerance, oscillation threshold within a pressure window) or CI failures become indistinguishable from physics. |
 
 # Reference patches: coverage
 
 Every reference patch from the original planning prompt builds from Part A, with no
 missing primitives (once M23–M29 land):
 
-1. **Karplus-Strong with single-sample feedback** — `delay.line` + `filter.onepole` + `mix.gain`, closed as a per-sample region; `resonator.string` is the playable native version.
+1. **Karplus-Strong with single-sample feedback** — `time.delay` + `filter.onepole` + `mix.gain`, closed as a per-sample region; `resonator.string` is the playable native version.
 2. **MIDI remapped to a scale** — `io.noteIn` → `note.quantize` ← `data.scale`.
-3. **Arpeggiator and chords** — `note.hold`, `clock.counter`, `note.select`, `note.chord`.
+3. **Arpeggiator and chords** — `note.hold`, `time.counter`, `note.select`, `note.chord`.
 4. **Struck body with material data** — `excite.mallet` → `resonator.modal` ← `data.material`.
 5. **Stone on asphalt** — `excite.contact` → `resonator.modal`, `util.macro` driving speed/pressure.
-6. **Transient and persistent swarms** — `instance.allocate.swarmTransient`/`instance.allocate.swarmPopulation`, real node types as of the Domain Extensions batch (2026-10-01) — see the Water/Cicada Field rows above for what still blocks each full reference patch.
+6. **Transient and persistent swarms** — `life.swarmTransient`/`life.swarmPopulation`, real node types as of the Domain Extensions batch (2026-10-01) — see the Water/Cicada Field rows above for what still blocks each full reference patch.
 7. **Ordinary subtractive patch** — `osc.analog`, `filter.ladder`, `env.adsr` — **built, playable today** as Init Patch.
-8. **Per-voice effects** — `shape.waveshaper`, `delay.line`, `space.reverb` placed before `instance.sum`.
-9. **Hexaphonic guitar** — `io.audioIn` per channel → `analysis.onset` + `analysis.pitch` → `note.assemble` → `instance.allocate.voice` (each string gets its own voice/mix pair, not a shared one — avoids needing a Note-stream-merge node).
+8. **Per-voice effects** — `shape.waveshaper`, `time.delay`, `space.reverb` placed before `life.merge`.
+9. **Hexaphonic guitar** — `io.audioIn` per channel → `analysis.onset` + `analysis.pitch` → `note.assemble` → `life.voice` (each string gets its own voice/mix pair, not a shared one — avoids needing a Note-stream-merge node).
 10. **Voiced self-oscillation (cat purr)** — see Part B, above.
 
 # Deliberately deferred

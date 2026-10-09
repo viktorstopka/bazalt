@@ -929,7 +929,7 @@ namespace bazalt::engine
                 // wired to them — deliberately NOT the port's own
                 // `defaultValue`: baking that in here would freeze it at
                 // whatever it was when this plan was compiled, silently
-                // breaking any node (DelayNode.h's "delay.line.samples" is
+                // breaking any node (DelayNode.h's "time.delay.samples" is
                 // the first example) whose value is still meant to be
                 // adjustable via setParameter() after compilation. The node
                 // itself resolves NaN -> "use my own current value" every

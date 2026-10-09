@@ -248,21 +248,21 @@ TEST_CASE ("v7 -> v8 migration rewrites adapt.remap into adapt.map and the old t
     };
 
     const auto& oldMap = find ("oldMap");
-    CHECK (oldMap.type == "adapt.map");
-    CHECK (oldMap.parameters.count ("adapt.map.min") == 0);
-    CHECK (oldMap.parameters.at ("adapt.map.inMin") == 0.0f);
-    CHECK (oldMap.parameters.at ("adapt.map.inMax") == 1.0f);
-    CHECK (oldMap.parameters.at ("adapt.map.outMin") == 200.0f);
-    CHECK (oldMap.parameters.at ("adapt.map.outMax") == 8000.0f);
+    CHECK (oldMap.type == "math.map");
+    CHECK (oldMap.parameters.count ("math.map.min") == 0);
+    CHECK (oldMap.parameters.at ("math.map.inMin") == 0.0f);
+    CHECK (oldMap.parameters.at ("math.map.inMax") == 1.0f);
+    CHECK (oldMap.parameters.at ("math.map.outMin") == 200.0f);
+    CHECK (oldMap.parameters.at ("math.map.outMax") == 8000.0f);
 
     const auto& remap = find ("remap");
-    CHECK (remap.type == "adapt.map");
-    CHECK (remap.parameters.at ("adapt.map.outMin") == 1.0f);
-    CHECK (remap.parameters.at ("adapt.map.outMax") == 0.0f);
+    CHECK (remap.type == "math.map");
+    CHECK (remap.parameters.at ("math.map.outMin") == 1.0f);
+    CHECK (remap.parameters.at ("math.map.outMax") == 0.0f);
     CHECK (remap.parameters.count ("adapt.remap.outMin") == 0);
 
     REQUIRE (result.document.connections.size() == 1);
-    CHECK (result.document.connections[0].toPortId == "adapt.map.inMax");
+    CHECK (result.document.connections[0].toPortId == "math.map.inMax");
 }
 
 TEST_CASE ("v8 -> v9 migration drops view.scope and splices view.glance out of its cable",

@@ -34,7 +34,7 @@ TEST_CASE ("ClockPulseNode free-runs at its rate in Free mode, counted over an o
     ClockPulseNode node;
     node.prepare (info);
     node.reset();
-    node.setParameter ("clock.pulse.rate", 10.0f);
+    node.setParameter ("time.clock.rate", 10.0f);
 
     const int numSamples = (int) (1.05 * 44100.0);
     int ticks = 0;
@@ -59,8 +59,8 @@ TEST_CASE ("ClockPulseNode's swing pushes every odd tick later, shortening the f
     ClockPulseNode node;
     node.prepare (info);
     node.reset();
-    node.setParameter ("clock.pulse.rate", 10.0f);
-    node.setParameter ("clock.pulse.swing", 1.0f); // maximal: thresholds 0, 1.5, 2, 3.5, 4, ...
+    node.setParameter ("time.clock.rate", 10.0f);
+    node.setParameter ("time.clock.swing", 1.0f); // maximal: thresholds 0, 1.5, 2, 3.5, 4, ...
 
     std::vector<int> tickSamples;
     for (int i = 0; i < 20000 && tickSamples.size() < 3; ++i)
@@ -87,9 +87,9 @@ TEST_CASE ("ClockPulseNode's jitter is deterministic for a given seed, and diffe
     {
         ClockPulseNode node;
         node.prepare (info);
-        node.setParameter ("clock.pulse.rate", 50.0f);
-        node.setParameter ("clock.pulse.jitter", 0.8f);
-        node.setParameter ("clock.pulse.seed", seed);
+        node.setParameter ("time.clock.rate", 50.0f);
+        node.setParameter ("time.clock.jitter", 0.8f);
+        node.setParameter ("time.clock.seed", seed);
         node.reset();
         std::vector<float> ticks;
         for (int i = 0; i < 5000; ++i)
@@ -121,9 +121,9 @@ TEST_CASE ("ClockPulseNode's Division mode reads rate as beats/sec scaled by the
         ClockPulseNode node;
         node.prepare (info);
         node.reset();
-        node.setParameter ("clock.pulse.rateMode", 1.0f); // Division
-        node.setParameter ("clock.pulse.division", divisionIndex);
-        node.setParameter ("clock.pulse.rate", 2.0f); // 2 beats/sec, e.g. io.transport.tempo at 120bpm
+        node.setParameter ("time.clock.rateMode", 1.0f); // Division
+        node.setParameter ("time.clock.division", divisionIndex);
+        node.setParameter ("time.clock.rate", 2.0f); // 2 beats/sec, e.g. io.transport.tempo at 120bpm
         int ticks = 0;
         for (int i = 0; i < numSamples; ++i)
         {
@@ -149,8 +149,8 @@ TEST_CASE ("ClockPulseNode's run input halts and resumes ticking; reset reissues
     ClockPulseNode node;
     node.prepare (info);
     node.reset();
-    node.setParameter ("clock.pulse.rate", 10.0f);
-    node.setParameter ("clock.pulse.run", 0.0f);
+    node.setParameter ("time.clock.rate", 10.0f);
+    node.setParameter ("time.clock.run", 0.0f);
 
     int ticksWhileStopped = 0;
     for (int i = 0; i < 10000; ++i)
@@ -163,7 +163,7 @@ TEST_CASE ("ClockPulseNode's run input halts and resumes ticking; reset reissues
     }
     CHECK (ticksWhileStopped == 0);
 
-    node.setParameter ("clock.pulse.run", 1.0f);
+    node.setParameter ("time.clock.run", 1.0f);
     float inputs[5] = { kNaN, kNaN, kNaN, kNaN, 0.0f };
     float outputs[2] = {};
     node.processSample (inputs, outputs); // basePhase is still 0 from before -> fires immediately
@@ -202,7 +202,7 @@ TEST_CASE ("ClockPulseNode never drifts tempo over a long hold - the interval be
     ClockPulseNode node;
     node.prepare (info);
     node.reset();
-    node.setParameter ("clock.pulse.rate", 5.0f); // 5Hz - a plausible arp/step rate
+    node.setParameter ("time.clock.rate", 5.0f); // 5Hz - a plausible arp/step rate
 
     const int64_t totalSamples = (int64_t) (600.0 * 44100.0); // 10 minutes
     std::vector<int64_t> tickSampleIndices;
@@ -240,7 +240,7 @@ TEST_CASE ("ClockDivideNode with divide=1 passes every tick through unchanged",
 {
     ClockDivideNode node;
     node.reset();
-    node.setParameter ("clock.divide.divide", 1.0f);
+    node.setParameter ("time.divide.divide", 1.0f);
 
     int outTicks = 0;
     for (int i = 0; i < 20; ++i)
@@ -259,7 +259,7 @@ TEST_CASE ("ClockDivideNode fires exactly every Nth incoming tick",
 {
     ClockDivideNode node;
     node.reset();
-    node.setParameter ("clock.divide.divide", 3.0f);
+    node.setParameter ("time.divide.divide", 3.0f);
 
     std::vector<int> firedAtTickNumber;
     for (int tick = 1; tick <= 9; ++tick)
@@ -278,7 +278,7 @@ TEST_CASE ("ClockDivideNode's reset zeroes the counter without itself firing an 
 {
     ClockDivideNode node;
     node.reset();
-    node.setParameter ("clock.divide.divide", 4.0f);
+    node.setParameter ("time.divide.divide", 4.0f);
 
     // Two ticks in (halfway to firing), then reset.
     for (int i = 0; i < 2; ++i)
@@ -313,9 +313,9 @@ TEST_CASE ("ClockCounterNode Up mode advances by step and wraps with a wrapped e
 {
     ClockCounterNode node;
     node.reset();
-    node.setParameter ("clock.counter.length", 4.0f);
-    node.setParameter ("clock.counter.step", 1.0f);
-    node.setParameter ("clock.counter.mode", 0.0f); // up
+    node.setParameter ("time.counter.length", 4.0f);
+    node.setParameter ("time.counter.step", 1.0f);
+    node.setParameter ("time.counter.mode", 0.0f); // up
 
     std::vector<int> indices;
     std::vector<bool> wraps;
@@ -336,8 +336,8 @@ TEST_CASE ("ClockCounterNode Down mode wraps downward", "[engine][nodes][ClockCo
 {
     ClockCounterNode node;
     node.reset();
-    node.setParameter ("clock.counter.length", 4.0f);
-    node.setParameter ("clock.counter.mode", 1.0f); // down
+    node.setParameter ("time.counter.length", 4.0f);
+    node.setParameter ("time.counter.mode", 1.0f); // down
 
     std::vector<int> indices;
     for (int i = 0; i < 5; ++i)
@@ -356,8 +356,8 @@ TEST_CASE ("ClockCounterNode PingPong mode bounces between 0 and length-1",
 {
     ClockCounterNode node;
     node.reset();
-    node.setParameter ("clock.counter.length", 4.0f);
-    node.setParameter ("clock.counter.mode", 2.0f); // pingPong
+    node.setParameter ("time.counter.length", 4.0f);
+    node.setParameter ("time.counter.mode", 2.0f); // pingPong
 
     std::vector<int> indices;
     for (int i = 0; i < 8; ++i)
@@ -376,9 +376,9 @@ TEST_CASE ("ClockCounterNode Random mode stays in range and is deterministic for
     auto runFor = [&] (float seed)
     {
         ClockCounterNode node;
-        node.setParameter ("clock.counter.length", 8.0f);
-        node.setParameter ("clock.counter.mode", 3.0f); // random
-        node.setParameter ("clock.counter.seed", seed);
+        node.setParameter ("time.counter.length", 8.0f);
+        node.setParameter ("time.counter.mode", 3.0f); // random
+        node.setParameter ("time.counter.seed", seed);
         node.reset();
         std::vector<int> indices;
         for (int i = 0; i < 100; ++i)
@@ -405,7 +405,7 @@ TEST_CASE ("ClockCounterNode's normalised output is index/(length-1)",
 {
     ClockCounterNode node;
     node.reset();
-    node.setParameter ("clock.counter.length", 5.0f); // valid indices 0..4
+    node.setParameter ("time.counter.length", 5.0f); // valid indices 0..4
 
     float outputs[3] = {};
     for (int i = 0; i < 3; ++i) // advance to index 3
@@ -424,10 +424,10 @@ TEST_CASE ("SeqStepsNode advances on tick, wraps at length, and holds its value 
 {
     SeqStepsNode node;
     node.reset();
-    node.setParameter ("seq.steps.length", 3.0f);
-    node.setParameter ("seq.steps.step.0", 0.25f);
-    node.setParameter ("seq.steps.step.1", -0.5f);
-    node.setParameter ("seq.steps.step.2", 1.0f);
+    node.setParameter ("time.steps.length", 3.0f);
+    node.setParameter ("time.steps.step.0", 0.25f);
+    node.setParameter ("time.steps.step.1", -0.5f);
+    node.setParameter ("time.steps.step.2", 1.0f);
 
     auto tick = [&] (SeqStepsNode& n) -> std::array<float, 4>
     {
@@ -472,9 +472,9 @@ TEST_CASE ("SeqStepsNode's gate reflects whether the current step is a rest (exa
 {
     SeqStepsNode node;
     node.reset();
-    node.setParameter ("seq.steps.length", 2.0f);
-    node.setParameter ("seq.steps.step.0", 0.0f); // rest
-    node.setParameter ("seq.steps.step.1", 0.3f); // active
+    node.setParameter ("time.steps.length", 2.0f);
+    node.setParameter ("time.steps.step.0", 0.0f); // rest
+    node.setParameter ("time.steps.step.1", 0.3f); // active
 
     float inputs0[2] = { 0.0f, 0.0f };
     float outputs0[4] = {};
@@ -498,8 +498,8 @@ TEST_CASE ("SeqStepsNode's value output is always bipolar, no Range selector",
     // explicitly, if ever wanted downstream.
     SeqStepsNode node;
     node.reset();
-    node.setParameter ("seq.steps.length", 1.0f);
-    node.setParameter ("seq.steps.step.0", -1.0f);
+    node.setParameter ("time.steps.length", 1.0f);
+    node.setParameter ("time.steps.step.0", -1.0f);
 
     float inputs[2] = { 0.0f, 0.0f };
     float outputs[4] = {};
@@ -511,7 +511,7 @@ TEST_CASE ("SeqStepsNode's reset returns to step 0", "[engine][nodes][SeqStepsNo
 {
     SeqStepsNode node;
     node.reset();
-    node.setParameter ("seq.steps.length", 4.0f);
+    node.setParameter ("time.steps.length", 4.0f);
 
     for (int i = 0; i < 3; ++i)
     {
@@ -532,8 +532,8 @@ TEST_CASE ("SeqEuclidNode steps=8 pulses=3 produces the classic tresillo pattern
 {
     SeqEuclidNode node;
     node.reset();
-    node.setParameter ("seq.euclid.steps", 8.0f);
-    node.setParameter ("seq.euclid.pulses", 3.0f);
+    node.setParameter ("time.euclid.steps", 8.0f);
+    node.setParameter ("time.euclid.pulses", 3.0f);
 
     // Index 0 is the resting state (no tick yet) - check it directly, then
     // tick through a full 8-step cycle and record which steps gate high.
@@ -559,8 +559,8 @@ TEST_CASE ("SeqEuclidNode: pulses=0 never fires, pulses>=steps fires every step"
 {
     SeqEuclidNode zero;
     zero.reset();
-    zero.setParameter ("seq.euclid.steps", 4.0f);
-    zero.setParameter ("seq.euclid.pulses", 0.0f);
+    zero.setParameter ("time.euclid.steps", 4.0f);
+    zero.setParameter ("time.euclid.pulses", 0.0f);
 
     int hits = 0;
     for (int i = 0; i < 8; ++i)
@@ -575,8 +575,8 @@ TEST_CASE ("SeqEuclidNode: pulses=0 never fires, pulses>=steps fires every step"
 
     SeqEuclidNode full;
     full.reset();
-    full.setParameter ("seq.euclid.steps", 4.0f);
-    full.setParameter ("seq.euclid.pulses", 4.0f);
+    full.setParameter ("time.euclid.steps", 4.0f);
+    full.setParameter ("time.euclid.pulses", 4.0f);
 
     hits = 0;
     for (int i = 0; i < 8; ++i)
@@ -598,9 +598,9 @@ TEST_CASE ("SeqEuclidNode's rotate shifts which step of the fixed pattern is rea
     // effective = (index + rotate) % steps, so index=0 reads pattern[3]=1 (a hit).
     SeqEuclidNode node;
     node.reset();
-    node.setParameter ("seq.euclid.steps", 8.0f);
-    node.setParameter ("seq.euclid.pulses", 3.0f);
-    node.setParameter ("seq.euclid.rotate", 3.0f);
+    node.setParameter ("time.euclid.steps", 8.0f);
+    node.setParameter ("time.euclid.pulses", 3.0f);
+    node.setParameter ("time.euclid.rotate", 3.0f);
 
     float inputs[5] = { 0.0f, kNaN, kNaN, kNaN, 0.0f }; // resting at index 0
     float outputs[2] = {};
@@ -613,8 +613,8 @@ TEST_CASE ("SeqEuclidNode's trigger only fires the instant a tick lands on a pul
 {
     SeqEuclidNode node;
     node.reset();
-    node.setParameter ("seq.euclid.steps", 8.0f);
-    node.setParameter ("seq.euclid.pulses", 3.0f);
+    node.setParameter ("time.euclid.steps", 8.0f);
+    node.setParameter ("time.euclid.pulses", 3.0f);
 
     // Step 1 (first tick) is not a pulse - trigger must stay low even though
     // nothing else changed; step 3 (third tick) is a pulse - trigger fires.

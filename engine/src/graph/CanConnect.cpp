@@ -85,7 +85,7 @@ namespace bazalt::engine
 
         AdapterStep mapStep()
         {
-            AdapterStep step { "adapt.map", "in" };
+            AdapterStep step { "math.map", "in" };
             step.seedFromSourceRange = true;      // input range: the source's own bounds, else its polarity
             step.seedFromDestinationRange = true; // output range: the destination's
             return step;
@@ -114,25 +114,25 @@ namespace bazalt::engine
             // real correctness gap in the "MVP, linear-only for now" remap
             // path (direct feedback caught this; it revises this function's
             // own long-standing Pitch-into-Cutoff example, not just adds a
-            // new case). `adapt.pitchToFrequency`/`adapt.frequencyToPitch`
+            // new case). `math.pitchToFrequency`/`math.frequencyToPitch`
             // are the actual, exact conversion — one step, no seeding
             // needed at all (the formula is fixed, not range-dependent).
             if (from == Quantity::Pitch && to == Quantity::Frequency)
             {
-                AdapterStep step { "adapt.pitchToFrequency", "pitch" };
+                AdapterStep step { "math.pitchToFrequency", "pitch" };
                 step.outputPortId = "frequency";
                 return needsAdapter (step, "Pitch into a Frequency-typed port needs an exact conversion, not a linear remap");
             }
             if (from == Quantity::Frequency && to == Quantity::Pitch)
             {
-                AdapterStep step { "adapt.frequencyToPitch", "frequency" };
+                AdapterStep step { "math.frequencyToPitch", "frequency" };
                 step.outputPortId = "pitch";
                 return needsAdapter (step, "Frequency into a Pitch-typed port needs an exact conversion, not a linear remap");
             }
 
             // Two different real quantities (e.g. Frequency and Time) — not
             // in SIGNAL_TYPES.md §5's original ten-pair table, but both
-            // sides are still real numeric ranges, so insert `adapt.map`
+            // sides are still real numeric ranges, so insert `math.map`
             // (NODE_CATALOG.md's own node — this is its MVP linear form,
             // curve support grows it later rather than replacing it),
             // seeded from BOTH ends at once: inMin/inMax from the source's
@@ -162,14 +162,14 @@ namespace bazalt::engine
 
             CanConnectResult result;
             result.outcome = ConnectionOutcome::NeedsAdapters;
-            result.adapterChain = { AdapterStep { "mix.downmix", "in" } };
+            result.adapterChain = { AdapterStep { "channels.downmix", "in" } };
             result.reason = "Stereo into a mono-only port: choose Mid, Left, Right or Side";
             result.choices = { "mid", "left", "right", "side" };
             if (rescale.has_value())
             {
                 // Downmix hands on an audio-range signal, so what follows is
                 // always a Map (never Pitch <-> Frequency).
-                if (rescale->adapterChain.size() != 1 || rescale->adapterChain.front().typeId != "adapt.map")
+                if (rescale->adapterChain.size() != 1 || rescale->adapterChain.front().typeId != "math.map")
                     return reject ("Stereo into this port needs a Downmix first");
                 result.adapterChain.push_back (mapStep());
             }
@@ -211,7 +211,7 @@ namespace bazalt::engine
         // A value into an Event port: a Threshold turns crossings into moments.
         if (isValueType (from.type) && to.type == SignalType::Event)
         {
-            AdapterStep step { "adapt.threshold", "by" };
+            AdapterStep step { "logic.threshold", "by" };
             return needsAdapter (step, "A value into an Event-typed port needs a Threshold");
         }
 

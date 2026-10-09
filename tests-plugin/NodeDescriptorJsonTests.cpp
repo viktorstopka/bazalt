@@ -52,11 +52,11 @@ TEST_CASE ("nodeDescriptorToVar serializes a node with an unbounded numeric outp
     // PropsAndMacroRedesign.md Batch E gave it a real, configurable range
     // contract, so its own output port is bounded by default now (see the
     // dedicated util.constant descriptor test below).
-    const auto descriptor = describeNode ("adapt.map", nodes::MapNode {});
+    const auto descriptor = describeNode ("math.map", nodes::MapNode {});
     const auto var = nodeDescriptorToVar (descriptor);
 
     REQUIRE (var.isObject());
-    CHECK (var["typeId"].toString() == "adapt.map");
+    CHECK (var["typeId"].toString() == "math.map");
 
     const auto* outputs = var["outputs"].getArray();
     REQUIRE (outputs != nullptr);
@@ -157,9 +157,9 @@ TEST_CASE ("nodeDescriptorToVar reports whether a node type is deprecated",
 TEST_CASE ("nodeDescriptorToVar serializes InstanceMixNode's port metadata intact",
            "[plugin][NodeDescriptorJson][M17]")
 {
-    const auto descriptor = describeNode ("instance.sum", nodes::InstanceMixNode {});
+    const auto descriptor = describeNode ("life.merge", nodes::InstanceMixNode {});
     const auto var = nodeDescriptorToVar (descriptor);
-    CHECK (var["typeId"].toString() == "instance.sum");
+    CHECK (var["typeId"].toString() == "life.merge");
 
     const auto* inputs = var["inputs"].getArray();
     REQUIRE (inputs != nullptr);
@@ -285,8 +285,8 @@ TEST_CASE ("nodeDescriptorToVar reports each port's polymorphism, so the UI adop
 
     // compare and sample&hold keep their type Control and follow only the quantity.
     CHECK (polymorphismOf ("logic.compare", "inputs", "a") == "quantity");
-    CHECK (polymorphismOf ("adapt.sampleHold", "inputs", "in") == "quantity");
-    CHECK (polymorphismOf ("adapt.sampleHold", "inputs", "trigger") == "none");
+    CHECK (polymorphismOf ("time.sampleHold", "inputs", "in") == "quantity");
+    CHECK (polymorphismOf ("time.sampleHold", "inputs", "trigger") == "none");
 
     CHECK (polymorphismOf ("osc.analog", "outputs", "out") == "none");
 }

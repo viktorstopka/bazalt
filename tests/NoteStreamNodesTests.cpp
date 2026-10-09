@@ -711,8 +711,8 @@ TEST_CASE ("A real compiled graph assembles a Note from clock.pulse via adapt.ga
     auto factory = buildDefaultNodeFactory();
 
     NodeGraph graph;
-    graph.addNode ({ "clk", "clock.pulse", {}, { { "clock.pulse.rate", 1000.0f } }, {} });
-    graph.addNode ({ "gateLen", "adapt.gateLength", {}, { { "length", 0.05f } }, {} });
+    graph.addNode ({ "clk", "time.clock", {}, { { "time.clock.rate", 1000.0f } }, {} });
+    graph.addNode ({ "gateLen", "time.gateLength", {}, { { "length", 0.05f } }, {} });
     graph.addNode ({ "pitchConst", "util.constant", {}, { { "util.constant.value", 67.0f } }, {} });
     graph.addNode ({ "assemble", "note.assemble", {}, {}, {} });
     graph.addNode ({ "value", "note.value", {}, {}, {} });

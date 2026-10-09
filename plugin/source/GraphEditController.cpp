@@ -661,7 +661,7 @@ namespace bazalt
                 // two-step one (mix.downmix -> adapt.map: ±1). Every
                 // other step still seeds itself independently from the
                 // ORIGINAL endpoints' own ranges (fromPort/toPort).
-                if (step.typeId == "adapt.map")
+                if (step.typeId == "math.map")
                 {
                     std::vector<bazalt::engine::PortDescriptor> feederStorage;
                     const bazalt::engine::PortDescriptor* feeder = fromPort;
@@ -673,15 +673,15 @@ namespace bazalt
 
                     if (const auto range = seedRangeForMapInput (*feeder))
                     {
-                        instance.parameters["adapt.map.inMin"] = range->first;
-                        instance.parameters["adapt.map.inMax"] = range->second;
+                        instance.parameters["math.map.inMin"] = range->first;
+                        instance.parameters["math.map.inMax"] = range->second;
                     }
                     // The same reading for the destination: its bounds, else
                     // its polarity, else ±1 for an audio port.
                     if (const auto range = seedRangeForMapInput (*toPort))
                     {
-                        instance.parameters["adapt.map.outMin"] = range->first;
-                        instance.parameters["adapt.map.outMax"] = range->second;
+                        instance.parameters["math.map.outMin"] = range->first;
+                        instance.parameters["math.map.outMax"] = range->second;
                     }
                 }
                 else if (step.seedFromDestinationRange && toPort->minValue.has_value() && toPort->maxValue.has_value())
@@ -1058,7 +1058,7 @@ namespace bazalt
         std::array<std::array<std::unique_ptr<bazalt::engine::ExecutionPlan>, BazaltAudioProcessor::numVoices>, BazaltAudioProcessor::maxOrigins> newVoicePlansBySlot;
 
         // wiki/plans/DomainRedesign.md Batch 4: this origin's own
-        // "instance.allocate.voice.maxInstances", read off the REAL
+        // "life.voice.maxInstances", read off the REAL
         // compiled node (whatever the graph's own NodeInstance::parameters
         // actually applied, default included) — captured per-slot here
         // and enforced (VoiceManager::setMaxActiveVoices) only once every
@@ -1136,7 +1136,7 @@ namespace bazalt
                         const auto& sum = origin.sums[s];
                         const auto left = plan.findOutputBufferIndex (sum.fromNodeId, sum.fromPortId);
                         if (left < 0)
-                            return { false, "Voice Sum '" + sum.sumNodeId + "' is fed from inside a feedback loop — "
+                            return { false, "Merge '" + sum.sumNodeId + "' is fed from inside a feedback loop — "
                                                 "take its input from outside the loop" };
                         plan.sumOutputs[s] = { left, plan.findRightOutputBufferIndex (sum.fromNodeId, sum.fromPortId) };
                         plan.numSumOutputs = (int) s + 1;

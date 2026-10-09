@@ -4,11 +4,11 @@
 
 namespace bazalt::engine::nodes
 {
-    /** Stable type id: "mix.downmix" (M16). Real stereo cable redesign
+    /** Stable type id: "channels.downmix" (M16). Real stereo cable redesign
         (`wiki/NODES.System.md` §9): now a genuine 1-in-1-out node — one
         `Channels::Stereo` `in` port, one mono `out` — which finally makes it
         fit `connectWithAutoAdapt`'s 1-in-1-out `AdapterStep` splice
-        mechanism the same way `adapt.map`/`adapt.threshold` already do. Before this redesign it took two
+        mechanism the same way `math.map`/`logic.threshold` already do. Before this redesign it took two
         separate mono inputs (`left`/`right`), which never fit that
         mechanism (`CanConnect.cpp`'s own comment used to explain why) —
         that limitation is closed now, not worked around.
@@ -24,7 +24,7 @@ namespace bazalt::engine::nodes
         int getNumInputChannels() const noexcept override { return 2; }
 
         juce::String getTitle() const override { return "Downmix"; }
-        juce::String getCategory() const override { return "Adapters"; }
+        juce::String getCategory() const override { return "Channels"; }
 
         std::vector<PortDescriptor> getInputPorts() const override
         {
@@ -40,7 +40,7 @@ namespace bazalt::engine::nodes
 
         std::vector<ParameterDescriptor> getParameters() const override
         {
-            return { ParameterDescriptor { .id = "mix.downmix.mode",
+            return { ParameterDescriptor { .id = "channels.downmix.mode",
                                             .minValue = 0.0f,
                                             .maxValue = 4.0f,
                                             .defaultValue = 2.0f, // "mid" — see modeForValue()
@@ -57,7 +57,7 @@ namespace bazalt::engine::nodes
 
         void setParameter (const juce::String& parameterId, float value) override
         {
-            if (parameterId == "mix.downmix.mode")
+            if (parameterId == "channels.downmix.mode")
                 mode = modeForValue (value);
         }
 

@@ -5,7 +5,7 @@
 
 namespace bazalt::engine::nodes
 {
-    /** Stable type id: "adapt.threshold" (M16, promotes the UI-only
+    /** Stable type id: "logic.threshold" (M16, promotes the UI-only
         `mock.triggerByThreshold` to a real engine node). `SIGNAL_TYPES.md`
         §5's Control -> Event adapter — `canConnect` auto-inserts this when
         a Control output feeds an Event-typed input, wired into this
@@ -29,7 +29,7 @@ namespace bazalt::engine::nodes
         int getNumOutputPorts() const noexcept override { return numOutputs; }
 
         juce::String getTitle() const override { return "Threshold"; }
-        juce::String getCategory() const override { return "Adapters"; }
+        juce::String getCategory() const override { return "Logic"; }
 
         std::vector<PortDescriptor> getInputPorts() const override
         {

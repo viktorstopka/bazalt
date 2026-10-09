@@ -67,15 +67,15 @@ TEST_CASE ("connectWithAutoAdapt inserts and seeds a real adapt.map node for Uni
     REQUIRE (controller.setGraph (bazalt::engine::buildVoiceProofGraph()).success);
 
     // allocator.velocity is a real Unipolar source (InstanceVoiceNode.h).
-    REQUIRE (controller.addNode ("delay.line", "dly", 100.0f, 0.0f).success);
+    REQUIRE (controller.addNode ("time.delay", "dly", 100.0f, 0.0f).success);
 
-    const auto result = controller.connectWithAutoAdapt ("allocator", "velocity", "dly", "delay.line.samples");
+    const auto result = controller.connectWithAutoAdapt ("allocator", "velocity", "dly", "time.delay.samples");
     REQUIRE (result.success);
 
     const auto& graph = controller.getGraph();
     const bazalt::engine::NodeInstance* mapNode = nullptr;
     for (const auto& n : graph.getNodes())
-        if (n.type == "adapt.map")
+        if (n.type == "math.map")
             mapNode = &n;
 
     REQUIRE (mapNode != nullptr);
@@ -83,20 +83,20 @@ TEST_CASE ("connectWithAutoAdapt inserts and seeds a real adapt.map node for Uni
     // Output range seeded from the destination port's own range —
     // delay.line's default maxDelaySamples is 4096 (DelayNode.h's
     // constructor default); input range from the Unipolar source, 0..1.
-    REQUIRE (mapNode->parameters.count ("adapt.map.outMin") == 1);
-    CHECK (mapNode->parameters.at ("adapt.map.outMin") == 1.0f);
-    REQUIRE (mapNode->parameters.count ("adapt.map.outMax") == 1);
-    CHECK (mapNode->parameters.at ("adapt.map.outMax") == 4096.0f);
-    REQUIRE (mapNode->parameters.count ("adapt.map.inMin") == 1);
-    CHECK (mapNode->parameters.at ("adapt.map.inMin") == 0.0f);
-    CHECK (mapNode->parameters.at ("adapt.map.inMax") == 1.0f);
+    REQUIRE (mapNode->parameters.count ("math.map.outMin") == 1);
+    CHECK (mapNode->parameters.at ("math.map.outMin") == 1.0f);
+    REQUIRE (mapNode->parameters.count ("math.map.outMax") == 1);
+    CHECK (mapNode->parameters.at ("math.map.outMax") == 4096.0f);
+    REQUIRE (mapNode->parameters.count ("math.map.inMin") == 1);
+    CHECK (mapNode->parameters.at ("math.map.inMin") == 0.0f);
+    CHECK (mapNode->parameters.at ("math.map.inMax") == 1.0f);
 
     bool sourceToAdapter = false, adapterToDestination = false;
     for (const auto& c : graph.getConnections())
     {
         if (c.fromNodeId == "allocator" && c.fromPortId == "velocity" && c.toNodeId == mapNode->id)
             sourceToAdapter = true;
-        if (c.fromNodeId == mapNode->id && c.toNodeId == "dly" && c.toPortId == "delay.line.samples")
+        if (c.fromNodeId == mapNode->id && c.toNodeId == "dly" && c.toPortId == "time.delay.samples")
             adapterToDestination = true;
     }
     CHECK (sourceToAdapter);
@@ -111,7 +111,7 @@ TEST_CASE ("connectWithAutoAdapt rejects a connection to an unknown port with no
     auto& controller = processor.getGraphEditController();
     REQUIRE (controller.setGraph (bazalt::engine::buildVoiceProofGraph()).success);
 
-    REQUIRE (controller.addNode ("delay.line", "dly", 0.0f, 0.0f).success);
+    REQUIRE (controller.addNode ("time.delay", "dly", 0.0f, 0.0f).success);
 
     const auto nodesBefore = controller.getGraph().getNodes().size();
     const auto connectionsBefore = controller.getGraph().getConnections().size();
@@ -151,7 +151,7 @@ TEST_CASE ("connectWithAutoAdapt inserts adapt.pitchToFrequency for Pitch into a
     const auto& graph = controller.getGraph();
     const bazalt::engine::NodeInstance* converterNode = nullptr;
     for (const auto& n : graph.getNodes())
-        if (n.type == "adapt.pitchToFrequency")
+        if (n.type == "math.pitchToFrequency")
             converterNode = &n;
     REQUIRE (converterNode != nullptr);
 
@@ -196,7 +196,7 @@ TEST_CASE ("connectWithAutoAdapt asks before reducing stereo into a mono-only po
 
     processor.getNodeFactory().registerType ("test.stereoSource", [] { return std::make_unique<StereoTestSourceNode>(); });
     REQUIRE (controller.addNode ("test.stereoSource", "stereoSrc", 0.0f, 0.0f).success);
-    REQUIRE (controller.addNode ("adapt.sampleHold", "follower", 100.0f, 0.0f).success); // its input is one signal
+    REQUIRE (controller.addNode ("time.sampleHold", "follower", 100.0f, 0.0f).success); // its input is one signal
 
     const auto nodesBefore = controller.getGraph().getNodes().size();
 
@@ -214,9 +214,9 @@ TEST_CASE ("connectWithAutoAdapt asks before reducing stereo into a mono-only po
     CHECK (controller.getGraph().getNodes().size() == nodesBefore + 1);
 
     const auto& nodes = controller.getGraph().getNodes();
-    const auto downmixIt = std::find_if (nodes.begin(), nodes.end(), [] (const auto& n) { return n.type == "mix.downmix"; });
+    const auto downmixIt = std::find_if (nodes.begin(), nodes.end(), [] (const auto& n) { return n.type == "channels.downmix"; });
     REQUIRE (downmixIt != nodes.end());
-    CHECK (downmixIt->parameters.at ("mix.downmix.mode") == 3.0f); // "right"
+    CHECK (downmixIt->parameters.at ("channels.downmix.mode") == 3.0f); // "right"
 
     const auto& connections = controller.getGraph().getConnections();
     CHECK (std::any_of (connections.begin(), connections.end(), [&] (const auto& c)
@@ -257,7 +257,7 @@ TEST_CASE ("connectWithAutoAdapt wires raw Audio straight into a modulation port
     REQUIRE (controller.setGraph (bazalt::engine::buildVoiceProofGraph()).success);
 
     // adapt.map's own "in" is a plain, quantity-less value port.
-    REQUIRE (controller.addNode ("adapt.map", "destTest", 0.0f, 0.0f).success);
+    REQUIRE (controller.addNode ("math.map", "destTest", 0.0f, 0.0f).success);
     const auto nodesBefore = controller.getGraph().getNodes().size();
 
     REQUIRE (controller.connectWithAutoAdapt ("osc", "out", "destTest", "in").success);
@@ -277,12 +277,12 @@ TEST_CASE ("connectWithAutoAdapt inserts one Map for raw Audio into a real-quant
     REQUIRE (controller.connectWithAutoAdapt ("osc", "out", "svf", "filter.svf.cutoff").success);
 
     const auto& graph = controller.getGraph();
-    const auto* mapNode = findNodeOfType (graph, "adapt.map");
+    const auto* mapNode = findNodeOfType (graph, "math.map");
     REQUIRE (mapNode != nullptr);
-    CHECK (mapNode->parameters.at ("adapt.map.inMin") == -1.0f);
-    CHECK (mapNode->parameters.at ("adapt.map.inMax") == 1.0f);
-    CHECK (mapNode->parameters.count ("adapt.map.outMin") == 1);
-    CHECK (mapNode->parameters.count ("adapt.map.outMax") == 1);
+    CHECK (mapNode->parameters.at ("math.map.inMin") == -1.0f);
+    CHECK (mapNode->parameters.at ("math.map.inMax") == 1.0f);
+    CHECK (mapNode->parameters.count ("math.map.outMin") == 1);
+    CHECK (mapNode->parameters.count ("math.map.outMax") == 1);
     CHECK (hasConnection (graph, "osc", "out", mapNode->id, "in"));
     CHECK (hasConnection (graph, mapNode->id, "out", "svf", "filter.svf.cutoff"));
 }
@@ -310,8 +310,8 @@ TEST_CASE ("connectWithAutoAdapt asks how to reduce a Stereo source into a mono 
 
     // With one: Downmix, then a Map onto the cutoff's range.
     REQUIRE (controller.connectWithAutoAdapt ("stereoSrc", "out", "svf", "filter.svf.cutoff", "mid").success);
-    CHECK (findNodeOfType (controller.getGraph(), "mix.downmix") != nullptr);
-    CHECK (findNodeOfType (controller.getGraph(), "adapt.map") != nullptr);
+    CHECK (findNodeOfType (controller.getGraph(), "channels.downmix") != nullptr);
+    CHECK (findNodeOfType (controller.getGraph(), "math.map") != nullptr);
 }
 
 TEST_CASE ("connectWithAutoAdapt wires a Bipolar modulation source straight into an Audio port",
@@ -342,12 +342,12 @@ TEST_CASE ("connectWithAutoAdapt inserts one Map from a real-quantity source ont
     REQUIRE (controller.addNode ("filter.dcBlock", "destTest", 0.0f, 0.0f).success);
     REQUIRE (controller.connectWithAutoAdapt ("allocator", "pitch", "destTest", "in").success);
 
-    const auto* mapNode = findNodeOfType (controller.getGraph(), "adapt.map");
+    const auto* mapNode = findNodeOfType (controller.getGraph(), "math.map");
     REQUIRE (mapNode != nullptr);
     // allocator.pitch declares 0..127 (InstanceVoiceNode.h).
-    CHECK (mapNode->parameters.at ("adapt.map.inMin") == 0.0f);
-    CHECK (mapNode->parameters.at ("adapt.map.inMax") == 127.0f);
-    CHECK (mapNode->parameters.at ("adapt.map.outMin") == -1.0f);
-    CHECK (mapNode->parameters.at ("adapt.map.outMax") == 1.0f);
+    CHECK (mapNode->parameters.at ("math.map.inMin") == 0.0f);
+    CHECK (mapNode->parameters.at ("math.map.inMax") == 127.0f);
+    CHECK (mapNode->parameters.at ("math.map.outMin") == -1.0f);
+    CHECK (mapNode->parameters.at ("math.map.outMax") == 1.0f);
     CHECK (hasConnection (controller.getGraph(), mapNode->id, "out", "destTest", "in"));
 }

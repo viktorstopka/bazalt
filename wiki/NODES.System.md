@@ -21,34 +21,32 @@ one place (§2) instead of a proliferation of special-cased wire kinds.
 
 | Type | What flows | Rate | Notes |
 |---|---|---|---|
-| `Audio` | one sample per frame, audio range | audio rate | the only type that's always audio rate |
-| `Control` | a numeric value (§2) | block or audio rate | carries floats, ints, bools *and* enums |
+| `Signal` | one float per sample | audio rate | a sound, a frequency, a modulation, a gate — told apart by quantity (§2) |
 | `Event` | discrete occurrences with a sample offset | sample-accurate | the UI calls this **Trigger** — one type, two names |
 | `Note` | note lifecycle events with a payload | sample-accurate | id, pitch, velocity, pressure, slide, release velocity |
 | `Data` | an immutable block of values | updated between blocks | tables, modal sets, scales, curves, wavetables, samples |
 | `Spectral` | reserved | — | no meaning assigned yet, connects to nothing |
 
+**Stage 1 (2026-10-09, `wiki/plans/DataAndWavetable.md` D1): `Audio`, `Control` and
+`Boolean` merged into `Signal`.** They were always the same per-sample float buffer;
+the separate types only said "these don't belong together", which the connection
+rules no longer believe. What a Signal *means* is its quantity: `Quantity::Audio` (a
+waveform meant to be heard, nominally ±1) and `Quantity::Boolean` (a 0/1 gate, true
+is > 0.5) sit beside Frequency, Time, Unipolar and the rest. Colour follows meaning
+(pink audio, blue Boolean, orange modulation, white value), and connecting is decided
+by meaning: a Map only where a range changes, Pitch ↔ Frequency exact, Stereo into a
+mono port asks for a Downmix, a value into an Event inserts a Threshold. Every Signal
+can carry channels.
+
 Deliberate consequences:
 
-- **Integer isn't a signal type.** It's `Control` with `kind = int`. The UI
+- **Integer isn't a signal type.** It's a `Signal` with `kind = int`. The UI
   colours/glyphs it distinctly by reading the value contract, not by a separate wire
   type.
-- **Boolean IS a real, separate signal type** (`SignalType::Boolean`, M7) — this
-  table omitted it until a post-`util.macro`-ship sweep (2026-10-01) caught the
-  omission, and the line above used to claim it was "Control with kind=bool," which
-  the real engine never did. `PortDescriptor.h`'s own doc comment states the actual
-  reason directly: Boolean is "a genuinely different buffer-level contract from
-  Control — no smoothing, no skew, one bit of state — not just a UI-side colour
-  distinction." Concretely: `Boolean` connects to `Boolean` directly; `Boolean` into
-  `Control` auto-inserts `adapt.boolToControl`; but `Control` into `Boolean` has no
-  adapter at all today and is a hard `Reject` — see §4's matrix for both rows. (A real
-  bug traced back to exactly this confusion: the UI's drag-a-port-out-to-create-a-
-  Macro gesture used to treat Boolean as macro-able the same as Control/Event, since
-  a macro's value has a meaningful 0/1 shape either way — but a macro's own output
-  port is always `Control`, so that gesture tried the one direction with no adapter,
-  failing every time. Fixed in `graphStore.ts`'s `isMacroablePort()`, not here — this
-  entry exists so the next design decision doesn't inherit the same wrong premise.)
-- **Modulation isn't a signal type.** It's `Control` with quantity `Unipolar` or
+- **Boolean isn't a signal type any more** — it is a `Signal` with `Quantity::Boolean`
+  (it was `SignalType::Boolean` from M7 until stage 1). A gate wires straight into an
+  amount; nothing converts it.
+- **Modulation isn't a signal type.** It's a `Signal` with quantity `Unipolar` or
   `Bipolar` (§2).
 - **Note is a real type, not a MIDI convention.** MIDI must enter the graph through a
   Note-typed port instead of being wired directly into voice allocation — otherwise
@@ -76,7 +74,7 @@ wires a `Data` connection once, at compile time, via `Node::getDataPublisher()`/
 discrete edit, never mid-block; the consumer just holds the raw `DataPublisher*` and
 reads `getCurrentForAudioThread()` for itself whenever it likes. `Note`
 has exactly two real ports anywhere in the engine right now: `io.noteIn`'s `notes`
-output and `instance.allocate.voice`'s `spawn` input (plus polymorphic `util.reroute`,
+output and `life.voice`'s `spawn` input (plus polymorphic `util.reroute`,
 which can carry a Note cable through unchanged). A connected Note port doesn't use the
 ordinary per-sample `blockBuffers` mechanism — it gets a dedicated `NoteEvent`-typed
 buffer (`ExecutionPlan::noteBuffers`), and **only one Note input and one Note output
@@ -239,47 +237,38 @@ single undoable command — never hidden coercion inside a cable. A chain is at 
 two adapters; if a conversion needs more, it's rejected and the user builds it by
 hand.
 
-The table below is the **complete scenario matrix** — every `from` × `to` pair and
-what actually happens, with a column distinguishing the aspirational full design from
-what `CanConnect.cpp` really implements today. Where they differ, the engine's actual
-behavior is what a patch experiences; the "target" column is what a later milestone
-should close.
+The table below is the **complete scenario matrix** as of stage 1 (2026-10-09). Every
+row is real in `CanConnect.cpp` today. A Signal's meaning, for these rows, is its
+quantity: `Audio` reads as a normalised ±1 value, `Boolean` as a plain 0/1 that fits
+anywhere, `Unipolar`/`Bipolar` as normalised, everything else as a real quantity.
 
-| From | To | Outcome | Adapter | Real today? |
-|---|---|---|---|---|
-| `Audio` (mono) | `Audio` (mono) | Ok | — | ✅ |
-| `Audio` (mono) | `Audio` (stereo) | Ok (broadcast — free) | — | ✅ |
-| `Audio` (stereo) | `Audio` (mono) | NeedsAdapters | `mix.downmix` (currently **manual only** — the UI predicts the need but doesn't auto-insert it yet) | ⚠️ partial — see §9.5, this stops being a rare edge case under the stereo redesign |
-| `Control` (same quantity) | `Control` (same quantity) | Ok | — | ✅ |
-| `Control` (`Unipolar`/`Bipolar`) | `Control` (real quantity, e.g. `Frequency`) | NeedsAdapters | `adapt.map`, seeded from the destination port's range/curve | ✅ |
-| `Control` (real quantity) | `Control` (`Unipolar`/`Bipolar`) | NeedsAdapters | `adapt.normalise`, seeded from the source port's range | ✅ |
-| `Control` (real quantity A) | `Control` (real quantity B, e.g. `Frequency`→`Pitch`) | NeedsAdapters | `adapt.normalise` → `adapt.map` (two-adapter chain) | ✅ |
-| `Control` (block-rate) | `Control` (audio-rate) | Ok, free broadcast | — | ✅ (no rate distinction is actually enforced in the current engine — every Control port already accepts either; see `NODES_Gaps.md`) |
-| `Event` | `Event` | Ok | — | ✅ |
-| `Note` | `Note` | Ok | — | ✅ (only 2 real Note ports exist to test this with — see §1) |
-| `Boolean` | `Boolean` | Ok | — | ✅ |
-| `Boolean` | `Control` | NeedsAdapters | `adapt.boolToControl` ("From Bool") | ✅ |
-| `Control` | `Boolean` | Reject | "Incompatible signal types with no adapter available yet" — no real `Control`→`Boolean` adapter exists (added to this table during a post-`util.macro`-ship sweep, 2026-10-01 — this row was missing despite the table's own "complete scenario matrix" claim, and its absence let a UI gesture wrongly assume this direction worked too; see §1's note) | ✅ (this *is* the engine's real behavior — rejecting is correct, the gap was only this doc never saying so) |
-| `Control` | `Event` | NeedsAdapters | `adapt.threshold`, rising edge at 50% of range | ✅ |
-| `Event` | `Control` | — | catalog names `env.adsr`(trigger-fed)/`adapt.sampleHold`("Latch") as the manual pattern | ❌ not auto-inserted |
-| `Audio` (mono) | `Control` (`Unipolar`/`Bipolar`/`Dimensionless`) | NeedsAdapters | `adapt.audioToControl` — reads the waveform's instantaneous value, scaled by `depth` | ✅ (`wiki/plans/AudioControlBridge.md`) |
-| `Audio` (mono) | `Control` (real quantity, e.g. `Frequency`) | NeedsAdapters | `adapt.audioToControl` → `adapt.map` (two-adapter chain, `adapt.map` seeded from the destination's range) | ✅ |
-| `Audio` (stereo) | `Control` | Reject | "Stereo source into a Control-typed port needs mix.downmix first" — a 3-adapter chain (downmix + bridge + map) would exceed the two-adapter ceiling, so this stays manual | ✅ (deliberate v1 scope limit, not a gap) |
-| `Audio` | `Control` (amplitude-tracking, not raw waveform) | — | `env.follower` (rectify + independent attack/release smoothing) is a DIFFERENT job from the row above — "how loud is this, smoothed" vs. "use the instantaneous waveform as a modulator" — and stays hand-placed only, on purpose: auto-inserting it on a bare wire-drag would silently defeat audio-rate FM/ring-mod, which needs the raw value `adapt.audioToControl` preserves. `archive_docs/decisions/0019-adapter-table.md`'s Amendment (0.x arc) has the full reasoning for why this revises the ADR's original M20 plan rather than fulfilling it. | ❌ not auto-inserted, deliberately — `env.follower` itself is real (✅), just never auto-spliced |
-| `Control` (`Unipolar`/`Bipolar`/`Dimensionless`) | `Audio` (mono) | NeedsAdapters | `adapt.controlToAudio` ("To Audio") — `Bipolar` passes through clamped, `Unipolar` expands via `*2-1` | ✅ (`wiki/plans/ControlToAudioBridge.md` — closes the "open symmetric question for later" `AudioControlBridge.md` §6 explicitly deferred) |
-| `Control` (real quantity, e.g. `Frequency`) | `Audio` (mono) | NeedsAdapters | `adapt.normalise` (seeded from the SOURCE's own range) → `adapt.controlToAudio` (two-adapter chain) — the mirror image of `Audio → Control`'s real-quantity case, just with the real-quantity step on the source side instead of the destination side | ✅ |
-| `Control` | `Audio` (stereo) | NeedsAdapters | same one- or two-step chain as above — no extra reject needed, since `Control` has no `Channels` concept to begin with; the existing mono → stereo free broadcast handles the final leg | ✅ |
-| `Note` | `Event` | — | catalog names a `note.gate`-style "Note gate" adapter | ❌ `note.gate` itself isn't built yet (M25) |
-| `Note` | `Control` | — | catalog names via `instance.allocate.voice`'s own outputs, or `note.value` | ❌ `note.value` isn't built yet (M25); the instance.allocate.voice path is real but isn't a `canConnect` adapter — it's just wiring its own output ports |
-| `Data` (tag X) | `Data` (accepts tag X) | Ok | — | ✅ |
-| `Data` (tag X) | `Data` (accepts tag Y ≠ X) | Reject | "Data tag mismatch" | ✅ |
-| `Data` (tag X) | anything non-`Data` | Reject | "Data never converts implicitly" | ✅ |
-| anything non-`Data` | `Data` | Reject | same | ✅ |
-| `Data(eq-curve)` | `Data(curve)` | — | catalog names `data.eqToCurve` (Correction 2) as an **explicit, one-way** node — never automatic, since the two tags mean genuinely different things (bands-in-dB-across-log-frequency vs. values-across-normalised-axis) | 📋 catalog only |
-| `Audio` (Poly) | `Audio` (Scalar-only destination, no `instance.sum` in between) | Reject at compile time | — insert `instance.sum` by hand | ✅ (`MultiplicityResolver`) |
-| `Audio` (`Poly`, `originId=X`) | `Audio` (`Poly`, `originId=Y ≠ X`), combined directly | Reject at compile time | "fed by two different voice allocators... reduce one to Scalar first" — reduce one side through its own `instance.sum` first | ✅ (`MultiplicityResolver`; mirrored at wire-drag-prediction time by `canConnect.ts`) |
-| `Spectral` | anything | Reject | "Spectral is reserved, not yet implemented" | ✅ |
-| type mismatch, no rule above applies | | Reject | "Incompatible signal types with no adapter available yet" | ✅ (the catch-all) |
+| From | To | Outcome | Adapter |
+|---|---|---|---|
+| `Signal` | `Signal`, same meaning, or either side Dimensionless/Boolean | Ok | — |
+| `Signal` normalised (audio, modulation) | `Signal` normalised | Ok | — |
+| `Signal` normalised | `Signal` real quantity (e.g. `Frequency`) | NeedsAdapters | `math.map`, seeded from the source's range (audio ±1) and the destination's |
+| `Signal` real quantity | `Signal` normalised | NeedsAdapters | `math.map`, same seeding |
+| `Signal` `Pitch` | `Signal` `Frequency` (and back) | NeedsAdapters | `math.pitchToFrequency` / `math.frequencyToPitch` — exact, never a linear map |
+| `Signal` real quantity A | `Signal` real quantity B | NeedsAdapters | `math.map`, seeded from both ends |
+| any `Signal` | a port that takes on what feeds it (Multiply, Add, Clip's `in`, Reroute, Scope) | Ok | — nothing is ever rescaled into it |
+| `Signal` (stereo) | `Signal` (mono-only port) | NeedsAdapters, **asks** | `channels.downmix` (Mid / Left / Right / Side), plus `math.map` when the destination is a real quantity |
+| `Signal` (mono) | `Signal` (stereo) | Ok (broadcast — free) | — |
+| `Signal` | `Event` | NeedsAdapters | `logic.threshold` |
+| `Event` | `Event` | Ok | — |
+| `Note` | `Note` | Ok | — |
+| `Data` (tag X) | `Data` (accepts tag X) | Ok | — |
+| `Data` (tag X) | `Data` (accepts tag Y ≠ X) | Reject | "Data tag mismatch" |
+| `Data` | anything else (either way) | Reject | "Data never converts implicitly" |
+| `Signal` (Poly) | Scalar-only destination with no `life.merge` in between | Reject at compile time | insert `life.merge` by hand (`MultiplicityResolver`) |
+| `Signal` (Poly, origin X) | combined directly with Poly origin Y ≠ X | Reject at compile time | reduce one to Scalar first |
+| `Spectral` | anything | Reject | "Spectral is reserved, not yet implemented" |
+| anything else | | Reject | "Incompatible signal types" |
+
+Gone in stage 1 (schema v12/v13 migrate them): `adapt.audioToControl` (To Mod),
+`adapt.controlToAudio` (To Audio), `adapt.boolToControl` (From Bool), `adapt.normalise`
+and the two polarity converters — a value now wires straight in, and a Map appears
+only where a range changes. `Event` → `Signal` and `Note` → `Signal` stay manual
+(`time.sampleHold`, `time.gateLength`, `note.value`, `note.gate`).
 
 **Occupied-port behavior (today, real):** the compiler enforces one source per input
 — a real, intentional rule, not a bug. Dropping a second cable onto an already-wired
@@ -303,11 +292,11 @@ empty port once the last one is wired, never below `min` or above `max`.
 (`wiki/plans/DomainRedesign.md`, all 5 batches landed) — not a tweak to it. The old
 model treated "domain" as a single fact about the *whole graph*: every node was
 whole-graph-classified `voice`, `global`, or `mono` by `DomainSplitter`'s reachability
-pass, which folded outward from wherever `instance.allocate.voice`/`instance.sum`
+pass, which folded outward from wherever `life.voice`/`life.merge`
 happened to sit and — the actual bug this redesign fixes — got a **different answer
-depending on compile order**: `env.adsr` → `instance.sum` compiled fine if
-`instance.sum` was already wired to the output first, and was rejected otherwise,
-for the exact same graph shape. `instance.sum` itself was also capped at **exactly
+depending on compile order**: `env.adsr` → `life.merge` compiled fine if
+`life.merge` was already wired to the output first, and was rejected otherwise,
+for the exact same graph shape. `life.merge` itself was also capped at **exactly
 one per graph**, full stop — a second allocator/sum pair was a hard reject, not a
 resource limit.
 
@@ -324,11 +313,11 @@ enum class Multiplicity { Scalar, Poly };  // one value/stream, vs. one PER ACTI
 ```
 
 A `Poly` port isn't a bare tag — it carries **which allocator it came from**
-(`originId`, the producing `instance.allocate.voice` node's own id). This is what
+(`originId`, the producing `life.voice` node's own id). This is what
 makes multiple independent voice regions fall out for free instead of needing their
 own bookkeeping: two different allocators each produce their own
 `Poly(originId=X)`/`Poly(originId=Y)`, nothing forces them to pair, and each gets
-reduced by its own `instance.sum` independently, whenever the graph actually wires
+reduced by its own `life.merge` independently, whenever the graph actually wires
 one — up to `MultiplicityResolver::maxOrigins` (4) simultaneous origins per graph,
 each its own physical plan, each either MIDI-driven (`io.noteIn`) or internally
 triggered (a `clock`→`seq`→`note.assemble` chain), never both for the same origin
@@ -352,7 +341,7 @@ boundary nodes below):
 **Not symmetric to `Channels`.** `Channels::Mono`/`Stereo` is a *static* per-port
 declaration, fixed at descriptor-authoring time — that's exactly why `Mono→Stereo`
 and `Stereo→Mono` are two different, asymmetric operations (free broadcast vs. lossy
-reduce via `mix.downmix`), and why direction matters. `Multiplicity` isn't that: an
+reduce via `channels.downmix`), and why direction matters. `Multiplicity` isn't that: an
 ordinary node's ports don't declare a fixed `Multiplicity` at all, so there's no such
 thing as "plugging a `Poly` signal into a `Scalar` port" — an ordinary port doesn't
 have a fixed one to plug into. Feeding a 2-input node one `Poly`-sourced signal and
@@ -369,7 +358,7 @@ changed is only how nodes get sorted into a voice-bucket vs. the global-bucket g
 local, per-node fixed-point pass, generalized from exactly one origin to up to
 `maxOrigins`. `ExecutionPlan`'s buffer/scheduling internals were never touched.
 
-### `instance.allocate.voice` — the region-opening node (renamed from `instance.allocator`, 09-28-InstanceAllocator.3; renamed again from `instance.voice`, 09-29-AddMenu.1)
+### `life.voice` — the region-opening node (renamed from `instance.allocator`, 09-28-InstanceAllocator.3; renamed again from `instance.voice`, 09-29-AddMenu.1)
 
 Originally designed as "one node, several configurations" (Voice allocation and
 "swarm" spawning treated as the same runtime machinery with a different event
@@ -378,17 +367,17 @@ found-live cost: three of the four configurations (Swarm-population/Swarm-transi
 Trigger) never did anything behaviorally, so the dropdown was pure UI clutter, and
 the four configurations don't even share a port shape (Voice needs a `Note` `spawn`
 input; Swarm-population needs none at all) — a real structural mismatch for one node
-with a mode switch, unlike e.g. `mix.downmix`'s legitimate same-shape mode enum.
+with a mode switch, unlike e.g. `channels.downmix`'s legitimate same-shape mode enum.
 `wiki/reports/InstanceAllocator_2026-09-28.md` has the full critique.
 
-**Current design, as of 09-28-InstanceAllocator.3:** `instance.allocate.voice` does exactly the
+**Current design, as of 09-28-InstanceAllocator.3:** `life.voice` does exactly the
 one thing it ever actually did — Voice allocation, spawned from a `Note` stream. The
 `configuration` parameter is gone outright, not defaulted. Swarm-population/
 Swarm-transient/Trigger are still real, wanted future capability, but as **separate
 node types** sharing the same underlying runtime machinery (instance context,
 lifetime, events-across-boundary — everything below this point still applies to all
 of them equally), each built as its own milestone once its real spawn/lifecycle
-behavior actually exists — not as empty shells on `instance.allocate.voice` now, which would
+behavior actually exists — not as empty shells on `life.voice` now, which would
 just recreate the same dead-surface problem this rename fixed.
 
 **Multiplicity terms, mapped onto this node:** its Poly-typed outputs (below) are the
@@ -398,24 +387,24 @@ fixed property of that one node rather than something resolved per compile. Ever
 `Poly` value this node produces is tagged `originId = this node's own id`.
 
 **Namespace note (09-29-AddMenu.1):** the type id itself carries an `allocate` segment
-(`instance.allocate.voice`, not `instance.voice`) specifically so the Add menu's
+(`life.voice`, not `instance.voice`) specifically so the Add menu's
 category tree — derived from `getCategory()`'s own `/`-separated path, §4-equivalent
 mechanism, see `wiki/MILESTONES.md`'s `09-29-AddMenu.1` entry — can nest all the
 spawn-mechanism siblings (Voice, and eventually Swarm-population/Swarm-transient/
 Trigger below) under one "Domain > Allocate" flyout instead of leaving them
-indistinguishable from `instance.sum` under a flat "Domain" list. `instance.sum`
+indistinguishable from `life.merge` under a flat "Domain" list. `life.merge`
 deliberately keeps its plain two-segment id and flat "Domain" category — it isn't one
 of the spawn-mechanism siblings, it's the region-closing node, so it doesn't belong in
 the same subcategory.
 
 | Future node type | Spawn source | Instance context | Typical use | Built? |
 |---|---|---|---|---|
-| `instance.allocate.voice` | a `Note` stream | the note | playing an instrument | ✅ |
-| `instance.allocate.swarmPopulation` | fixed count, always live | index + seeded randoms | cicadas, a drone of many bodies | 📋 M28 |
-| `instance.allocate.swarmTransient` | an `Event` stream | seeded randoms per spawn | bubbles, crackles, sparks, raindrops | 📋 M28 |
-| `instance.allocate.trigger` | an `Event` stream, one instance at a time | payload | percussive one-shots | 📋 M28 |
+| `life.voice` | a `Note` stream | the note | playing an instrument | ✅ |
+| `life.swarmPopulation` | fixed count, always live | index + seeded randoms | cicadas, a drone of many bodies | 📋 M28 |
+| `life.swarmTransient` | an `Event` stream | seeded randoms per spawn | bubbles, crackles, sparks, raindrops | 📋 M28 |
+| `life.trigger` | an `Event` stream, one instance at a time | payload | percussive one-shots | 📋 M28 |
 
-### Instance context (instance.allocate.voice's output ports)
+### Instance context (life.voice's output ports)
 
 Everything here is `polyOnly`. Common to all configurations: **Instance Index**
 (`Count`), **Instance Age** (`Time`), **Random** — a stable random value seeded from
@@ -459,19 +448,19 @@ Velocity**, **Unison Index**/**Unison Detune**.
   (audio only) or an explicit aggregation node (later feature).
 - `Data` is read-only and shared across instances — never copied per instance.
 
-### `instance.sum` — closing the region (renamed from `instance.mix`, `wiki/plans/DomainRedesign.md` Batch 1b — C++ class name `InstanceMixNode` unchanged)
+### `life.merge` — closing the region (renamed from `instance.mix`, `wiki/plans/DomainRedesign.md` Batch 1b — C++ class name `InstanceMixNode` unchanged)
 
 Sums or averages live instances back to Scalar, placeable anywhere, more than one
 allowed. Reports per-instance silence back to its own origin's allocator, which is
 what actually frees a slot. Its own per-port shape is the OTHER real asymmetry
-Multiplicity carries (§2.4 of the plan): `instance.sum`'s `in` port is the one port
+Multiplicity carries (§2.4 of the plan): `life.merge`'s `in` port is the one port
 in the whole catalog **required** to be `Poly` — `MultiplicityResolver` rejects it
-outright ("instance.sum '...' input must be a Poly signal — nothing to reduce") if
+outright ("life.merge '...' input must be a Poly signal — nothing to reduce") if
 nothing Poly feeds it, rather than treating a Scalar input as a harmless no-op
 passthrough. Its `out` port is ordinary Scalar, ordinary priority resolution, nothing
 special. `DomainSplitter`'s old **exactly one allocator, exactly one mix, full stop**
 ceiling is gone — up to `maxOrigins` (4) allocator/sum pairs now coexist in one
-graph, each independent. One origin may also be reduced by several `instance.sum`
+graph, each independent. One origin may also be reduced by several `life.merge`
 nodes (up to `maxSumsPerOrigin`, 4 — 2026-10-05): one voice can feed a main chain
 and a separate layer (a resonator, say) that are summed independently and only
 combined afterwards, in the Scalar domain — so the layer skips the main chain's
@@ -608,7 +597,7 @@ this is built yet — it's catalog-only, same status as most of Correction 1.
    referenced, per-patch size budget) — needed before any factory that owns audio
    ships, or patches bloat/invent their own storage.
 2. `NodeContent` as a real third category (§3) — changes what "structural" means for
-   `data.table`/`seq.steps`, neither of which is built yet, so this is free to land
+   `data.table`/`time.steps`, neither of which is built yet, so this is free to land
    correctly from the start rather than a migration.
 3. The `ui.custom` descriptor field — cheap now, a per-node bolt-on later.
 4. The `stock.*` rename — free today, breaking once a patch references a shipped
@@ -635,7 +624,7 @@ layered underneath this.
 
 `PortDescriptor::channels` (`Mono | Stereo | Inherited`, M16) already existed and
 `canConnect` (`CanConnect.cpp`) already had the right rule — mono→mono free,
-mono→stereo free (broadcast), stereo→stereo free, stereo→mono needs `mix.downmix`.
+mono→stereo free (broadcast), stereo→stereo free, stereo→mono needs `channels.downmix`.
 What was missing was the compiler actually backing that rule with real per-channel
 buffers instead of always allocating exactly one per declared port. `GraphCompiler.cpp`
 now does:
@@ -688,21 +677,21 @@ inspection.
 | `space.pan` (`PanNode.h`) | 1 output `out` (Stereo, primary) |
 | `space.width` (`WidthNode.h`) | 1 input `in` (Stereo); 1 output `out` (Stereo) |
 | `io.output` (`OutputNode.h`) | 1 input `in` (Stereo); 1 output `out` (Stereo) |
-| `mix.downmix` (`DownmixNode.h`) | 1 input `in` (Stereo); 1 mono output `out` |
-| `stereo.split` | 1 input `in` (Stereo) → 2 separate mono outputs `left`/`right` |
-| `stereo.combine` | 2 separate mono inputs `left`/`right` → 1 output `out` (Stereo) |
+| `channels.downmix` (`DownmixNode.h`) | 1 input `in` (Stereo); 1 mono output `out` |
+| `channels.split` | 1 input `in` (Stereo) → 2 separate mono outputs `left`/`right` |
+| `channels.combine` | 2 separate mono inputs `left`/`right` → 1 output `out` (Stereo) |
 
-`mix.downmix` becoming a genuine 1-in-1-out node closes a real, previously-logged gap:
+`channels.downmix` becoming a genuine 1-in-1-out node closes a real, previously-logged gap:
 it now fits `connectWithAutoAdapt`'s single-`AdapterStep` splice mechanism the same way
-`adapt.map`/`adapt.normalise`/`adapt.threshold` already did, so wiring a stereo source
-into a mono-only port auto-inserts a real `mix.downmix` node instead of being rejected
-outright (`GraphEditController::connectWithAutoAdapt`, the hardcoded `mix.downmix`
+`math.map`/`adapt.normalise`/`logic.threshold` already did, so wiring a stereo source
+into a mono-only port auto-inserts a real `channels.downmix` node instead of being rejected
+outright (`GraphEditController::connectWithAutoAdapt`, the hardcoded `channels.downmix`
 refusal removed).
 
-`stereo.split`/`stereo.combine` are the bridge nodes independent per-channel wiring
+`channels.split`/`channels.combine` are the bridge nodes independent per-channel wiring
 still needs — you can feed a stereo signal's two channels to genuinely different
-downstream processing (`stereo.split`), or bundle two unrelated mono sources into one
-stereo cable for a destination that expects one (`stereo.combine`). Both are trivial,
+downstream processing (`channels.split`), or bundle two unrelated mono sources into one
+stereo cable for a destination that expects one (`channels.combine`). Both are trivial,
 byte-for-byte passthroughs (`tests/SpaceNodesTests.cpp`).
 
 ### 9.3 No patch migration — CLAUDE.md rule 3 is suspended
@@ -710,7 +699,7 @@ byte-for-byte passthroughs (`tests/SpaceNodesTests.cpp`).
 Every one of the six nodes above had a shipped port id renamed or removed
 (`left`/`right` → `out`, `in.left`/`in.right` → `in`). Under CLAUDE.md rule 3 ("port
 ids never renamed once shipped") this would normally demand a real v4→v5 migration —
-inserting `stereo.combine`/`stereo.split` bridge nodes for any old patch's asymmetric
+inserting `channels.combine`/`channels.split` bridge nodes for any old patch's asymmetric
 `left`/`right` wiring, exactly like the v3→v4 migration already did for `mix.sum`'s
 removed `level.N` ports.
 
@@ -735,7 +724,7 @@ the template to copy if a real migration is ever needed once rule 3's suspension
   `canConnect.ts` (already correct); cable rendering draws by port screen position
   regardless of channel count. A visually distinct stereo cable (thicker line, doubled
   glyph, a small indicator) is optional polish, not built.
-- **The mono-only render path is untouched.** A graph with no `instance.allocate.voice`
+- **The mono-only render path is untouched.** A graph with no `life.voice`
   (`MultiplicityResolver`'s own `MultiplicityResult::monoOnly` field, replacing
   `DomainSplitter::monoOnly` — `wiki/plans/DomainRedesign.md`; `PluginProcessor::
   renderMonoRange`) still only ever tracks one mono buffer.
@@ -755,7 +744,7 @@ now wires `pan.out` → `masterOut.in` as one cable;
 `tests-plugin/HostInputTests.cpp` has both a hard-panned "left and right genuinely
 differ" test and a "mono source still duplicates to both channels" test;
 `tests/SpaceNodesTests.cpp` covers the two bridge nodes' transparency;
-`tests-plugin/ConnectWithAutoAdaptTests.cpp` covers `mix.downmix` auto-insertion
+`tests-plugin/ConnectWithAutoAdaptTests.cpp` covers `channels.downmix` auto-insertion
 end to end. A real mutation-testing pass on the mono→stereo broadcast logic (force it
 to bind pairwise instead of broadcasting) crashed on a debug assertion rather than
 silently passing, confirming it's load-bearing. 365/365 engine+plugin tests green,
@@ -766,7 +755,7 @@ with zero `ui/src` changes.
 
 **Status: built** (`wiki/plans/StereoChannels.md`). §9 made stereo one cable but left
 every filter, delay, gain and shaper mono-only, so a stereo signal reaching one got a
-silently auto-inserted `mix.downmix`. Now:
+silently auto-inserted `channels.downmix`. Now:
 
 - **`Channels::Inherited` is real.** A node whose Audio ports are all per-channel
   (`perChannel()` in `PortDescriptor.h`; no fixed-Stereo port, at least one Inherited
@@ -779,7 +768,7 @@ silently auto-inserted `mix.downmix`. Now:
   lanes. Non-lane outputs are visible from lane 0 only. `maxLanes = 2` today; the
   width is a count, not an enum.
 - **Per-channel today:** `filter.svf/ladder/onepole/allpass/peak/shelf`,
-  `util.dcBlock`, `delay.line`, `mix.gain`, `shape.clip`, `mix.crossfade`,
+  `util.dcBlock`, `time.delay`, `mix.gain`, `shape.clip`, `mix.crossfade`,
   `resonator.comb/string`, and — through their resolved Audio type — `math.add`,
   `math.multiply`, `util.reroute`, `view.cycle`. Viewers (`view.listen`, the meter)
   accept any width and read the first channel.
@@ -794,10 +783,10 @@ silently auto-inserted `mix.downmix`. Now:
   an exciter input, `space.pan`'s input) returns `NeedsAdapters` with
   `CanConnectResult::choices` (`mid/left/right/side`); `connectWithAutoAdapt` makes
   no change without a choice, and the editor asks with a small chooser at the drop
-  (`ConnectionChoiceMenu.tsx`). The pick becomes a visible `mix.downmix` in that mode.
+  (`ConnectionChoiceMenu.tsx`). The pick becomes a visible `channels.downmix` in that mode.
 - **Voices are stereo end to end.** A voice plan whose output is stereo is summed
-  into a two-channel scratch buffer; `instance.sum` carries two channels when its
-  voices do (a driver-set `instance.sum.channels`, not a user parameter); the
+  into a two-channel scratch buffer; `life.merge` carries two channels when its
+  voices do (a driver-set `life.merge.channels`, not a user parameter); the
   no-voices render path keeps its right channel. Before this a per-voice pan lost
   its right channel at the voice sum.
 - **Visible width.** Compiled plans list their stereo outputs
@@ -806,7 +795,7 @@ silently auto-inserted `mix.downmix`. Now:
 
 Tests: `tests/StereoLaneTests.cpp` (lanes, mono unchanged, stereo feedback loop,
 per-lane reuse/edits, stereo bypass), `tests-plugin/StereoVoiceTests.cpp` (per-voice
-pan through the voice sum, with and without `instance.sum` + a global filter),
+pan through the voice sum, with and without `life.merge` + a global filter),
 `ConnectWithAutoAdaptTests.cpp` (direct stereo into a per-channel port; choose-then-
 insert for a mono-only port), `CanConnectTests.cpp`. Known limits: `space.pan` has no
 stereo-input (balance) mode yet; per-channel previews show the first channel.

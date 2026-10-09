@@ -147,7 +147,7 @@ TEST_CASE ("noise.colored has the slope its colour names, at a matched level", "
     std::vector<double> levels;
     for (const auto& [colour, slope] : colours)
     {
-        auto node = make<NoiseColoredNode> ({ { "noise.colored.colour", (float) colour }, { "noise.colored.level", 1.0f } });
+        auto node = make<NoiseColoredNode> ({ { "source.noise.colour", (float) colour }, { "source.noise.level", 1.0f } });
         const auto out = run (*node, {}, (int) (8.0 * fs))[0];
         const auto low = octaveBandDb (out, 250.0), high = octaveBandDb (out, 4000.0);
         const auto measured = (high - low) / 4.0;
@@ -161,7 +161,7 @@ TEST_CASE ("noise.colored has the slope its colour names, at a matched level", "
 
 TEST_CASE ("noise.colored stereo is decorrelated and seeds are reproducible", "[engine][palette][noise]")
 {
-    auto node = make<NoiseColoredNode> ({ { "noise.colored.stereo", 1.0f }, { "noise.colored.colour", 0.0f } });
+    auto node = make<NoiseColoredNode> ({ { "source.noise.stereo", 1.0f }, { "source.noise.colour", 0.0f } });
     REQUIRE (node->getNumOutputChannels() == 2);
     const auto out = run (*node, {}, (int) fs);
     double lr = 0, ll = 0, rr = 0;
@@ -173,15 +173,15 @@ TEST_CASE ("noise.colored stereo is decorrelated and seeds are reproducible", "[
     }
     CHECK (std::abs (lr / std::sqrt (ll * rr)) < 0.02);
 
-    auto a = make<NoiseColoredNode> ({ { "noise.colored.seed", 7.0f } }), b = make<NoiseColoredNode> ({ { "noise.colored.seed", 7.0f } });
-    auto c = make<NoiseColoredNode> ({ { "noise.colored.seed", 8.0f } });
+    auto a = make<NoiseColoredNode> ({ { "source.noise.seed", 7.0f } }), b = make<NoiseColoredNode> ({ { "source.noise.seed", 7.0f } });
+    auto c = make<NoiseColoredNode> ({ { "source.noise.seed", 8.0f } });
     CHECK (run (*a, {}, 1000)[0] == run (*b, {}, 1000)[0]);
     CHECK (run (*a, {}, 1000)[0] != run (*c, {}, 1000)[0]);
 }
 
 TEST_CASE ("noise.dust fires at its density, and trigger marks every impulse", "[engine][palette][noise]")
 {
-    auto node = make<NoiseDustNode> ({ { "noise.dust.density", 200.0f } });
+    auto node = make<NoiseDustNode> ({ { "source.dust.density", 200.0f } });
     const auto out = run (*node, {}, (int) (10.0 * fs));
     int impulses = 0, triggers = 0;
     for (size_t i = 0; i < out[0].size(); ++i)
@@ -321,7 +321,7 @@ TEST_CASE ("analysis.level reads RMS and peak, in dB too", "[engine][palette][an
 TEST_CASE ("dyn.compress follows its static curve, and the sidechain ducks", "[engine][palette][dynamics]")
 {
     // A full-scale tone, threshold -20, ratio 4, hard knee: 20 dB over -> 5 dB over -> 15 dB of reduction.
-    auto node = make<DynCompressNode> ({ { "dyn.compress.threshold", -20.0f }, { "dyn.compress.ratio", 4.0f }, { "dyn.compress.knee", 0.0f } });
+    auto node = make<DynCompressNode> ({ { "dynamics.compress.threshold", -20.0f }, { "dynamics.compress.ratio", 4.0f }, { "dynamics.compress.knee", 0.0f } });
     const auto s = sine (500.0, 1.0);
     const auto out = run (*node, { s, s }, (int) s.size());
     CHECK (out[3].back() == Catch::Approx (15.0).margin (0.5));
@@ -330,7 +330,7 @@ TEST_CASE ("dyn.compress follows its static curve, and the sidechain ducks", "[e
     CHECK (DynCompressNode::curve (-10.0, -20.0, 4.0, 10.0) == Catch::Approx (-17.5));
     CHECK (DynCompressNode::curve (-40.0, -20.0, 4.0, 10.0) == Catch::Approx (-40.0));
 
-    auto ducker = make<DynCompressNode> ({ { "dyn.compress.threshold", -30.0f }, { "dyn.compress.ratio", 20.0f } });
+    auto ducker = make<DynCompressNode> ({ { "dynamics.compress.threshold", -30.0f }, { "dynamics.compress.ratio", 20.0f } });
     const auto quiet = sine (300.0, 1.0, 0.1);
     const auto loudKey = sine (80.0, 1.0, 1.0);
     const auto ducked = run (*ducker, { quiet, quiet, loudKey, loudKey }, (int) quiet.size());
@@ -339,13 +339,13 @@ TEST_CASE ("dyn.compress follows its static curve, and the sidechain ducks", "[e
 
 TEST_CASE ("dyn.gate opens above its threshold and closes by its range", "[engine][palette][dynamics]")
 {
-    auto node = make<DynGateNode> ({ { "dyn.gate.threshold", -30.0f }, { "dyn.gate.range", 40.0f } });
+    auto node = make<DynGateNode> ({ { "dynamics.gate.threshold", -30.0f }, { "dynamics.gate.range", 40.0f } });
     const auto loud = sine (500.0, 0.5, 0.5);
     const auto open = run (*node, { loud, loud }, (int) loud.size());
     CHECK (open[3].back() == 1.0f);
     CHECK (rms (open[0], open[0].size() / 2) == Catch::Approx (rms (loud)).epsilon (0.02));
 
-    auto closedGate = make<DynGateNode> ({ { "dyn.gate.threshold", -30.0f }, { "dyn.gate.range", 40.0f } });
+    auto closedGate = make<DynGateNode> ({ { "dynamics.gate.threshold", -30.0f }, { "dynamics.gate.range", 40.0f } });
     const auto soft = sine (500.0, 0.5, 0.01); // -40 dB
     const auto closed = run (*closedGate, { soft, soft }, (int) soft.size());
     CHECK (closed[3].back() == 0.0f);
@@ -354,7 +354,7 @@ TEST_CASE ("dyn.gate opens above its threshold and closes by its range", "[engin
 
 TEST_CASE ("fx.freqShift moves a tone by Hz, one sideband at a time", "[engine][palette][freqShift]")
 {
-    auto node = make<FreqShiftNode> ({ { "fx.freqShift.shift", 100.0f } });
+    auto node = make<FreqShiftNode> ({ { "spectrum.freqShift.shift", 100.0f } });
     const auto out = run (*node, { sine (1000.0, 1.0, 0.5) }, (int) fs);
     const auto upWanted = amplitudeAt (out[0], 1100.0), upUnwanted = amplitudeAt (out[0], 900.0);
     const auto downWanted = amplitudeAt (out[1], 900.0), downUnwanted = amplitudeAt (out[1], 1100.0);
@@ -368,8 +368,8 @@ TEST_CASE ("fx.freqShift moves a tone by Hz, one sideband at a time", "[engine][
 TEST_CASE ("Every Sound Palette node is block-size invariant", "[engine][palette]")
 {
     auto factory = buildDefaultNodeFactory();
-    for (const auto* type : { "noise.colored", "noise.dust", "shape.rectify", "shape.crush", "shape.waveshaper", "shape.fold",
-                              "lfo.shape", "analysis.level", "dyn.compress", "dyn.gate", "fx.freqShift",
+    for (const auto* type : { "source.noise", "source.dust", "shape.rectify", "shape.crush", "shape.waveshaper", "shape.fold",
+                              "lfo.shape", "analysis.level", "dynamics.compress", "dynamics.gate", "spectrum.freqShift",
                               "filter.svf", "osc.analog", "excite.burst" })
     {
         const auto render = [&] (int blockSize)

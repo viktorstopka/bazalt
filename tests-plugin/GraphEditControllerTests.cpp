@@ -777,7 +777,7 @@ TEST_CASE ("A Trigger-type util.macro connects directly into a real Event-typed 
 
     const auto& graphAfterTrigger = controller.getGraph();
     const auto hasThresholdAdapter = std::any_of (graphAfterTrigger.getNodes().begin(), graphAfterTrigger.getNodes().end(),
-                                                   [] (const auto& n) { return n.type == "adapt.threshold"; });
+                                                   [] (const auto& n) { return n.type == "logic.threshold"; });
     CHECK_FALSE (hasThresholdAdapter);
 
     const auto& connectionsAfterTrigger = graphAfterTrigger.getConnections();
@@ -1051,7 +1051,7 @@ TEST_CASE ("connectWithAutoAdapt resolves a polymorphic source before choosing a
     REQUIRE (result.success);
 
     const auto& nodes = controller.getGraph().getNodes();
-    CHECK (std::any_of (nodes.begin(), nodes.end(), [] (const auto& n) { return n.type == "adapt.map"; }));
+    CHECK (std::any_of (nodes.begin(), nodes.end(), [] (const auto& n) { return n.type == "math.map"; }));
 }
 
 // One voice allocator feeding two Voice Sums: a main chain and a separate
@@ -1065,10 +1065,10 @@ TEST_CASE ("Two instance.sum nodes reducing one origin each carry that origin's 
     {
         bazalt::engine::NodeGraph graph;
         graph.addNode ({ "noteIn", "io.noteIn", {}, {}, {} });
-        graph.addNode ({ "alloc", "instance.allocate.voice", {}, {}, {} });
+        graph.addNode ({ "alloc", "life.voice", {}, {}, {} });
         graph.addNode ({ "osc", "osc.analog", {}, {}, {} });
-        graph.addNode ({ "sumMain", "instance.sum", {}, {}, {} });
-        graph.addNode ({ "sumLayer", "instance.sum", {}, {}, {} });
+        graph.addNode ({ "sumMain", "life.merge", {}, {}, {} });
+        graph.addNode ({ "sumLayer", "life.merge", {}, {}, {} });
         graph.addNode ({ "gainMain", "math.multiply", {}, { { "in.1", mainGain } }, {} });
         graph.addNode ({ "gainLayer", "math.multiply", {}, { { "in.1", layerGain } }, {} });
         graph.addNode ({ "add", "math.add", {}, {}, {} });

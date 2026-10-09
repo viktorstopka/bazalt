@@ -76,13 +76,13 @@ TEST_CASE ("InstanceTriggerNode: random1/random2 are deterministic per (seed, sp
 {
     InstanceTriggerNode a;
     a.prepare ({ 44100.0, 64 });
-    a.setParameter ("instance.allocate.trigger.seed", 7.0f);
+    a.setParameter ("life.trigger.seed", 7.0f);
     a.reset();
     const auto spawnA = sampleOnce (a, 1.0f);
 
     InstanceTriggerNode b;
     b.prepare ({ 44100.0, 64 });
-    b.setParameter ("instance.allocate.trigger.seed", 7.0f);
+    b.setParameter ("life.trigger.seed", 7.0f);
     b.reset();
     const auto spawnB = sampleOnce (b, 1.0f);
 
@@ -104,7 +104,7 @@ TEST_CASE ("InstanceTriggerNode declares only the real seed parameter (maxInstan
 
     const auto parameters = node.getParameters();
     REQUIRE (parameters.size() == 1);
-    CHECK (parameters[0].id == "instance.allocate.trigger.seed");
+    CHECK (parameters[0].id == "life.trigger.seed");
 
     const auto outputs = node.getOutputPorts();
     REQUIRE (outputs.size() == 7); // no "position" - not a swarm type

@@ -184,6 +184,20 @@ ctest --test-dir build -C Debug -R PluginTests --output-on-failure
 
 ## Known interim simplifications (not bugs, don't "fix" without checking)
 
+- **Stage 1 sweep (`wiki/plans/DataAndWavetable.md`, batch 1a, 2026-10-09).**
+  `SignalType` is `Signal`/`Event`/`Note`/`Spectral`/`Data`: Audio, Control and
+  Boolean merged into `Signal`, and what a signal means is its `Quantity`
+  (`Quantity::Audio` for a waveform, `Quantity::Boolean` for a 0/1 gate, appended
+  so `util.macro`'s stored quantity ordinals keep their meaning). Every Signal can
+  carry channels. Colour follows meaning; poly is drawn as a stack of cards on the
+  node (`GraphSurface.tsx`), never as a cable colour. Removed/merged nodes migrate
+  in schema v12-v13 (To Mod/To Audio/From Bool/Normalise/polarity converters,
+  Gain->Multiply, Clamp->Clip, Follower->Level, Crossfade/Select->Blend, the three
+  history scopes->Scope); schema v14 moves type ids into their categories
+  (`life.voice`, `life.merge`, `time.delay`, `math.map`, `channels.downmix`, ...,
+  table in `PatchSerializer.cpp`'s `migrateV13ToV14`). Older code comments still
+  say Audio/Control and the old ids in places — the engine is the truth.
+
 - **Fixed, 2026-10-03** — this note used to say the M0 plugin editor's
   release-build WebView always served a hard-coded placeholder HTML string
   via a resource provider, never the real `ui/dist` build, "still true as of
@@ -275,7 +289,7 @@ ctest --test-dir build -C Debug -R PluginTests --output-on-failure
   node has type `"io.noteIn"`, whatever its id), the same fix
   `instance.mix`'s own `externalInputNodeId` already had. A note-in placed
   under any id (e.g. the editor's own auto-generated `"node7"`) works
-  correctly. A graph with no `instance.allocate.voice` (`MultiplicityResolver`'s
+  correctly. A graph with no `life.voice` (`MultiplicityResolver`'s
   own `MultiplicityResult::monoOnly` field, replacing `DomainSplitter::monoOnly` as of
   `wiki/plans/DomainRedesign.md`) is one plan run every block, so audio effects work
   but it plays no notes. **Never call `ExecutionPlan::getNodeById ("literal")` on the audio
@@ -366,7 +380,8 @@ ctest --test-dir build -C Debug -R PluginTests --output-on-failure
   ADR-0007) was the first native function the UI ever called and is still
   the only read-only one (fetched once by both the canvas and the component
   gallery, each independently).
-- `instance.sum`/`instance.allocate.voice`/`MultiplicityResolver`
+- `life.merge`/`life.voice` (were `instance.sum`/`instance.allocate.voice`
+  until schema v14)/`MultiplicityResolver`
   (`wiki/NODES.System.md` §5, `wiki/plans/DomainRedesign.md`) are real and
   tested at the engine level (`tests/MultiplicityResolverTests.cpp`), and
   `PluginProcessor`'s starting graph (`buildVoiceProofGraph()`) has both.
@@ -382,8 +397,9 @@ ctest --test-dir build -C Debug -R PluginTests --output-on-failure
   `ExecutionPlan` bundle, each either MIDI-dispatched (`io.noteIn`) or
   internally triggered, never both for the same origin. `instance.sum` was
   renamed from `instance.mix` in the same redesign (Batch 1b, C++ class
-  name `InstanceMixNode` unchanged). Up to `maxSumsPerOrigin` (4)
-  `instance.sum` nodes may reduce the SAME origin as of 2026-10-05 (direct
+  name `InstanceMixNode` unchanged), then to `life.merge` (title Merge) in
+  stage 1's id sweep. Up to `maxSumsPerOrigin` (4)
+  Merge nodes may reduce the SAME origin as of 2026-10-05 (direct
   request: a Plate layer summed on its own, added after the main chain's
   effects): each voice plan exposes one summed output per sum
   (`ExecutionPlan::sumOutputs`, the first being its final output), and each

@@ -12,7 +12,7 @@ namespace bazalt::engine::nodes
         `count` (not elaborated by the catalog): a plain running tally of
         note-on events seen since the last `reset()` — this node's own
         concrete design, useful for anything that wants to react every Nth
-        note (feed it into `clock.divide`, or `math.modulo` for a repeating
+        note (feed it into `time.divide`, or `math.modulo` for a repeating
         pattern).
     */
     class NoteGateNode : public Node
@@ -27,7 +27,7 @@ namespace bazalt::engine::nodes
         int getNumOutputPorts() const noexcept override { return numOutputs; }
 
         juce::String getTitle() const override { return "Note Gate"; }
-        juce::String getCategory() const override { return "Note"; }
+        juce::String getCategory() const override { return "Notes"; }
 
         std::vector<PortDescriptor> getInputPorts() const override
         {

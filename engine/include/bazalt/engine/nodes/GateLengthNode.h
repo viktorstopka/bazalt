@@ -7,7 +7,7 @@
 
 namespace bazalt::engine::nodes
 {
-    /** Stable type id: "adapt.gateLength". Direct feedback: `note.assemble`
+    /** Stable type id: "time.gateLength". Direct feedback: `note.assemble`
         (and anything else driven by a plain gate — `env.adsr`, `instance.
         allocate.voice.spawn` via `note.assemble`) has no built-in way to
         say "hold this note for N seconds" from a bare trigger — the
@@ -44,7 +44,7 @@ namespace bazalt::engine::nodes
         int getNumOutputPorts() const noexcept override { return numOutputs; }
 
         juce::String getTitle() const override { return "Gate Length"; }
-        juce::String getCategory() const override { return "Adapters"; }
+        juce::String getCategory() const override { return "Time"; }
 
         std::vector<PortDescriptor> getInputPorts() const override
         {

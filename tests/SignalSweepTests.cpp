@@ -72,22 +72,22 @@ TEST_CASE ("A v11 patch's bridge adapters are spliced out or rewritten as Multip
     // Map over the same ranges.
     const auto* custom = findNode (doc, "fromBoolCustom");
     REQUIRE (custom != nullptr);
-    CHECK (custom->type == "adapt.map");
-    CHECK (custom->parameters.at ("adapt.map.outMin") == -1.0f);
-    CHECK (custom->parameters.at ("adapt.map.outMax") == 5.0f);
+    CHECK (custom->type == "math.map");
+    CHECK (custom->parameters.at ("math.map.outMin") == -1.0f);
+    CHECK (custom->parameters.at ("math.map.outMax") == 5.0f);
 
     const auto* norm = findNode (doc, "norm");
     REQUIRE (norm != nullptr);
-    CHECK (norm->type == "adapt.map");
-    CHECK (norm->parameters.at ("adapt.map.inMin") == 20.0f);
-    CHECK (norm->parameters.at ("adapt.map.inMax") == 2000.0f);
-    CHECK (norm->parameters.at ("adapt.map.outMin") == 0.0f);
-    CHECK (norm->parameters.at ("adapt.map.outMax") == 1.0f);
+    CHECK (norm->type == "math.map");
+    CHECK (norm->parameters.at ("math.map.inMin") == 20.0f);
+    CHECK (norm->parameters.at ("math.map.inMax") == 2000.0f);
+    CHECK (norm->parameters.at ("math.map.outMin") == 0.0f);
+    CHECK (norm->parameters.at ("math.map.outMax") == 1.0f);
 
     const auto* uniToBi = findNode (doc, "uniToBi");
     REQUIRE (uniToBi != nullptr);
-    CHECK (uniToBi->type == "adapt.map");
-    CHECK (uniToBi->parameters.at ("adapt.map.outMin") == -1.0f);
+    CHECK (uniToBi->type == "math.map");
+    CHECK (uniToBi->parameters.at ("math.map.outMin") == -1.0f);
 }
 
 TEST_CASE ("A v12 patch's Gain, Clamp, Clip and Follower load as Multiply, Clip and Level",
@@ -199,4 +199,35 @@ TEST_CASE ("A v12 patch's Crossfade, Select and history scopes load as Blend and
     CHECK (mod->parameters.at ("view.scope.timeWindow") == 4.0f);
     CHECK (mod->properties.count ("viewer.center") == 1); // display settings carry over
     CHECK (findNode (doc, "gate")->type == "view.scope");
+}
+
+TEST_CASE ("A v13 patch's ids move to their categories, parameters and ports with them",
+           "[engine][PatchSerializer][sweep]")
+{
+    const auto json = R"({ "schemaVersion": 13,
+        "nodes": [
+            { "id": "alloc", "type": "instance.allocate.voice", "parameters": {}, "properties": {} },
+            { "id": "sum", "type": "instance.sum", "parameters": {}, "properties": {} },
+            { "id": "map", "type": "adapt.map", "parameters": { "adapt.map.outMax": 2000.0 }, "properties": {} },
+            { "id": "hold", "type": "adapt.sampleHold", "parameters": {}, "properties": {} },
+            { "id": "k", "type": "util.constant", "parameters": {}, "properties": {} }
+        ],
+        "connections": [
+            { "fromNodeId": "alloc", "fromPortId": "gate", "toNodeId": "sum", "toPortId": "in" },
+            { "fromNodeId": "k", "fromPortId": "out", "toNodeId": "hold", "toPortId": "adapt.sampleHold.glide" }
+        ],
+        "outputNodeId": "sum", "outputPortId": "out" })";
+
+    const auto parsed = parsePatchFromJson (json);
+    REQUIRE (parsed.success);
+    const auto& doc = parsed.document;
+    CHECK (doc.schemaVersion == PatchDocument::currentSchemaVersion);
+    CHECK (findNode (doc, "alloc")->type == "life.voice");
+    CHECK (findNode (doc, "sum")->type == "life.merge");
+    CHECK (findNode (doc, "map")->type == "math.map");
+    CHECK (findNode (doc, "map")->parameters.at ("math.map.outMax") == 2000.0f);
+    CHECK (findNode (doc, "hold")->type == "time.sampleHold");
+    CHECK (hasConnection (doc, "k", "out", "hold", "time.sampleHold.glide"));
+    CHECK (hasConnection (doc, "alloc", "gate", "sum", "in"));
+    CHECK (findNode (doc, "k")->type == "util.constant"); // unchanged ids stay
 }

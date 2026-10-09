@@ -20,7 +20,7 @@ namespace bazalt::engine::nodes
 
         **`spectrum`** (structural: brown/pink/white-filtered) is an
         honestly-approximate character knob, not a precise 1/f filter design
-        — real colored-noise shaping is `noise.colored`'s job (M23), a
+        — real colored-noise shaping is `source.noise`'s job (M23), a
         different node with a different purpose. Here it's a FIXED one-pole
         smoothing coefficient applied to the raw noise increment before
         integration (`white-filtered`: none, the fastest/least-correlated

@@ -11,7 +11,7 @@
 
 namespace bazalt::engine::nodes
 {
-    /** Stable type id: "instance.allocate.trigger" (Domain Extensions
+    /** Stable type id: "life.trigger" (Domain Extensions
         batch, Batch 4 — reuses everything Batch 3's `InstanceSwarmTransientNode`
         and `PluginProcessor`'s generalized relay already built; the only new
         work is this node class itself).
@@ -59,7 +59,7 @@ namespace bazalt::engine::nodes
 
         juce::String getTitle() const override { return "Trigger"; }
         // "Domain/Allocate" — same flyout as Voice/Swarm-population/Swarm-transient (09-29-AddMenu.1).
-        juce::String getCategory() const override { return "Domain/Allocate"; }
+        juce::String getCategory() const override { return "Life-cycle"; }
 
         std::vector<PortDescriptor> getInputPorts() const override
         {
@@ -87,7 +87,7 @@ namespace bazalt::engine::nodes
             // getMaxInstances(), never overridden) - not an editable
             // parameter at all.
             return {
-                ParameterDescriptor { .id = "instance.allocate.trigger.seed",
+                ParameterDescriptor { .id = "life.trigger.seed",
                                        .minValue = 0.0f, .maxValue = 999999.0f, .defaultValue = 1.0f,
                                        .displayName = "Seed", .isInteger = true,
                                        .quantity = Quantity::Count, .step = 1.0f, .isStructural = true },
@@ -96,7 +96,7 @@ namespace bazalt::engine::nodes
 
         void setParameter (const juce::String& parameterId, float value) override
         {
-            if (parameterId == "instance.allocate.trigger.seed")
+            if (parameterId == "life.trigger.seed")
                 seed = (int) std::lround (value);
         }
 

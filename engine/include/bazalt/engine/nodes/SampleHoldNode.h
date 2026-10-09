@@ -6,7 +6,7 @@
 
 namespace bazalt::engine::nodes
 {
-    /** Stable type id: "adapt.sampleHold" (NODE_CATALOG.md's `adapt.*` row:
+    /** Stable type id: "time.sampleHold" (NODE_CATALOG.md's `adapt.*` row:
         `in` (Control), `trigger : Event`, `glide : float·Time·0–5s·log·0` ->
         `out` Control, "quantity inherited"). On each `trigger` event it
         samples `in` and holds that value until the next one — the classic
@@ -20,7 +20,7 @@ namespace bazalt::engine::nodes
         `glide` is an exponential lag toward the held value: 0 (the default)
         jumps at once, otherwise it is the one-pole time constant — the same
         definition, and the same reasons (scale-free across quantities,
-        sample-rate-derived rather than hardcoded), as `math.slew`. The
+        sample-rate-derived rather than hardcoded), as `time.slew`. The
         coefficient is derived from the prepared sample rate and recomputed
         only when `glide` changes. Before the first trigger the output is 0;
         the first trigger jumps to the sampled value rather than gliding up from
@@ -51,7 +51,7 @@ namespace bazalt::engine::nodes
         int getNumOutputPorts() const noexcept override { return numOutputs; }
 
         juce::String getTitle() const override { return "Sample & Hold"; }
-        juce::String getCategory() const override { return "Adapters"; }
+        juce::String getCategory() const override { return "Time"; }
 
         void resolveIncomingPort (const juce::String& toPortId, const PortDescriptor& source) noexcept override
         {
@@ -65,7 +65,7 @@ namespace bazalt::engine::nodes
                 PortDescriptor { .id = "in", .type = SignalType::Signal, .label = "In",
                                   .quantity = resolvedQuantity, .polymorphism = PortPolymorphism::Quantity },
                 PortDescriptor { .id = "trigger", .type = SignalType::Event, .label = "Trigger" },
-                ValueTypes::timeSecondsPort ("adapt.sampleHold.glide", "Glide", 0.0f, 5.0f),
+                ValueTypes::timeSecondsPort ("time.sampleHold.glide", "Glide", 0.0f, 5.0f),
             };
         }
 
@@ -77,7 +77,7 @@ namespace bazalt::engine::nodes
 
         void setParameter (const juce::String& parameterId, float value) override
         {
-            if (parameterId == "adapt.sampleHold.glide")
+            if (parameterId == "time.sampleHold.glide")
                 storedGlide = value;
         }
 

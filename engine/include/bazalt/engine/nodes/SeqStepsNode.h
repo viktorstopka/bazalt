@@ -6,7 +6,7 @@
 
 namespace bazalt::engine::nodes
 {
-    /** Stable type id: "seq.steps" (wiki/NODES.md's `seq.*` row, the
+    /** Stable type id: "time.steps" (wiki/NODES.md's `seq.*` row, the
         Clock+Seq batch). A classic step sequencer: holds a bank of
         hand-editable step values, advances through them on `tick`.
 
@@ -20,7 +20,7 @@ namespace bazalt::engine::nodes
         editable step data"). And `length` is capped at 16, not the
         catalog's 1-64 — a classic 16-step sequencer covers the overwhelming
         common case, and raising the cap later is trivial (these are plain,
-        individually-numbered `ParameterDescriptor`s, `seq.steps.step.0`
+        individually-numbered `ParameterDescriptor`s, `time.steps.step.0`
         .. `.15`, not a structural array size baked into the wire format).
         Real per-step editing belongs on `NodeContent` (`wiki/
         NODES.System.md` §3) once that exists; this is the interim shape.
@@ -32,7 +32,7 @@ namespace bazalt::engine::nodes
         AND an active step there too would need the separate flag the
         catalog doesn't specify a shape for.
 
-        **Convention (matches `seq.euclid`)**: the sequencer holds at step 0
+        **Convention (matches `time.euclid`)**: the sequencer holds at step 0
         until the first tick, which advances it to step 1 - the same
         "power-on shows step 1 active, first clock advances to step 2"
         behaviour classic hardware step sequencers use, not an off-by-one
@@ -51,7 +51,7 @@ namespace bazalt::engine::nodes
         int getNumOutputPorts() const noexcept override { return numOutputs; }
 
         juce::String getTitle() const override { return "Step Sequencer"; }
-        juce::String getCategory() const override { return "Sequencing"; }
+        juce::String getCategory() const override { return "Time"; }
 
         std::vector<PortDescriptor> getInputPorts() const override
         {
@@ -77,7 +77,7 @@ namespace bazalt::engine::nodes
         std::vector<ParameterDescriptor> getParameters() const override
         {
             std::vector<ParameterDescriptor> parameters = {
-                ParameterDescriptor { .id = "seq.steps.length",
+                ParameterDescriptor { .id = "time.steps.length",
                                        .minValue = 1.0f, .maxValue = (float) maxSteps, .defaultValue = 8.0f,
                                        .displayName = "Length", .isInteger = true, .quantity = Quantity::Count,
                                        .step = 1.0f, .isStructural = true },
@@ -86,7 +86,7 @@ namespace bazalt::engine::nodes
             for (int i = 0; i < maxSteps; ++i)
             {
                 parameters.push_back (ParameterDescriptor {
-                    .id = "seq.steps.step." + juce::String (i),
+                    .id = "time.steps.step." + juce::String (i),
                     .minValue = -1.0f,
                     .maxValue = 1.0f,
                     .defaultValue = 0.0f,
@@ -101,9 +101,9 @@ namespace bazalt::engine::nodes
 
         void setParameter (const juce::String& parameterId, float value) override
         {
-            if (parameterId == "seq.steps.length")
+            if (parameterId == "time.steps.length")
                 storedLength = juce::jlimit (1, maxSteps, (int) std::lround (value));
-            else if (parameterId.startsWith ("seq.steps.step."))
+            else if (parameterId.startsWith ("time.steps.step."))
             {
                 const auto index = parameterId.fromLastOccurrenceOf (".", false, false).getIntValue();
                 if (index >= 0 && index < maxSteps)

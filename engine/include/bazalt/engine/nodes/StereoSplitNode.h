@@ -4,7 +4,7 @@
 
 namespace bazalt::engine::nodes
 {
-    /** Stable type id: "stereo.split". Real stereo cable redesign
+    /** Stable type id: "channels.split". Real stereo cable redesign
         (`wiki/NODES.System.md` §9): the bridge node independent per-channel
         wiring needs — takes one real stereo cable (`in`, `Channels::Stereo`)
         and re-exposes each side as an ordinary, individually-wireable mono
@@ -30,7 +30,7 @@ namespace bazalt::engine::nodes
         int getNumInputChannels() const noexcept override { return 2; }
 
         juce::String getTitle() const override { return "Stereo Split"; }
-        juce::String getCategory() const override { return "Adapters"; }
+        juce::String getCategory() const override { return "Channels"; }
 
         std::vector<PortDescriptor> getInputPorts() const override
         {

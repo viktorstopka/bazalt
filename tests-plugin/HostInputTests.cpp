@@ -132,7 +132,7 @@ TEST_CASE ("09-28-InstanceAllocator.1: an unrelated, unconnected instance.alloca
     NodeGraph graph;
     graph.addNode ({ "sine", "osc.sine", {}, { { "osc.sine.frequency", 220.0f } }, {} });
     graph.addNode ({ "out", "io.output", {}, {}, {} });
-    graph.addNode ({ "alloc", "instance.allocate.voice", {}, {}, {} }); // deliberately unconnected
+    graph.addNode ({ "alloc", "life.voice", {}, {}, {} }); // deliberately unconnected
     graph.addConnection ({ "sine", "out", "out", "in" });
     graph.setOutput ("out", "out");
 
@@ -154,7 +154,7 @@ TEST_CASE ("09-28-InstanceAllocator.1b: MIDI reaches io.noteIn regardless of its
            "[plugin][host-input][InstanceAllocator]")
 {
     // Another real bug found live in the same session, same symptom
-    // ("instance.allocate.voice's gate never moves"): PluginProcessor used to
+    // ("life.voice's gate never moves"): PluginProcessor used to
     // find the plan's io.noteIn node by a HARDCODED instance id ("noteIn")
     // rather than by type. The editor's own Add-menu auto-generates
     // ordinary ids ("node2", "node3", ...) for a placed node - never that
@@ -179,7 +179,7 @@ TEST_CASE ("09-28-InstanceAllocator.1b: MIDI reaches io.noteIn regardless of its
 
     NodeGraph graph;
     graph.addNode ({ "node3", "io.noteIn", {}, {}, {} }); // NOT "noteIn"
-    graph.addNode ({ "alloc", "instance.allocate.voice", {}, {}, {} });
+    graph.addNode ({ "alloc", "life.voice", {}, {}, {} });
     graph.addNode ({ "osc", "osc.analog", {}, {}, {} });
     graph.addNode ({ "env", "env.adsr", {}, { { "env.adsr.attack", 0.0f } }, {} });
     graph.addNode ({ "vca", "math.multiply", {}, {}, {} });
@@ -228,9 +228,9 @@ TEST_CASE ("A genuinely stereo graph (space.pan into io.output's stereo pair) se
     // covered by the next test.
     NodeGraph graph;
     graph.addNode ({ "noteIn", "io.noteIn", {}, {}, {} });
-    graph.addNode ({ "allocator", "instance.allocate.voice", {}, {}, {} });
+    graph.addNode ({ "allocator", "life.voice", {}, {}, {} });
     graph.addNode ({ "osc", "osc.analog", {}, {}, {} });
-    graph.addNode ({ "voiceMix", "instance.sum", {}, {}, {} });
+    graph.addNode ({ "voiceMix", "life.merge", {}, {}, {} });
     graph.addNode ({ "pan", "space.pan", {}, { { "space.pan.pan", -1.0f } }, {} }); // hard left
     graph.addNode ({ "out", "io.output", {}, {}, {} });
     graph.addConnection ({ "noteIn", "notes", "allocator", "spawn" });
@@ -283,9 +283,9 @@ TEST_CASE ("A mono source into io.output's stereo 'in' broadcasts to both host c
     // can't exercise this mechanism either way.
     NodeGraph graph;
     graph.addNode ({ "noteIn", "io.noteIn", {}, {}, {} });
-    graph.addNode ({ "allocator", "instance.allocate.voice", {}, {}, {} });
+    graph.addNode ({ "allocator", "life.voice", {}, {}, {} });
     graph.addNode ({ "osc", "osc.analog", {}, {}, {} });
-    graph.addNode ({ "voiceMix", "instance.sum", {}, {}, {} });
+    graph.addNode ({ "voiceMix", "life.merge", {}, {}, {} });
     graph.addNode ({ "out", "io.output", {}, {}, {} });
     graph.addConnection ({ "noteIn", "notes", "allocator", "spawn" });
     graph.addConnection ({ "allocator", "pitch", "osc", "pitch" });
@@ -357,10 +357,10 @@ TEST_CASE ("An audioIn feeding the global domain (after an instance.sum) passes 
     // no voice active - changes).
     NodeGraph graph;
     graph.addNode ({ "noteIn", "io.noteIn", {}, {}, {} });
-    graph.addNode ({ "alloc", "instance.allocate.voice", {}, {}, {} });
+    graph.addNode ({ "alloc", "life.voice", {}, {}, {} });
     graph.addNode ({ "osc", "osc.analog", {}, {}, {} });
     graph.addNode ({ "svf", "filter.svf", {}, {}, {} });
-    graph.addNode ({ "instancemix", "instance.sum", {}, {}, {} });
+    graph.addNode ({ "instancemix", "life.merge", {}, {}, {} });
     graph.addNode ({ "sum", "math.add", {}, {}, {} });
     graph.addNode ({ "audioin", "io.audioIn", {}, {}, {} });
     graph.addNode ({ "masterout", "io.output", {}, {}, {} });
@@ -606,10 +606,10 @@ TEST_CASE ("The host-input path never allocates on the audio thread",
         // sibling test above.
         NodeGraph graph;
         graph.addNode ({ "noteIn", "io.noteIn", {}, {}, {} });
-        graph.addNode ({ "alloc", "instance.allocate.voice", {}, {}, {} });
+        graph.addNode ({ "alloc", "life.voice", {}, {}, {} });
         graph.addNode ({ "osc", "osc.analog", {}, {}, {} });
         graph.addNode ({ "svf", "filter.svf", {}, {}, {} });
-        graph.addNode ({ "instancemix", "instance.sum", {}, {}, {} });
+        graph.addNode ({ "instancemix", "life.merge", {}, {}, {} });
         graph.addNode ({ "sum", "math.add", {}, {}, {} });
         graph.addNode ({ "audioin", "io.audioIn", {}, {}, {} });
         graph.addNode ({ "masterout", "io.output", {}, {}, {} });

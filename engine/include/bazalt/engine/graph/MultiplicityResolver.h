@@ -6,7 +6,7 @@
 namespace bazalt::engine
 {
     /** One instance-allocating node's own Poly-resolved region (any of
-        "instance.allocate.voice"/"swarmPopulation"/"swarmTransient"/
+        "life.voice"/"swarmPopulation"/"swarmTransient"/
         "trigger" — Domain Extensions batch; see MultiplicityResolver.cpp's
         own `isInstanceOriginType`) — every node MultiplicityResolver::
         split() classified as Poly(originId == this node's own id),
@@ -24,7 +24,7 @@ namespace bazalt::engine
         juce::String originId;
         NodeGraph voiceGraph;
 
-        /** One "instance.sum" reducing this origin: the sum node and the
+        /** One "life.merge" reducing this origin: the sum node and the
             voice-side port that feeds it. */
         struct Sum
         {
@@ -55,7 +55,7 @@ namespace bazalt::engine
         juce::String errorMessage;
 
         /** True iff the graph has no instance-allocating node of any kind
-            AND no "instance.sum" node at all — wholly Scalar, compiled once, run
+            AND no "life.merge" node at all — wholly Scalar, compiled once, run
             every block whether or not any note is held (DomainSplitResult::
             monoOnly, unchanged meaning). `origins` is empty and
             `globalGraph` is the whole, unfiltered input graph.
@@ -104,7 +104,7 @@ namespace bazalt::engine
            Poly(originId = its own id) by construction). More than
            `maxOrigins` is a compile error, same tone as the old "only
            one... found N" message.
-        2. Fixed-point pass over every other (non-origin, non-"instance.sum")
+        2. Fixed-point pass over every other (non-origin, non-"life.merge")
            node: resolves Scalar if every wired input is Scalar (or
            unconnected); resolves Poly(X) if any wired input is Poly(X) and
            no OTHER wired input is Poly(Y != X); two inputs resolving to
@@ -115,7 +115,7 @@ namespace bazalt::engine
            all its ports — ordinary nodes never have mixed per-port
            multiplicity; only the two boundary types do, by fixed
            declaration.
-        3. Every "instance.sum" node's "in" port is REQUIRED to resolve
+        3. Every "life.merge" node's "in" port is REQUIRED to resolve
            Poly — resolving Scalar (including "nothing wired yet") past the
            freshly-placed carve-out is a compile error ("nothing to
            reduce"). Up to `maxSumsPerOrigin` instance.sum nodes per origin
@@ -139,14 +139,14 @@ namespace bazalt::engine
            generalized from "the allocator's own predecessors" to "any
            Poly(X)-resolved node's predecessors" and from one origin to N.
            A node already resolved to SOME origin (this one or another) is
-           never re-classified by this pass, and "instance.sum" is never
+           never re-classified by this pass, and "life.merge" is never
            duplicated (it's a fixed global-domain node by declaration).
         5. The graph's designated output (NodeGraph::getOutputNodeId())
            either resolves Poly(X) — see `outputOriginId` — or Scalar, in
            which case `hasGlobalDomain` is true and globalGraph carries it.
         6. Partition: one NodeGraph per origin (that origin's voiceMembers,
            step 4) plus exactly one `globalGraph` (every Scalar-resolved
-           node, including every "instance.sum" node and the designated
+           node, including every "life.merge" node and the designated
            output) — note this is NOT mutually exclusive with an origin's
            voiceGraph the way DomainSplitter's old voice/global split was: a
            Scalar node duplicated into an origin's voiceGraph (step 4) still

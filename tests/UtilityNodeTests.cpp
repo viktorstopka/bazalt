@@ -218,10 +218,10 @@ TEST_CASE ("MapNode rescales in..inMin/inMax onto outMin/outMax, clamped, matchi
            "[engine][nodes][util][M20]")
 {
     MapNode node;
-    node.setParameter ("adapt.map.inMin", 0.0f);
-    node.setParameter ("adapt.map.inMax", 127.0f);
-    node.setParameter ("adapt.map.outMin", 20.0f);
-    node.setParameter ("adapt.map.outMax", 20000.0f);
+    node.setParameter ("math.map.inMin", 0.0f);
+    node.setParameter ("math.map.inMax", 127.0f);
+    node.setParameter ("math.map.outMin", 20.0f);
+    node.setParameter ("math.map.outMax", 20000.0f);
 
     const auto kNaN = std::numeric_limits<float>::quiet_NaN();
     auto remapOf = [&] (float in)
@@ -243,10 +243,10 @@ TEST_CASE ("MapNode's range ports live-modulate independently of setParameter's 
            "[engine][nodes][util][M20]")
 {
     MapNode node;
-    node.setParameter ("adapt.map.inMin", 0.0f);
-    node.setParameter ("adapt.map.inMax", 1.0f);
-    node.setParameter ("adapt.map.outMin", 0.0f);
-    node.setParameter ("adapt.map.outMax", 1.0f);
+    node.setParameter ("math.map.inMin", 0.0f);
+    node.setParameter ("math.map.inMax", 1.0f);
+    node.setParameter ("math.map.outMin", 0.0f);
+    node.setParameter ("math.map.outMax", 1.0f);
 
     float out = 0.0f;
     // Live-wired to a completely different range than the static config.
@@ -305,12 +305,12 @@ TEST_CASE ("canConnect prefers the exact converter over the generic linear remap
     const auto toFreq = canConnect (pitchPort, freqPort);
     REQUIRE (toFreq.outcome == ConnectionOutcome::NeedsAdapters);
     REQUIRE (toFreq.adapterChain.size() == 1);
-    CHECK (toFreq.adapterChain[0].typeId == "adapt.pitchToFrequency");
+    CHECK (toFreq.adapterChain[0].typeId == "math.pitchToFrequency");
 
     const auto toPitch = canConnect (freqPort, pitchPort);
     REQUIRE (toPitch.outcome == ConnectionOutcome::NeedsAdapters);
     REQUIRE (toPitch.adapterChain.size() == 1);
-    CHECK (toPitch.adapterChain[0].typeId == "adapt.frequencyToPitch");
+    CHECK (toPitch.adapterChain[0].typeId == "math.frequencyToPitch");
 
     // A different real-quantity pair still falls through to the generic
     // remap - this override is scoped to Pitch<->Frequency specifically.
@@ -318,7 +318,7 @@ TEST_CASE ("canConnect prefers the exact converter over the generic linear remap
     timePort.quantity = Quantity::Time;
     const auto pitchToTime = canConnect (pitchPort, timePort);
     REQUIRE (pitchToTime.outcome == ConnectionOutcome::NeedsAdapters);
-    CHECK (pitchToTime.adapterChain[0].typeId == "adapt.map");
+    CHECK (pitchToTime.adapterChain[0].typeId == "math.map");
 }
 
 // ---- adapt.gateLength ----

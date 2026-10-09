@@ -113,7 +113,7 @@ namespace bazalt::engine::nodes
             return {};
         }
 
-        juce::String getCategory() const override { return "Generators"; }
+        juce::String getCategory() const override { return "Sources"; }
 
         /** "osc.sine", "osc.saw", ... — the prefix every port/parameter id of
             this node uses. */

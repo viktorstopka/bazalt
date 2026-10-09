@@ -130,7 +130,7 @@ TEST_CASE ("threshold -> logic.toggle -> env.adsr gate compiles and toggles, so 
 
     NodeGraph graph;
     graph.addNode ({ "level", "util.constant", {}, { { "util.constant.value", 0.6f } }, {} });
-    graph.addNode ({ "edge", "adapt.threshold", {}, {}, {} });
+    graph.addNode ({ "edge", "logic.threshold", {}, {}, {} });
     graph.addNode ({ "flip", "logic.toggle", {}, {}, {} });
     graph.addNode ({ "env", "env.adsr", {}, {}, {} });
     graph.addConnection ({ "level", "out", "edge", "by" });

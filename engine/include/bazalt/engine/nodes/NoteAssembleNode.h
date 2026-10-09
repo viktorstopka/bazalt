@@ -29,7 +29,7 @@ namespace bazalt::engine::nodes
         every other note-adjacent thing in this catalog already uses
         (`env.adsr`, `io.noteIn`'s own translated MIDI, `note.gate`'s own
         "gate" output). One `gate` input replaces both; a monostable
-        primitive (`adapt.gateLength`, new alongside this fix) turns a bare
+        primitive (`time.gateLength`, new alongside this fix) turns a bare
         trigger into a timed gate for whoever needs one, rather than baking
         duration into this node itself.
 
@@ -85,7 +85,7 @@ namespace bazalt::engine::nodes
         int getNumOutputPorts() const noexcept override { return numOutputs; }
 
         juce::String getTitle() const override { return "Assemble Note"; }
-        juce::String getCategory() const override { return "Note"; }
+        juce::String getCategory() const override { return "Notes"; }
 
         std::vector<PortDescriptor> getInputPorts() const override
         {

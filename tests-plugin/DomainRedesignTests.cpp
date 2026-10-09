@@ -32,12 +32,12 @@ namespace
     // origins in the same graph tick at deliberately different rates.
     void addInternallySequencedOrigin (NodeGraph& graph, const juce::String& idPrefix, float rateHz, float pitch)
     {
-        graph.addNode ({ idPrefix + "clock", "clock.pulse", {}, { { "clock.pulse.rate", rateHz } }, {} });
-        graph.addNode ({ idPrefix + "gateLen", "adapt.gateLength", {}, { { "length", 0.5f } }, {} });
+        graph.addNode ({ idPrefix + "clock", "time.clock", {}, { { "time.clock.rate", rateHz } }, {} });
+        graph.addNode ({ idPrefix + "gateLen", "time.gateLength", {}, { { "length", 0.5f } }, {} });
         graph.addNode ({ idPrefix + "assemble", "note.assemble", {}, { { "pitch", pitch } }, {} });
-        graph.addNode ({ idPrefix + "alloc", "instance.allocate.voice", {}, {}, {} });
+        graph.addNode ({ idPrefix + "alloc", "life.voice", {}, {}, {} });
         graph.addNode ({ idPrefix + "osc", "osc.analog", {}, {}, {} });
-        graph.addNode ({ idPrefix + "sum", "instance.sum", {}, {}, {} }); // instance.sum, DomainRedesign.md Batch 1b's rename
+        graph.addNode ({ idPrefix + "sum", "life.merge", {}, {}, {} }); // instance.sum, DomainRedesign.md Batch 1b's rename
 
         graph.addConnection ({ idPrefix + "clock", "tick", idPrefix + "gateLen", "trigger" });
         graph.addConnection ({ idPrefix + "gateLen", "gate", idPrefix + "assemble", "gate" });
@@ -153,12 +153,12 @@ TEST_CASE ("getNodeDomains() labels nodes correctly across two simultaneous orig
            "[plugin][DomainRedesign][GraphEditController]")
 {
     NodeGraph graph;
-    graph.addNode ({ "allocA", "instance.allocate.voice", {}, {}, {} });
+    graph.addNode ({ "allocA", "life.voice", {}, {}, {} });
     graph.addNode ({ "oscA", "osc.analog", {}, {}, {} });
-    graph.addNode ({ "sumA", "instance.sum", {}, {}, {} });
-    graph.addNode ({ "allocB", "instance.allocate.voice", {}, {}, {} });
+    graph.addNode ({ "sumA", "life.merge", {}, {}, {} });
+    graph.addNode ({ "allocB", "life.voice", {}, {}, {} });
     graph.addNode ({ "oscB", "osc.analog", {}, {}, {} });
-    graph.addNode ({ "sumB", "instance.sum", {}, {}, {} });
+    graph.addNode ({ "sumB", "life.merge", {}, {}, {} });
     graph.addNode ({ "mixdown", "math.add", {}, {}, {} });
     graph.addNode ({ "masterout", "io.output", {}, {}, {} });
 
@@ -192,7 +192,7 @@ TEST_CASE ("An origin that disappears from the graph deactivates its bundle; a n
            "[plugin][DomainRedesign][GraphEditController]")
 {
     NodeGraph graph;
-    graph.addNode ({ "alloc", "instance.allocate.voice", {}, {}, {} });
+    graph.addNode ({ "alloc", "life.voice", {}, {}, {} });
     graph.addNode ({ "osc", "osc.analog", {}, {}, {} });
     graph.addNode ({ "masterout", "io.output", {}, {}, {} });
     graph.addConnection ({ "alloc", "pitch", "osc", "pitch" });
@@ -232,9 +232,9 @@ TEST_CASE ("getPortMultiplicity() reports poly for a voice-region node's ports (
            "[plugin][DomainRedesign][GraphEditController]")
 {
     NodeGraph graph;
-    graph.addNode ({ "alloc", "instance.allocate.voice", {}, {}, {} });
+    graph.addNode ({ "alloc", "life.voice", {}, {}, {} });
     graph.addNode ({ "osc", "osc.analog", {}, {}, {} });
-    graph.addNode ({ "sum", "instance.sum", {}, {}, {} });
+    graph.addNode ({ "sum", "life.merge", {}, {}, {} });
     graph.addNode ({ "masterout", "io.output", {}, {}, {} });
     graph.addConnection ({ "alloc", "pitch", "osc", "pitch" });
     graph.addConnection ({ "osc", "out", "sum", "in" });
@@ -280,7 +280,7 @@ TEST_CASE ("A recompile enforces instance.allocate.voice.maxInstances for real, 
 {
     NodeGraph graph;
     graph.addNode ({ "noteIn", "io.noteIn", {}, {}, {} });
-    graph.addNode ({ "alloc", "instance.allocate.voice", {}, { { "instance.allocate.voice.maxInstances", 2.0f } }, {} });
+    graph.addNode ({ "alloc", "life.voice", {}, { { "life.voice.maxInstances", 2.0f } }, {} });
     graph.addNode ({ "osc", "osc.analog", {}, {}, {} });
     graph.addNode ({ "masterout", "io.output", {}, {}, {} });
     graph.addConnection ({ "noteIn", "notes", "alloc", "spawn" });
@@ -328,7 +328,7 @@ TEST_CASE ("Disconnecting a Note source from instance.allocate.voice.spawn WHILE
     graph.addNode ({ "noteIn", "io.noteIn", {}, {}, {} });
     graph.addNode ({ "scale", "data.scale", {}, {}, {} });
     graph.addNode ({ "quantize", "note.quantize", {}, {}, {} });
-    graph.addNode ({ "alloc", "instance.allocate.voice", {}, {}, {} });
+    graph.addNode ({ "alloc", "life.voice", {}, {}, {} });
     graph.addNode ({ "osc", "osc.analog", {}, {}, {} });
     graph.addNode ({ "masterout", "io.output", {}, {}, {} });
     graph.addConnection ({ "noteIn", "notes", "quantize", "notes" });

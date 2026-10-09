@@ -7,8 +7,11 @@ adapters removed with schema v12 (1a.2), and the merges with schema v13 (1a.3) �
 into Multiply, Clamp into Clip (Low/High), Envelope Follower into Level, Crossfade and
 Select into **Blend** (`math.blend`), the three history scopes into one **Scope**
 (`view.scope`, styled by its source), and the new **Switch** (`logic.switch`). A port
-that inherits both type and quantity never asks for a Map. Still open in 1a: the enum
-unification, colours, the card stack, categories and ids (1a.4).
+that inherits both type and quantity never asks for a Map. 1a.4: one `Signal` type
+(Boolean and Audio are quantities), channels on every Signal, colours by meaning (Data
+teal, Notes green, no poly colour), the card stack for poly nodes, and categories with
+ids following them (schema v14). Batch 1a is complete; next is 1b. Still open: the
+Swarm (Transient) and Trigger titles.
 
 Builds on `Factories.md` (content, editors, unwrap) and replaces its "docked editor
 panel" with a full Factory window (§1, D10). Stage 2's engine work — one plan with an

@@ -89,25 +89,25 @@ TEST_CASE ("DownmixNode's five modes compute the expected value", "[engine][Down
     const float inputs[2] = { 0.6f, 0.2f };
     float out;
 
-    node.setParameter ("mix.downmix.mode", 0.0f); // sum
+    node.setParameter ("channels.downmix.mode", 0.0f); // sum
     node.processSample (inputs, &out);
     CHECK (out > 0.7999f);
     CHECK (out < 0.8001f);
 
-    node.setParameter ("mix.downmix.mode", 1.0f); // left
+    node.setParameter ("channels.downmix.mode", 1.0f); // left
     node.processSample (inputs, &out);
     CHECK (out == 0.6f);
 
-    node.setParameter ("mix.downmix.mode", 2.0f); // mid
+    node.setParameter ("channels.downmix.mode", 2.0f); // mid
     node.processSample (inputs, &out);
     CHECK (out > 0.3999f);
     CHECK (out < 0.4001f);
 
-    node.setParameter ("mix.downmix.mode", 3.0f); // right
+    node.setParameter ("channels.downmix.mode", 3.0f); // right
     node.processSample (inputs, &out);
     CHECK (out == 0.2f);
 
-    node.setParameter ("mix.downmix.mode", 4.0f); // side
+    node.setParameter ("channels.downmix.mode", 4.0f); // side
     node.processSample (inputs, &out);
     CHECK (out > 0.1999f);
     CHECK (out < 0.2001f);
