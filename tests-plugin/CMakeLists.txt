@@ -64,9 +64,6 @@ target_compile_definitions(PluginTests
         # needs defining by hand.
         JucePlugin_Name="Bazalt"
         BAZALT_UI_DEV_SERVER_URL="http://localhost:5173"
-        # The factory patches the UI ships (ui/src/patches) — loaded by tests
-        # to prove every migration still yields a working patch.
-        BAZALT_FACTORY_PATCH_DIR="${CMAKE_SOURCE_DIR}/ui/src/patches"
 )
 
 target_link_libraries(PluginTests
