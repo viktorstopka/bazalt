@@ -416,11 +416,11 @@ TEST_CASE ("The exact motivating repro (section 0): env.adsr -> mix.gain connect
         graph.addNode ({ "alloc", "instance.allocate.voice", {}, {}, {} });
         graph.addNode ({ "env", "env.adsr", {}, {}, {} });
         graph.addNode ({ "osc", "osc.analog", {}, {}, {} });
-        graph.addNode ({ "gain", "mix.gain", {}, {}, {} });
+        graph.addNode ({ "gain", "math.multiply", {}, {}, {} });
         graph.addNode ({ "masterout", "io.output", {}, {}, {} });
 
         graph.addConnection ({ "alloc", "gate", "env", "gate" });
-        graph.addConnection ({ "osc", "out", "gain", "audio" });
+        graph.addConnection ({ "osc", "out", "gain", "in.0" });
         graph.setOutput ("masterout", "out");
         return graph;
     };
@@ -428,7 +428,7 @@ TEST_CASE ("The exact motivating repro (section 0): env.adsr -> mix.gain connect
     // Order 1: wire env -> gain FIRST, gain -> masterout second.
     {
         auto graph = buildBase();
-        graph.addConnection ({ "env", "out", "gain", "gain" });
+        graph.addConnection ({ "env", "out", "gain", "in.1" });
         const auto beforeOutput = MultiplicityResolver::split (graph);
         REQUIRE (beforeOutput.success); // accepted even with nothing downstream of gain yet
 
@@ -450,7 +450,7 @@ TEST_CASE ("The exact motivating repro (section 0): env.adsr -> mix.gain connect
         REQUIRE (beforeEnv.success);
         CHECK (beforeEnv.hasGlobalDomain); // no Poly reaches gain/masterout yet — ordinary global content
 
-        graph.addConnection ({ "env", "out", "gain", "gain" });
+        graph.addConnection ({ "env", "out", "gain", "in.1" });
         const auto afterEnv = MultiplicityResolver::split (graph);
         REQUIRE (afterEnv.success); // <- the exact edge the OLD model rejected in this order
         CHECK (afterEnv.outputOriginId == "alloc");
@@ -575,7 +575,7 @@ TEST_CASE ("An origin with no instance.sum still targets the GRAPH's real design
     // such plan's real audible signal for the allocator's own raw Boolean
     // gate value.
     auto graph = buildVoiceProofGraph();
-    graph.removeConnection ("svf", "out", "amp", "audio"); // still a real edit; must not disturb the output designation
+    graph.removeConnection ("svf", "out", "amp", "in.0"); // still a real edit; must not disturb the output designation
 
     const auto result = MultiplicityResolver::split (graph);
     REQUIRE (result.success);

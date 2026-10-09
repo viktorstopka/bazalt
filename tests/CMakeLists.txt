@@ -15,7 +15,6 @@ add_executable(EngineTests
     DataFoundationsNodesTests.cpp
     DataTests.cpp
     DcBlockNodeTests.cpp
-    EnvelopeFollowerNodeTests.cpp
     EngineVersionTests.cpp
     ExecutionPlanTapTests.cpp
     GraphCompilerTests.cpp

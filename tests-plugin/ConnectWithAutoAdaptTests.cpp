@@ -46,13 +46,13 @@ TEST_CASE ("connectWithAutoAdapt connects directly when canConnect already says 
     auto& controller = processor.getGraphEditController();
     REQUIRE (controller.setGraph (bazalt::engine::buildVoiceProofGraph()).success);
 
-    REQUIRE (controller.disconnect ("svf", "out", "amp", "audio").success);
-    const auto result = controller.connectWithAutoAdapt ("svf", "out", "amp", "audio");
+    REQUIRE (controller.disconnect ("svf", "out", "amp", "in.0").success);
+    const auto result = controller.connectWithAutoAdapt ("svf", "out", "amp", "in.0");
     CHECK (result.success);
 
     bool found = false;
     for (const auto& c : controller.getGraph().getConnections())
-        if (c.fromNodeId == "svf" && c.toNodeId == "amp" && c.toPortId == "audio")
+        if (c.fromNodeId == "svf" && c.toNodeId == "amp" && c.toPortId == "in.0")
             found = true;
     CHECK (found);
 }
@@ -170,7 +170,7 @@ TEST_CASE ("connectWithAutoAdapt inserts adapt.pitchToFrequency for Pitch into a
 TEST_CASE ("connectWithAutoAdapt wires a Stereo source straight into a per-channel port",
            "[plugin][GraphEditController][CanConnect][Stereo]")
 {
-    // wiki/plans/StereoChannels.md: mix.gain's audio input follows the width
+    // wiki/plans/StereoChannels.md: math.multiply's inputs follow the width
     // of its source, so stereo stays stereo — nothing is inserted.
     BazaltAudioProcessor processor;
     processor.prepareToPlay (44100.0, 512);
@@ -181,7 +181,7 @@ TEST_CASE ("connectWithAutoAdapt wires a Stereo source straight into a per-chann
     REQUIRE (controller.addNode ("test.stereoSource", "stereoSrc", 0.0f, 0.0f).success);
 
     const auto nodesBefore = controller.getGraph().getNodes().size();
-    REQUIRE (controller.connectWithAutoAdapt ("stereoSrc", "out", "amp", "audio").success);
+    REQUIRE (controller.connectWithAutoAdapt ("stereoSrc", "out", "amp", "in.0").success);
     CHECK (controller.getGraph().getNodes().size() == nodesBefore);
 }
 
@@ -195,7 +195,7 @@ TEST_CASE ("connectWithAutoAdapt asks before reducing stereo into a mono-only po
 
     processor.getNodeFactory().registerType ("test.stereoSource", [] { return std::make_unique<StereoTestSourceNode>(); });
     REQUIRE (controller.addNode ("test.stereoSource", "stereoSrc", 0.0f, 0.0f).success);
-    REQUIRE (controller.addNode ("env.follower", "follower", 100.0f, 0.0f).success); // its detector input is one signal
+    REQUIRE (controller.addNode ("adapt.sampleHold", "follower", 100.0f, 0.0f).success); // its input is one signal
 
     const auto nodesBefore = controller.getGraph().getNodes().size();
 

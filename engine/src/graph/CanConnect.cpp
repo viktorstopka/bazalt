@@ -69,6 +69,18 @@ namespace bazalt::engine
             return port.quantity;
         }
 
+        /** What a destination expects. A port that takes on both the type and
+            the quantity of what feeds it (Multiply, Add, Clip's `in`, Reroute)
+            expects nothing of its own — whatever it resolved to was borrowed
+            from its inputs, so a Gain into a Multiply already carrying audio is
+            just a product, never a range to rescale. */
+        Quantity expectedMeaningOf (const PortDescriptor& port) noexcept
+        {
+            if (port.polymorphism == PortPolymorphism::SignalAndQuantity)
+                return Quantity::Dimensionless;
+            return meaningOf (port);
+        }
+
         AdapterStep mapStep()
         {
             AdapterStep step { "adapt.map", "in" };
@@ -141,7 +153,7 @@ namespace bazalt::engine
             // becomes a visible Downmix (wiki/plans/StereoChannels.md §3) —
             // followed by a Map when the destination is a real quantity.
             const auto reducesStereo = from.channels == Channels::Stereo && to.channels == Channels::Mono;
-            auto rescale = rescaleFor (meaningOf (from), meaningOf (to));
+            auto rescale = rescaleFor (meaningOf (from), expectedMeaningOf (to));
 
             if (! reducesStereo)
                 return rescale.has_value() ? *rescale : ok();

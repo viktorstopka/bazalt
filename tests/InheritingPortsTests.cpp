@@ -5,7 +5,6 @@
 #include "bazalt/engine/nodes/LogicCompareNode.h"
 #include "bazalt/engine/nodes/LogicSelectNode.h"
 #include "bazalt/engine/nodes/SampleHoldNode.h"
-#include "bazalt/engine/nodes/ClampNode.h"
 #include "bazalt/engine/nodes/ViewCycleNode.h"
 #include <cmath>
 #include <limits>
@@ -395,44 +394,6 @@ TEST_CASE ("adapt.sampleHold's in and out share the source's quantity; trigger a
 }
 
 // ---- math.clamp ------------------------------------------------------------
-
-TEST_CASE ("math.clamp inherits one quantity across in, low, high and out, by priority (in beats low beats high)",
-           "[engine][nodes][util][M20][inheriting]")
-{
-    ClampNode node;
-
-    // Unconnected default: every port stays Dimensionless/Control.
-    for (const auto* id : { "in", "math.clamp.low", "math.clamp.high" })
-        CHECK (portNamed (node.getInputPorts(), id).quantity == Quantity::Dimensionless);
-    CHECK (portNamed (node.getOutputPorts(), "out").quantity == Quantity::Dimensionless);
-
-    // low resolves first (nothing on "in" yet) — low/high/out all pick it up.
-    node.resolveIncomingPort ("math.clamp.low", sourcePort (SignalType::Control, Quantity::Time));
-    for (const auto* id : { "in", "math.clamp.low", "math.clamp.high" })
-        CHECK (portNamed (node.getInputPorts(), id).quantity == Quantity::Time);
-    CHECK (portNamed (node.getOutputPorts(), "out").quantity == Quantity::Time);
-
-    // "in" outranks low: once it resolves, its quantity wins everywhere,
-    // even though low resolved first — same "priority, not arrival order"
-    // rule logic.compare's own a/b/tolerance test already establishes.
-    node.resolveIncomingPort ("in", sourcePort (SignalType::Control, Quantity::Frequency));
-    for (const auto* id : { "in", "math.clamp.low", "math.clamp.high" })
-        CHECK (portNamed (node.getInputPorts(), id).quantity == Quantity::Frequency);
-    CHECK (portNamed (node.getOutputPorts(), "out").quantity == Quantity::Frequency);
-
-    // The SignalType itself never follows the source — Clamp has never
-    // taken anything but Control.
-    ClampNode audioFed;
-    audioFed.resolveIncomingPort ("in", sourcePort (SignalType::Audio));
-    CHECK (portNamed (audioFed.getInputPorts(), "in").type == SignalType::Control);
-
-    // Clamping still behaves exactly as before — the inheritance above is a
-    // pure type/colour hint, processSample is unchanged.
-    float inputs[3] = { 2.0f, 0.0f, 1.0f };
-    float out = 0.0f;
-    node.processSample (inputs, &out);
-    CHECK (out == 1.0f);
-}
 
 TEST_CASE ("view.cycle adopts the wired type and quantity on both in and out, and passes the value through unchanged",
            "[engine][nodes][view][M0.6][inheriting]")

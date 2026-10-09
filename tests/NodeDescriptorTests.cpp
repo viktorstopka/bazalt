@@ -10,7 +10,7 @@ TEST_CASE ("NodeFactory::describeAll() returns a descriptor for every registered
     auto factory = buildDefaultNodeFactory();
     const auto descriptors = factory.describeAll();
 
-    REQUIRE (descriptors.size() == 116); // - To Mod/To Audio/From Bool/Normalise/Unipolar to Bipolar/Bipolar to Unipolar (wiki/plans/DataAndWavetable.md §2) // + deco.header/comment/box/image (wiki/plans/Decorations.md) // + view.tune (design/Visualization/Tune.png) // + 11 Sound Palette nodes (wiki/plans/SoundPalette.md) + space.diffuser, space.reverb (wiki/plans/Reverb.md). 93 as of util.bipolarToUnipolar (see git history for the full running tally before this) + view.ripple (design/Visualization/Ripple.png) + view.count (design/Visualization/Count.png) + view.scope.control (design/Visualization/Scope1.png) + view.scope.modulation (ScopeMod.png) + view.gate (Gate.png) - adapt.remap (became adapt.map, replacing the old Map — design/Map.png) + osc.saw, osc.square, osc.triangle - view.scope - view.glance + view.cycle - logic.boolean + logic.and/or/xor/eventGroup/edge/latch
+    REQUIRE (descriptors.size() == 113); // - mix.gain, math.clamp, env.follower (merged into Multiply/Clip/Level) // - To Mod/To Audio/From Bool/Normalise/Unipolar to Bipolar/Bipolar to Unipolar (wiki/plans/DataAndWavetable.md §2) // + deco.header/comment/box/image (wiki/plans/Decorations.md) // + view.tune (design/Visualization/Tune.png) // + 11 Sound Palette nodes (wiki/plans/SoundPalette.md) + space.diffuser, space.reverb (wiki/plans/Reverb.md). 93 as of util.bipolarToUnipolar (see git history for the full running tally before this) + view.ripple (design/Visualization/Ripple.png) + view.count (design/Visualization/Count.png) + view.scope.control (design/Visualization/Scope1.png) + view.scope.modulation (ScopeMod.png) + view.gate (Gate.png) - adapt.remap (became adapt.map, replacing the old Map — design/Map.png) + osc.saw, osc.square, osc.triangle - view.scope - view.glance + view.cycle - logic.boolean + logic.and/or/xor/eventGroup/edge/latch
 
     auto findByTypeId = [&] (const juce::String& typeId) -> const NodeDescriptor*
     {
@@ -41,12 +41,13 @@ TEST_CASE ("NodeFactory::describeAll() returns a descriptor for every registered
     REQUIRE (svf->inputs.size() == 3); // "in", "cutoff", "resonance" (M20)
     CHECK (svf->inputs[0].id == "in");
 
-    const auto* amp = findByTypeId ("mix.gain");
+    // Gain is a Multiply now (wiki/plans/DataAndWavetable.md §2).
+    CHECK (findByTypeId ("mix.gain") == nullptr);
+    const auto* amp = findByTypeId ("math.multiply");
     REQUIRE (amp != nullptr);
-    CHECK (amp->title == "Gain"); // wiki/NODES_Gaps.md's jargon-naming finding: was "VCA"
     REQUIRE (amp->inputs.size() == 2);
-    CHECK (amp->inputs[0].id == "audio");
-    CHECK (amp->inputs[1].id == "gain");
+    CHECK (amp->inputs[0].id == "in.0");
+    CHECK (amp->inputs[1].id == "in.1");
 
     // Every descriptor must have a non-empty title (falls back to typeId)
     // and a category — this is what makes a usable Add menu possible.

@@ -71,8 +71,8 @@ namespace
         graph.addNode ({ "osc", type, {}, { { type + ".frequency", frequency } }, {} });
         if (throughGain)
         {
-            graph.addNode ({ "gain", "mix.gain", {}, { { "gain", 0.5f } }, {} });
-            graph.addConnection ({ "osc", "out", "gain", "audio" });
+            graph.addNode ({ "gain", "math.multiply", {}, { { "in.1", 0.5f } }, {} });
+            graph.addConnection ({ "osc", "out", "gain", "in.0" });
             graph.setOutput ("gain", "out");
         }
         else

@@ -7,7 +7,6 @@
 #include "bazalt/engine/nodes/AddNode.h"
 #include "bazalt/engine/nodes/MultiplyNode.h"
 #include "bazalt/engine/nodes/RoundNode.h"
-#include "bazalt/engine/nodes/ClampNode.h"
 #include "bazalt/engine/nodes/ListenNode.h"
 #include "bazalt/engine/nodes/OutputNode.h"
 #include "bazalt/engine/nodes/InstanceMixNode.h"
@@ -211,38 +210,6 @@ TEST_CASE ("RoundNode's output declares isInteger/kind=Int unconditionally, matc
     REQUIRE (outputs.size() == 1);
     CHECK (outputs[0].isInteger);
     CHECK (outputs[0].kind == ValueKind::Int);
-}
-
-TEST_CASE ("ClampNode clamps to its low/high ports, swapped if low > high", "[engine][nodes][util][M20]")
-{
-    ClampNode node;
-
-    auto clampOf = [&] (float in, float low, float high)
-    {
-        float out = 0.0f;
-        float inputs[3] = { in, low, high };
-        node.processSample (inputs, &out);
-        return out;
-    };
-
-    CHECK (clampOf (0.5f, 0.0f, 1.0f) == 0.5f);
-    CHECK (clampOf (-1.0f, 0.0f, 1.0f) == 0.0f);
-    CHECK (clampOf (2.0f, 0.0f, 1.0f) == 1.0f);
-    CHECK (clampOf (0.5f, 1.0f, 0.0f) == 0.5f); // swapped low/high still clamps correctly
-}
-
-TEST_CASE ("ClampNode's low/high ports fall back to setParameter's static value exactly when unconnected",
-           "[engine][nodes][util][M20]")
-{
-    ClampNode node;
-    node.setParameter ("math.clamp.low", 10.0f);
-    node.setParameter ("math.clamp.high", 20.0f);
-
-    float out = 0.0f;
-    const auto kNaN = std::numeric_limits<float>::quiet_NaN();
-    float inputs[3] = { 5.0f, kNaN, kNaN };
-    node.processSample (inputs, &out);
-    CHECK (out == 10.0f);
 }
 
 TEST_CASE ("MapNode rescales in..inMin/inMax onto outMin/outMax, clamped, matching Normalise+Map chained",

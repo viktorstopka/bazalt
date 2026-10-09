@@ -56,7 +56,7 @@ TEST_CASE ("A v11 patch's bridge adapters are spliced out or rewritten as Multip
 
     // Spliced out: the wire now runs straight through.
     CHECK (findNode (doc, "toAudio") == nullptr);
-    CHECK (hasConnection (doc, "src", "out", "gain", "audio"));
+    CHECK (hasConnection (doc, "src", "out", "gain", "in.0")); // mix.gain is math.multiply since v13
     CHECK (findNode (doc, "plainMod") == nullptr);
     CHECK (hasConnection (doc, "src", "out", "out", "in"));
     CHECK (findNode (doc, "fromBool") == nullptr);
@@ -67,7 +67,7 @@ TEST_CASE ("A v11 patch's bridge adapters are spliced out or rewritten as Multip
     CHECK (toMod->type == "math.multiply");
     CHECK (toMod->parameters.at ("in.1") == 0.5f);
     CHECK (hasConnection (doc, "src", "out", "toMod", "in.0"));
-    CHECK (hasConnection (doc, "toMod", "out", "gain", "gain"));
+    CHECK (hasConnection (doc, "toMod", "out", "gain", "in.1"));
 
     // Map over the same ranges.
     const auto* custom = findNode (doc, "fromBoolCustom");
@@ -88,4 +88,62 @@ TEST_CASE ("A v11 patch's bridge adapters are spliced out or rewritten as Multip
     REQUIRE (uniToBi != nullptr);
     CHECK (uniToBi->type == "adapt.map");
     CHECK (uniToBi->parameters.at ("adapt.map.outMin") == -1.0f);
+}
+
+TEST_CASE ("A v12 patch's Gain, Clamp, Clip and Follower load as Multiply, Clip and Level",
+           "[engine][PatchSerializer][sweep]")
+{
+    const auto json = R"({ "schemaVersion": 12,
+        "nodes": [
+            { "id": "src", "type": "osc.sine", "parameters": {}, "properties": {} },
+            { "id": "gain", "type": "mix.gain", "parameters": { "gain": 0.25 }, "properties": {} },
+            { "id": "clamp", "type": "math.clamp", "parameters": { "math.clamp.high": 0.5 }, "properties": {} },
+            { "id": "clip", "type": "shape.clip", "parameters": { "shape.clip.ceiling": 0.8 }, "properties": {} },
+            { "id": "follow", "type": "env.follower", "parameters": { "env.follower.detection": 1, "env.follower.attack": 5 }, "properties": {} },
+            { "id": "out", "type": "io.output", "parameters": {}, "properties": {} }
+        ],
+        "connections": [
+            { "fromNodeId": "src", "fromPortId": "out", "toNodeId": "gain", "toPortId": "audio" },
+            { "fromNodeId": "follow", "fromPortId": "out", "toNodeId": "gain", "toPortId": "gain" },
+            { "fromNodeId": "src", "fromPortId": "out", "toNodeId": "follow", "toPortId": "in" },
+            { "fromNodeId": "src", "fromPortId": "out", "toNodeId": "clamp", "toPortId": "math.clamp.low" },
+            { "fromNodeId": "gain", "fromPortId": "out", "toNodeId": "clip", "toPortId": "in" },
+            { "fromNodeId": "clip", "fromPortId": "out", "toNodeId": "out", "toPortId": "in" }
+        ],
+        "outputNodeId": "out", "outputPortId": "out" })";
+
+    const auto parsed = parsePatchFromJson (json);
+    REQUIRE (parsed.success);
+    const auto& doc = parsed.document;
+    CHECK (doc.schemaVersion == PatchDocument::currentSchemaVersion);
+
+    const auto* gain = findNode (doc, "gain");
+    REQUIRE (gain != nullptr);
+    CHECK (gain->type == "math.multiply");
+    CHECK (gain->parameters.at ("in.1") == 0.25f);
+    CHECK (hasConnection (doc, "src", "out", "gain", "in.0"));
+    CHECK (hasConnection (doc, "follow", "level", "gain", "in.1"));
+
+    // Clamp keeps its 0..1 defaults and its instant corners (knee 0).
+    const auto* clamp = findNode (doc, "clamp");
+    REQUIRE (clamp != nullptr);
+    CHECK (clamp->type == "shape.clip");
+    CHECK (clamp->parameters.at ("shape.clip.low") == 0.0f);
+    CHECK (clamp->parameters.at ("shape.clip.high") == 0.5f);
+    CHECK (clamp->parameters.at ("shape.clip.knee") == 0.0f);
+    CHECK (hasConnection (doc, "src", "out", "clamp", "shape.clip.low"));
+
+    // The old Clip's ceiling becomes a symmetric range.
+    const auto* clip = findNode (doc, "clip");
+    REQUIRE (clip != nullptr);
+    CHECK (clip->parameters.at ("shape.clip.low") == -0.8f);
+    CHECK (clip->parameters.at ("shape.clip.high") == 0.8f);
+    CHECK (clip->parameters.find ("shape.clip.ceiling") == clip->parameters.end());
+
+    // Follower RMS (1) is Level RMS (0).
+    const auto* follow = findNode (doc, "follow");
+    REQUIRE (follow != nullptr);
+    CHECK (follow->type == "analysis.level");
+    CHECK (follow->parameters.at ("analysis.level.mode") == 0.0f);
+    CHECK (follow->parameters.at ("analysis.level.attack") == 5.0f);
 }

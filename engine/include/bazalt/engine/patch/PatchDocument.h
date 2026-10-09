@@ -125,7 +125,10 @@ namespace bazalt::engine
         // Schema v12 (wiki/plans/DataAndWavetable.md §2): To Mod / To Audio /
         // From Bool / Normalise and the two polarity converters are gone —
         // spliced out, or rewritten as math.multiply / adapt.map.
-        static constexpr int currentSchemaVersion = 12;
+        //
+        // Schema v13 (same plan, 1a.3): duplicated nodes merged — Gain into
+        // Multiply, Clamp into Clip (low/high), Envelope Follower into Level.
+        static constexpr int currentSchemaVersion = 13;
 
         int schemaVersion = currentSchemaVersion;
         std::vector<NodeInstance> nodes;

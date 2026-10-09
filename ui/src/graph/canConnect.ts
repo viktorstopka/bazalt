@@ -53,6 +53,13 @@ function meaningOf(port: PortDescriptor): Quantity {
   if (port.type === 'boolean') return 'dimensionless'
   return port.quantity
 }
+/** What a destination expects: a port inheriting both type and quantity (Multiply,
+    Add, Clip's `in`, Reroute) expects nothing of its own — what it resolved to was
+    borrowed from its inputs, so nothing is ever rescaled into it. */
+function expectedMeaningOf(port: PortDescriptor): Quantity {
+  if (port.polymorphism === 'signalAndQuantity') return 'dimensionless'
+  return meaningOf(port)
+}
 
 /** The rescaling reason between two meanings, or null when they meet directly. */
 function rescaleFor(from: Quantity, to: Quantity): string | null {
@@ -66,7 +73,7 @@ function rescaleFor(from: Quantity, to: Quantity): string | null {
 }
 
 function connectValues(from: PortDescriptor, to: PortDescriptor): CanConnectResult {
-  const rescale = rescaleFor(meaningOf(from), meaningOf(to))
+  const rescale = rescaleFor(meaningOf(from), expectedMeaningOf(to))
   if (from.channels === 'stereo' && to.channels === 'mono') {
     if (rescale && (rescale.startsWith('Pitch') || rescale.startsWith('Frequency'))) return reject('Stereo into this port needs a Downmix first')
     return needsAdapters('Stereo into a mono-only port: choose Mid, Left, Right or Side')

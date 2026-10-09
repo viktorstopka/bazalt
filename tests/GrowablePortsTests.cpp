@@ -651,19 +651,20 @@ TEST_CASE ("Schema v3 -> v4 preserves mix.sum's level.N as a spliced mix.gain no
             CHECK (node.parameters.find ("level.1") == node.parameters.end());
         }
 
-    // level.1 = 2.0, a plain constant: a real mix.gain node now sits between
+    // level.1 = 2.0, a plain constant: a real gain node (math.multiply since
+    // schema v13) now sits between
     // b and mix, holding that value as its own "gain" parameter — and the
     // old direct b -> mix.in.1 connection is gone (replaced, not duplicated).
     juce::String gain1Id;
     for (const auto& node : result.document.nodes)
-        if (node.type == "mix.gain" && findConnection ("b", "out", node.id, "audio"))
+        if (node.type == "math.multiply" && findConnection ("b", "out", node.id, "in.0"))
             gain1Id = node.id;
     REQUIRE (gain1Id.isNotEmpty());
     CHECK (findConnection (gain1Id, "out", "mix", "in.1"));
     CHECK_FALSE (findConnection ("b", "out", "mix", "in.1"));
     for (const auto& node : result.document.nodes)
         if (node.id == gain1Id)
-            CHECK (node.parameters.at ("gain") == Catch::Approx (2.0f));
+            CHECK (node.parameters.at ("in.1") == Catch::Approx (2.0f));
 
     // level.2 was itself fed by a connection (lfo), not a constant: the
     // spliced mix.gain node's own "gain" INPUT is wired from lfo instead of
@@ -671,11 +672,11 @@ TEST_CASE ("Schema v3 -> v4 preserves mix.sum's level.N as a spliced mix.gain no
     // is gone (its port doesn't exist any more).
     juce::String gain2Id;
     for (const auto& node : result.document.nodes)
-        if (node.type == "mix.gain" && findConnection ("c", "out", node.id, "audio"))
+        if (node.type == "math.multiply" && findConnection ("c", "out", node.id, "in.0"))
             gain2Id = node.id;
     REQUIRE (gain2Id.isNotEmpty());
     CHECK (findConnection (gain2Id, "out", "mix", "in.2"));
-    CHECK (findConnection ("lfo", "out", gain2Id, "gain"));
+    CHECK (findConnection ("lfo", "out", gain2Id, "in.1"));
     CHECK_FALSE (findConnection ("lfo", "out", "mix", "level.2"));
     CHECK_FALSE (findConnection ("c", "out", "mix", "in.2")); // replaced, not left dangling alongside the new one
 

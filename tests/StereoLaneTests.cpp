@@ -11,7 +11,7 @@ using namespace bazalt::engine;
 namespace
 {
     // A sine on the left channel only, through `chain` (each with an
-    // "in" — "audio" for mix.gain — and an "out"), into io.output.
+    // "in" — "in.0" for math.multiply — and an "out"), into io.output.
     NodeGraph leftOnlySineThrough (std::vector<NodeInstance> chain, float cutoff = 1000.0f)
     {
         NodeGraph graph;
@@ -26,7 +26,7 @@ namespace
                 node.parameters["filter.svf.cutoff"] = cutoff;
             const auto id = node.id;
             graph.addNode (node);
-            graph.addConnection ({ previous, "out", id, node.type == "mix.gain" ? "audio" : "in" });
+            graph.addConnection ({ previous, "out", id, node.type == "math.multiply" ? "in.0" : "in" });
             previous = id;
         }
 
@@ -70,7 +70,7 @@ TEST_CASE ("A per-channel filter fed stereo runs one lane per channel, each with
 {
     auto factory = buildDefaultNodeFactory();
     auto result = GraphCompiler::compile (leftOnlySineThrough ({ { "svf", "filter.svf", {}, {}, {} },
-                                                                 { "amp", "mix.gain", {}, {}, {} } }),
+                                                                 { "amp", "math.multiply", {}, {}, {} } }),
                                           factory, { 48000.0, 64 }, 1);
     REQUIRE (result.success);
     CHECK (lanesOf (result.plan, "svf") == 2);

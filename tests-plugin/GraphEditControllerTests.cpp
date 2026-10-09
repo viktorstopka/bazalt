@@ -33,10 +33,10 @@ TEST_CASE ("addNode + connect + setParameterValue commands produce the expected 
     // Reroute svf's output through a new one-pole damping node instead of
     // straight into amp — proves add/connect/setParameter together produce
     // a graph that actually compiles differently and sounds differently.
-    REQUIRE (controller.disconnect ("svf", "out", "amp", "audio").success);
+    REQUIRE (controller.disconnect ("svf", "out", "amp", "in.0").success);
     REQUIRE (controller.addNode ("filter.onepole", "damper", 100.0f, 100.0f).success);
     REQUIRE (controller.connect ("svf", "out", "damper", "in").success);
-    REQUIRE (controller.connect ("damper", "out", "amp", "audio").success);
+    REQUIRE (controller.connect ("damper", "out", "amp", "in.0").success);
     REQUIRE (controller.setParameterValue ("damper", "filter.onepole.coefficient", 0.8f).success);
 
     juce::MidiBuffer noteOn;
@@ -75,7 +75,7 @@ TEST_CASE ("Connecting into an already-wired input replaces the old connection i
     // `occupied-port-rejects` finding) — it should now succeed and REPLACE
     // the old connection instead, exactly like dropping a new cable onto an
     // occupied jack on a real patchbay.
-    const auto result = controller.connectWithAutoAdapt ("osc", "out", "amp", "audio");
+    const auto result = controller.connectWithAutoAdapt ("osc", "out", "amp", "in.0");
     REQUIRE (result.success);
 
     const auto& connections = controller.getGraph().getConnections();
@@ -85,7 +85,7 @@ TEST_CASE ("Connecting into an already-wired input replaces the old connection i
     auto sourcedFromOsc = 0;
     for (const auto& c : connections)
     {
-        if (c.toNodeId == "amp" && c.toPortId == "audio")
+        if (c.toNodeId == "amp" && c.toPortId == "in.0")
         {
             ++targetingAmpAudio;
             if (c.fromNodeId == "svf") ++sourcedFromSvf;
@@ -107,16 +107,13 @@ TEST_CASE ("deleteNode and disconnect commands are reflected in the live graph a
     auto& controller = processor.getGraphEditController();
     REQUIRE (controller.setGraph (bazalt::engine::buildVoiceProofGraph()).success);
 
-    // Disconnecting svf's output from amp's audio input leaves it silent
-    // (0 — an unconnected Audio port carries no fallback to fall back to,
-    // unlike a Control port), so amp's audio*gain output is silent
-    // regardless of gain — directly, audibly verifiable, not just a
-    // graph-shape assertion. (Not disconnecting env from amp's own "gain"
-    // input for this: since wiki/NODES_Gaps.md's `modulation-only-port` fix,
-    // an unpatched gain now correctly falls back to unity — "just as loud
-    // as before" — rather than silence, so that disconnect alone no longer
-    // silences the voice; it isn't meant to any more.)
-    REQUIRE (controller.disconnect ("svf", "out", "amp", "audio").success);
+    // Disconnecting the oscillator from svf's audio input leaves the filter
+    // silent (an unconnected Audio input reads 0), so the whole voice is
+    // silent — directly, audibly verifiable, not just a graph-shape
+    // assertion. (Not disconnecting svf from amp: amp is a Multiply since
+    // schema v13, and its unwired input falls back to 1, so amp would then
+    // pass the envelope through instead of going quiet.)
+    REQUIRE (controller.disconnect ("osc", "out", "svf", "in").success);
 
     juce::MidiBuffer noteOn;
     noteOn.addEvent (juce::MidiMessage::noteOn (1, 60, (juce::uint8) 100), 0);
@@ -131,7 +128,7 @@ TEST_CASE ("deleteNode and disconnect commands are reflected in the live graph a
         processor.processBlock (buffer, empty);
     }
 
-    CHECK (rms (buffer, 0) < 0.0001f); // amp.audio is silent -> whole voice is silent
+    CHECK (rms (buffer, 0) < 0.0001f); // svf.in is silent -> whole voice is silent
 
     // deleteNode removes the node AND every connection touching it —
     // verified directly against the live graph.
@@ -159,7 +156,7 @@ TEST_CASE ("An invalid command is rejected and leaves the graph and compiled aud
     const auto connectionsBefore = controller.getGraph().getConnections().size();
 
     // Unknown node id — rejected before any mutation is even attempted.
-    const auto badConnect = controller.connect ("does-not-exist", "out", "amp", "audio");
+    const auto badConnect = controller.connect ("does-not-exist", "out", "amp", "in.0");
     CHECK_FALSE (badConnect.success);
     CHECK (badConnect.errorMessage.isNotEmpty());
 
@@ -1073,8 +1070,8 @@ TEST_CASE ("Two instance.sum nodes reducing one origin each carry that origin's 
         graph.addNode ({ "osc", "osc.analog", {}, {}, {} });
         graph.addNode ({ "sumMain", "instance.sum", {}, {}, {} });
         graph.addNode ({ "sumLayer", "instance.sum", {}, {}, {} });
-        graph.addNode ({ "gainMain", "mix.gain", {}, { { "gain", mainGain } }, {} });
-        graph.addNode ({ "gainLayer", "mix.gain", {}, { { "gain", layerGain } }, {} });
+        graph.addNode ({ "gainMain", "math.multiply", {}, { { "in.1", mainGain } }, {} });
+        graph.addNode ({ "gainLayer", "math.multiply", {}, { { "in.1", layerGain } }, {} });
         graph.addNode ({ "add", "math.add", {}, {}, {} });
         graph.addNode ({ "masterOut", "io.output", {}, {}, {} });
 
@@ -1082,8 +1079,8 @@ TEST_CASE ("Two instance.sum nodes reducing one origin each carry that origin's 
         graph.addConnection ({ "alloc", "pitch", "osc", "pitch" });
         graph.addConnection ({ "osc", "out", "sumMain", "in" });
         graph.addConnection ({ "osc", "out", "sumLayer", "in" });
-        graph.addConnection ({ "sumMain", "out", "gainMain", "audio" });
-        graph.addConnection ({ "sumLayer", "out", "gainLayer", "audio" });
+        graph.addConnection ({ "sumMain", "out", "gainMain", "in.0" });
+        graph.addConnection ({ "sumLayer", "out", "gainLayer", "in.0" });
         graph.addConnection ({ "gainMain", "out", "add", "in.0" });
         graph.addConnection ({ "gainLayer", "out", "add", "in.1" });
         graph.addConnection ({ "add", "out", "masterOut", "in" });

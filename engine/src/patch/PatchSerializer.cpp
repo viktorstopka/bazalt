@@ -1,4 +1,5 @@
 #include "bazalt/engine/patch/PatchSerializer.h"
+#include <cmath>
 #include <functional>
 #include <unordered_map>
 #include <unordered_set>
@@ -865,6 +866,117 @@ namespace bazalt::engine
             return root;
         }
 
+        // wiki/plans/DataAndWavetable.md §2 (1a.3): duplicated nodes merged.
+        //   - mix.gain -> math.multiply (audio -> in.0, gain -> in.1);
+        //   - math.clamp -> shape.clip (low/high carry over, knee 0: an exact
+        //     clamp), and an old shape.clip's ±ceiling -> low = -c, high = c
+        //     (a wired ceiling drives High only);
+        //   - env.follower -> analysis.level (detection -> mode, attack and
+        //     release carry over, out -> level).
+        juce::var migrateV12ToV13 (juce::var v12Root)
+        {
+            auto root = v12Root.clone();
+            auto* nodes = root["nodes"].getArray();
+            auto* connections = root["connections"].getArray();
+
+            // Port renames per node id, applied to connections afterwards.
+            std::unordered_map<juce::String, std::unordered_map<juce::String, juce::String>> inputRenames, outputRenames;
+
+            auto parametersOf = [] (juce::DynamicObject& node) -> juce::DynamicObject&
+            {
+                if (node.getProperty ("parameters").getDynamicObject() == nullptr)
+                    node.setProperty ("parameters", juce::var (new juce::DynamicObject()));
+                return *node.getProperty ("parameters").getDynamicObject();
+            };
+            auto moveParameter = [] (juce::DynamicObject& parameters, const juce::String& from, const juce::String& to)
+            {
+                if (! parameters.hasProperty (from))
+                    return;
+                const auto value = parameters.getProperty (from);
+                parameters.removeProperty (from);
+                parameters.setProperty (to, value);
+            };
+
+            if (nodes != nullptr)
+            {
+                for (auto& node : *nodes)
+                {
+                    auto* object = node.getDynamicObject();
+                    if (object == nullptr)
+                        continue;
+                    const auto id = object->getProperty ("id").toString();
+                    const auto type = object->getProperty ("type").toString();
+                    auto& parameters = parametersOf (*object);
+
+                    if (type == "mix.gain")
+                    {
+                        object->setProperty ("type", "math.multiply");
+                        moveParameter (parameters, "gain", "in.1");
+                        inputRenames[id] = { { "audio", "in.0" }, { "gain", "in.1" } };
+                    }
+                    else if (type == "math.clamp")
+                    {
+                        object->setProperty ("type", "shape.clip");
+                        moveParameter (parameters, "math.clamp.low", "shape.clip.low");
+                        moveParameter (parameters, "math.clamp.high", "shape.clip.high");
+                        if (! parameters.hasProperty ("shape.clip.low"))
+                            parameters.setProperty ("shape.clip.low", 0.0f); // Clamp's own defaults
+                        if (! parameters.hasProperty ("shape.clip.high"))
+                            parameters.setProperty ("shape.clip.high", 1.0f);
+                        parameters.setProperty ("shape.clip.knee", 0.0f);
+                        inputRenames[id] = { { "math.clamp.low", "shape.clip.low" }, { "math.clamp.high", "shape.clip.high" } };
+                    }
+                    else if (type == "shape.clip")
+                    {
+                        const auto ceiling = parameters.hasProperty ("shape.clip.ceiling") ? (float) parameters.getProperty ("shape.clip.ceiling") : 1.0f;
+                        parameters.removeProperty ("shape.clip.ceiling");
+                        parameters.setProperty ("shape.clip.low", -ceiling);
+                        parameters.setProperty ("shape.clip.high", ceiling);
+                        inputRenames[id] = { { "shape.clip.ceiling", "shape.clip.high" } };
+                    }
+                    else if (type == "env.follower")
+                    {
+                        object->setProperty ("type", "analysis.level");
+                        // Follower: 0 Peak, 1 RMS (Peak by default). Level: 0 RMS, 1 Peak.
+                        const auto detection = parameters.hasProperty ("env.follower.detection") ? (int) std::lround ((float) parameters.getProperty ("env.follower.detection")) : 0;
+                        parameters.removeProperty ("env.follower.detection");
+                        parameters.setProperty ("analysis.level.mode", detection == 1 ? 0.0f : 1.0f);
+                        moveParameter (parameters, "env.follower.attack", "analysis.level.attack");
+                        moveParameter (parameters, "env.follower.release", "analysis.level.release");
+                        inputRenames[id] = { { "env.follower.attack", "analysis.level.attack" }, { "env.follower.release", "analysis.level.release" } };
+                        outputRenames[id] = { { "out", "level" } };
+                    }
+                }
+            }
+
+            auto rename = [] (const std::unordered_map<juce::String, std::unordered_map<juce::String, juce::String>>& renames,
+                              const juce::String& nodeId, const juce::String& portId) -> juce::String
+            {
+                const auto node = renames.find (nodeId);
+                if (node == renames.end())
+                    return portId;
+                const auto port = node->second.find (portId);
+                return port == node->second.end() ? portId : port->second;
+            };
+
+            if (connections != nullptr)
+            {
+                for (auto& c : *connections)
+                {
+                    if (auto* connection = c.getDynamicObject())
+                    {
+                        connection->setProperty ("toPortId", rename (inputRenames, c["toNodeId"].toString(), c["toPortId"].toString()));
+                        connection->setProperty ("fromPortId", rename (outputRenames, c["fromNodeId"].toString(), c["fromPortId"].toString()));
+                    }
+                }
+            }
+            if (root.getDynamicObject()->hasProperty ("outputNodeId"))
+                root.getDynamicObject()->setProperty ("outputPortId", rename (outputRenames, root["outputNodeId"].toString(), root["outputPortId"].toString()));
+
+            root.getDynamicObject()->setProperty ("schemaVersion", 13);
+            return root;
+        }
+
         // vN -> vN+1 migrations, keyed by the version they migrate FROM.
         using Migration = std::function<juce::var (juce::var)>;
 
@@ -882,6 +994,7 @@ namespace bazalt::engine
                 { 9, migrateV9ToV10 },
                 { 10, migrateV10ToV11 },
                 { 11, migrateV11ToV12 },
+                { 12, migrateV12ToV13 },
             };
             return migrations;
         }

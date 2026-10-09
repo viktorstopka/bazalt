@@ -182,13 +182,13 @@ TEST_CASE ("09-28-InstanceAllocator.1b: MIDI reaches io.noteIn regardless of its
     graph.addNode ({ "alloc", "instance.allocate.voice", {}, {}, {} });
     graph.addNode ({ "osc", "osc.analog", {}, {}, {} });
     graph.addNode ({ "env", "env.adsr", {}, { { "env.adsr.attack", 0.0f } }, {} });
-    graph.addNode ({ "vca", "mix.gain", {}, {}, {} });
+    graph.addNode ({ "vca", "math.multiply", {}, {}, {} });
     graph.addNode ({ "out", "io.output", {}, {}, {} });
     graph.addConnection ({ "node3", "notes", "alloc", "spawn" });
     graph.addConnection ({ "alloc", "pitch", "osc", "pitch" });
     graph.addConnection ({ "alloc", "gate", "env", "gate" });
-    graph.addConnection ({ "osc", "out", "vca", "audio" });
-    graph.addConnection ({ "env", "out", "vca", "gain" });
+    graph.addConnection ({ "osc", "out", "vca", "in.0" });
+    graph.addConnection ({ "env", "out", "vca", "in.1" });
     graph.addConnection ({ "vca", "out", "out", "in" });
     graph.setOutput ("out", "out");
 

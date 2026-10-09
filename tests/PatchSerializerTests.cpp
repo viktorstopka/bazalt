@@ -172,9 +172,9 @@ TEST_CASE ("A hand-written schema v1 patch migrates to v2 with resolved port ids
     CHECK (doc.connections[0].fromPortId == "out"); // osc.analog's only output
     CHECK (doc.connections[0].toPortId == "in");    // filter.svf's only input
     CHECK (doc.connections[1].fromPortId == "out"); // filter.svf's only output
-    CHECK (doc.connections[1].toPortId == "audio"); // mix.gain input 0
+    CHECK (doc.connections[1].toPortId == "in.0"); // mix.gain input 0, math.multiply since v13
     CHECK (doc.connections[2].fromPortId == "out"); // env.adsr's only output
-    CHECK (doc.connections[2].toPortId == "gain");  // mix.gain input 1
+    CHECK (doc.connections[2].toPortId == "in.1"); // mix.gain input 1, math.multiply since v13
 
     // The migrated graph must still actually compile — not just parse.
     auto graph = doc.toNodeGraph();
@@ -288,13 +288,13 @@ TEST_CASE ("v8 -> v9 migration drops view.scope and splices view.glance out of i
     REQUIRE (result.success);
     REQUIRE (result.document.nodes.size() == 2);
     for (const auto& node : result.document.nodes)
-        CHECK ((node.type == "osc.sine" || node.type == "mix.gain"));
+        CHECK ((node.type == "osc.sine" || node.type == "math.multiply")); // mix.gain became math.multiply in v13
 
     REQUIRE (result.document.connections.size() == 1);
     const auto& c = result.document.connections[0];
     CHECK (c.fromNodeId == "osc");
     CHECK (c.toNodeId == "gain");
-    CHECK (c.toPortId == "audio");
+    CHECK (c.toPortId == "in.0");
     CHECK (result.document.outputNodeId == "osc");
 }
 

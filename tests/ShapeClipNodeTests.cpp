@@ -15,9 +15,10 @@ namespace
 {
     constexpr float kNaN = std::numeric_limits<float>::quiet_NaN();
 
+    // A symmetric ±ceiling range (the old Clip) through the merged Low/High ports.
     std::pair<float, float> runOneSample (Node& node, float in, float ceiling = kNaN, float knee = kNaN)
     {
-        const float inputs[3] = { in, ceiling, knee };
+        const float inputs[4] = { in, std::isnan (ceiling) ? kNaN : -ceiling, ceiling, knee };
         float outputs[2] = { 0.0f, 0.0f };
         node.processSample (inputs, outputs);
         return { outputs[0], outputs[1] };
@@ -154,12 +155,13 @@ TEST_CASE ("ShapeClipNode (limiter mode) remembers a loud burst: gain reduction 
     CHECK (quietLimiter < quietHard);
 }
 
-TEST_CASE ("ShapeClipNode's ceiling and knee fall back to setParameter()-set values when unconnected",
+TEST_CASE ("ShapeClipNode's range and knee fall back to setParameter()-set values when unconnected",
            "[engine][nodes][ShapeClipNode]")
 {
     ShapeClipNode node;
     node.prepare ({ 44100.0, 512 });
-    node.setParameter ("shape.clip.ceiling", 0.5f);
+    node.setParameter ("shape.clip.low", -0.5f);
+    node.setParameter ("shape.clip.high", 0.5f);
     node.setParameter ("shape.clip.knee", 0.0f);
 
     CHECK (runOneSample (node, 2.0f, kNaN, kNaN).first == Catch::Approx (0.5f));
@@ -181,4 +183,53 @@ TEST_CASE ("ShapeClipNode stays finite and bounded for extreme inputs in every m
             REQUIRE (std::fabs (out) <= 1.001f); // a hair of float slack, never meaningfully past the ceiling
         }
     }
+}
+
+// wiki/plans/DataAndWavetable.md §2: Clamp merged into Clip. Hard mode with
+// knee 0 over an arbitrary Low..High range is exactly the old Clamp.
+TEST_CASE ("ShapeClipNode clamps exactly to an asymmetric Low..High range (the old Clamp), swapped if Low > High",
+           "[engine][nodes][ShapeClipNode][sweep]")
+{
+    ShapeClipNode node;
+    node.prepare ({ 44100.0, 512 });
+    node.setParameter ("shape.clip.knee", 0.0f);
+
+    auto clampOf = [&] (float in, float low, float high)
+    {
+        const float inputs[4] = { in, low, high, kNaN };
+        float outputs[2] = { 0.0f, 0.0f };
+        node.processSample (inputs, outputs);
+        return outputs[0];
+    };
+
+    CHECK (clampOf (0.5f, 0.0f, 1.0f) == Catch::Approx (0.5f));
+    CHECK (clampOf (-1.0f, 0.0f, 1.0f) == Catch::Approx (0.0f));
+    CHECK (clampOf (2.0f, 0.0f, 1.0f) == Catch::Approx (1.0f));
+    CHECK (clampOf (0.5f, 1.0f, 0.0f) == Catch::Approx (0.5f));
+    CHECK (clampOf (5000.0f, 200.0f, 2000.0f) == Catch::Approx (2000.0f)); // a frequency range
+    CHECK (clampOf (50.0f, 200.0f, 2000.0f) == Catch::Approx (200.0f));
+}
+
+TEST_CASE ("ShapeClipNode takes on the type and quantity of what feeds it",
+           "[engine][nodes][ShapeClipNode][sweep][inheriting]")
+{
+    auto port = [] (const std::vector<PortDescriptor>& ports, const juce::String& id)
+    {
+        for (const auto& p : ports)
+            if (p.id == id)
+                return p;
+        return PortDescriptor {};
+    };
+
+    ShapeClipNode node;
+    CHECK (port (node.getInputPorts(), "in").type == SignalType::Audio); // the default: an audio safety clip
+
+    PortDescriptor frequency { "src", SignalType::Control };
+    frequency.quantity = Quantity::Frequency;
+    node.resolveIncomingPort ("in", frequency);
+    CHECK (port (node.getInputPorts(), "in").type == SignalType::Control);
+    CHECK (port (node.getInputPorts(), "in").quantity == Quantity::Frequency);
+    CHECK (port (node.getInputPorts(), "shape.clip.low").quantity == Quantity::Frequency);
+    CHECK (port (node.getInputPorts(), "shape.clip.high").quantity == Quantity::Frequency);
+    CHECK (port (node.getOutputPorts(), "out").quantity == Quantity::Frequency);
 }

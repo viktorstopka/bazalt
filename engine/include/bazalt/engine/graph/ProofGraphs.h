@@ -5,7 +5,6 @@
 #include "bazalt/engine/nodes/OscillatorNode.h"
 #include "bazalt/engine/nodes/SvfFilterNode.h"
 #include "bazalt/engine/nodes/AdsrNode.h"
-#include "bazalt/engine/nodes/GainNode.h"
 #include "bazalt/engine/nodes/NoiseBurstNode.h"
 #include "bazalt/engine/nodes/DelayNode.h"
 #include "bazalt/engine/nodes/OnePoleFilterNode.h"
@@ -16,7 +15,6 @@
 #include "bazalt/engine/nodes/AddNode.h"
 #include "bazalt/engine/nodes/MultiplyNode.h"
 #include "bazalt/engine/nodes/RoundNode.h"
-#include "bazalt/engine/nodes/ClampNode.h"
 #include "bazalt/engine/nodes/ListenNode.h"
 #include "bazalt/engine/nodes/ViewNodes.h"
 #include "bazalt/engine/nodes/ViewCycleNode.h"
@@ -56,7 +54,6 @@
 #include "bazalt/engine/nodes/IoTransportNode.h"
 #include "bazalt/engine/nodes/SineOscillatorNode.h"
 #include "bazalt/engine/nodes/DcBlockNode.h"
-#include "bazalt/engine/nodes/EnvelopeFollowerNode.h"
 #include "bazalt/engine/nodes/PeakFilterNode.h"
 #include "bazalt/engine/nodes/ShelfFilterNode.h"
 #include "bazalt/engine/nodes/AllpassFilterNode.h"
@@ -117,7 +114,6 @@ namespace bazalt::engine
         factory.registerType ("osc.analog", [] { return std::make_unique<nodes::OscillatorNode>(); });
         factory.registerType ("filter.svf", [] { return std::make_unique<nodes::SvfFilterNode>(); });
         factory.registerType ("env.adsr", [] { return std::make_unique<nodes::AdsrNode>(); });
-        factory.registerType ("mix.gain", [] { return std::make_unique<nodes::GainNode>(); });
         factory.registerType ("excite.burst", [] { return std::make_unique<nodes::NoiseBurstNode>(); });
         factory.registerType ("delay.line", [] { return std::make_unique<nodes::DelayNode>(); });
         factory.registerType ("filter.onepole", [] { return std::make_unique<nodes::OnePoleFilterNode>(); });
@@ -128,7 +124,6 @@ namespace bazalt::engine
         factory.registerType ("math.add", [] { return std::make_unique<nodes::AddNode>(); });
         factory.registerType ("math.multiply", [] { return std::make_unique<nodes::MultiplyNode>(); });
         factory.registerType ("math.round", [] { return std::make_unique<nodes::RoundNode>(); });
-        factory.registerType ("math.clamp", [] { return std::make_unique<nodes::ClampNode>(); });
         factory.registerType ("view.listen", [] { return std::make_unique<nodes::ListenNode>(); });
         factory.registerType ("view.spectrum", [] { return std::make_unique<nodes::ViewSpectrumNode>(); });
         factory.registerType ("view.meter", [] { return std::make_unique<nodes::ViewMeterNode>(); });
@@ -188,7 +183,6 @@ namespace bazalt::engine
         factory.registerType ("osc.square", [] { return std::make_unique<nodes::SquareOscillatorNode>(); });
         factory.registerType ("osc.triangle", [] { return std::make_unique<nodes::TriangleOscillatorNode>(); });
         factory.registerType ("filter.dcBlock", [] { return std::make_unique<nodes::DcBlockNode>(); });
-        factory.registerType ("env.follower", [] { return std::make_unique<nodes::EnvelopeFollowerNode>(); });
         // M22 wave 2 — the Biquad family.
         factory.registerType ("filter.peak", [] { return std::make_unique<nodes::PeakFilterNode>(); });
         factory.registerType ("filter.shelf", [] { return std::make_unique<nodes::ShelfFilterNode>(); });
@@ -344,7 +338,7 @@ namespace bazalt::engine
         graph.addNode ({ "ampEnv", "env.adsr", { 1540.0f, 640.0f },
                           { { "env.adsr.attack", 0.005f }, { "env.adsr.decay", 0.15f },
                             { "env.adsr.sustain", 0.8f }, { "env.adsr.release", 0.3f } }, {} });
-        graph.addNode ({ "ampVCA", "mix.gain", { 1840.0f, 250.0f }, {}, {} });
+        graph.addNode ({ "ampVCA", "math.multiply", { 1840.0f, 250.0f }, {}, {} });
 
         graph.addNode ({ "voiceMix", "instance.sum", { 2140.0f, 250.0f }, {}, {} });
         // Milestone 0.2 (wiki/NODES.System.md §9): a real stereo signal path
@@ -373,9 +367,9 @@ namespace bazalt::engine
         graph.addConnection ({ "cutoffSum", "out", "ladder", "filter.ladder.cutoff" });
         graph.addConnection ({ "allocator", "pitch", "ladder", "filter.ladder.keyPitch" });
 
-        graph.addConnection ({ "ladder", "out", "ampVCA", "audio" });
+        graph.addConnection ({ "ladder", "out", "ampVCA", "in.0" });
         graph.addConnection ({ "allocator", "gate", "ampEnv", "gate" });
-        graph.addConnection ({ "ampEnv", "out", "ampVCA", "gain" });
+        graph.addConnection ({ "ampEnv", "out", "ampVCA", "in.1" });
 
         graph.addConnection ({ "ampVCA", "out", "voiceMix", "in" });
         graph.addConnection ({ "voiceMix", "out", "pan", "in" });
@@ -438,14 +432,14 @@ namespace bazalt::engine
         graph.addNode ({ "env", "env.adsr", { 640.0f, 40.0f }, {}, {} });
         graph.addNode ({ "osc", "osc.analog", { 340.0f, 420.0f }, {}, {} });
         graph.addNode ({ "svf", "filter.svf", { 640.0f, 420.0f }, { { "filter.svf.cutoff", 3000.0f }, { "filter.svf.resonance", 0.9f } }, {} });
-        graph.addNode ({ "amp", "mix.gain", { 940.0f, 230.0f }, {}, {} });
+        graph.addNode ({ "amp", "math.multiply", { 940.0f, 230.0f }, {}, {} });
 
         graph.addConnection ({ "noteIn", "notes", "allocator", "spawn" });
         graph.addConnection ({ "allocator", "pitch", "osc", "pitch" });
         graph.addConnection ({ "allocator", "gate", "env", "gate" });
         graph.addConnection ({ "osc", "out", "svf", "in" });
-        graph.addConnection ({ "svf", "out", "amp", "audio" });
-        graph.addConnection ({ "env", "out", "amp", "gain" });
+        graph.addConnection ({ "svf", "out", "amp", "in.0" });
+        graph.addConnection ({ "env", "out", "amp", "in.1" });
 
         graph.setOutput ("amp", "out");
 
