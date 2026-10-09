@@ -28,6 +28,15 @@ port says the same thing in shape, so you can tell them apart without colour.
 | ![](wiki/guide/images/legend/note.svg) | **Notes** | ♪ | Notes from a keyboard: pitch, velocity, start, stop. |
 | ![](wiki/guide/images/legend/data.svg) | **Data** | ≡ | A whole shape at once: a curve, a wavetable, a scale. |
 
+### YOU CAN PLUG ALMOST ANYTHING INTO ALMOST ANYTHING.
+
+**A sound, a slow movement, a gate, a note's pitch: under the colours they are all
+just numbers, so they all connect. Plug audio into a frequency, a gate into a volume,
+an envelope into a filter. Trying to break things is part of the fun.** The colours
+tell you what a signal *means*, not what you're allowed to do with it. When a range
+doesn't fit, Bazalt drops in a Map for you. Only Notes and Data are picky, because
+they aren't single numbers.
+
 **Dot or symbol?** An input with a **dot** (●) has its own value: a slider, a
 switch or a menu right next to it. Plug a cable into it and the dot turns into the
 symbol, and the cable takes over. Unplug it and the slider comes back. An input
