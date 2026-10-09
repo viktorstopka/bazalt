@@ -45,12 +45,12 @@ namespace bazalt::engine::nodes
         std::vector<PortDescriptor> getInputPorts() const override
         {
             return {
-                perChannel ({ "in", SignalType::Audio }),
-                PortDescriptor { .id = "fx.freqShift.shift", .type = SignalType::Control, .label = "Shift", .unit = "Hz",
+                perChannel ({ .id = "in", .type = SignalType::Signal, .quantity = Quantity::Audio }),
+                PortDescriptor { .id = "fx.freqShift.shift", .type = SignalType::Signal, .label = "Shift", .unit = "Hz",
                                   .minValue = -5000.0f, .maxValue = 5000.0f, .defaultValue = 100.0f,
                                   .hasFallbackWhenUnconnected = true, .quantity = Quantity::Frequency, .polarity = Polarity::Bipolar,
                                   .softMin = -500.0f, .softMax = 500.0f },
-                PortDescriptor { .id = "fx.freqShift.mix", .type = SignalType::Control, .label = "Mix",
+                PortDescriptor { .id = "fx.freqShift.mix", .type = SignalType::Signal, .label = "Mix",
                                   .minValue = 0.0f, .maxValue = 1.0f, .defaultValue = 1.0f, .hasFallbackWhenUnconnected = true,
                                   .quantity = Quantity::Unipolar },
             };
@@ -58,8 +58,8 @@ namespace bazalt::engine::nodes
         std::vector<PortDescriptor> getOutputPorts() const override
         {
             return {
-                perChannel (PortDescriptor { .id = "out", .type = SignalType::Audio, .label = "Up", .isPrimaryOutput = true }),
-                perChannel (PortDescriptor { .id = "mirror", .type = SignalType::Audio, .label = "Down" }),
+                perChannel (PortDescriptor { .id = "out", .type = SignalType::Signal, .label = "Up", .isPrimaryOutput = true, .quantity = Quantity::Audio }),
+                perChannel (PortDescriptor { .id = "mirror", .type = SignalType::Signal, .label = "Down", .quantity = Quantity::Audio }),
             };
         }
         void setParameter (const juce::String& parameterId, float value) override

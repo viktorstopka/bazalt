@@ -59,7 +59,7 @@ namespace bazalt::engine::ValueTypes
     inline PortDescriptor frequencyPort (juce::String id, juce::String label, float defaultValue = 440.0f, bool hasFallbackWhenUnconnected = true)
     {
         return PortDescriptor { .id = std::move (id),
-                                 .type = SignalType::Control,
+                                 .type = SignalType::Signal,
                                  .label = std::move (label),
                                  .unit = "Hz",
                                  .minValue = 20.0f,
@@ -92,7 +92,7 @@ namespace bazalt::engine::ValueTypes
     inline PortDescriptor timeSecondsPort (juce::String id, juce::String label, float defaultValue, float maxSeconds = 10.0f, bool hasFallbackWhenUnconnected = true)
     {
         return PortDescriptor { .id = std::move (id),
-                                 .type = SignalType::Control,
+                                 .type = SignalType::Signal,
                                  .label = std::move (label),
                                  .unit = "s",
                                  .minValue = 0.0f,
@@ -119,7 +119,7 @@ namespace bazalt::engine::ValueTypes
     inline PortDescriptor timeMsPort (juce::String id, juce::String label, float defaultValue, float maxMs = 5000.0f, bool hasFallbackWhenUnconnected = true)
     {
         return PortDescriptor { .id = std::move (id),
-                                 .type = SignalType::Control,
+                                 .type = SignalType::Signal,
                                  .label = std::move (label),
                                  .unit = "ms",
                                  .minValue = 0.0f,
@@ -137,7 +137,7 @@ namespace bazalt::engine::ValueTypes
     inline PortDescriptor timeSamplesPort (juce::String id, juce::String label, int maxSamples, float defaultValue, bool hasFallbackWhenUnconnected = true)
     {
         return PortDescriptor { .id = std::move (id),
-                                 .type = SignalType::Control,
+                                 .type = SignalType::Signal,
                                  .label = std::move (label),
                                  .unit = "samples",
                                  .minValue = 1.0f,
@@ -159,7 +159,7 @@ namespace bazalt::engine::ValueTypes
     inline PortDescriptor midiNotePort (juce::String id, juce::String label, float defaultValue = 60.0f, bool hasFallbackWhenUnconnected = true)
     {
         return PortDescriptor { .id = std::move (id),
-                                 .type = SignalType::Control,
+                                 .type = SignalType::Signal,
                                  .label = std::move (label),
                                  .minValue = 0.0f,
                                  .maxValue = 127.0f,
@@ -180,7 +180,7 @@ namespace bazalt::engine::ValueTypes
     inline PortDescriptor velocityPort (juce::String id, juce::String label, float defaultValue = 100.0f, bool hasFallbackWhenUnconnected = true)
     {
         return PortDescriptor { .id = std::move (id),
-                                 .type = SignalType::Control,
+                                 .type = SignalType::Signal,
                                  .label = std::move (label),
                                  .minValue = 0.0f,
                                  .maxValue = 127.0f,
@@ -199,7 +199,7 @@ namespace bazalt::engine::ValueTypes
     inline PortDescriptor pitchPort (juce::String id, juce::String label, float rangeSemitones = 60.0f, float defaultValue = 0.0f, bool hasFallbackWhenUnconnected = true)
     {
         return PortDescriptor { .id = std::move (id),
-                                 .type = SignalType::Control,
+                                 .type = SignalType::Signal,
                                  .label = std::move (label),
                                  .unit = "st",
                                  .minValue = -rangeSemitones,
@@ -240,7 +240,7 @@ namespace bazalt::engine::ValueTypes
     inline PortDescriptor gainDbPort (juce::String id, juce::String label, float defaultValue = 0.0f, float minDb = -60.0f, float maxDb = 12.0f, bool hasFallbackWhenUnconnected = true)
     {
         return PortDescriptor { .id = std::move (id),
-                                 .type = SignalType::Control,
+                                 .type = SignalType::Signal,
                                  .label = std::move (label),
                                  .unit = "dB",
                                  .minValue = minDb,
@@ -266,7 +266,7 @@ namespace bazalt::engine::ValueTypes
     inline PortDescriptor percentPort (juce::String id, juce::String label, float defaultValue = 100.0f, bool hasFallbackWhenUnconnected = true)
     {
         return PortDescriptor { .id = std::move (id),
-                                 .type = SignalType::Control,
+                                 .type = SignalType::Signal,
                                  .label = std::move (label),
                                  .unit = "%",
                                  .minValue = 0.0f,

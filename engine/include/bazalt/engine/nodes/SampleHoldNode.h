@@ -36,7 +36,7 @@ namespace bazalt::engine::nodes
         static constexpr int numInputs = 3; // in, trigger, glide
         static constexpr int numOutputs = 1;
 
-        SampleHoldNode() noexcept : InheritingPortsNode (SignalType::Control) {}
+        SampleHoldNode() noexcept : InheritingPortsNode (Quantity::Dimensionless) {}
 
         void prepare (const NodePrepareInfo& info) override { sampleRate = info.sampleRate; }
 
@@ -62,7 +62,7 @@ namespace bazalt::engine::nodes
         std::vector<PortDescriptor> getInputPorts() const override
         {
             return {
-                PortDescriptor { .id = "in", .type = SignalType::Control, .label = "In",
+                PortDescriptor { .id = "in", .type = SignalType::Signal, .label = "In",
                                   .quantity = resolvedQuantity, .polymorphism = PortPolymorphism::Quantity },
                 PortDescriptor { .id = "trigger", .type = SignalType::Event, .label = "Trigger" },
                 ValueTypes::timeSecondsPort ("adapt.sampleHold.glide", "Glide", 0.0f, 5.0f),
@@ -71,7 +71,7 @@ namespace bazalt::engine::nodes
 
         std::vector<PortDescriptor> getOutputPorts() const override
         {
-            return { PortDescriptor { .id = "out", .type = SignalType::Control, .isPrimaryOutput = true,
+            return { PortDescriptor { .id = "out", .type = SignalType::Signal, .isPrimaryOutput = true,
                                        .quantity = resolvedQuantity, .polymorphism = PortPolymorphism::Quantity } };
         }
 

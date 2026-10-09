@@ -74,27 +74,27 @@ namespace bazalt::engine::nodes
             return {
                 PortDescriptor { .id = "trigger", .type = SignalType::Event, .label = "Trigger",
                                   .hasFallbackWhenUnconnected = true },
-                PortDescriptor { .id = "random.stepped.rate", .type = SignalType::Control, .label = "Rate",
+                PortDescriptor { .id = "random.stepped.rate", .type = SignalType::Signal, .label = "Rate",
                                   .unit = "Hz", .minValue = 0.01f, .maxValue = 1000.0f, .defaultValue = defaultRateHz,
                                   .isLogScale = true, .hasFallbackWhenUnconnected = true, .quantity = Quantity::Frequency,
                                   .curve = Curve::Logarithmic },
-                PortDescriptor { .id = "random.stepped.amount", .type = SignalType::Control, .label = "Amount",
+                PortDescriptor { .id = "random.stepped.amount", .type = SignalType::Signal, .label = "Amount",
                                   .minValue = 0.0f, .maxValue = 1.0f, .defaultValue = 1.0f,
                                   .hasFallbackWhenUnconnected = true, .quantity = Quantity::Unipolar },
-                PortDescriptor { .id = "random.stepped.smooth", .type = SignalType::Control, .label = "Smooth",
+                PortDescriptor { .id = "random.stepped.smooth", .type = SignalType::Signal, .label = "Smooth",
                                   .minValue = 0.0f, .maxValue = 1.0f, .defaultValue = 0.0f,
                                   .hasFallbackWhenUnconnected = true, .quantity = Quantity::Unipolar },
-                PortDescriptor { .id = "random.stepped.bias", .type = SignalType::Control, .label = "Bias",
+                PortDescriptor { .id = "random.stepped.bias", .type = SignalType::Signal, .label = "Bias",
                                   .minValue = -1.0f, .maxValue = 1.0f, .defaultValue = 0.0f,
                                   .hasFallbackWhenUnconnected = true, .quantity = Quantity::Bipolar,
                                   .polarity = Polarity::Bipolar },
-                PortDescriptor { .id = "random.stepped.spread", .type = SignalType::Control, .label = "Spread",
+                PortDescriptor { .id = "random.stepped.spread", .type = SignalType::Signal, .label = "Spread",
                                   .minValue = 0.0f, .maxValue = 1.0f, .defaultValue = 1.0f,
                                   .hasFallbackWhenUnconnected = true, .quantity = Quantity::Unipolar },
-                PortDescriptor { .id = "random.stepped.steps", .type = SignalType::Control, .label = "Steps",
+                PortDescriptor { .id = "random.stepped.steps", .type = SignalType::Signal, .label = "Steps",
                                   .minValue = 0.0f, .maxValue = 64.0f, .defaultValue = 0.0f, .isInteger = true,
                                   .hasFallbackWhenUnconnected = true, .quantity = Quantity::Count },
-                PortDescriptor { .id = "random.stepped.chance", .type = SignalType::Control, .label = "Chance",
+                PortDescriptor { .id = "random.stepped.chance", .type = SignalType::Signal, .label = "Chance",
                                   .minValue = 0.0f, .maxValue = 1.0f, .defaultValue = 1.0f,
                                   .hasFallbackWhenUnconnected = true, .quantity = Quantity::Unipolar },
             };
@@ -103,7 +103,7 @@ namespace bazalt::engine::nodes
         std::vector<PortDescriptor> getOutputPorts() const override
         {
             return {
-                PortDescriptor { .id = "out", .type = SignalType::Control, .isPrimaryOutput = true,
+                PortDescriptor { .id = "out", .type = SignalType::Signal, .isPrimaryOutput = true,
                                   .minValue = -1.0f, .maxValue = 1.0f, .quantity = Quantity::Bipolar },
                 PortDescriptor { .id = "changed", .type = SignalType::Event, .label = "Changed" },
             };

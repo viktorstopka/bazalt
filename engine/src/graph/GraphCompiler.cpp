@@ -60,7 +60,7 @@ namespace bazalt::engine
         // (wiki/plans/StereoChannels.md) — is compile()'s own widthOf().
         int channelCountOf (const PortDescriptor& port) noexcept
         {
-            return (port.type == SignalType::Audio && port.channels == Channels::Stereo) ? 2 : 1;
+            return (port.type == SignalType::Signal && port.channels == Channels::Stereo) ? 2 : 1;
         }
 
         // One entry per descriptor: the flat index its first channel starts
@@ -564,26 +564,31 @@ namespace bazalt::engine
 
         for (int slot = 0; slot < numNodes; ++slot)
         {
-            auto inheritedInput = false, inheritedOutput = false, fixedWidthAudio = false;
+            // Every Signal can carry channels (DataAndWavetable.md D2) — a
+            // modulation as much as a sound. A Mono port beside the lane
+            // ports is shared: inputs broadcast to every lane, outputs are
+            // read from lane 0 (forEachLaneOutput). Only a fixed-Stereo port
+            // means the node already handles both channels itself.
+            auto inheritedInput = false, inheritedOutput = false, fixedStereo = false;
             for (const auto& port : inputPortsBySlot[(size_t) slot])
-                if (port.type == SignalType::Audio)
+                if (port.type == SignalType::Signal)
                 {
                     inheritedInput = inheritedInput || port.channels == Channels::Inherited;
-                    fixedWidthAudio = fixedWidthAudio || port.channels == Channels::Stereo;
+                    fixedStereo = fixedStereo || port.channels == Channels::Stereo;
                 }
             for (const auto& port : outputPortsBySlot[(size_t) slot])
-                if (port.type == SignalType::Audio)
+                if (port.type == SignalType::Signal)
                 {
                     inheritedOutput = inheritedOutput || port.channels == Channels::Inherited;
-                    fixedWidthAudio = fixedWidthAudio || port.channels != Channels::Inherited;
+                    fixedStereo = fixedStereo || port.channels == Channels::Stereo;
                 }
-            laneable[(size_t) slot] = (char) (inheritedInput && inheritedOutput && ! fixedWidthAudio);
+            laneable[(size_t) slot] = (char) (inheritedInput && inheritedOutput && ! fixedStereo);
         }
 
         // How many channels a port carries in this compile.
         const auto widthOf = [&] (int slot, const PortDescriptor& port) -> int
         {
-            if (port.type != SignalType::Audio)
+            if (port.type != SignalType::Signal)
                 return 1;
             if (port.channels == Channels::Stereo)
                 return 2;
@@ -594,7 +599,7 @@ namespace bazalt::engine
         // Whether this port is one the node's lanes each get their own channel of.
         const auto isLanePort = [&] (int slot, const PortDescriptor& port)
         {
-            return laneable[(size_t) slot] && port.type == SignalType::Audio && port.channels == Channels::Inherited;
+            return laneable[(size_t) slot] && port.type == SignalType::Signal && port.channels == Channels::Inherited;
         };
 
         for (int pass = 0; pass <= numNodes; ++pass)

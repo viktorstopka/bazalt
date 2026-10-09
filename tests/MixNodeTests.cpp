@@ -110,15 +110,15 @@ TEST_CASE ("logic.switch plays one input, steps on Next with wrap-around, and cr
 TEST_CASE ("logic.switch's inputs adopt the lowest-numbered wired type and quantity", "[engine][nodes][switch]")
 {
     LogicSwitchNode node;
-    PortDescriptor frequency { "src", SignalType::Control };
+    PortDescriptor frequency { .id = "src", .type = SignalType::Signal };
     frequency.quantity = Quantity::Frequency;
-    PortDescriptor audio { "src", SignalType::Audio };
+    PortDescriptor audio { .id = "src", .type = SignalType::Signal, .quantity = Quantity::Audio };
 
     node.resolveIncomingPort ("in.1", frequency);
     node.resolveIncomingPort ("in.0", audio);
     node.resolveIncomingPort ("next", frequency); // never a source of the switched type
-    CHECK (node.getInputPorts()[0].type == SignalType::Audio);
-    CHECK (node.getOutputPorts()[0].type == SignalType::Audio);
+    CHECK (node.getInputPorts()[0].quantity == Quantity::Audio);
+    CHECK (node.getOutputPorts()[0].quantity == Quantity::Audio);
     CHECK (node.getInputPorts().back().id == "next");
     CHECK (node.getInputPorts().back().type == SignalType::Event);
 }

@@ -57,10 +57,10 @@ namespace bazalt::engine::nodes
             return {
                 PortDescriptor { .id = "tick", .type = SignalType::Event, .label = "Tick" },
                 PortDescriptor { .id = "reset", .type = SignalType::Event, .label = "Reset" },
-                PortDescriptor { .id = "clock.counter.length", .type = SignalType::Control, .label = "Length",
+                PortDescriptor { .id = "clock.counter.length", .type = SignalType::Signal, .label = "Length",
                                   .minValue = 1.0f, .maxValue = 1024.0f, .defaultValue = 8.0f, .isInteger = true,
                                   .hasFallbackWhenUnconnected = true, .quantity = Quantity::Count, .step = 1.0f },
-                PortDescriptor { .id = "clock.counter.step", .type = SignalType::Control, .label = "Step",
+                PortDescriptor { .id = "clock.counter.step", .type = SignalType::Signal, .label = "Step",
                                   .minValue = 1.0f, .maxValue = 64.0f, .defaultValue = 1.0f, .isInteger = true,
                                   .hasFallbackWhenUnconnected = true, .quantity = Quantity::Count, .step = 1.0f },
             };
@@ -69,9 +69,9 @@ namespace bazalt::engine::nodes
         std::vector<PortDescriptor> getOutputPorts() const override
         {
             return {
-                PortDescriptor { .id = "index", .type = SignalType::Control, .label = "Index", .isPrimaryOutput = true,
+                PortDescriptor { .id = "index", .type = SignalType::Signal, .label = "Index", .isPrimaryOutput = true,
                                   .minValue = 0.0f, .isInteger = true, .quantity = Quantity::Count },
-                PortDescriptor { .id = "normalised", .type = SignalType::Control, .label = "Normalised",
+                PortDescriptor { .id = "normalised", .type = SignalType::Signal, .label = "Normalised",
                                   .minValue = 0.0f, .maxValue = 1.0f, .quantity = Quantity::Unipolar },
                 PortDescriptor { .id = "wrapped", .type = SignalType::Event, .label = "Wrapped" },
             };

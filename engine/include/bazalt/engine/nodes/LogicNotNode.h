@@ -24,12 +24,12 @@ namespace bazalt::engine::nodes
 
         std::vector<PortDescriptor> getInputPorts() const override
         {
-            return { PortDescriptor { .id = "in", .type = SignalType::Boolean, .kind = ValueKind::Bool } };
+            return { PortDescriptor { .id = "in", .type = SignalType::Signal, .kind = ValueKind::Bool, .quantity = Quantity::Boolean } };
         }
 
         std::vector<PortDescriptor> getOutputPorts() const override
         {
-            return { PortDescriptor { .id = "out", .type = SignalType::Boolean, .isPrimaryOutput = true, .kind = ValueKind::Bool } };
+            return { PortDescriptor { .id = "out", .type = SignalType::Signal, .isPrimaryOutput = true, .kind = ValueKind::Bool, .quantity = Quantity::Boolean } };
         }
 
         void processSample (const float* inputs, float* outputs) noexcept override

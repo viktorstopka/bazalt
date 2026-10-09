@@ -29,7 +29,7 @@ namespace bazalt::engine::nodes
         inline PortDescriptor controlPort (const char* id, const char* label, const char* unit, float minValue, float maxValue,
                                            float defaultValue, Quantity quantity = Quantity::Dimensionless)
         {
-            return PortDescriptor { .id = id, .type = SignalType::Control, .label = label, .unit = unit,
+            return PortDescriptor { .id = id, .type = SignalType::Signal, .label = label, .unit = unit,
                                     .minValue = minValue, .maxValue = maxValue, .defaultValue = defaultValue,
                                     .hasFallbackWhenUnconnected = true, .quantity = quantity };
         }
@@ -79,9 +79,9 @@ namespace bazalt::engine::nodes
         {
             using dynamics::controlPort;
             return {
-                PortDescriptor { .id = "in", .type = SignalType::Audio, .channels = Channels::Stereo },
-                PortDescriptor { .id = "sidechain", .type = SignalType::Audio, .label = "Sidechain",
-                                  .hasFallbackWhenUnconnected = true, .channels = Channels::Stereo },
+                PortDescriptor { .id = "in", .type = SignalType::Signal, .quantity = Quantity::Audio, .channels = Channels::Stereo },
+                PortDescriptor { .id = "sidechain", .type = SignalType::Signal, .label = "Sidechain",
+                                  .hasFallbackWhenUnconnected = true, .quantity = Quantity::Audio, .channels = Channels::Stereo },
                 controlPort ("dyn.compress.threshold", "Threshold", "dB", -60.0f, 0.0f, -18.0f, Quantity::Gain),
                 controlPort ("dyn.compress.ratio", "Ratio", ":1", 1.0f, 20.0f, 4.0f, Quantity::Ratio),
                 controlPort ("dyn.compress.knee", "Knee", "dB", 0.0f, 24.0f, 6.0f, Quantity::Gain),
@@ -94,10 +94,10 @@ namespace bazalt::engine::nodes
         std::vector<PortDescriptor> getOutputPorts() const override
         {
             return {
-                PortDescriptor { .id = "out", .type = SignalType::Audio, .label = "Out", .isPrimaryOutput = true, .channels = Channels::Stereo },
-                PortDescriptor { .id = "gain", .type = SignalType::Control, .label = "Gain", .minValue = 0.0f, .maxValue = 1.0f,
+                PortDescriptor { .id = "out", .type = SignalType::Signal, .label = "Out", .isPrimaryOutput = true, .quantity = Quantity::Audio, .channels = Channels::Stereo },
+                PortDescriptor { .id = "gain", .type = SignalType::Signal, .label = "Gain", .minValue = 0.0f, .maxValue = 1.0f,
                                   .quantity = Quantity::Unipolar },
-                PortDescriptor { .id = "reduction", .type = SignalType::Control, .label = "Reduction", .unit = "dB",
+                PortDescriptor { .id = "reduction", .type = SignalType::Signal, .label = "Reduction", .unit = "dB",
                                   .minValue = 0.0f, .maxValue = 60.0f, .quantity = Quantity::Gain },
             };
         }
@@ -201,9 +201,9 @@ namespace bazalt::engine::nodes
         {
             using dynamics::controlPort;
             return {
-                PortDescriptor { .id = "in", .type = SignalType::Audio, .channels = Channels::Stereo },
-                PortDescriptor { .id = "sidechain", .type = SignalType::Audio, .label = "Sidechain",
-                                  .hasFallbackWhenUnconnected = true, .channels = Channels::Stereo },
+                PortDescriptor { .id = "in", .type = SignalType::Signal, .quantity = Quantity::Audio, .channels = Channels::Stereo },
+                PortDescriptor { .id = "sidechain", .type = SignalType::Signal, .label = "Sidechain",
+                                  .hasFallbackWhenUnconnected = true, .quantity = Quantity::Audio, .channels = Channels::Stereo },
                 controlPort ("dyn.gate.threshold", "Threshold", "dB", -80.0f, 0.0f, -40.0f, Quantity::Gain),
                 controlPort ("dyn.gate.range", "Range", "dB", 0.0f, 80.0f, 60.0f, Quantity::Gain),
                 ValueTypes::timeMsPort ("dyn.gate.attack", "Attack", 1.0f, 50.0f),
@@ -214,10 +214,10 @@ namespace bazalt::engine::nodes
         std::vector<PortDescriptor> getOutputPorts() const override
         {
             return {
-                PortDescriptor { .id = "out", .type = SignalType::Audio, .label = "Out", .isPrimaryOutput = true, .channels = Channels::Stereo },
-                PortDescriptor { .id = "gain", .type = SignalType::Control, .label = "Gain", .minValue = 0.0f, .maxValue = 1.0f,
+                PortDescriptor { .id = "out", .type = SignalType::Signal, .label = "Out", .isPrimaryOutput = true, .quantity = Quantity::Audio, .channels = Channels::Stereo },
+                PortDescriptor { .id = "gain", .type = SignalType::Signal, .label = "Gain", .minValue = 0.0f, .maxValue = 1.0f,
                                   .quantity = Quantity::Unipolar },
-                PortDescriptor { .id = "open", .type = SignalType::Boolean, .label = "Open", .kind = ValueKind::Bool },
+                PortDescriptor { .id = "open", .type = SignalType::Signal, .label = "Open", .kind = ValueKind::Bool, .quantity = Quantity::Boolean },
             };
         }
         void setParameter (const juce::String& parameterId, float value) override

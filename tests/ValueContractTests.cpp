@@ -73,7 +73,7 @@ TEST_CASE ("Unmigrated ports/parameters default every new value-contract field t
     // A plain, pre-M14-style aggregate init — exactly what every node
     // header still writes for a bespoke value ValueTypes.h doesn't cover
     // (e.g. filter.svf's resonance, filter.onepole's coefficient).
-    const PortDescriptor port { "in", SignalType::Control };
+    const PortDescriptor port { .id = "in", .type = SignalType::Signal };
     CHECK (port.kind == ValueKind::Float);
     CHECK (port.quantity == Quantity::Dimensionless);
     CHECK (port.curve == Curve::Linear);

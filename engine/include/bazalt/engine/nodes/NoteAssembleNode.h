@@ -90,17 +90,17 @@ namespace bazalt::engine::nodes
         std::vector<PortDescriptor> getInputPorts() const override
         {
             return {
-                PortDescriptor { .id = "gate", .type = SignalType::Boolean, .label = "Gate", .kind = ValueKind::Bool },
-                PortDescriptor { .id = "pitch", .type = SignalType::Control, .label = "Pitch",
+                PortDescriptor { .id = "gate", .type = SignalType::Signal, .label = "Gate", .kind = ValueKind::Bool, .quantity = Quantity::Boolean },
+                PortDescriptor { .id = "pitch", .type = SignalType::Signal, .label = "Pitch",
                                   .unit = "st", .minValue = 0.0f, .maxValue = 127.0f, .defaultValue = defaultPitch,
                                   .hasFallbackWhenUnconnected = true, .quantity = Quantity::Pitch },
-                PortDescriptor { .id = "velocity", .type = SignalType::Control, .label = "Velocity",
+                PortDescriptor { .id = "velocity", .type = SignalType::Signal, .label = "Velocity",
                                   .minValue = 0.0f, .maxValue = 1.0f, .defaultValue = defaultVelocity,
                                   .hasFallbackWhenUnconnected = true, .quantity = Quantity::Unipolar },
-                PortDescriptor { .id = "confidence", .type = SignalType::Control, .label = "Confidence",
+                PortDescriptor { .id = "confidence", .type = SignalType::Signal, .label = "Confidence",
                                   .minValue = 0.0f, .maxValue = 1.0f, .defaultValue = defaultConfidence,
                                   .hasFallbackWhenUnconnected = true, .quantity = Quantity::Unipolar },
-                PortDescriptor { .id = "confidenceGate", .type = SignalType::Control, .label = "Confidence Gate",
+                PortDescriptor { .id = "confidenceGate", .type = SignalType::Signal, .label = "Confidence Gate",
                                   .minValue = 0.0f, .maxValue = 1.0f, .defaultValue = defaultConfidenceGate,
                                   .hasFallbackWhenUnconnected = true, .quantity = Quantity::Unipolar },
             };

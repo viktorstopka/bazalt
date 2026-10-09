@@ -85,7 +85,7 @@ function macroEntriesFrom(nodes: readonly GraphNode[]): MacroEntry[] {
     const max = node.parameterValues?.[MACRO_MAX_PARAM] ?? 1
     const isInteger = (node.parameterValues?.[MACRO_IS_INTEGER_PARAM] ?? 0) >= 0.5
     const quantity = quantityFromOrdinal(node.parameterValues?.[MACRO_QUANTITY_PARAM] ?? 0)
-    const kind = classifyPortUiKind({ type: 'control', isInteger, quantity })
+    const kind = classifyPortUiKind({ type: 'signal', isInteger, quantity })
 
     entries.push({
       slot,

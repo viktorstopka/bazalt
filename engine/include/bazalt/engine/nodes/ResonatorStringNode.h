@@ -101,27 +101,27 @@ namespace bazalt::engine::nodes
         std::vector<PortDescriptor> getInputPorts() const override
         {
             return {
-                perChannel ({ "excite", SignalType::Audio }),
-                PortDescriptor { .id = "pitch", .type = SignalType::Control, .unit = "st",
+                perChannel ({ .id = "excite", .type = SignalType::Signal, .quantity = Quantity::Audio }),
+                PortDescriptor { .id = "pitch", .type = SignalType::Signal, .unit = "st",
                                   .minValue = 0.0f, .maxValue = 127.0f, .defaultValue = 60.0f,
                                   .hasFallbackWhenUnconnected = true, .quantity = Quantity::Pitch },
-                PortDescriptor { .id = "resonator.string.decay", .type = SignalType::Control, .label = "Decay",
+                PortDescriptor { .id = "resonator.string.decay", .type = SignalType::Signal, .label = "Decay",
                                   .unit = "s", .minValue = 0.05f, .maxValue = 30.0f, .defaultValue = 3.0f,
                                   .hasFallbackWhenUnconnected = true, .quantity = Quantity::Time,
                                   .curve = Curve::Logarithmic },
                 unipolarPort ("resonator.string.damping", "Damping", 0.5f),
                 unipolarPort ("resonator.string.stiffness", "Stiffness", 0.1f),
                 unipolarPort ("resonator.string.position", "Position", 0.15f),
-                PortDescriptor { .id = "resonator.string.release", .type = SignalType::Boolean, .label = "Release",
-                                  .defaultValue = 1.0f, .hasFallbackWhenUnconnected = true },
+                PortDescriptor { .id = "resonator.string.release", .type = SignalType::Signal, .label = "Release",
+                                  .defaultValue = 1.0f, .hasFallbackWhenUnconnected = true, .quantity = Quantity::Boolean },
             };
         }
 
         std::vector<PortDescriptor> getOutputPorts() const override
         {
             return {
-                perChannel (PortDescriptor { .id = "out", .type = SignalType::Audio, .label = "Out", .isPrimaryOutput = true }),
-                perChannel (PortDescriptor { .id = "motion", .type = SignalType::Audio, .label = "Motion" }),
+                perChannel (PortDescriptor { .id = "out", .type = SignalType::Signal, .label = "Out", .isPrimaryOutput = true, .quantity = Quantity::Audio }),
+                perChannel (PortDescriptor { .id = "motion", .type = SignalType::Signal, .label = "Motion", .quantity = Quantity::Audio }),
             };
         }
 
@@ -189,7 +189,7 @@ namespace bazalt::engine::nodes
     private:
         static PortDescriptor unipolarPort (juce::String id, juce::String label, float defaultValue)
         {
-            return PortDescriptor { .id = std::move (id), .type = SignalType::Control, .label = std::move (label),
+            return PortDescriptor { .id = std::move (id), .type = SignalType::Signal, .label = std::move (label),
                                      .minValue = 0.0f, .maxValue = 1.0f, .defaultValue = defaultValue,
                                      .hasFallbackWhenUnconnected = true, .quantity = Quantity::Unipolar,
                                      .polarity = Polarity::Unipolar };

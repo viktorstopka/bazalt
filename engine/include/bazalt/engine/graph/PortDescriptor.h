@@ -39,7 +39,12 @@ namespace bazalt::engine
         Unipolar,
         Bipolar,
         Count,
-        Phase
+        Phase,
+        // wiki/plans/DataAndWavetable.md D1: what used to be separate signal
+        // types. Appended, never inserted — util.macro stores this enum's
+        // ordinal.
+        Audio,  // a waveform meant to be heard, nominally ±1
+        Boolean // a 0/1 gate; true is > 0.5
     };
 
     /** curve: how a 0-1 gesture maps onto a bounded value's range

@@ -46,8 +46,8 @@ namespace bazalt::engine::nodes
         std::vector<PortDescriptor> getInputPorts() const override
         {
             return {
-                perChannel ({ "in", SignalType::Audio }),
-                PortDescriptor { .id = "filter.onepole.coefficient", .type = SignalType::Control, .label = "Damping",
+                perChannel ({ .id = "in", .type = SignalType::Signal, .quantity = Quantity::Audio }),
+                PortDescriptor { .id = "filter.onepole.coefficient", .type = SignalType::Signal, .label = "Damping",
                                   .minValue = 0.0f, .maxValue = 1.0f, .defaultValue = 0.5f,
                                   .hasFallbackWhenUnconnected = true, .quantity = Quantity::Unipolar, .polarity = Polarity::Unipolar },
             };
@@ -56,8 +56,8 @@ namespace bazalt::engine::nodes
         std::vector<PortDescriptor> getOutputPorts() const override
         {
             return {
-                perChannel (PortDescriptor { .id = "out", .type = SignalType::Audio, .label = "Lowpass", .isPrimaryOutput = true }),
-                perChannel (PortDescriptor { .id = "highpass", .type = SignalType::Audio, .label = "Highpass" }),
+                perChannel (PortDescriptor { .id = "out", .type = SignalType::Signal, .label = "Lowpass", .isPrimaryOutput = true, .quantity = Quantity::Audio }),
+                perChannel (PortDescriptor { .id = "highpass", .type = SignalType::Signal, .label = "Highpass", .quantity = Quantity::Audio }),
             };
         }
 

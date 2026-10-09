@@ -27,11 +27,11 @@ TEST_CASE ("NodeFactory::describeAll() returns a descriptor for every registered
     CHECK (osc->layoutVariant == NodeLayoutVariant::Standard);
     REQUIRE (osc->inputs.size() == 6); // "pitch" (M18, ADR-0024), "osc.analog.frequency" (M20), fine, pulseWidth, phase, sync (SoundPalette.md Batch 2)
     CHECK (osc->inputs[0].id == "pitch");
-    CHECK (osc->inputs[0].type == SignalType::Control);
+    CHECK (osc->inputs[0].type == SignalType::Signal);
     CHECK (osc->inputs[1].id == "osc.analog.frequency");
     REQUIRE (osc->outputs.size() == 1);
     CHECK (osc->outputs[0].id == "out");
-    CHECK (osc->outputs[0].type == SignalType::Audio);
+    CHECK (osc->outputs[0].quantity == Quantity::Audio);
     REQUIRE (osc->parameters.size() == 1); // "shape" only — "frequency" is a port now (M20)
 
     const auto* svf = findByTypeId ("filter.svf");
@@ -159,7 +159,7 @@ TEST_CASE ("A node with no title override falls back to its type id in the descr
     {
     public:
         int getNumOutputPorts() const noexcept override { return 1; }
-        std::vector<PortDescriptor> getOutputPorts() const override { return { { "out", SignalType::Audio } }; }
+        std::vector<PortDescriptor> getOutputPorts() const override { return { { .id = "out", .type = SignalType::Signal, .quantity = Quantity::Audio } }; }
     };
 
     NodeFactory factory;

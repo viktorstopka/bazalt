@@ -35,7 +35,7 @@ namespace bazalt::engine::nodes
         std::vector<PortDescriptor> getInputPorts() const override
         {
             return {
-                PortDescriptor { .id = "in", .type = SignalType::Audio, .channels = Channels::Stereo },
+                PortDescriptor { .id = "in", .type = SignalType::Signal, .quantity = Quantity::Audio, .channels = Channels::Stereo },
                 ValueTypes::timeMsPort ("analysis.level.attack", "Attack", 10.0f, 1000.0f),
                 ValueTypes::timeMsPort ("analysis.level.release", "Release", 150.0f, 5000.0f),
             };
@@ -43,9 +43,9 @@ namespace bazalt::engine::nodes
         std::vector<PortDescriptor> getOutputPorts() const override
         {
             return {
-                PortDescriptor { .id = "level", .type = SignalType::Control, .label = "Level", .isPrimaryOutput = true,
+                PortDescriptor { .id = "level", .type = SignalType::Signal, .label = "Level", .isPrimaryOutput = true,
                                   .minValue = 0.0f, .maxValue = 1.0f, .quantity = Quantity::Unipolar },
-                PortDescriptor { .id = "db", .type = SignalType::Control, .label = "dB", .unit = "dB",
+                PortDescriptor { .id = "db", .type = SignalType::Signal, .label = "dB", .unit = "dB",
                                   .minValue = floorDb, .maxValue = 12.0f, .quantity = Quantity::Gain },
             };
         }

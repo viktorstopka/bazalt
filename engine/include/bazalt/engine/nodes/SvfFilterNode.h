@@ -43,9 +43,9 @@ namespace bazalt::engine::nodes
         std::vector<PortDescriptor> getInputPorts() const override
         {
             return {
-                perChannel ({ "in", SignalType::Audio }),
+                perChannel ({ .id = "in", .type = SignalType::Signal, .quantity = Quantity::Audio }),
                 ValueTypes::frequencyPort ("filter.svf.cutoff", "Cutoff", 1000.0f),
-                PortDescriptor { .id = "filter.svf.resonance", .type = SignalType::Control, .label = "Resonance",
+                PortDescriptor { .id = "filter.svf.resonance", .type = SignalType::Signal, .label = "Resonance",
                                   .minValue = 0.01f, .maxValue = 10.0f, .defaultValue = 0.70710678f,
                                   .hasFallbackWhenUnconnected = true },
             };
@@ -55,7 +55,7 @@ namespace bazalt::engine::nodes
         {
             const auto output = [] (const char* id, const char* label, bool primary = false)
             {
-                return perChannel (PortDescriptor { .id = id, .type = SignalType::Audio, .label = label, .isPrimaryOutput = primary });
+                return perChannel (PortDescriptor { .id = id, .type = SignalType::Signal, .label = label, .isPrimaryOutput = primary, .quantity = Quantity::Audio });
             };
             return { output ("out", "Lowpass", true), output ("bandpass", "Bandpass"), output ("highpass", "Highpass"),
                      output ("notch", "Notch"), output ("peak", "Peak") };

@@ -28,15 +28,15 @@ namespace bazalt::engine::nodes
         std::vector<PortDescriptor> getInputPorts() const override
         {
             return {
-                { "in", SignalType::Control },
-                PortDescriptor { .id = "math.modulo.divisor", .type = SignalType::Control, .label = "Divisor",
+                { .id = "in", .type = SignalType::Signal },
+                PortDescriptor { .id = "math.modulo.divisor", .type = SignalType::Signal, .label = "Divisor",
                                   .defaultValue = 1.0f, .hasFallbackWhenUnconnected = true },
             };
         }
 
         std::vector<PortDescriptor> getOutputPorts() const override
         {
-            return { PortDescriptor { .id = "out", .type = SignalType::Control, .isPrimaryOutput = true } };
+            return { PortDescriptor { .id = "out", .type = SignalType::Signal, .isPrimaryOutput = true } };
         }
 
         void setParameter (const juce::String& parameterId, float value) override

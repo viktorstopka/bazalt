@@ -63,17 +63,17 @@ namespace bazalt::engine::nodes
             // frequency's own max), not get clamped to whatever the
             // fallback slider background happened to show.
             return {
-                PortDescriptor { .id = "in", .type = SignalType::Control, .label = "In" }, // design/Map.png: the merged pass-through row reads "In"
-                PortDescriptor { .id = "adapt.map.inMin", .type = SignalType::Control, .label = "In Min",
+                PortDescriptor { .id = "in", .type = SignalType::Signal, .label = "In" }, // design/Map.png: the merged pass-through row reads "In"
+                PortDescriptor { .id = "adapt.map.inMin", .type = SignalType::Signal, .label = "In Min",
                                   .minValue = -100000.0f, .maxValue = 100000.0f, .defaultValue = 0.0f,
                                   .hasFallbackWhenUnconnected = true, .softMin = 0.0f, .softMax = 1.0f },
-                PortDescriptor { .id = "adapt.map.inMax", .type = SignalType::Control, .label = "In Max",
+                PortDescriptor { .id = "adapt.map.inMax", .type = SignalType::Signal, .label = "In Max",
                                   .minValue = -100000.0f, .maxValue = 100000.0f, .defaultValue = 1.0f,
                                   .hasFallbackWhenUnconnected = true, .softMin = 0.0f, .softMax = 1.0f },
-                PortDescriptor { .id = "adapt.map.outMin", .type = SignalType::Control, .label = "Out Min",
+                PortDescriptor { .id = "adapt.map.outMin", .type = SignalType::Signal, .label = "Out Min",
                                   .minValue = -100000.0f, .maxValue = 100000.0f, .defaultValue = 0.0f,
                                   .hasFallbackWhenUnconnected = true, .softMin = 0.0f, .softMax = 1.0f },
-                PortDescriptor { .id = "adapt.map.outMax", .type = SignalType::Control, .label = "Out Max",
+                PortDescriptor { .id = "adapt.map.outMax", .type = SignalType::Signal, .label = "Out Max",
                                   .minValue = -100000.0f, .maxValue = 100000.0f, .defaultValue = 1.0f,
                                   .hasFallbackWhenUnconnected = true, .softMin = 0.0f, .softMax = 1.0f },
             };
@@ -81,7 +81,7 @@ namespace bazalt::engine::nodes
 
         std::vector<PortDescriptor> getOutputPorts() const override
         {
-            return { PortDescriptor { .id = "out", .type = SignalType::Control, .isPrimaryOutput = true } };
+            return { PortDescriptor { .id = "out", .type = SignalType::Signal, .isPrimaryOutput = true } };
         }
 
         void setParameter (const juce::String& parameterId, float value) override

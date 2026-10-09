@@ -55,10 +55,10 @@ namespace bazalt::engine::nodes
                 PortDescriptor { .id = "notes", .type = SignalType::Note },
                 ValueTypes::midiNotePort ("note.filter.lowPitch", "Low Pitch", 0.0f),
                 ValueTypes::midiNotePort ("note.filter.highPitch", "High Pitch", 127.0f),
-                PortDescriptor { .id = "note.filter.lowVelocity", .type = SignalType::Control, .label = "Low Velocity",
+                PortDescriptor { .id = "note.filter.lowVelocity", .type = SignalType::Signal, .label = "Low Velocity",
                                   .minValue = 0.0f, .maxValue = 1.0f, .defaultValue = 0.0f,
                                   .hasFallbackWhenUnconnected = true, .quantity = Quantity::Unipolar },
-                PortDescriptor { .id = "note.filter.highVelocity", .type = SignalType::Control, .label = "High Velocity",
+                PortDescriptor { .id = "note.filter.highVelocity", .type = SignalType::Signal, .label = "High Velocity",
                                   .minValue = 0.0f, .maxValue = 1.0f, .defaultValue = 1.0f,
                                   .hasFallbackWhenUnconnected = true, .quantity = Quantity::Unipolar },
             };
@@ -71,7 +71,7 @@ namespace bazalt::engine::nodes
                 // may reuse a port id across its own inputs/outputs, same as
                 // clock.divide's own "tickOut") forces this; label stays "Notes".
                 PortDescriptor { .id = "notesOut", .type = SignalType::Note, .label = "Notes", .isPrimaryOutput = true },
-                PortDescriptor { .id = "inRange", .type = SignalType::Boolean, .label = "In Range", .kind = ValueKind::Bool },
+                PortDescriptor { .id = "inRange", .type = SignalType::Signal, .label = "In Range", .kind = ValueKind::Bool, .quantity = Quantity::Boolean },
             };
         }
 

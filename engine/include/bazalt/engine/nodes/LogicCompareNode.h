@@ -31,7 +31,7 @@ namespace bazalt::engine::nodes
         static constexpr int numInputs = 3; // a, b, tolerance
         static constexpr int numOutputs = 1;
 
-        LogicCompareNode() noexcept : InheritingPortsNode (SignalType::Control) {}
+        LogicCompareNode() noexcept : InheritingPortsNode (Quantity::Dimensionless) {}
 
         int getNumInputPorts() const noexcept override { return numInputs; }
         int getNumOutputPorts() const noexcept override { return numOutputs; }
@@ -52,11 +52,11 @@ namespace bazalt::engine::nodes
         std::vector<PortDescriptor> getInputPorts() const override
         {
             return {
-                PortDescriptor { .id = "a", .type = SignalType::Control, .label = "A",
+                PortDescriptor { .id = "a", .type = SignalType::Signal, .label = "A",
                                   .quantity = resolvedQuantity, .polymorphism = PortPolymorphism::Quantity },
-                PortDescriptor { .id = "b", .type = SignalType::Control, .label = "B",
+                PortDescriptor { .id = "b", .type = SignalType::Signal, .label = "B",
                                   .quantity = resolvedQuantity, .polymorphism = PortPolymorphism::Quantity },
-                PortDescriptor { .id = "logic.compare.tolerance", .type = SignalType::Control, .label = "Tolerance",
+                PortDescriptor { .id = "logic.compare.tolerance", .type = SignalType::Signal, .label = "Tolerance",
                                   .minValue = 0.0f, .defaultValue = 0.001f, .hasFallbackWhenUnconnected = true,
                                   .quantity = resolvedQuantity, .polymorphism = PortPolymorphism::Quantity },
             };
@@ -64,7 +64,7 @@ namespace bazalt::engine::nodes
 
         std::vector<PortDescriptor> getOutputPorts() const override
         {
-            return { PortDescriptor { .id = "out", .type = SignalType::Boolean, .isPrimaryOutput = true, .kind = ValueKind::Bool } };
+            return { PortDescriptor { .id = "out", .type = SignalType::Signal, .isPrimaryOutput = true, .kind = ValueKind::Bool, .quantity = Quantity::Boolean } };
         }
 
         std::vector<ParameterDescriptor> getParameters() const override

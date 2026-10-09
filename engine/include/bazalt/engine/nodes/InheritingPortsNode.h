@@ -36,15 +36,17 @@ namespace bazalt::engine::nodes
         bool hasPolymorphicPorts() const noexcept override { return true; }
 
     protected:
-        explicit InheritingPortsNode (SignalType defaultType) noexcept : resolvedType (defaultType) {}
+        /** \p defaultQuantity is what the ports declare until something is
+            wired: Quantity::Audio for a node that is mostly fed sound (Clip,
+            Blend, Cycle, Meter), Dimensionless for a plain value. */
+        explicit InheritingPortsNode (Quantity defaultQuantity) noexcept : resolvedQuantity (defaultQuantity) {}
 
-        /** \p inheritType false keeps the type fixed (logic.compare's values are
-            always Control) and adopts only the quantity.
+        /** \p inheritType false keeps the type a Signal (logic.compare's values
+            never become Events) and adopts only the quantity.
         */
         void offer (int priority, const PortDescriptor& source, bool inheritType) noexcept
         {
-            const auto isPlainValue = source.type == SignalType::Audio || source.type == SignalType::Control
-                                       || source.type == SignalType::Boolean || source.type == SignalType::Event;
+            const auto isPlainValue = source.type == SignalType::Signal || source.type == SignalType::Event;
             if (! isPlainValue || priority > bestPriority)
                 return;
 
@@ -54,8 +56,8 @@ namespace bazalt::engine::nodes
             resolvedQuantity = source.quantity;
         }
 
-        SignalType resolvedType;
-        Quantity resolvedQuantity = Quantity::Dimensionless;
+        SignalType resolvedType = SignalType::Signal;
+        Quantity resolvedQuantity;
 
     private:
         int bestPriority = std::numeric_limits<int>::max();

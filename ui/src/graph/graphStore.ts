@@ -233,13 +233,13 @@ function resolveTypedValueOutputPort(node: GraphNode, staticPort: PortDescriptor
   const rawMin = pv[`${prefix}.min`] ?? 0
   const rawMax = pv[`${prefix}.max`] ?? 1
 
-  if (type === 'bool') return { ...staticPort, type: 'boolean', kind: 'bool', isInteger: false, quantity, minValue: null, maxValue: null, unit: '' }
+  if (type === 'bool') return { ...staticPort, type: 'signal', kind: 'bool', isInteger: false, quantity: 'boolean', minValue: null, maxValue: null, unit: '' }
   if (type === 'trigger') return { ...staticPort, type: 'event', kind: 'int', isInteger: true, quantity, minValue: null, maxValue: null, unit: '' }
 
   // Control.
   const kind: ValueKind = isEnum ? 'enum' : isInteger ? 'int' : 'float'
   const [min, max] = quantity === 'unipolar' ? [0, 1] : quantity === 'bipolar' ? [-1, 1] : [rawMin, rawMax]
-  return { ...staticPort, type: 'control', kind, isInteger, quantity, minValue: min, maxValue: max, unit: quantityUnit(quantity) }
+  return { ...staticPort, type: 'signal', kind, isInteger, quantity, minValue: min, maxValue: max, unit: quantityUnit(quantity) }
 }
 
 export interface GraphWire {
@@ -747,9 +747,23 @@ function endpointFor(nodeId: string, portId: string, direction: 'input' | 'outpu
     const { type, quantity, unit, minValue, maxValue, isInteger, polarity } = upstream.port
     const adopted = { ...port, quantity, unit, minValue, maxValue, isInteger, polarity }
     if (polymorphism === 'signalAndQuantity') adopted.type = type
+    // Add/Multiply (AddNode.h): a waveform combined with anything is still a waveform.
+    if (WAVEFORM_DOMINANT_TYPES.has(node.typeId) && anyWiredInputIsAudio(nodeId, descriptor.inputs, seen)) adopted.quantity = 'audio'
     return { nodeId, portId, direction, port: adopted }
   }
   return unresolvedEndpoint
+}
+
+const WAVEFORM_DOMINANT_TYPES = new Set(['math.add', 'math.multiply'])
+
+function anyWiredInputIsAudio(nodeId: string, inputs: readonly PortDescriptor[], seen: Set<string>): boolean {
+  for (const input of inputs) {
+    const wire = wires.get(wireId(nodeId, input.id))
+    if (!wire) continue
+    const upstream = endpointFor(wire.fromNodeId, wire.fromPortId, 'output', new Set(seen))
+    if (upstream && !upstream.unresolved && upstream.port.quantity === 'audio') return true
+  }
+  return false
 }
 
 export function findWireAtInput(nodeId: string, portId: string): GraphWire | undefined {
@@ -1528,7 +1542,7 @@ function macroConfigForPort(port: PortDescriptor, currentValue: number): MacroSe
     const maxIndex = port.options.length - 1
     return { type: 'control', min: 0, max: maxIndex, isInteger: true, quantity: 'dimensionless', defaultRaw: rawOf(Math.round(currentValue), 0, maxIndex) }
   }
-  if (port.type === 'boolean') {
+  if (port.quantity === 'boolean') {
     return { type: 'bool', min: 0, max: 1, isInteger: false, quantity: 'dimensionless', defaultRaw: currentValue >= 0.5 ? 1 : 0 }
   }
   if (port.type === 'event') {
@@ -1549,14 +1563,14 @@ function macroConfigForPort(port: PortDescriptor, currentValue: number): MacroSe
   return { type: 'control', min: 0, max: 1, isInteger: false, quantity: 'dimensionless', defaultRaw: clamp(currentValue, 0, 1) }
 }
 
-/** Whether `port` could sensibly become a Macro's value at all: Control,
-    Boolean and Event — a macro is Control, Bool or Trigger typed
-    (macroConfigForPort picks the matching one). Audio and Note don't (a
-    macro is a scalar/discrete automatable value, not an audio-rate or
-    event-stream signal), Data never converts implicitly, Spectral isn't real.
+/** Whether `port` could sensibly become a Macro's value at all: a value, a
+    Boolean or an Event — a macro is Control, Bool or Trigger typed
+    (macroConfigForPort picks the matching one). An audio input and Note don't
+    (a macro is a scalar/discrete automatable value, not a waveform or an
+    event stream), Data never converts implicitly, Spectral isn't real.
 */
-export function isMacroablePort(port: Pick<PortDescriptor, 'type'>): boolean {
-  return port.type === 'control' || port.type === 'boolean' || port.type === 'event'
+export function isMacroablePort(port: Pick<PortDescriptor, 'type' | 'quantity'>): boolean {
+  return (port.type === 'signal' && port.quantity !== 'audio') || port.type === 'event'
 }
 
 /** The authoritative check `createMacroFromPort` uses right before
@@ -1716,11 +1730,11 @@ const DEFAULT_VIEWER_BY_PORT_KIND: Partial<Record<PortUiKind, string>> = {
 export function defaultViewerTypeForPort(port: PortDescriptor): string | undefined {
   // A Pitch-quantity Control port gets the tuner (design/Visualization/Tune.png),
   // not the generic Control scope.
-  if (port.type === 'control' && port.quantity === 'pitch') return 'view.tune'
+  if (port.type === 'signal' && port.quantity === 'pitch') return 'view.tune'
   // classifyPortUiKind falls back to 'value' for a type it has no colour for
   // (Spectral) — only a genuine Control port gets the Control scope.
   const kind = classifyPortUiKind(port)
-  if (kind === 'value' && port.type !== 'control') return undefined
+  if (kind === 'value' && port.type !== 'signal') return undefined
   return DEFAULT_VIEWER_BY_PORT_KIND[kind]
 }
 
@@ -1778,7 +1792,7 @@ export function mainOutputPortId(nodeId: string): string | undefined {
 export function canAddFromNode(nodeId: string): boolean {
   const portId = mainOutputPortId(nodeId)
   const endpoint = portId ? getEndpoint(nodeId, portId, 'output') : undefined
-  return !!endpoint && (endpoint.port.type === 'audio' || endpoint.port.type === 'control' || endpoint.port.type === 'boolean')
+  return !!endpoint && endpoint.port.type === 'signal'
 }
 
 /** Ctrl+Y: a Map fed from the node's main output, placed at (x, y). One undo step. */

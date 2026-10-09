@@ -94,17 +94,17 @@ namespace bazalt::engine::nodes
         std::vector<PortDescriptor> getInputPorts() const override
         {
             return {
-                PortDescriptor { .id = "pitch", .type = SignalType::Control, .unit = "st",
+                PortDescriptor { .id = "pitch", .type = SignalType::Signal, .unit = "st",
                                   .minValue = 0.0f, .maxValue = 127.0f, .defaultValue = 60.0f,
                                   .hasFallbackWhenUnconnected = true, .quantity = Quantity::Pitch },
                 ValueTypes::frequencyPort ("osc.analog.frequency", "Frequency", defaultFrequencyHz),
-                PortDescriptor { .id = "osc.analog.fine", .type = SignalType::Control, .label = "Fine", .unit = "ct",
+                PortDescriptor { .id = "osc.analog.fine", .type = SignalType::Signal, .label = "Fine", .unit = "ct",
                                   .minValue = -100.0f, .maxValue = 100.0f, .defaultValue = 0.0f,
                                   .hasFallbackWhenUnconnected = true, .polarity = Polarity::Bipolar },
-                PortDescriptor { .id = "osc.analog.pulseWidth", .type = SignalType::Control, .label = "Pulse Width",
+                PortDescriptor { .id = "osc.analog.pulseWidth", .type = SignalType::Signal, .label = "Pulse Width",
                                   .minValue = 0.0f, .maxValue = 1.0f, .defaultValue = 0.5f,
                                   .hasFallbackWhenUnconnected = true, .quantity = Quantity::Unipolar },
-                PortDescriptor { .id = "osc.analog.phase", .type = SignalType::Control, .label = "Phase",
+                PortDescriptor { .id = "osc.analog.phase", .type = SignalType::Signal, .label = "Phase",
                                   .minValue = -1.0f, .maxValue = 1.0f, .defaultValue = 0.0f,
                                   .hasFallbackWhenUnconnected = true, .quantity = Quantity::Bipolar,
                                   .polarity = Polarity::Bipolar },
@@ -113,7 +113,7 @@ namespace bazalt::engine::nodes
         }
         std::vector<PortDescriptor> getOutputPorts() const override
         {
-            return { PortDescriptor { .id = "out", .type = SignalType::Audio, .label = "Out", .isPrimaryOutput = true } };
+            return { PortDescriptor { .id = "out", .type = SignalType::Signal, .label = "Out", .isPrimaryOutput = true, .quantity = Quantity::Audio } };
         }
 
         std::vector<PreviewDescriptor> getPreviews() const override

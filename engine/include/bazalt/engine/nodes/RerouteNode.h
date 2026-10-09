@@ -14,7 +14,7 @@ namespace bazalt::engine::nodes
         place to sit and be moved/renamed on the canvas.
 
         docs/CLEANUP.md Priority 1 #2: a real type-polymorphic port, not a
-        hardcoded Audio one — `resolvedType` starts at `SignalType::Audio`
+        hardcoded Audio one — it starts as an audio Signal (`Quantity::Audio`)
         (preserving today's behaviour for an unconnected Reroute, or one
         fed by an Audio source) and GraphCompiler calls
         `resolveIncomingPort()` once per compile, before validating
@@ -104,8 +104,8 @@ namespace bazalt::engine::nodes
         }
 
     private:
-        SignalType resolvedType = SignalType::Audio;
-        Quantity resolvedQuantity = Quantity::Dimensionless;
+        SignalType resolvedType = SignalType::Signal;
+        Quantity resolvedQuantity = Quantity::Audio;
         std::vector<NoteEvent> noteScratch;
     };
 }

@@ -222,12 +222,12 @@ TEST_CASE ("ShapeClipNode takes on the type and quantity of what feeds it",
     };
 
     ShapeClipNode node;
-    CHECK (port (node.getInputPorts(), "in").type == SignalType::Audio); // the default: an audio safety clip
+    CHECK (port (node.getInputPorts(), "in").quantity == Quantity::Audio); // the default: an audio safety clip
 
-    PortDescriptor frequency { "src", SignalType::Control };
+    PortDescriptor frequency { .id = "src", .type = SignalType::Signal };
     frequency.quantity = Quantity::Frequency;
     node.resolveIncomingPort ("in", frequency);
-    CHECK (port (node.getInputPorts(), "in").type == SignalType::Control);
+    CHECK (port (node.getInputPorts(), "in").type == SignalType::Signal);
     CHECK (port (node.getInputPorts(), "in").quantity == Quantity::Frequency);
     CHECK (port (node.getInputPorts(), "shape.clip.low").quantity == Quantity::Frequency);
     CHECK (port (node.getInputPorts(), "shape.clip.high").quantity == Quantity::Frequency);

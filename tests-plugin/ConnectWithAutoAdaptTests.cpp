@@ -25,7 +25,8 @@ namespace
 
         std::vector<bazalt::engine::PortDescriptor> getOutputPorts() const override
         {
-            bazalt::engine::PortDescriptor port { "out", bazalt::engine::SignalType::Audio };
+            bazalt::engine::PortDescriptor port { "out", bazalt::engine::SignalType::Signal };
+            port.quantity = bazalt::engine::Quantity::Audio;
             port.channels = bazalt::engine::Channels::Stereo;
             return { port };
         }

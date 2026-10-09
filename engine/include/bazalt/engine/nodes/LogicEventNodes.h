@@ -80,7 +80,7 @@ namespace bazalt::engine::nodes
 
         std::vector<PortDescriptor> getInputPorts() const override
         {
-            return { PortDescriptor { .id = "in", .type = SignalType::Boolean, .label = "In", .kind = ValueKind::Bool } };
+            return { PortDescriptor { .id = "in", .type = SignalType::Signal, .label = "In", .kind = ValueKind::Bool, .quantity = Quantity::Boolean } };
         }
 
         std::vector<PortDescriptor> getOutputPorts() const override
@@ -139,7 +139,7 @@ namespace bazalt::engine::nodes
 
         std::vector<PortDescriptor> getOutputPorts() const override
         {
-            return { PortDescriptor { .id = "out", .type = SignalType::Boolean, .label = "Out", .isPrimaryOutput = true, .kind = ValueKind::Bool } };
+            return { PortDescriptor { .id = "out", .type = SignalType::Signal, .label = "Out", .isPrimaryOutput = true, .kind = ValueKind::Bool, .quantity = Quantity::Boolean } };
         }
 
         void reset() override { state = false; }

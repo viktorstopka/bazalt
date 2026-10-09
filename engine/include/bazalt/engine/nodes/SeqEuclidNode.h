@@ -51,13 +51,13 @@ namespace bazalt::engine::nodes
         {
             return {
                 PortDescriptor { .id = "tick", .type = SignalType::Event, .label = "Tick" },
-                PortDescriptor { .id = "seq.euclid.steps", .type = SignalType::Control, .label = "Steps",
+                PortDescriptor { .id = "seq.euclid.steps", .type = SignalType::Signal, .label = "Steps",
                                   .minValue = 1.0f, .maxValue = 64.0f, .defaultValue = 16.0f, .isInteger = true,
                                   .hasFallbackWhenUnconnected = true, .quantity = Quantity::Count, .step = 1.0f },
-                PortDescriptor { .id = "seq.euclid.pulses", .type = SignalType::Control, .label = "Pulses",
+                PortDescriptor { .id = "seq.euclid.pulses", .type = SignalType::Signal, .label = "Pulses",
                                   .minValue = 0.0f, .maxValue = 64.0f, .defaultValue = 4.0f, .isInteger = true,
                                   .hasFallbackWhenUnconnected = true, .quantity = Quantity::Count, .step = 1.0f },
-                PortDescriptor { .id = "seq.euclid.rotate", .type = SignalType::Control, .label = "Rotate",
+                PortDescriptor { .id = "seq.euclid.rotate", .type = SignalType::Signal, .label = "Rotate",
                                   .minValue = -64.0f, .maxValue = 64.0f, .defaultValue = 0.0f, .isInteger = true,
                                   .hasFallbackWhenUnconnected = true, .quantity = Quantity::Count, .step = 1.0f },
                 PortDescriptor { .id = "reset", .type = SignalType::Event, .label = "Reset" },
@@ -68,7 +68,7 @@ namespace bazalt::engine::nodes
         {
             return {
                 PortDescriptor { .id = "trigger", .type = SignalType::Event, .label = "Trigger", .isPrimaryOutput = true },
-                PortDescriptor { .id = "gate", .type = SignalType::Boolean, .label = "Gate", .kind = ValueKind::Bool },
+                PortDescriptor { .id = "gate", .type = SignalType::Signal, .label = "Gate", .kind = ValueKind::Bool, .quantity = Quantity::Boolean },
             };
         }
 

@@ -56,9 +56,9 @@ namespace bazalt::engine::nodes
         std::vector<PortDescriptor> getInputPorts() const override
         {
             return {
-                perChannel ({ "in", SignalType::Audio }),
+                perChannel ({ .id = "in", .type = SignalType::Signal, .quantity = Quantity::Audio }),
                 ValueTypes::frequencyPort ("filter.allpass.frequency", "Frequency", defaultFrequencyHz),
-                PortDescriptor { .id = "filter.allpass.amount", .type = SignalType::Control, .label = "Amount",
+                PortDescriptor { .id = "filter.allpass.amount", .type = SignalType::Signal, .label = "Amount",
                                   .minValue = 0.0f, .maxValue = 1.0f, .defaultValue = defaultAmount,
                                   .hasFallbackWhenUnconnected = true, .quantity = Quantity::Unipolar,
                                   .polarity = Polarity::Unipolar },
@@ -67,7 +67,7 @@ namespace bazalt::engine::nodes
 
         std::vector<PortDescriptor> getOutputPorts() const override
         {
-            return { perChannel ({ "out", SignalType::Audio }) };
+            return { perChannel ({ .id = "out", .type = SignalType::Signal, .quantity = Quantity::Audio }) };
         }
 
         std::vector<ParameterDescriptor> getParameters() const override

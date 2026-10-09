@@ -39,8 +39,8 @@ namespace bazalt::engine::nodes
             return {
                 PortDescriptor { .id = "noteOn", .type = SignalType::Event, .label = "Note On", .isPrimaryOutput = true },
                 PortDescriptor { .id = "noteOff", .type = SignalType::Event, .label = "Note Off" },
-                PortDescriptor { .id = "gate", .type = SignalType::Boolean, .label = "Gate", .kind = ValueKind::Bool },
-                PortDescriptor { .id = "count", .type = SignalType::Control, .label = "Count",
+                PortDescriptor { .id = "gate", .type = SignalType::Signal, .label = "Gate", .kind = ValueKind::Bool, .quantity = Quantity::Boolean },
+                PortDescriptor { .id = "count", .type = SignalType::Signal, .label = "Count",
                                   .minValue = 0.0f, .isInteger = true, .quantity = Quantity::Count },
             };
         }

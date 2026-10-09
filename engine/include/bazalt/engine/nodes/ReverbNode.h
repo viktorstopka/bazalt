@@ -83,12 +83,12 @@ namespace bazalt::engine::nodes
         {
             const auto unit = [] (const char* id, const char* label, float defaultValue)
             {
-                return PortDescriptor { .id = id, .type = SignalType::Control, .label = label, .minValue = 0.0f, .maxValue = 1.0f,
+                return PortDescriptor { .id = id, .type = SignalType::Signal, .label = label, .minValue = 0.0f, .maxValue = 1.0f,
                                         .defaultValue = defaultValue, .hasFallbackWhenUnconnected = true, .quantity = Quantity::Unipolar };
             };
             const auto multiplier = [] (const char* id, const char* label, float minValue, float maxValue, float defaultValue)
             {
-                return PortDescriptor { .id = id, .type = SignalType::Control, .label = label, .unit = "x",
+                return PortDescriptor { .id = id, .type = SignalType::Signal, .label = label, .unit = "x",
                                         .minValue = minValue, .maxValue = maxValue, .defaultValue = defaultValue,
                                         .isLogScale = true, .hasFallbackWhenUnconnected = true, .curve = Curve::Logarithmic };
             };
@@ -98,8 +98,8 @@ namespace bazalt::engine::nodes
             highCut.minValue = 1000.0f;
 
             return {
-                PortDescriptor { .id = "in", .type = SignalType::Audio, .channels = Channels::Stereo },
-                PortDescriptor { .id = "space.reverb.size", .type = SignalType::Control, .label = "Size", .unit = "m",
+                PortDescriptor { .id = "in", .type = SignalType::Signal, .quantity = Quantity::Audio, .channels = Channels::Stereo },
+                PortDescriptor { .id = "space.reverb.size", .type = SignalType::Signal, .label = "Size", .unit = "m",
                                   .minValue = minSize, .maxValue = maxSize, .defaultValue = 12.0f, .isLogScale = true,
                                   .hasFallbackWhenUnconnected = true, .curve = Curve::Logarithmic },
                 ValueTypes::timeSecondsPort ("space.reverb.decay", "Decay", 2.5f, 60.0f),
@@ -108,7 +108,7 @@ namespace bazalt::engine::nodes
                 ValueTypes::timeMsPort ("space.reverb.predelay", "Predelay", 10.0f, maxPredelayMs),
                 unit ("space.reverb.diffusion", "Diffusion", 0.85f),
                 unit ("space.reverb.modulation", "Modulation", 0.3f),
-                PortDescriptor { .id = "space.reverb.modRate", .type = SignalType::Control, .label = "Mod Rate", .unit = "Hz",
+                PortDescriptor { .id = "space.reverb.modRate", .type = SignalType::Signal, .label = "Mod Rate", .unit = "Hz",
                                   .minValue = 0.05f, .maxValue = 5.0f, .defaultValue = 0.6f, .isLogScale = true,
                                   .hasFallbackWhenUnconnected = true, .quantity = Quantity::Frequency, .curve = Curve::Logarithmic },
                 unit ("space.reverb.early", "Early", 0.3f),
@@ -116,14 +116,14 @@ namespace bazalt::engine::nodes
                 highCut,
                 unit ("space.reverb.width", "Width", 1.0f),
                 unit ("space.reverb.mix", "Mix", 0.3f),
-                PortDescriptor { .id = "space.reverb.freeze", .type = SignalType::Boolean, .label = "Freeze",
-                                  .defaultValue = 0.0f, .hasFallbackWhenUnconnected = true, .kind = ValueKind::Bool },
+                PortDescriptor { .id = "space.reverb.freeze", .type = SignalType::Signal, .label = "Freeze",
+                                  .defaultValue = 0.0f, .hasFallbackWhenUnconnected = true, .kind = ValueKind::Bool, .quantity = Quantity::Boolean },
             };
         }
 
         std::vector<PortDescriptor> getOutputPorts() const override
         {
-            return { PortDescriptor { .id = "out", .type = SignalType::Audio, .label = "Out", .isPrimaryOutput = true, .channels = Channels::Stereo } };
+            return { PortDescriptor { .id = "out", .type = SignalType::Signal, .label = "Out", .isPrimaryOutput = true, .quantity = Quantity::Audio, .channels = Channels::Stereo } };
         }
 
         std::vector<ParameterDescriptor> getParameters() const override

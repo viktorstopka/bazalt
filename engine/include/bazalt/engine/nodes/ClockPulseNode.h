@@ -82,18 +82,18 @@ namespace bazalt::engine::nodes
         std::vector<PortDescriptor> getInputPorts() const override
         {
             return {
-                PortDescriptor { .id = "clock.pulse.rate", .type = SignalType::Control, .label = "Rate",
+                PortDescriptor { .id = "clock.pulse.rate", .type = SignalType::Signal, .label = "Rate",
                                   .unit = "Hz", .minValue = 0.01f, .maxValue = 100.0f, .defaultValue = defaultRateHz,
                                   .isLogScale = true, .hasFallbackWhenUnconnected = true, .quantity = Quantity::Frequency,
                                   .curve = Curve::Logarithmic },
-                PortDescriptor { .id = "clock.pulse.swing", .type = SignalType::Control, .label = "Swing",
+                PortDescriptor { .id = "clock.pulse.swing", .type = SignalType::Signal, .label = "Swing",
                                   .minValue = 0.0f, .maxValue = 1.0f, .defaultValue = 0.0f,
                                   .hasFallbackWhenUnconnected = true, .quantity = Quantity::Unipolar },
-                PortDescriptor { .id = "clock.pulse.jitter", .type = SignalType::Control, .label = "Jitter",
+                PortDescriptor { .id = "clock.pulse.jitter", .type = SignalType::Signal, .label = "Jitter",
                                   .minValue = 0.0f, .maxValue = 1.0f, .defaultValue = 0.0f,
                                   .hasFallbackWhenUnconnected = true, .quantity = Quantity::Unipolar },
-                PortDescriptor { .id = "clock.pulse.run", .type = SignalType::Boolean, .label = "Run",
-                                  .defaultValue = 1.0f, .hasFallbackWhenUnconnected = true, .kind = ValueKind::Bool },
+                PortDescriptor { .id = "clock.pulse.run", .type = SignalType::Signal, .label = "Run",
+                                  .defaultValue = 1.0f, .hasFallbackWhenUnconnected = true, .kind = ValueKind::Bool, .quantity = Quantity::Boolean },
                 PortDescriptor { .id = "reset", .type = SignalType::Event, .label = "Reset" },
             };
         }
@@ -102,7 +102,7 @@ namespace bazalt::engine::nodes
         {
             return {
                 PortDescriptor { .id = "tick", .type = SignalType::Event, .label = "Tick", .isPrimaryOutput = true },
-                PortDescriptor { .id = "phase", .type = SignalType::Control, .label = "Phase",
+                PortDescriptor { .id = "phase", .type = SignalType::Signal, .label = "Phase",
                                   .minValue = 0.0f, .maxValue = 1.0f, .quantity = Quantity::Phase },
             };
         }

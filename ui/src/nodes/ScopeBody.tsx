@@ -23,14 +23,14 @@ const DEFAULT_TIME_WINDOW_SECONDS = 2.0
 /** "The range autofills from the source port's polarity: bipolar gives -1…1,
     unipolar 0…1." An audio signal reads as bipolar. */
 function rangeFromPolarity(port: PortDescriptor): { min: number; max: number } | undefined {
-  if (port.type === 'audio' || port.quantity === 'bipolar') return { min: -1, max: 1 }
+  if (port.quantity === 'audio' || port.quantity === 'bipolar') return { min: -1, max: 1 }
   if (port.quantity === 'unipolar') return { min: 0, max: 1 }
   return undefined
 }
 
 export function scopeVariantForSource(port: PortDescriptor | undefined): ScopeHistoryVariant {
   if (!port) return 'line'
-  if (port.type === 'audio') return 'centred'
+  if (port.quantity === 'audio') return 'centred'
   const kind = classifyPortUiKind(port)
   if (kind === 'boolean') return 'binary'
   if (kind === 'modulation') return 'centred'

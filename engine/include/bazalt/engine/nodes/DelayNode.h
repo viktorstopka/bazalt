@@ -60,14 +60,14 @@ namespace bazalt::engine::nodes
         std::vector<PortDescriptor> getInputPorts() const override
         {
             return {
-                perChannel ({ "in", SignalType::Audio }),
+                perChannel ({ .id = "in", .type = SignalType::Signal, .quantity = Quantity::Audio }),
                 ValueTypes::timeSamplesPort ("delay.line.samples", "By", maxDelaySamples, 200.0f),
             };
         }
 
         std::vector<PortDescriptor> getOutputPorts() const override
         {
-            return { perChannel ({ "out", SignalType::Audio }) };
+            return { perChannel ({ .id = "out", .type = SignalType::Signal, .quantity = Quantity::Audio }) };
         }
 
         std::vector<ParameterDescriptor> getParameters() const override { return {}; }

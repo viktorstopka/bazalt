@@ -56,7 +56,7 @@ namespace bazalt::engine::nodes
 
         std::vector<PortDescriptor> getOutputPorts() const override
         {
-            return { PortDescriptor { .id = "gate", .type = SignalType::Boolean, .isPrimaryOutput = true, .kind = ValueKind::Bool } };
+            return { PortDescriptor { .id = "gate", .type = SignalType::Signal, .isPrimaryOutput = true, .kind = ValueKind::Bool, .quantity = Quantity::Boolean } };
         }
 
         void setParameter (const juce::String& parameterId, float value) override

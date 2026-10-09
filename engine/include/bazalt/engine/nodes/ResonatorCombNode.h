@@ -86,13 +86,13 @@ namespace bazalt::engine::nodes
         std::vector<PortDescriptor> getInputPorts() const override
         {
             return {
-                perChannel ({ "in", SignalType::Audio }),
+                perChannel ({ .id = "in", .type = SignalType::Signal, .quantity = Quantity::Audio }),
                 ValueTypes::frequencyPort ("resonator.comb.frequency", "Frequency", 220.0f),
-                PortDescriptor { .id = "resonator.comb.feedback", .type = SignalType::Control, .label = "Feedback",
+                PortDescriptor { .id = "resonator.comb.feedback", .type = SignalType::Signal, .label = "Feedback",
                                   .minValue = -1.0f, .maxValue = 1.0f, .defaultValue = 0.5f,
                                   .hasFallbackWhenUnconnected = true, .quantity = Quantity::Bipolar,
                                   .polarity = Polarity::Bipolar },
-                PortDescriptor { .id = "resonator.comb.damping", .type = SignalType::Control, .label = "Damping",
+                PortDescriptor { .id = "resonator.comb.damping", .type = SignalType::Signal, .label = "Damping",
                                   .minValue = 0.0f, .maxValue = 1.0f, .defaultValue = 0.5f,
                                   .hasFallbackWhenUnconnected = true, .quantity = Quantity::Unipolar,
                                   .polarity = Polarity::Unipolar },
@@ -101,7 +101,7 @@ namespace bazalt::engine::nodes
 
         std::vector<PortDescriptor> getOutputPorts() const override
         {
-            return { perChannel ({ "out", SignalType::Audio }) };
+            return { perChannel ({ .id = "out", .type = SignalType::Signal, .quantity = Quantity::Audio }) };
         }
 
         std::vector<ParameterDescriptor> getParameters() const override

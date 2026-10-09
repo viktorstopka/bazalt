@@ -267,7 +267,7 @@ TEST_CASE ("A logic gate's group size is clamped to 2..16 and drives its declare
     REQUIRE (node.getInputPorts().size() == 5);
     CHECK (node.getNumInputPorts() == 5);
     CHECK (node.getInputPorts()[4].id == "in.4");
-    CHECK (node.getInputPorts()[4].type == SignalType::Boolean);
+    CHECK (node.getInputPorts()[4].quantity == Quantity::Boolean);
 
     node.setGroupPortCount (99);
     CHECK (node.getGroupPortCount() == 16);

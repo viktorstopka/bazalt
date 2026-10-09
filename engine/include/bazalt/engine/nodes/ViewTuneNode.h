@@ -29,13 +29,13 @@ namespace bazalt::engine::nodes
 
         std::vector<PortDescriptor> getInputPorts() const override
         {
-            return { PortDescriptor { .id = "in", .type = SignalType::Control, .label = "In", .unit = "st",
+            return { PortDescriptor { .id = "in", .type = SignalType::Signal, .label = "In", .unit = "st",
                                       .minValue = 0.0f, .maxValue = 127.0f, .quantity = Quantity::Pitch } };
         }
 
         std::vector<PortDescriptor> getOutputPorts() const override
         {
-            return { PortDescriptor { .id = "out", .type = SignalType::Control, .label = "Out", .isPrimaryOutput = true,
+            return { PortDescriptor { .id = "out", .type = SignalType::Signal, .label = "Out", .isPrimaryOutput = true,
                                       .unit = "st", .minValue = 0.0f, .maxValue = 127.0f, .quantity = Quantity::Pitch } };
         }
 

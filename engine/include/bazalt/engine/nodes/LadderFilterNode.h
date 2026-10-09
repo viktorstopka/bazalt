@@ -52,21 +52,21 @@ namespace bazalt::engine::nodes
         std::vector<PortDescriptor> getInputPorts() const override
         {
             return {
-                perChannel ({ "in", SignalType::Audio }),
+                perChannel ({ .id = "in", .type = SignalType::Signal, .quantity = Quantity::Audio }),
                 ValueTypes::frequencyPort ("filter.ladder.cutoff", "Cutoff", defaultCutoffHz),
-                PortDescriptor { .id = "filter.ladder.resonance", .type = SignalType::Control, .label = "Resonance",
+                PortDescriptor { .id = "filter.ladder.resonance", .type = SignalType::Signal, .label = "Resonance",
                                   .minValue = 0.0f, .maxValue = 1.0f, .defaultValue = defaultResonance,
                                   .hasFallbackWhenUnconnected = true, .quantity = Quantity::Unipolar,
                                   .polarity = Polarity::Unipolar },
-                PortDescriptor { .id = "filter.ladder.drive", .type = SignalType::Control, .label = "Drive",
+                PortDescriptor { .id = "filter.ladder.drive", .type = SignalType::Signal, .label = "Drive",
                                   .minValue = 1.0f, .maxValue = 30.0f, .defaultValue = defaultDrive,
                                   .isLogScale = true, .hasFallbackWhenUnconnected = true, .quantity = Quantity::Gain,
                                   .curve = Curve::Logarithmic },
-                PortDescriptor { .id = "filter.ladder.keyTrack", .type = SignalType::Control, .label = "Key Track",
+                PortDescriptor { .id = "filter.ladder.keyTrack", .type = SignalType::Signal, .label = "Key Track",
                                   .minValue = -1.0f, .maxValue = 2.0f, .defaultValue = defaultKeyTrack,
                                   .hasFallbackWhenUnconnected = true, .quantity = Quantity::Ratio,
                                   .polarity = Polarity::Bipolar },
-                PortDescriptor { .id = "filter.ladder.keyPitch", .type = SignalType::Control, .label = "Key Pitch",
+                PortDescriptor { .id = "filter.ladder.keyPitch", .type = SignalType::Signal, .label = "Key Pitch",
                                   .minValue = 0.0f, .maxValue = 127.0f, .defaultValue = defaultKeyPitch,
                                   .hasFallbackWhenUnconnected = true, .quantity = Quantity::Pitch },
             };
@@ -74,7 +74,7 @@ namespace bazalt::engine::nodes
 
         std::vector<PortDescriptor> getOutputPorts() const override
         {
-            return { perChannel ({ "out", SignalType::Audio }) };
+            return { perChannel ({ .id = "out", .type = SignalType::Signal, .quantity = Quantity::Audio }) };
         }
 
         std::vector<ParameterDescriptor> getParameters() const override

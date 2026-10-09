@@ -91,18 +91,18 @@ namespace bazalt::engine::nodes
         std::vector<PortDescriptor> getOutputPorts() const override
         {
             return {
-                PortDescriptor { .id = "gate", .type = SignalType::Boolean, .isPrimaryOutput = true },
+                PortDescriptor { .id = "gate", .type = SignalType::Signal, .isPrimaryOutput = true, .quantity = Quantity::Boolean },
                 // Absolute pitch (VALUE_MODEL.md §3: "semitones, 60 = middle
                 // C") — deliberately NOT ValueTypes::pitchPort(), which is a
                 // *relative* transpose/bend amount (its own doc comment says
                 // so); this port's default IS the anchor, not an offset
                 // from it.
-                PortDescriptor { .id = "pitch", .type = SignalType::Control, .unit = "st", .minValue = 0.0f, .maxValue = 127.0f, .defaultValue = 60.0f, .quantity = Quantity::Pitch },
-                PortDescriptor { .id = "velocity", .type = SignalType::Control, .quantity = Quantity::Unipolar, .polarity = Polarity::Unipolar },
-                PortDescriptor { .id = "instanceIndex", .type = SignalType::Control, .isInteger = true, .quantity = Quantity::Count, .step = 1.0f },
-                PortDescriptor { .id = "instanceAge", .type = SignalType::Control, .quantity = Quantity::Time },
-                PortDescriptor { .id = "random1", .type = SignalType::Control, .quantity = Quantity::Bipolar, .polarity = Polarity::Bipolar },
-                PortDescriptor { .id = "random2", .type = SignalType::Control, .quantity = Quantity::Bipolar, .polarity = Polarity::Bipolar },
+                PortDescriptor { .id = "pitch", .type = SignalType::Signal, .unit = "st", .minValue = 0.0f, .maxValue = 127.0f, .defaultValue = 60.0f, .quantity = Quantity::Pitch },
+                PortDescriptor { .id = "velocity", .type = SignalType::Signal, .quantity = Quantity::Unipolar, .polarity = Polarity::Unipolar },
+                PortDescriptor { .id = "instanceIndex", .type = SignalType::Signal, .isInteger = true, .quantity = Quantity::Count, .step = 1.0f },
+                PortDescriptor { .id = "instanceAge", .type = SignalType::Signal, .quantity = Quantity::Time },
+                PortDescriptor { .id = "random1", .type = SignalType::Signal, .quantity = Quantity::Bipolar, .polarity = Polarity::Bipolar },
+                PortDescriptor { .id = "random2", .type = SignalType::Signal, .quantity = Quantity::Bipolar, .polarity = Polarity::Bipolar },
                 PortDescriptor { .id = "start", .type = SignalType::Event },
                 PortDescriptor { .id = "stop", .type = SignalType::Event },
             };

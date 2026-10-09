@@ -31,8 +31,8 @@ namespace bazalt::engine::nodes
         std::vector<PortDescriptor> getInputPorts() const override
         {
             return {
-                { "in", SignalType::Control },
-                PortDescriptor { .id = "math.round.step", .type = SignalType::Control, .label = "Step",
+                { .id = "in", .type = SignalType::Signal },
+                PortDescriptor { .id = "math.round.step", .type = SignalType::Signal, .label = "Step",
                                   .minValue = 0.0f, .defaultValue = 1.0f, .hasFallbackWhenUnconnected = true },
             };
         }
@@ -50,7 +50,7 @@ namespace bazalt::engine::nodes
             // default describes the common case" reasoning ValueTypes.h's
             // own factories already apply elsewhere, direct feedback
             // 2026-10-04: "I want it to be int by default."
-            return { PortDescriptor { .id = "out", .type = SignalType::Control, .isPrimaryOutput = true,
+            return { PortDescriptor { .id = "out", .type = SignalType::Signal, .isPrimaryOutput = true,
                                        .isInteger = true, .kind = ValueKind::Int } };
         }
 

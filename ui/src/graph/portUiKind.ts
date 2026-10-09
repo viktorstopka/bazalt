@@ -42,9 +42,11 @@ export function classifyPortUiKind(
 ): PortUiKind {
   const type: SignalType = port.type
 
-  if (type === 'audio') return isPoly ? 'audio-poly' : 'audio-scalar'
+  // A Signal's colour is what it means (wiki/plans/DataAndWavetable.md D3):
+  // a waveform is pink, a gate blue, whatever its source.
+  if (type === 'signal' && port.quantity === 'audio') return isPoly ? 'audio-poly' : 'audio-scalar'
   if (type === 'event') return 'trigger'
-  if (type === 'boolean') return 'boolean'
+  if (type === 'signal' && port.quantity === 'boolean') return 'boolean'
   // wiki/NODES_Gaps.md's Note-port-connectivity finding: Note used to fall
   // through the generic "unknown type" branch below into 'value' — the
   // exact same white a real-quantity Control port renders as, so wiring
@@ -62,7 +64,7 @@ export function classifyPortUiKind(
   // stays on the 'value' fallback below rather than inventing a colour for
   // a type nothing produces.
   if (type === 'data') return 'data'
-  if (type !== 'control') return 'value' // Spectral: reserved, no real port exists yet (§5); fall back rather than crash
+  if (type !== 'signal') return 'value' // Spectral: reserved, no real port exists yet (§5); fall back rather than crash
 
   if (port.isInteger) return 'integer'
 

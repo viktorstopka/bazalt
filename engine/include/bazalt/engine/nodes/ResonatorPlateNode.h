@@ -112,10 +112,10 @@ namespace bazalt::engine::nodes
         std::vector<PortDescriptor> getInputPorts() const override
         {
             return {
-                { "excite", SignalType::Audio },
+                { .id = "excite", .type = SignalType::Signal, .quantity = Quantity::Audio },
                 unipolarPort ("resonator.plate.size", "Size", 0.5f),
                 unipolarPort ("resonator.plate.tension", "Tension", 0.5f),
-                PortDescriptor { .id = "resonator.plate.decay", .type = SignalType::Control, .label = "Decay",
+                PortDescriptor { .id = "resonator.plate.decay", .type = SignalType::Signal, .label = "Decay",
                                   .unit = "s", .minValue = 0.05f, .maxValue = 30.0f, .defaultValue = 2.0f,
                                   .hasFallbackWhenUnconnected = true, .quantity = Quantity::Time,
                                   .curve = Curve::Logarithmic },
@@ -128,7 +128,7 @@ namespace bazalt::engine::nodes
         std::vector<PortDescriptor> getOutputPorts() const override
         {
             return {
-                PortDescriptor { .id = "out", .type = SignalType::Audio, .label = "Out", .isPrimaryOutput = true, .channels = Channels::Stereo },
+                PortDescriptor { .id = "out", .type = SignalType::Signal, .label = "Out", .isPrimaryOutput = true, .quantity = Quantity::Audio, .channels = Channels::Stereo },
             };
         }
 
@@ -215,7 +215,7 @@ namespace bazalt::engine::nodes
     private:
         static PortDescriptor unipolarPort (juce::String id, juce::String label, float defaultValue)
         {
-            return PortDescriptor { .id = std::move (id), .type = SignalType::Control, .label = std::move (label),
+            return PortDescriptor { .id = std::move (id), .type = SignalType::Signal, .label = std::move (label),
                                      .minValue = 0.0f, .maxValue = 1.0f, .defaultValue = defaultValue,
                                      .hasFallbackWhenUnconnected = true, .quantity = Quantity::Unipolar,
                                      .polarity = Polarity::Unipolar };

@@ -39,14 +39,14 @@ namespace bazalt::engine::nodes
 
         std::vector<PortDescriptor> getInputPorts() const override
         {
-            return { PortDescriptor { .id = "pitch", .type = SignalType::Control, .label = "Pitch",
+            return { PortDescriptor { .id = "pitch", .type = SignalType::Signal, .label = "Pitch",
                                        .unit = "st", .minValue = 0.0f, .maxValue = 127.0f, .defaultValue = defaultPitch,
                                        .hasFallbackWhenUnconnected = true, .quantity = Quantity::Pitch } };
         }
 
         std::vector<PortDescriptor> getOutputPorts() const override
         {
-            return { PortDescriptor { .id = "frequency", .type = SignalType::Control, .label = "Frequency",
+            return { PortDescriptor { .id = "frequency", .type = SignalType::Signal, .label = "Frequency",
                                        .isPrimaryOutput = true, .unit = "Hz", .quantity = Quantity::Frequency,
                                        .curve = Curve::Logarithmic } };
         }
@@ -92,7 +92,7 @@ namespace bazalt::engine::nodes
 
         std::vector<PortDescriptor> getInputPorts() const override
         {
-            return { PortDescriptor { .id = "frequency", .type = SignalType::Control, .label = "Frequency",
+            return { PortDescriptor { .id = "frequency", .type = SignalType::Signal, .label = "Frequency",
                                        .unit = "Hz", .minValue = 0.01f, .maxValue = 20000.0f, .defaultValue = defaultFrequency,
                                        .isLogScale = true, .hasFallbackWhenUnconnected = true, .quantity = Quantity::Frequency,
                                        .curve = Curve::Logarithmic } };
@@ -100,7 +100,7 @@ namespace bazalt::engine::nodes
 
         std::vector<PortDescriptor> getOutputPorts() const override
         {
-            return { PortDescriptor { .id = "pitch", .type = SignalType::Control, .label = "Pitch",
+            return { PortDescriptor { .id = "pitch", .type = SignalType::Signal, .label = "Pitch",
                                        .isPrimaryOutput = true, .unit = "st", .quantity = Quantity::Pitch } };
         }
 

@@ -50,7 +50,7 @@ namespace bazalt::engine::nodes
         std::vector<PortDescriptor> getInputPorts() const override
         {
             return {
-                { "in", SignalType::Control },
+                { .id = "in", .type = SignalType::Signal },
                 ValueTypes::timeSecondsPort ("math.slew.rise", "Rise", 0.01f),
                 ValueTypes::timeSecondsPort ("math.slew.fall", "Fall", 0.01f),
             };
@@ -58,7 +58,7 @@ namespace bazalt::engine::nodes
 
         std::vector<PortDescriptor> getOutputPorts() const override
         {
-            return { PortDescriptor { .id = "out", .type = SignalType::Control, .isPrimaryOutput = true } };
+            return { PortDescriptor { .id = "out", .type = SignalType::Signal, .isPrimaryOutput = true } };
         }
 
         void setParameter (const juce::String& parameterId, float value) override

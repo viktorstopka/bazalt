@@ -57,10 +57,10 @@ namespace bazalt::engine::nodes
         std::vector<PortDescriptor> getInputPorts() const override
         {
             return {
-                PortDescriptor { .id = "gate", .type = SignalType::Boolean, .hasFallbackWhenUnconnected = true },
+                PortDescriptor { .id = "gate", .type = SignalType::Signal, .hasFallbackWhenUnconnected = true, .quantity = Quantity::Boolean },
                 ValueTypes::timeSecondsPort ("env.adsr.attack", "Attack", 0.01f),
                 ValueTypes::timeSecondsPort ("env.adsr.decay", "Decay", 0.1f),
-                PortDescriptor { .id = "env.adsr.sustain", .type = SignalType::Control, .label = "Sustain",
+                PortDescriptor { .id = "env.adsr.sustain", .type = SignalType::Signal, .label = "Sustain",
                                   .minValue = 0.0f, .maxValue = 1.0f, .defaultValue = 0.7f,
                                   .hasFallbackWhenUnconnected = true, .quantity = Quantity::Unipolar, .polarity = Polarity::Unipolar },
                 ValueTypes::timeSecondsPort ("env.adsr.release", "Release", 0.2f),
@@ -68,7 +68,7 @@ namespace bazalt::engine::nodes
         }
         std::vector<PortDescriptor> getOutputPorts() const override
         {
-            return { { "out", SignalType::Control } };
+            return { { .id = "out", .type = SignalType::Signal } };
         }
 
         std::vector<ParameterDescriptor> getParameters() const override { return {}; }

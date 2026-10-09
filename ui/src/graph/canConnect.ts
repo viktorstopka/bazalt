@@ -34,11 +34,12 @@ function needsAdapters(reason: string): CanConnectResult {
   return { outcome: 'needsAdapters', reason }
 }
 
+// An audio waveform reads as a normalised ±1 value; a Boolean is a plain 0/1 that fits anywhere.
 function isNormalisedQuantity(q: Quantity): boolean {
-  return q === 'unipolar' || q === 'bipolar'
+  return q === 'unipolar' || q === 'bipolar' || q === 'audio'
 }
 function isRealQuantity(q: Quantity): boolean {
-  return q !== 'dimensionless' && !isNormalisedQuantity(q)
+  return q !== 'dimensionless' && q !== 'boolean' && !isNormalisedQuantity(q)
 }
 
 /** wiki/plans/DataAndWavetable.md D1 (mirrors CanConnect.cpp): Audio, Control
@@ -46,11 +47,11 @@ function isRealQuantity(q: Quantity): boolean {
     value means — an Audio port reads as a waveform (±1, like Bipolar), a
     Boolean as a plain 0/1 that fits anywhere. */
 function isValueType(type: PortDescriptor['type']): boolean {
-  return type === 'audio' || type === 'control' || type === 'boolean'
+  return type === 'signal'
 }
 function meaningOf(port: PortDescriptor): Quantity {
-  if (port.type === 'audio') return 'bipolar'
-  if (port.type === 'boolean') return 'dimensionless'
+  if (port.quantity === 'audio') return 'bipolar'
+  if (port.quantity === 'boolean') return 'dimensionless'
   return port.quantity
 }
 /** What a destination expects: a port inheriting both type and quantity (Multiply,

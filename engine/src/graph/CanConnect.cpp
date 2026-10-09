@@ -5,14 +5,16 @@ namespace bazalt::engine
 {
     namespace
     {
+        // An audio waveform reads as a normalised ±1 value; a Boolean is a
+        // plain 0/1 that fits anywhere (meaningOf below).
         bool isNormalisedQuantity (Quantity q) noexcept
         {
-            return q == Quantity::Unipolar || q == Quantity::Bipolar;
+            return q == Quantity::Unipolar || q == Quantity::Bipolar || q == Quantity::Audio;
         }
 
         bool isRealQuantity (Quantity q) noexcept
         {
-            return q != Quantity::Dimensionless && ! isNormalisedQuantity (q);
+            return q != Quantity::Dimensionless && q != Quantity::Boolean && ! isNormalisedQuantity (q);
         }
 
         CanConnectResult ok() noexcept
@@ -57,14 +59,14 @@ namespace bazalt::engine
             quantity. */
         bool isValueType (SignalType type) noexcept
         {
-            return type == SignalType::Audio || type == SignalType::Control || type == SignalType::Boolean;
+            return type == SignalType::Signal;
         }
 
         Quantity meaningOf (const PortDescriptor& port) noexcept
         {
-            if (port.type == SignalType::Audio)
+            if (port.quantity == Quantity::Audio)
                 return Quantity::Bipolar;
-            if (port.type == SignalType::Boolean)
+            if (port.quantity == Quantity::Boolean)
                 return Quantity::Dimensionless;
             return port.quantity;
         }
@@ -200,9 +202,7 @@ namespace bazalt::engine
                 case SignalType::Event:    return ok();
                 case SignalType::Note:     return ok();
                 case SignalType::Spectral: return reject ("Spectral is reserved, not yet implemented");
-                case SignalType::Audio:
-                case SignalType::Control:
-                case SignalType::Boolean:
+                case SignalType::Signal:
                 case SignalType::Data:     break; // handled above
             }
             return reject ("Unhandled signal type");

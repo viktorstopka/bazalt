@@ -50,10 +50,10 @@ namespace bazalt::engine::nodes
         juce::String getTitle() const override { return "Rectify"; }
         juce::String getCategory() const override { return "Shape"; }
 
-        std::vector<PortDescriptor> getInputPorts() const override { return { perChannel ({ "in", SignalType::Audio }) }; }
+        std::vector<PortDescriptor> getInputPorts() const override { return { perChannel ({ .id = "in", .type = SignalType::Signal, .quantity = Quantity::Audio }) }; }
         std::vector<PortDescriptor> getOutputPorts() const override
         {
-            return { perChannel (PortDescriptor { .id = "out", .type = SignalType::Audio, .label = "Out", .isPrimaryOutput = true }) };
+            return { perChannel (PortDescriptor { .id = "out", .type = SignalType::Signal, .label = "Out", .isPrimaryOutput = true, .quantity = Quantity::Audio }) };
         }
         std::vector<ParameterDescriptor> getParameters() const override
         {
@@ -112,17 +112,17 @@ namespace bazalt::engine::nodes
         std::vector<PortDescriptor> getInputPorts() const override
         {
             return {
-                perChannel ({ "in", SignalType::Audio }),
-                PortDescriptor { .id = "shape.crush.bits", .type = SignalType::Control, .label = "Bits",
+                perChannel ({ .id = "in", .type = SignalType::Signal, .quantity = Quantity::Audio }),
+                PortDescriptor { .id = "shape.crush.bits", .type = SignalType::Signal, .label = "Bits",
                                   .minValue = 1.0f, .maxValue = 24.0f, .defaultValue = 8.0f, .hasFallbackWhenUnconnected = true },
-                PortDescriptor { .id = "shape.crush.rate", .type = SignalType::Control, .label = "Rate", .unit = "Hz",
+                PortDescriptor { .id = "shape.crush.rate", .type = SignalType::Signal, .label = "Rate", .unit = "Hz",
                                   .minValue = 50.0f, .maxValue = 48000.0f, .defaultValue = 48000.0f, .isLogScale = true,
                                   .hasFallbackWhenUnconnected = true, .quantity = Quantity::Frequency, .curve = Curve::Logarithmic },
             };
         }
         std::vector<PortDescriptor> getOutputPorts() const override
         {
-            return { perChannel (PortDescriptor { .id = "out", .type = SignalType::Audio, .label = "Out", .isPrimaryOutput = true }) };
+            return { perChannel (PortDescriptor { .id = "out", .type = SignalType::Signal, .label = "Out", .isPrimaryOutput = true, .quantity = Quantity::Audio }) };
         }
         void setParameter (const juce::String& parameterId, float value) override
         {
@@ -177,24 +177,24 @@ namespace bazalt::engine::nodes
         std::vector<PortDescriptor> getInputPorts() const override
         {
             return {
-                perChannel ({ "in", SignalType::Audio }),
-                PortDescriptor { .id = "shape.waveshaper.drive", .type = SignalType::Control, .label = "Drive", .unit = "dB",
+                perChannel ({ .id = "in", .type = SignalType::Signal, .quantity = Quantity::Audio }),
+                PortDescriptor { .id = "shape.waveshaper.drive", .type = SignalType::Signal, .label = "Drive", .unit = "dB",
                                   .minValue = 0.0f, .maxValue = 36.0f, .defaultValue = 6.0f, .hasFallbackWhenUnconnected = true,
                                   .quantity = Quantity::Gain },
-                PortDescriptor { .id = "shape.waveshaper.bias", .type = SignalType::Control, .label = "Bias",
+                PortDescriptor { .id = "shape.waveshaper.bias", .type = SignalType::Signal, .label = "Bias",
                                   .minValue = -1.0f, .maxValue = 1.0f, .defaultValue = 0.0f, .hasFallbackWhenUnconnected = true,
                                   .quantity = Quantity::Bipolar, .polarity = Polarity::Bipolar },
-                PortDescriptor { .id = "shape.waveshaper.output", .type = SignalType::Control, .label = "Output", .unit = "dB",
+                PortDescriptor { .id = "shape.waveshaper.output", .type = SignalType::Signal, .label = "Output", .unit = "dB",
                                   .minValue = -24.0f, .maxValue = 12.0f, .defaultValue = 0.0f, .hasFallbackWhenUnconnected = true,
                                   .quantity = Quantity::Gain },
-                PortDescriptor { .id = "shape.waveshaper.mix", .type = SignalType::Control, .label = "Mix",
+                PortDescriptor { .id = "shape.waveshaper.mix", .type = SignalType::Signal, .label = "Mix",
                                   .minValue = 0.0f, .maxValue = 1.0f, .defaultValue = 1.0f, .hasFallbackWhenUnconnected = true,
                                   .quantity = Quantity::Unipolar },
             };
         }
         std::vector<PortDescriptor> getOutputPorts() const override
         {
-            return { perChannel (PortDescriptor { .id = "out", .type = SignalType::Audio, .label = "Out", .isPrimaryOutput = true }) };
+            return { perChannel (PortDescriptor { .id = "out", .type = SignalType::Signal, .label = "Out", .isPrimaryOutput = true, .quantity = Quantity::Audio }) };
         }
         std::vector<ParameterDescriptor> getParameters() const override
         {
@@ -292,21 +292,21 @@ namespace bazalt::engine::nodes
         std::vector<PortDescriptor> getInputPorts() const override
         {
             return {
-                perChannel ({ "in", SignalType::Audio }),
-                PortDescriptor { .id = "shape.fold.fold", .type = SignalType::Control, .label = "Fold",
+                perChannel ({ .id = "in", .type = SignalType::Signal, .quantity = Quantity::Audio }),
+                PortDescriptor { .id = "shape.fold.fold", .type = SignalType::Signal, .label = "Fold",
                                   .minValue = 1.0f, .maxValue = 20.0f, .defaultValue = 2.0f, .isLogScale = true,
                                   .hasFallbackWhenUnconnected = true, .curve = bazalt::engine::Curve::Logarithmic },
-                PortDescriptor { .id = "shape.fold.bias", .type = SignalType::Control, .label = "Bias",
+                PortDescriptor { .id = "shape.fold.bias", .type = SignalType::Signal, .label = "Bias",
                                   .minValue = -1.0f, .maxValue = 1.0f, .defaultValue = 0.0f, .hasFallbackWhenUnconnected = true,
                                   .quantity = Quantity::Bipolar, .polarity = Polarity::Bipolar },
-                PortDescriptor { .id = "shape.fold.mix", .type = SignalType::Control, .label = "Mix",
+                PortDescriptor { .id = "shape.fold.mix", .type = SignalType::Signal, .label = "Mix",
                                   .minValue = 0.0f, .maxValue = 1.0f, .defaultValue = 1.0f, .hasFallbackWhenUnconnected = true,
                                   .quantity = Quantity::Unipolar },
             };
         }
         std::vector<PortDescriptor> getOutputPorts() const override
         {
-            return { perChannel (PortDescriptor { .id = "out", .type = SignalType::Audio, .label = "Out", .isPrimaryOutput = true }) };
+            return { perChannel (PortDescriptor { .id = "out", .type = SignalType::Signal, .label = "Out", .isPrimaryOutput = true, .quantity = Quantity::Audio }) };
         }
         std::vector<ParameterDescriptor> getParameters() const override
         {

@@ -41,7 +41,7 @@ namespace bazalt::engine::nodes
         {
             return {
                 PortDescriptor { .id = "tick", .type = SignalType::Event, .label = "Tick" },
-                PortDescriptor { .id = "clock.divide.divide", .type = SignalType::Control, .label = "Divide",
+                PortDescriptor { .id = "clock.divide.divide", .type = SignalType::Signal, .label = "Divide",
                                   .minValue = 1.0f, .maxValue = 64.0f, .defaultValue = 2.0f, .isInteger = true,
                                   .hasFallbackWhenUnconnected = true, .quantity = Quantity::Count, .step = 1.0f },
                 PortDescriptor { .id = "reset", .type = SignalType::Event, .label = "Reset" },

@@ -1166,7 +1166,7 @@ export const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, InfiniteCanvasPro
           // listening if it already is (wiki/ROADMAP.md stage 0).
           if ((e.ctrlKey || e.metaKey) && e.altKey) {
             const endpoint = getEndpoint(port.nodeId, port.portId, 'output')
-            if (endpoint?.port.type === 'audio') {
+            if (endpoint?.port.quantity === 'audio') {
               const worldPos = canvasToWorld(lastMouseCanvasX, lastMouseCanvasY)
               toggleListenAtPort(port.nodeId, port.portId, snapValue(worldPos.x + 40, snapSettingsRef.current), snapValue(worldPos.y + 40, snapSettingsRef.current))
               requestFrame()

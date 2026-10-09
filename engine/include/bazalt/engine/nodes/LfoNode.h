@@ -90,10 +90,10 @@ namespace bazalt::engine::nodes
         std::vector<PortDescriptor> getInputPorts() const override
         {
             return {
-                PortDescriptor { .id = "lfo.shape.rate", .type = SignalType::Control, .label = "Rate", .unit = "Hz",
+                PortDescriptor { .id = "lfo.shape.rate", .type = SignalType::Signal, .label = "Rate", .unit = "Hz",
                                   .minValue = 0.01f, .maxValue = 50.0f, .defaultValue = 1.0f, .isLogScale = true,
                                   .hasFallbackWhenUnconnected = true, .quantity = Quantity::Frequency, .curve = Curve::Logarithmic },
-                PortDescriptor { .id = "lfo.shape.phase", .type = SignalType::Control, .label = "Phase",
+                PortDescriptor { .id = "lfo.shape.phase", .type = SignalType::Signal, .label = "Phase",
                                   .minValue = -1.0f, .maxValue = 1.0f, .defaultValue = 0.0f, .hasFallbackWhenUnconnected = true,
                                   .quantity = Quantity::Bipolar, .polarity = Polarity::Bipolar },
                 PortDescriptor { .id = "reset", .type = SignalType::Event, .label = "Reset" },
@@ -102,7 +102,7 @@ namespace bazalt::engine::nodes
 
         std::vector<PortDescriptor> getOutputPorts() const override
         {
-            return { PortDescriptor { .id = "out", .type = SignalType::Control, .label = "Out", .isPrimaryOutput = true,
+            return { PortDescriptor { .id = "out", .type = SignalType::Signal, .label = "Out", .isPrimaryOutput = true,
                                       .minValue = unipolar ? 0.0f : -1.0f, .maxValue = 1.0f,
                                       .quantity = unipolar ? Quantity::Unipolar : Quantity::Bipolar,
                                       .polarity = unipolar ? Polarity::Unipolar : Polarity::Bipolar } };

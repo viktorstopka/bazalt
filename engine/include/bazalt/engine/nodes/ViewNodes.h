@@ -52,7 +52,7 @@ namespace bazalt::engine::nodes
 
         std::vector<PortDescriptor> getInputPorts() const override
         {
-            return { perChannel (PortDescriptor { .id = "in", .type = SignalType::Audio, .label = "In" }) };
+            return { perChannel (PortDescriptor { .id = "in", .type = SignalType::Signal, .label = "In", .quantity = Quantity::Audio }) };
         }
 
         std::vector<ParameterDescriptor> getParameters() const override
@@ -121,7 +121,7 @@ namespace bazalt::engine::nodes
     class ViewMeterNode : public InheritingPortsNode
     {
     public:
-        ViewMeterNode() noexcept : InheritingPortsNode (SignalType::Audio) {}
+        ViewMeterNode() noexcept : InheritingPortsNode (Quantity::Audio) {}
 
         int getNumInputPorts() const noexcept override { return 1; }
         int getNumOutputPorts() const noexcept override { return 0; }

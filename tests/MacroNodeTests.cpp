@@ -82,7 +82,7 @@ TEST_CASE ("MacroNode's slot/min/max/isInteger/quantity round-trip through setPa
     REQUIRE (ports.size() == 1);
     const auto& out = ports[0];
     CHECK (out.id == "out");
-    CHECK (out.type == SignalType::Control);
+    CHECK (out.type == SignalType::Signal);
     CHECK (out.isPrimaryOutput);
     REQUIRE (out.minValue.has_value());
     REQUIRE (out.maxValue.has_value());
@@ -145,7 +145,7 @@ TEST_CASE ("MacroNode's exposed contract is structural - GraphCompiler builds a 
 // below: Control=0, Bool=1, Trigger=2 (Trigger stays last deliberately —
 // see TypedValueNodeBase.h's own comment on why).
 
-TEST_CASE ("MacroNode's type=Bool genuinely declares SignalType::Boolean, not a disguised Control 0/1",
+TEST_CASE ("MacroNode's type=Bool genuinely declares a Boolean (Quantity::Boolean), not a disguised plain 0/1",
            "[engine][nodes][macro][props-edit]")
 {
     // The whole point of a real Bool output type: it connects straight
@@ -159,7 +159,7 @@ TEST_CASE ("MacroNode's type=Bool genuinely declares SignalType::Boolean, not a 
 
     const auto ports = node.getOutputPorts();
     REQUIRE (ports.size() == 1);
-    CHECK (ports[0].type == SignalType::Boolean);
+    CHECK (ports[0].quantity == Quantity::Boolean);
     CHECK (ports[0].kind == ValueKind::Bool);
     CHECK_FALSE (ports[0].minValue.has_value()); // no range on a Boolean port, matching every other one in this codebase
 
@@ -210,7 +210,7 @@ TEST_CASE ("MacroNode's isInteger+isEnum declares an integer-kind Control output
 
     const auto ports = node.getOutputPorts();
     REQUIRE (ports.size() == 1);
-    CHECK (ports[0].type == SignalType::Control);
+    CHECK (ports[0].type == SignalType::Signal);
     CHECK (ports[0].kind == ValueKind::Enum);
     CHECK (ports[0].isInteger);
     REQUIRE (ports[0].minValue.has_value());

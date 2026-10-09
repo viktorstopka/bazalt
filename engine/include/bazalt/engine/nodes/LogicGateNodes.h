@@ -63,17 +63,17 @@ namespace bazalt::engine::nodes
             const auto group = groupFor ("in.");
             for (int i = 0; i < groupCount; ++i)
                 ports.push_back (PortDescriptor { .id = "in." + juce::String (i),
-                                                  .type = SignalType::Boolean,
+                                                  .type = SignalType::Signal,
                                                   .label = "In " + juce::String (i + 1),
                                                   .hasFallbackWhenUnconnected = true,
                                                   .kind = ValueKind::Bool,
-                                                  .group = group });
+                                                  .quantity = Quantity::Boolean, .group = group });
             return ports;
         }
 
         std::vector<PortDescriptor> getOutputPorts() const override
         {
-            return { PortDescriptor { .id = "out", .type = SignalType::Boolean, .label = "Out", .isPrimaryOutput = true, .kind = ValueKind::Bool } };
+            return { PortDescriptor { .id = "out", .type = SignalType::Signal, .label = "Out", .isPrimaryOutput = true, .kind = ValueKind::Bool, .quantity = Quantity::Boolean } };
         }
 
         std::vector<ParameterDescriptor> getParameters() const override

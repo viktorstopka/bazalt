@@ -122,20 +122,20 @@ namespace bazalt::engine::nodes
         std::vector<PortDescriptor> getInputPorts() const override
         {
             std::vector<PortDescriptor> ports {
-                PortDescriptor { .id = frequencyId, .type = SignalType::Control, .label = "Frequency",
+                PortDescriptor { .id = frequencyId, .type = SignalType::Signal, .label = "Frequency",
                                  .unit = "Hz", .minValue = 0.01f, .maxValue = 20000.0f, .defaultValue = defaultFrequencyHz,
                                  .isLogScale = true, .hasFallbackWhenUnconnected = true, .quantity = Quantity::Frequency,
                                  .curve = Curve::Logarithmic },
-                PortDescriptor { .id = amplitudeId, .type = SignalType::Control, .label = "Amplitude",
+                PortDescriptor { .id = amplitudeId, .type = SignalType::Signal, .label = "Amplitude",
                                  .minValue = 0.0f, .maxValue = 1.0f, .defaultValue = 1.0f,
                                  .hasFallbackWhenUnconnected = true },
-                PortDescriptor { .id = phaseId, .type = SignalType::Control, .label = "Phase",
+                PortDescriptor { .id = phaseId, .type = SignalType::Signal, .label = "Phase",
                                  .minValue = -1.0f, .maxValue = 1.0f, .defaultValue = 0.0f,
                                  .hasFallbackWhenUnconnected = true, .quantity = Quantity::Bipolar,
                                  .polarity = Polarity::Bipolar },
             };
             if (hasPulseWidth())
-                ports.push_back (PortDescriptor { .id = pulseWidthId, .type = SignalType::Control, .label = "Pulse Width",
+                ports.push_back (PortDescriptor { .id = pulseWidthId, .type = SignalType::Signal, .label = "Pulse Width",
                                                   .minValue = 0.0f, .maxValue = 1.0f, .defaultValue = defaultPulseWidth,
                                                   .hasFallbackWhenUnconnected = true, .quantity = Quantity::Unipolar });
             ports.push_back (PortDescriptor { .id = "sync", .type = SignalType::Event, .label = "Sync" });
@@ -144,7 +144,7 @@ namespace bazalt::engine::nodes
 
         std::vector<PortDescriptor> getOutputPorts() const override
         {
-            return { PortDescriptor { .id = "out", .type = SignalType::Audio, .label = "Out", .isPrimaryOutput = true } };
+            return { PortDescriptor { .id = "out", .type = SignalType::Signal, .label = "Out", .isPrimaryOutput = true, .quantity = Quantity::Audio } };
         }
 
         /** Phase-locked: its own waveform at its current parameters,

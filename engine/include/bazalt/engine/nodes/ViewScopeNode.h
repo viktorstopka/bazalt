@@ -25,7 +25,7 @@ namespace bazalt::engine::nodes
     class ViewScopeNode : public InheritingPortsNode
     {
     public:
-        ViewScopeNode() noexcept : InheritingPortsNode (SignalType::Control) {}
+        ViewScopeNode() noexcept : InheritingPortsNode (Quantity::Dimensionless) {}
 
         int getNumInputPorts() const noexcept override { return 1; }
         int getNumOutputPorts() const noexcept override { return 1; }

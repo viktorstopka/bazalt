@@ -185,7 +185,7 @@ namespace bazalt
             if (feeder.minValue.has_value() && feeder.maxValue.has_value())
                 return std::make_pair (*feeder.minValue, *feeder.maxValue);
             // An audio port is a waveform: ±1 (wiki/plans/DataAndWavetable.md D1).
-            if (feeder.quantity == bazalt::engine::Quantity::Bipolar || feeder.type == bazalt::engine::SignalType::Audio)
+            if (feeder.quantity == bazalt::engine::Quantity::Bipolar || feeder.quantity == bazalt::engine::Quantity::Audio)
                 return std::make_pair (-1.0f, 1.0f);
             if (feeder.quantity == bazalt::engine::Quantity::Unipolar)
                 return std::make_pair (0.0f, 1.0f);

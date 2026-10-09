@@ -50,8 +50,7 @@ namespace bazalt::engine::nodes
 
         void resolveIncomingPort (const juce::String& toPortId, const PortDescriptor& source) noexcept override
         {
-            const auto isPlainValue = source.type == SignalType::Audio || source.type == SignalType::Control
-                                       || source.type == SignalType::Boolean;
+            const auto isPlainValue = source.type == SignalType::Signal;
             const auto priority = parsePortGroupIndex (toPortId, "in.");
             if (! isPlainValue || priority < 0 || priority > bestPriority)
                 return;
@@ -80,7 +79,7 @@ namespace bazalt::engine::nodes
                 PortDescriptor { .id = "out", .type = resolvedType, .label = "Out", .isPrimaryOutput = true,
                                  .quantity = resolvedQuantity, .channels = Channels::Inherited,
                                  .polymorphism = PortPolymorphism::SignalAndQuantity },
-                PortDescriptor { .id = "index", .type = SignalType::Control, .label = "Index",
+                PortDescriptor { .id = "index", .type = SignalType::Signal, .label = "Index",
                                  .minValue = 0.0f, .maxValue = (float) (maxInputs - 1), .kind = ValueKind::Int,
                                  .quantity = Quantity::Count },
             };
@@ -133,8 +132,8 @@ namespace bazalt::engine::nodes
             fade = 0.0f;
         }
 
-        SignalType resolvedType = SignalType::Audio;
-        Quantity resolvedQuantity = Quantity::Dimensionless;
+        SignalType resolvedType = SignalType::Signal;
+        Quantity resolvedQuantity = Quantity::Audio;
         int bestPriority = std::numeric_limits<int>::max();
         int storedActive = 0;
         int current = 0, previous = 0;

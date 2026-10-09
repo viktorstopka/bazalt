@@ -42,15 +42,17 @@ TEST_CASE ("RerouteNode defaults to Audio and adopts the resolved type on both p
 {
     RerouteNode node;
     REQUIRE (node.hasPolymorphicPorts());
-    CHECK (node.getInputPorts()[0].type == SignalType::Audio);
-    CHECK (node.getOutputPorts()[0].type == SignalType::Audio);
+    CHECK (node.getInputPorts()[0].quantity == Quantity::Audio);
+    CHECK (node.getOutputPorts()[0].quantity == Quantity::Audio);
 
-    for (const auto type : { SignalType::Control, SignalType::Boolean, SignalType::Event, SignalType::Note })
+    for (const auto type : { SignalType::Signal, SignalType::Event, SignalType::Note })
     {
         PortDescriptor source { "src", type };
+        source.quantity = Quantity::Frequency;
         node.resolveIncomingPort ("in", source);
         CHECK (node.getInputPorts()[0].type == type);
         CHECK (node.getOutputPorts()[0].type == type);
+        CHECK (node.getOutputPorts()[0].quantity == Quantity::Frequency);
     }
 }
 
@@ -60,11 +62,11 @@ TEST_CASE ("RerouteNode refuses to adopt SignalType::Data, leaving its type unch
     // Data is a DataPublisher-swapped pointer, not a per-sample value —
     // Reroute has no way to forward it, so it must not claim to.
     RerouteNode node;
-    node.resolveIncomingPort ("in", PortDescriptor { "src", SignalType::Control });
+    node.resolveIncomingPort ("in", PortDescriptor { .id = "src", .type = SignalType::Signal });
     node.resolveIncomingPort ("in", PortDescriptor { "src", SignalType::Data });
 
-    CHECK (node.getInputPorts()[0].type == SignalType::Control);
-    CHECK (node.getOutputPorts()[0].type == SignalType::Control);
+    CHECK (node.getInputPorts()[0].type == SignalType::Signal);
+    CHECK (node.getOutputPorts()[0].type == SignalType::Signal);
 }
 
 TEST_CASE ("RerouteNode carries the source's quantity too, so a rerouted Frequency is still a Frequency",
@@ -74,15 +76,15 @@ TEST_CASE ("RerouteNode carries the source's quantity too, so a rerouted Frequen
     // so a Reroute that dropped it would let a Frequency reach a Pitch port
     // with no adapter, exactly the unit mix-up adapt.map exists to prevent.
     RerouteNode node;
-    CHECK (node.getOutputPorts()[0].quantity == Quantity::Dimensionless); // unresolved default
+    CHECK (node.getOutputPorts()[0].quantity == Quantity::Audio); // unresolved default: an audio Reroute
 
-    PortDescriptor source { "f", SignalType::Control };
+    PortDescriptor source { .id = "f", .type = SignalType::Signal };
     source.quantity = Quantity::Frequency;
     node.resolveIncomingPort ("in", source);
 
     CHECK (node.getInputPorts()[0].quantity == Quantity::Frequency);
     CHECK (node.getOutputPorts()[0].quantity == Quantity::Frequency);
-    CHECK (node.getOutputPorts()[0].type == SignalType::Control);
+    CHECK (node.getOutputPorts()[0].type == SignalType::Signal);
 }
 
 TEST_CASE ("AddNode and MultiplyNode compute a+b and a*b", "[engine][nodes][util]")
@@ -295,9 +297,9 @@ TEST_CASE ("FrequencyToPitchNode is the exact inverse of PitchToFrequencyNode",
 TEST_CASE ("canConnect prefers the exact converter over the generic linear remap for Pitch<->Frequency",
            "[engine][CanConnect][PitchToFrequencyNode]")
 {
-    PortDescriptor pitchPort { "p", SignalType::Control };
+    PortDescriptor pitchPort { .id = "p", .type = SignalType::Signal };
     pitchPort.quantity = Quantity::Pitch;
-    PortDescriptor freqPort { "f", SignalType::Control };
+    PortDescriptor freqPort { .id = "f", .type = SignalType::Signal };
     freqPort.quantity = Quantity::Frequency;
 
     const auto toFreq = canConnect (pitchPort, freqPort);
@@ -312,7 +314,7 @@ TEST_CASE ("canConnect prefers the exact converter over the generic linear remap
 
     // A different real-quantity pair still falls through to the generic
     // remap - this override is scoped to Pitch<->Frequency specifically.
-    PortDescriptor timePort { "t", SignalType::Control };
+    PortDescriptor timePort { .id = "t", .type = SignalType::Signal };
     timePort.quantity = Quantity::Time;
     const auto pitchToTime = canConnect (pitchPort, timePort);
     REQUIRE (pitchToTime.outcome == ConnectionOutcome::NeedsAdapters);

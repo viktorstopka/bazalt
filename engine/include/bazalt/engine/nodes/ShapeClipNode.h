@@ -44,7 +44,7 @@ namespace bazalt::engine::nodes
 
         enum class Mode { Hard, Soft, Limiter };
 
-        ShapeClipNode() noexcept : InheritingPortsNode (SignalType::Audio) {}
+        ShapeClipNode() noexcept : InheritingPortsNode (Quantity::Audio) {}
 
         void prepare (const NodePrepareInfo& info) override
         {
@@ -76,7 +76,7 @@ namespace bazalt::engine::nodes
         {
             auto rangePort = [this] (const char* id, const char* label, float defaultValue)
             {
-                return PortDescriptor { .id = id, .type = SignalType::Control, .label = label,
+                return PortDescriptor { .id = id, .type = SignalType::Signal, .label = label,
                                         .defaultValue = defaultValue, .hasFallbackWhenUnconnected = true,
                                         .quantity = resolvedQuantity, .polymorphism = PortPolymorphism::Quantity };
             };
@@ -85,7 +85,7 @@ namespace bazalt::engine::nodes
                                  .channels = Channels::Inherited, .polymorphism = PortPolymorphism::SignalAndQuantity },
                 rangePort ("shape.clip.low", "Low", defaultLow),
                 rangePort ("shape.clip.high", "High", defaultHigh),
-                PortDescriptor { .id = "shape.clip.knee", .type = SignalType::Control, .label = "Knee",
+                PortDescriptor { .id = "shape.clip.knee", .type = SignalType::Signal, .label = "Knee",
                                  .minValue = 0.0f, .maxValue = 1.0f, .defaultValue = defaultKnee,
                                  .hasFallbackWhenUnconnected = true, .quantity = Quantity::Unipolar,
                                  .polarity = Polarity::Unipolar },
@@ -98,7 +98,7 @@ namespace bazalt::engine::nodes
                 PortDescriptor { .id = "out", .type = resolvedType, .label = "Out", .isPrimaryOutput = true,
                                  .quantity = resolvedQuantity, .channels = Channels::Inherited,
                                  .polymorphism = PortPolymorphism::SignalAndQuantity },
-                PortDescriptor { .id = "clipping", .type = SignalType::Boolean, .label = "Clipping" },
+                PortDescriptor { .id = "clipping", .type = SignalType::Signal, .label = "Clipping", .quantity = Quantity::Boolean },
             };
         }
 

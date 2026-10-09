@@ -22,7 +22,7 @@ namespace
     {
     public:
         int getNumOutputPorts() const noexcept override { return 1; }
-        std::vector<PortDescriptor> getOutputPorts() const override { return { { "out", SignalType::Audio } }; }
+        std::vector<PortDescriptor> getOutputPorts() const override { return { { .id = "out", .type = SignalType::Signal, .quantity = Quantity::Audio } }; }
         void processSample (const float*, float* outputs) noexcept override { outputs[0] = 0.0f; }
 
         std::vector<PreviewDescriptor> getPreviews() const override
@@ -63,7 +63,7 @@ TEST_CASE ("nodeDescriptorToVar serializes a node with an unbounded numeric outp
     REQUIRE (outputs->size() == 1);
     const auto& out = (*outputs)[0];
     CHECK (out["id"].toString() == "out");
-    CHECK (out["type"].toString() == "control");
+    CHECK (out["type"].toString() == "signal");
     CHECK ((bool) out["isPrimaryOutput"]);
     // Unset optional<float> must serialize to a JS-visible null (isVoid),
     // never 0 — 0 is a legitimate bound, absence isn't the same fact.
@@ -94,7 +94,7 @@ TEST_CASE ("nodeDescriptorToVar serializes util.constant's new type-aware descri
     REQUIRE (outputs->size() == 1);
     const auto& out = (*outputs)[0];
     CHECK (out["id"].toString() == "out");
-    CHECK (out["type"].toString() == "control");
+    CHECK (out["type"].toString() == "signal");
     CHECK ((bool) out["isPrimaryOutput"]);
     CHECK ((float) out["minValue"] == -100000.0f);
     CHECK ((float) out["maxValue"] == 100000.0f);

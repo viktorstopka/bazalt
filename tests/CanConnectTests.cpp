@@ -7,14 +7,14 @@ namespace
 {
     PortDescriptor audioPort (Channels channels = Channels::Mono)
     {
-        PortDescriptor p { "p", SignalType::Audio };
+        PortDescriptor p { .id = "p", .type = SignalType::Signal, .quantity = Quantity::Audio };
         p.channels = channels;
         return p;
     }
 
     PortDescriptor controlPort (Quantity quantity = Quantity::Dimensionless, std::optional<float> minValue = {}, std::optional<float> maxValue = {})
     {
-        PortDescriptor p { "p", SignalType::Control };
+        PortDescriptor p { .id = "p", .type = SignalType::Signal };
         p.quantity = quantity;
         p.minValue = minValue;
         p.maxValue = maxValue;
@@ -42,7 +42,7 @@ TEST_CASE ("canConnect: same signal type, same or Dimensionless quantity is alwa
     PortDescriptor note { "n", SignalType::Note };
     CHECK (canConnect (note, note).outcome == ConnectionOutcome::Ok);
 
-    PortDescriptor boolean { "b", SignalType::Boolean };
+    PortDescriptor boolean { .id = "b", .type = SignalType::Signal, .quantity = Quantity::Boolean };
     CHECK (canConnect (boolean, boolean).outcome == ConnectionOutcome::Ok);
 }
 
@@ -131,7 +131,7 @@ TEST_CASE ("canConnect: Pitch<->Frequency gets the exact converter, not the gene
 TEST_CASE ("canConnect: a Boolean is a plain 0/1 value - it wires straight into any value port",
            "[engine][CanConnect]")
 {
-    PortDescriptor boolPort { "b", SignalType::Boolean };
+    PortDescriptor boolPort { .id = "b", .type = SignalType::Signal, .quantity = Quantity::Boolean };
     CHECK (canConnect (boolPort, controlPort()).outcome == ConnectionOutcome::Ok);
     CHECK (canConnect (boolPort, controlPort (Quantity::Frequency, 20.0f, 20000.0f)).outcome == ConnectionOutcome::Ok);
     CHECK (canConnect (boolPort, audioPort()).outcome == ConnectionOutcome::Ok);

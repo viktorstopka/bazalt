@@ -88,7 +88,7 @@ namespace bazalt::engine::nodes
 
         std::vector<PortDescriptor> getOutputPorts() const override
         {
-            return { { "out", SignalType::Audio } };
+            return { { .id = "out", .type = SignalType::Signal, .quantity = Quantity::Audio } };
         }
 
         void setParameter (const juce::String& parameterId, float value) override
@@ -141,7 +141,7 @@ namespace bazalt::engine::nodes
     private:
         static PortDescriptor unipolarPort (juce::String id, juce::String label, float defaultValue)
         {
-            return PortDescriptor { .id = std::move (id), .type = SignalType::Control, .label = std::move (label),
+            return PortDescriptor { .id = std::move (id), .type = SignalType::Signal, .label = std::move (label),
                                      .minValue = 0.0f, .maxValue = 1.0f, .defaultValue = defaultValue,
                                      .hasFallbackWhenUnconnected = true, .quantity = Quantity::Unipolar,
                                      .polarity = Polarity::Unipolar };

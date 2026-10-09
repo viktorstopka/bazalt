@@ -82,9 +82,9 @@ export const MOCK_DESCRIPTORS: NodeDescriptor[] = [
     inputs: [],
     outputs: [
       port({ id: 'legato', type: 'event', label: 'Legato' }),
-      port({ id: 'noteOn', type: 'boolean', label: 'Note On' }),
-      port({ id: 'pitch', type: 'control', label: 'Pitch', unit: 'st', isPrimaryOutput: true }),
-      port({ id: 'velocity', type: 'control', label: 'Velocity', unit: '%' }),
+      port({ id: 'noteOn', type: 'signal', quantity: 'boolean', label: 'Note On' }),
+      port({ id: 'pitch', type: 'signal', label: 'Pitch', unit: 'st', isPrimaryOutput: true }),
+      port({ id: 'velocity', type: 'signal', label: 'Velocity', unit: '%' }),
     ],
     parameters: [],
   },
@@ -96,7 +96,7 @@ export const MOCK_DESCRIPTORS: NodeDescriptor[] = [
     layoutVariant: 'standard',
     isMock: true,
     inputs: [],
-    outputs: [port({ id: 'value', type: 'control', label: 'Bind', unit: '%', isPrimaryOutput: true })],
+    outputs: [port({ id: 'value', type: 'signal', label: 'Bind', unit: '%', isPrimaryOutput: true })],
     parameters: [],
   },
   {
@@ -107,7 +107,7 @@ export const MOCK_DESCRIPTORS: NodeDescriptor[] = [
     layoutVariant: 'standard',
     isMock: true,
     inputs: [],
-    outputs: [port({ id: 'out', type: 'audio', label: 'OUT', isPrimaryOutput: true })],
+    outputs: [port({ id: 'out', type: 'signal', quantity: 'audio', label: 'OUT', isPrimaryOutput: true })],
     parameters: [parameter({ id: 'track', minValue: 1, maxValue: 16, defaultValue: 1, displayName: 'Track', isInteger: true })],
   },
   {
@@ -126,10 +126,10 @@ export const MOCK_DESCRIPTORS: NodeDescriptor[] = [
     // time is exactly the kind of thing this system exists for (direct
     // feedback) — no reason this should be a non-connectable parameter.
     inputs: [
-      port({ id: 'audio', type: 'audio', label: 'Audio' }),
-      port({ id: 'byMs', type: 'control', label: 'By', unit: 'ms', minValue: 0, maxValue: 500, defaultValue: 34, isInteger: true, hasFallbackWhenUnconnected: true }),
+      port({ id: 'audio', type: 'signal', quantity: 'audio', label: 'Audio' }),
+      port({ id: 'byMs', type: 'signal', label: 'By', unit: 'ms', minValue: 0, maxValue: 500, defaultValue: 34, isInteger: true, hasFallbackWhenUnconnected: true }),
     ],
-    outputs: [port({ id: 'audio', type: 'audio', label: 'Audio', isPrimaryOutput: true })],
+    outputs: [port({ id: 'audio', type: 'signal', quantity: 'audio', label: 'Audio', isPrimaryOutput: true })],
     parameters: [],
   },
   {
@@ -140,8 +140,8 @@ export const MOCK_DESCRIPTORS: NodeDescriptor[] = [
     layoutVariant: 'standard',
     isMock: true,
     inputs: [
-      port({ id: 'by', type: 'control', label: 'By', unit: '' }),
-      port({ id: 'threshold', type: 'control', label: 'Threshold', unit: '%', minValue: 0, maxValue: 100, defaultValue: 50, hasFallbackWhenUnconnected: true }),
+      port({ id: 'by', type: 'signal', label: 'By', unit: '' }),
+      port({ id: 'threshold', type: 'signal', label: 'Threshold', unit: '%', minValue: 0, maxValue: 100, defaultValue: 50, hasFallbackWhenUnconnected: true }),
     ],
     outputs: [port({ id: 'onThreshold', type: 'event', label: 'On Threshold', isPrimaryOutput: true })],
     parameters: [],
@@ -169,9 +169,9 @@ export const MOCK_DESCRIPTORS: NodeDescriptor[] = [
         options: ['On Every Note', 'On Note Legato', 'On Note On', 'Manual'],
         defaultValue: 0,
       }),
-      port({ id: 'rate', type: 'control', label: 'Rate', unit: 'Hz', minValue: 0.01, maxValue: 20, defaultValue: 3, isLogScale: true, hasFallbackWhenUnconnected: true }),
+      port({ id: 'rate', type: 'signal', label: 'Rate', unit: 'Hz', minValue: 0.01, maxValue: 20, defaultValue: 3, isLogScale: true, hasFallbackWhenUnconnected: true }),
     ],
-    outputs: [port({ id: 'out', type: 'control', label: 'Out', isPrimaryOutput: true })],
+    outputs: [port({ id: 'out', type: 'signal', label: 'Out', isPrimaryOutput: true })],
     parameters: [],
   },
   {
@@ -188,7 +188,7 @@ export const MOCK_DESCRIPTORS: NodeDescriptor[] = [
     // options) is a per-instance override on the GraphNode itself
     // (GraphNode.macroConfig, resolved by resolveNodeDescriptor), this base
     // entry is just the shape a manually-placed, unconfigured Macro gets.
-    outputs: [port({ id: 'out', type: 'control', label: 'Out', unit: '%', minValue: 0, maxValue: 100, defaultValue: 42.53, isPrimaryOutput: true })],
+    outputs: [port({ id: 'out', type: 'signal', label: 'Out', unit: '%', minValue: 0, maxValue: 100, defaultValue: 42.53, isPrimaryOutput: true })],
     parameters: [parameter({ id: 'value', minValue: 0, maxValue: 100, defaultValue: 42.53, unit: '%', displayName: 'Macro 1' })],
   },
   {
@@ -198,8 +198,8 @@ export const MOCK_DESCRIPTORS: NodeDescriptor[] = [
     icon: 'singleton',
     layoutVariant: 'singleton',
     isMock: true,
-    inputs: [port({ id: 'in', type: 'audio', label: '', isPolyPlaceholder: true })],
-    outputs: [port({ id: 'out', type: 'audio', label: '', isPrimaryOutput: true })],
+    inputs: [port({ id: 'in', type: 'signal', quantity: 'audio', label: '', isPolyPlaceholder: true })],
+    outputs: [port({ id: 'out', type: 'signal', quantity: 'audio', label: '', isPrimaryOutput: true })],
     parameters: [],
   },
   {
@@ -209,7 +209,7 @@ export const MOCK_DESCRIPTORS: NodeDescriptor[] = [
     icon: 'singleton',
     layoutVariant: 'singleton',
     isMock: true,
-    inputs: [port({ id: 'in', type: 'audio', label: '' })],
+    inputs: [port({ id: 'in', type: 'signal', quantity: 'audio', label: '' })],
     outputs: [],
     parameters: [],
   },
@@ -220,8 +220,8 @@ export const MOCK_DESCRIPTORS: NodeDescriptor[] = [
     icon: 'singleton',
     layoutVariant: 'singleton',
     isMock: true,
-    inputs: [port({ id: 'in', type: 'audio', label: '' })],
-    outputs: [port({ id: 'out', type: 'audio', label: '', isPrimaryOutput: true })],
+    inputs: [port({ id: 'in', type: 'signal', quantity: 'audio', label: '' })],
+    outputs: [port({ id: 'out', type: 'signal', quantity: 'audio', label: '', isPrimaryOutput: true })],
     parameters: [],
   },
   {
@@ -231,8 +231,8 @@ export const MOCK_DESCRIPTORS: NodeDescriptor[] = [
     icon: 'singleton',
     layoutVariant: 'singleton',
     isMock: true,
-    inputs: [port({ id: 'in', type: 'audio', label: '' })],
-    outputs: [port({ id: 'out', type: 'audio', label: '', isPrimaryOutput: true })],
+    inputs: [port({ id: 'in', type: 'signal', quantity: 'audio', label: '' })],
+    outputs: [port({ id: 'out', type: 'signal', quantity: 'audio', label: '', isPrimaryOutput: true })],
     parameters: [],
   },
   {

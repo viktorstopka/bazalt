@@ -2,41 +2,29 @@
 
 namespace bazalt::engine
 {
-    /** ARCHITECTURE.md §3.3. Audio and Control share the same buffer shape
-        (float32, block-length) — Control may run at full sample rate too
-        (e.g. FM/PM) — but carry a distinct tag so the compiler and UI can
-        reason about range/units. Event and Note aren't wired through node
-        ports yet in M2 (voices are driven directly by the voice manager
-        poking node parameters); the tags exist now so the M3 MIDI/note
-        data model doesn't require a port-type migration. Spectral is
-        reserved, unimplemented.
+    /** How a port's value is carried — never what it means (that is its
+        Quantity, PortDescriptor.h). wiki/plans/DataAndWavetable.md D1.
 
-        Boolean (NODE_EDITOR.md §5, added M7): a genuinely different buffer-
-        level contract from Control — no smoothing, no skew, one bit of
-        state — not just a UI-side colour distinction. The UI's Modulation/
-        Value/Integer palette entries are presentation classifications
-        layered on top of Control + PortDescriptor's numeric metadata
-        (NODE_EDITOR.md §5), not separate SignalType values.
+        Signal: one float per sample — a sound, a frequency, a modulation, a
+        true/false gate are all Signals, told apart by their Quantity
+        (Quantity::Audio for a waveform meant to be heard, Quantity::Boolean
+        for a 0/1 gate). Until stage 1 these were three types (Audio,
+        Control, Boolean); the buffers were always identical and the type
+        only ever said "these don't belong together", which the connection
+        rules no longer believe. Every Signal can carry channels (stereo).
 
-        Data (SIGNAL_TYPES.md §2, added M15, see Data.h): an immutable,
-        reference-counted buffer — tables, modal sets, scales, wavetables,
-        curves, impulse responses. Not a buffer-shape tag like every other
-        member here (GraphCompiler doesn't allocate a `blockBuffers`/
-        `regionScalars` slot for it the way it does for Audio/Control) —
-        a Data-typed port instead holds a `const DataBuffer*` published by
-        `DataPublisher` (Data.h), swapped, never copied per sample. ADR-0016
-        already flags that `SignalType` mixes two concerns (compiler
-        buffer-shape vs. UI/connection semantics); Data is unambiguously
-        real regardless of how that's eventually resolved.
+        Event: a moment (non-zero on the sample it fires — its strength).
+        Note: a note payload on its own buffer (ExecutionPlan::noteBuffers).
+        Data: an immutable, reference-counted buffer — tables, curves,
+        scales, wavetables (Data.h), swapped, never copied per sample.
+        Spectral: reserved, unimplemented.
     */
     enum class SignalType
     {
-        Audio,
-        Control,
+        Signal,
         Event,
         Note,
         Spectral,
-        Boolean,
         Data
     };
 }

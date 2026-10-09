@@ -41,10 +41,10 @@ namespace
     NodeFactory makeFactory()
     {
         auto factory = buildDefaultNodeFactory();
-        factory.registerType ("test.unipolar", [] { return std::make_unique<FixedSourceNode> (SignalType::Control, Quantity::Unipolar); });
-        factory.registerType ("test.bipolar", [] { return std::make_unique<FixedSourceNode> (SignalType::Control, Quantity::Bipolar); });
-        factory.registerType ("test.frequency", [] { return std::make_unique<FixedSourceNode> (SignalType::Control, Quantity::Frequency); });
-        factory.registerType ("test.bool", [] { return std::make_unique<FixedSourceNode> (SignalType::Boolean, Quantity::Dimensionless); });
+        factory.registerType ("test.unipolar", [] { return std::make_unique<FixedSourceNode> (SignalType::Signal, Quantity::Unipolar); });
+        factory.registerType ("test.bipolar", [] { return std::make_unique<FixedSourceNode> (SignalType::Signal, Quantity::Bipolar); });
+        factory.registerType ("test.frequency", [] { return std::make_unique<FixedSourceNode> (SignalType::Signal, Quantity::Frequency); });
+        factory.registerType ("test.bool", [] { return std::make_unique<FixedSourceNode> (SignalType::Signal, Quantity::Boolean); });
         return factory;
     }
 
@@ -79,15 +79,15 @@ TEST_CASE ("view.scope is a pass-through whose ports take on the source's type a
 {
     ViewScopeNode node;
     REQUIRE (node.hasPolymorphicPorts());
-    CHECK (node.getInputPorts()[0].type == SignalType::Control); // unconnected default
+    CHECK (node.getInputPorts()[0].type == SignalType::Signal); // unconnected default
 
-    PortDescriptor boolean { "src", SignalType::Boolean };
+    PortDescriptor boolean { .id = "src", .type = SignalType::Signal, .quantity = Quantity::Boolean };
     node.resolveIncomingPort ("in", boolean);
-    CHECK (node.getInputPorts()[0].type == SignalType::Boolean);
-    CHECK (node.getOutputPorts()[0].type == SignalType::Boolean);
+    CHECK (node.getInputPorts()[0].quantity == Quantity::Boolean);
+    CHECK (node.getOutputPorts()[0].quantity == Quantity::Boolean);
 
     ViewScopeNode modulation;
-    PortDescriptor unipolar { "src", SignalType::Control };
+    PortDescriptor unipolar { .id = "src", .type = SignalType::Signal };
     unipolar.quantity = Quantity::Unipolar;
     modulation.resolveIncomingPort ("in", unipolar);
     CHECK (modulation.getOutputPorts()[0].quantity == Quantity::Unipolar);

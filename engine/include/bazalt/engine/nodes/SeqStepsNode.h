@@ -64,11 +64,11 @@ namespace bazalt::engine::nodes
         std::vector<PortDescriptor> getOutputPorts() const override
         {
             return {
-                PortDescriptor { .id = "value", .type = SignalType::Control, .label = "Value", .isPrimaryOutput = true,
+                PortDescriptor { .id = "value", .type = SignalType::Signal, .label = "Value", .isPrimaryOutput = true,
                                   .minValue = -1.0f, .maxValue = 1.0f, .quantity = Quantity::Bipolar },
-                PortDescriptor { .id = "gate", .type = SignalType::Boolean, .label = "Gate", .kind = ValueKind::Bool },
+                PortDescriptor { .id = "gate", .type = SignalType::Signal, .label = "Gate", .kind = ValueKind::Bool, .quantity = Quantity::Boolean },
                 PortDescriptor { .id = "trigger", .type = SignalType::Event, .label = "Trigger" },
-                PortDescriptor { .id = "index", .type = SignalType::Control, .label = "Index",
+                PortDescriptor { .id = "index", .type = SignalType::Signal, .label = "Index",
                                   .minValue = 0.0f, .maxValue = (float) (maxSteps - 1), .isInteger = true,
                                   .quantity = Quantity::Count },
             };

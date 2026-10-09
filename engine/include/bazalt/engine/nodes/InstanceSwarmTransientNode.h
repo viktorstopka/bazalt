@@ -85,14 +85,14 @@ namespace bazalt::engine::nodes
         std::vector<PortDescriptor> getOutputPorts() const override
         {
             return {
-                PortDescriptor { .id = "gate", .type = SignalType::Boolean, .isPrimaryOutput = true },
-                PortDescriptor { .id = "instanceIndex", .type = SignalType::Control, .isInteger = true, .quantity = Quantity::Count, .step = 1.0f },
-                PortDescriptor { .id = "instanceAge", .type = SignalType::Control, .quantity = Quantity::Time },
-                PortDescriptor { .id = "random1", .type = SignalType::Control, .quantity = Quantity::Bipolar, .polarity = Polarity::Bipolar },
-                PortDescriptor { .id = "random2", .type = SignalType::Control, .quantity = Quantity::Bipolar, .polarity = Polarity::Bipolar },
+                PortDescriptor { .id = "gate", .type = SignalType::Signal, .isPrimaryOutput = true, .quantity = Quantity::Boolean },
+                PortDescriptor { .id = "instanceIndex", .type = SignalType::Signal, .isInteger = true, .quantity = Quantity::Count, .step = 1.0f },
+                PortDescriptor { .id = "instanceAge", .type = SignalType::Signal, .quantity = Quantity::Time },
+                PortDescriptor { .id = "random1", .type = SignalType::Signal, .quantity = Quantity::Bipolar, .polarity = Polarity::Bipolar },
+                PortDescriptor { .id = "random2", .type = SignalType::Signal, .quantity = Quantity::Bipolar, .polarity = Polarity::Bipolar },
                 PortDescriptor { .id = "start", .type = SignalType::Event },
                 PortDescriptor { .id = "stop", .type = SignalType::Event },
-                PortDescriptor { .id = "position", .type = SignalType::Control, .quantity = Quantity::Bipolar, .polarity = Polarity::Bipolar },
+                PortDescriptor { .id = "position", .type = SignalType::Signal, .quantity = Quantity::Bipolar, .polarity = Polarity::Bipolar },
             };
         }
 

@@ -28,7 +28,7 @@ namespace bazalt::engine::nodes
 
         std::vector<PortDescriptor> getInputPorts() const override
         {
-            return { perChannel ({ "in", SignalType::Audio }) };
+            return { perChannel ({ .id = "in", .type = SignalType::Signal, .quantity = Quantity::Audio }) };
         }
 
         void processSample (const float*, float*) noexcept override {}

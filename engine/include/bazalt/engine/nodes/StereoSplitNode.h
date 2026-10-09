@@ -35,15 +35,15 @@ namespace bazalt::engine::nodes
         std::vector<PortDescriptor> getInputPorts() const override
         {
             return {
-                PortDescriptor { .id = "in", .type = SignalType::Audio, .channels = Channels::Stereo },
+                PortDescriptor { .id = "in", .type = SignalType::Signal, .quantity = Quantity::Audio, .channels = Channels::Stereo },
             };
         }
 
         std::vector<PortDescriptor> getOutputPorts() const override
         {
             return {
-                PortDescriptor { .id = "left", .type = SignalType::Audio, .label = "Left", .isPrimaryOutput = true },
-                PortDescriptor { .id = "right", .type = SignalType::Audio, .label = "Right" },
+                PortDescriptor { .id = "left", .type = SignalType::Signal, .label = "Left", .isPrimaryOutput = true, .quantity = Quantity::Audio },
+                PortDescriptor { .id = "right", .type = SignalType::Signal, .label = "Right", .quantity = Quantity::Audio },
             };
         }
 

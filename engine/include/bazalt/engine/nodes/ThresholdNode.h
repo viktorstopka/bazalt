@@ -34,9 +34,9 @@ namespace bazalt::engine::nodes
         std::vector<PortDescriptor> getInputPorts() const override
         {
             return {
-                { "by", SignalType::Control },
+                { .id = "by", .type = SignalType::Signal },
                 PortDescriptor { .id = "threshold",
-                                  .type = SignalType::Control,
+                                  .type = SignalType::Signal,
                                   .minValue = 0.0f,
                                   .maxValue = 1.0f,
                                   .defaultValue = 0.5f,

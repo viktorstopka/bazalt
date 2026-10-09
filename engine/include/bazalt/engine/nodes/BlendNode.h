@@ -27,7 +27,7 @@ namespace bazalt::engine::nodes
         static constexpr float smoothingSeconds = 0.005f;
         static constexpr float defaultAmount = 0.5f;
 
-        BlendNode() noexcept : InheritingPortsNode (SignalType::Audio) {}
+        BlendNode() noexcept : InheritingPortsNode (Quantity::Audio) {}
 
         void prepare (const NodePrepareInfo& info) override
         {
@@ -61,7 +61,7 @@ namespace bazalt::engine::nodes
             return {
                 valuePort ("a", "A"),
                 valuePort ("b", "B"),
-                PortDescriptor { .id = "math.blend.amount", .type = SignalType::Control, .label = "Amount",
+                PortDescriptor { .id = "math.blend.amount", .type = SignalType::Signal, .label = "Amount",
                                  .minValue = 0.0f, .maxValue = 1.0f, .defaultValue = defaultAmount,
                                  .hasFallbackWhenUnconnected = true, .quantity = Quantity::Unipolar,
                                  .polarity = Polarity::Unipolar },

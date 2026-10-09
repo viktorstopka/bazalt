@@ -22,16 +22,14 @@ namespace bazalt
         {
             switch (type)
             {
-                case SignalType::Audio:    return "audio";
-                case SignalType::Control:  return "control";
+                case SignalType::Signal:   return "signal";
                 case SignalType::Event:    return "event";
                 case SignalType::Note:     return "note";
                 case SignalType::Spectral: return "spectral";
-                case SignalType::Boolean:  return "boolean";
                 case SignalType::Data:     return "data";
             }
             jassertfalse;
-            return "control";
+            return "signal";
         }
 
         juce::String dataTagToString (bazalt::engine::DataTag tag)
@@ -110,6 +108,8 @@ namespace bazalt
                 case Quantity::Bipolar:       return "bipolar";
                 case Quantity::Count:         return "count";
                 case Quantity::Phase:         return "phase";
+                case Quantity::Audio:         return "audio";
+                case Quantity::Boolean:       return "boolean";
             }
             jassertfalse;
             return "dimensionless";

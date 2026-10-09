@@ -46,10 +46,10 @@ namespace bazalt::engine::nodes
         {
             return {
                 PortDescriptor { .id = "beat", .type = SignalType::Event, .label = "Beat", .isPrimaryOutput = true },
-                PortDescriptor { .id = "tempo", .type = SignalType::Control, .label = "Tempo", .unit = "Hz",
+                PortDescriptor { .id = "tempo", .type = SignalType::Signal, .label = "Tempo", .unit = "Hz",
                                   .quantity = Quantity::Frequency },
-                PortDescriptor { .id = "playing", .type = SignalType::Boolean, .label = "Playing", .kind = ValueKind::Bool },
-                PortDescriptor { .id = "position", .type = SignalType::Control, .label = "Position", .unit = "s",
+                PortDescriptor { .id = "playing", .type = SignalType::Signal, .label = "Playing", .kind = ValueKind::Bool, .quantity = Quantity::Boolean },
+                PortDescriptor { .id = "position", .type = SignalType::Signal, .label = "Position", .unit = "s",
                                   .quantity = Quantity::Time },
             };
         }

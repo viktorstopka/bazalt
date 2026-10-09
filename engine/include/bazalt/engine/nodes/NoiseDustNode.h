@@ -34,10 +34,10 @@ namespace bazalt::engine::nodes
         std::vector<PortDescriptor> getInputPorts() const override
         {
             return {
-                PortDescriptor { .id = "noise.dust.density", .type = SignalType::Control, .label = "Density", .unit = "/s",
+                PortDescriptor { .id = "noise.dust.density", .type = SignalType::Signal, .label = "Density", .unit = "/s",
                                   .minValue = 0.1f, .maxValue = 10000.0f, .defaultValue = 20.0f, .isLogScale = true,
                                   .hasFallbackWhenUnconnected = true, .quantity = Quantity::Frequency, .curve = Curve::Logarithmic },
-                PortDescriptor { .id = "noise.dust.randomness", .type = SignalType::Control, .label = "Randomness",
+                PortDescriptor { .id = "noise.dust.randomness", .type = SignalType::Signal, .label = "Randomness",
                                   .minValue = 0.0f, .maxValue = 1.0f, .defaultValue = 0.5f, .hasFallbackWhenUnconnected = true,
                                   .quantity = Quantity::Unipolar },
             };
@@ -45,7 +45,7 @@ namespace bazalt::engine::nodes
         std::vector<PortDescriptor> getOutputPorts() const override
         {
             return {
-                PortDescriptor { .id = "out", .type = SignalType::Audio, .label = "Out", .isPrimaryOutput = true },
+                PortDescriptor { .id = "out", .type = SignalType::Signal, .label = "Out", .isPrimaryOutput = true, .quantity = Quantity::Audio },
                 PortDescriptor { .id = "trigger", .type = SignalType::Event, .label = "Trigger" },
             };
         }

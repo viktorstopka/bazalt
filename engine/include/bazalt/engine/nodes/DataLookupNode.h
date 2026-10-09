@@ -60,12 +60,12 @@ namespace bazalt::engine::nodes
         std::vector<PortDescriptor> getInputPorts() const override
         {
             return {
-                PortDescriptor { .id = "in", .type = SignalType::Control, .label = "In" },
+                PortDescriptor { .id = "in", .type = SignalType::Signal, .label = "In" },
                 PortDescriptor { .id = "data", .type = SignalType::Data, .label = "Data",
                                   .dataTags = { DataTag::Curve, DataTag::Scale } },
                 PortDescriptor { .id = "dataB", .type = SignalType::Data, .label = "Data B",
                                   .dataTags = { DataTag::Curve, DataTag::Scale } },
-                PortDescriptor { .id = "data.lookup.morph", .type = SignalType::Control, .label = "Morph",
+                PortDescriptor { .id = "data.lookup.morph", .type = SignalType::Signal, .label = "Morph",
                                   .minValue = 0.0f, .maxValue = 1.0f, .defaultValue = 0.0f,
                                   .hasFallbackWhenUnconnected = true, .quantity = Quantity::Unipolar },
             };
@@ -73,7 +73,7 @@ namespace bazalt::engine::nodes
 
         std::vector<PortDescriptor> getOutputPorts() const override
         {
-            return { { "out", SignalType::Control } };
+            return { { .id = "out", .type = SignalType::Signal } };
         }
 
         std::vector<ParameterDescriptor> getParameters() const override
