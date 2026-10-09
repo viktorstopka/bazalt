@@ -1,12 +1,12 @@
 // design/TopBar.png: the top bar's centre dropdown — Factory patches and
-// the user's own saved patches. The factory list is just "Empty" now
-// (direct instruction, 2026-10-09: the demo patches are rebuilt by hand
-// rather than migrated across every node redesign). "Empty" mirrors
-// ProofGraphs.h's buildMasterOutOnlyGraph() exactly — same node id
-// "masterOut", same position — so picking it matches a fresh plugin
-// instance's default graph. Each entry is a whole-graph JSON string in the
-// shape PatchSerializer.cpp's `parsePatchFromJson` expects, loaded via
-// graphStore.ts's `loadPatch`.
+// the user's own saved patches. Factory patches are "Empty" plus every
+// `.bazalt` file in ./patches/factory (direct instruction, 2026-10-09):
+// drop a patch saved from Bazalt into that folder and it ships, named by
+// its own meta.name. "Empty" mirrors ProofGraphs.h's
+// buildMasterOutOnlyGraph() exactly — same node id "masterOut", same
+// position — which is also what the app opens on. Each entry is a
+// whole-graph JSON string in the shape PatchSerializer.cpp's
+// `parsePatchFromJson` expects, loaded via graphStore.ts's `loadPatch`.
 import { useEffect, useRef, useState } from 'react'
 import { deleteUserPatch, listUserPatches, saveUserPatch, userPatchExists, type UserPatchEntry } from './graph/patchLibrary'
 import './PatchMenu.css'
@@ -26,8 +26,25 @@ function emptyPatchJson(): string {
   })
 }
 
+// Raw text, not JSON.parse'd and re-stringified: loadPatch parses it on its
+// own end, and re-serializing could reformat values tuned by ear.
+const factoryFiles = import.meta.glob('./patches/factory/*.bazalt', { query: '?raw', import: 'default', eager: true }) as Record<string, string>
+
+function factoryPatchName(path: string, json: string): string {
+  try {
+    const name = (JSON.parse(json) as { meta?: { name?: unknown } }).meta?.name
+    if (typeof name === 'string' && name.trim()) return name.trim()
+  } catch {
+    // Not readable JSON: fall back to the file name.
+  }
+  return path.replace(/^.*\//, '').replace(/\.bazalt$/, '')
+}
+
 export const PREMADE_PATCHES: readonly PatchOption[] = [
   { name: 'Empty', json: emptyPatchJson() },
+  ...Object.entries(factoryFiles)
+    .map(([path, json]) => ({ name: factoryPatchName(path, json), json }))
+    .sort((a, b) => a.name.localeCompare(b.name)),
 ]
 
 /** What the live graph was last loaded from or saved as — the menu's label,

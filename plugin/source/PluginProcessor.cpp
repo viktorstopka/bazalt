@@ -1285,7 +1285,15 @@ namespace bazalt
                     sumBuffer.clear (0, numSamples); // both channels
 
                 if (! bundle.active)
+                {
+                    // Not played, but still marked as seen: a swapper whose
+                    // plans the audio thread never reads can never reclaim
+                    // them, fills up, and then silently refuses every new
+                    // plan (PlanSwapper::publish) — leaving a stale one live.
+                    for (auto& swapper : bundle.voicePlanSwappers)
+                        swapper.getCurrentPlanForAudioThread();
                     continue;
+                }
 
                 auto& plans = originVoicePlanPtrs[(size_t) b];
                 for (int i = 0; i < numVoices; ++i)
@@ -1317,6 +1325,15 @@ namespace bazalt
                 bazalt::engine::ExecutionPlan* globalPlans[1] = { globalPlanForThisBlock };
                 macroParameters.applyToPlans (globalPlans, 1, numSamples);
                 liveParameterEdits.applyToPlans (globalPlans, 1);
+            }
+            else
+            {
+                // Published on every edit (it holds the graph's per-patch
+                // content: macros, orphans) even while the output is a raw
+                // voice sum. Unread, its swapper filled up and froze the
+                // global plan at a stale patch: "MIDI played the patch
+                // before". Reading it marks what may be reclaimed.
+                globalPlanSwapper.getCurrentPlanForAudioThread();
             }
         }
 

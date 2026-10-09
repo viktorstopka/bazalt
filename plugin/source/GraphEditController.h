@@ -279,6 +279,7 @@ namespace bazalt
         double sampleRate = 44100.0;
         int blockSize = 512;
         bool hasGlobalDomain = false;
+        bool freshStateOnNextCompile = false; // setGraph: a whole new patch keeps no running state
         std::unordered_map<juce::String, juce::String> nodeDomains;
         std::unordered_map<juce::String, std::unordered_map<juce::String, PortMultiplicityInfo>> portMultiplicity;
         std::unordered_map<juce::String, int> originBundleIndexByNodeId;

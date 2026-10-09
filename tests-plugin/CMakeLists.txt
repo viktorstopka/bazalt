@@ -43,6 +43,7 @@ target_sources(PluginTests
         MacroParametersTests.cpp
         NodeDescriptorJsonTests.cpp
         PatchStateTests.cpp
+        PatchSwitchTests.cpp
         StressGraphTests.cpp
         VisualizationTapTests.cpp
         VoiceRenderTests.cpp
@@ -64,6 +65,8 @@ target_compile_definitions(PluginTests
         # needs defining by hand.
         JucePlugin_Name="Bazalt"
         BAZALT_UI_DEV_SERVER_URL="http://localhost:5173"
+        # The factory patches the UI ships — every one must load and compile.
+        BAZALT_FACTORY_PATCH_DIR="${CMAKE_SOURCE_DIR}/ui/src/patches/factory"
 )
 
 target_link_libraries(PluginTests

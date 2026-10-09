@@ -209,8 +209,15 @@ ctest --test-dir build -C Debug -R PluginTests --output-on-failure
   Oscillator's Shape; its Frame rides on the cable as `DataPublisher`'s companion
   signal. The fixed Sine/Saw/Square/Triangle nodes are back as `source.sine`/
   `saw`/`square`/`triangle` (user's instruction). **No new migrations** (user's
-  instruction, same day: patches get rebuilt by hand) — the factory patch list is
-  just Empty, `ui/src/patches/CatPurr.json` stays on disk unused and unmodified.
+  instruction, same day: patches get rebuilt by hand). Factory patches are Empty
+  plus every `.bazalt` file in `ui/src/patches/factory/` (picked up by
+  `PatchMenu.tsx`'s glob, named by `meta.name`; a plugin test loads each one).
+  CatPurr.json is gone. The Standalone always opens on Empty
+  (`StandaloneApp.cpp` drops JUCE's saved "filterState"); a DAW still restores
+  state. A whole-patch load (`GraphEditController::setGraph`) keeps no running
+  node state from the previous patch, and the audio thread reads every plan
+  swapper each block, played or not — an unread swapper used to fill up and
+  freeze the global plan on a stale patch.
 
 - **Fixed, 2026-10-03** — this note used to say the M0 plugin editor's
   release-build WebView always served a hard-coded placeholder HTML string

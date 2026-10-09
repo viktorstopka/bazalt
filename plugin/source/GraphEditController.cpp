@@ -927,7 +927,12 @@ namespace bazalt
         const auto previousGraph = graph;
         graph = std::move (newGraph);
 
+        // A whole patch replaces the graph: nothing of the previous patch's
+        // running state carries over, even where node ids happen to match
+        // (every patch numbers its nodes the same way, so they often do).
+        freshStateOnNextCompile = true;
         auto result = recompileAndPublish();
+        freshStateOnNextCompile = false;
         if (! result.success)
             graph = previousGraph;
 
@@ -1037,7 +1042,7 @@ namespace bazalt
         // edit recompiles and republishes every one of them fresh.
         if (effectiveMonoOnly)
         {
-            const auto* previousPlan = processor.getGlobalPlanSwapper().peekCurrentPlan();
+            const auto* previousPlan = freshStateOnNextCompile ? nullptr : processor.getGlobalPlanSwapper().peekCurrentPlan();
 
             auto monoCompile = bazalt::engine::GraphCompiler::compile (
                 split.globalGraph, factory, prepareInfo, nextGeneration(), previousPlan);
@@ -1146,7 +1151,7 @@ namespace bazalt
                 // the SAME slot this origin already occupies (or a freshly
                 // empty one for a brand-new origin) — never a different
                 // origin's own plans.
-                const auto* previousPlan = processor.getOriginVoicePlanSwapper (slot, i).peekCurrentPlan();
+                const auto* previousPlan = freshStateOnNextCompile ? nullptr : processor.getOriginVoicePlanSwapper (slot, i).peekCurrentPlan();
 
                 auto compileResult = bazalt::engine::GraphCompiler::compile (
                     origin.voiceGraph, factory, prepareInfo, nextGeneration(), previousPlan);
@@ -1264,7 +1269,7 @@ namespace bazalt
             // state it held, on every single edit including a plain move.
             // The per-voice loop above already gets this right; this branch
             // just never had its own matching peekCurrentPlan() call.
-            const auto* previousGlobalPlan = processor.getGlobalPlanSwapper().peekCurrentPlan();
+            const auto* previousGlobalPlan = freshStateOnNextCompile ? nullptr : processor.getGlobalPlanSwapper().peekCurrentPlan();
 
             ensureGlobalGraphHasAValidOutput (split.globalGraph, factory);
 

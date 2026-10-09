@@ -1,0 +1,326 @@
+{
+  "schemaVersion": 16,
+  "nodes": [
+    {
+      "id": "masterOut",
+      "type": "io.output",
+      "position": {
+        "x": 1521.5189208984375,
+        "y": 465.9703369140625
+      },
+      "parameters": {
+      },
+      "properties": {
+      }
+    },
+    {
+      "id": "node314",
+      "type": "source.envelope",
+      "position": {
+        "x": -286.282440185546875,
+        "y": 304.219573974609375
+      },
+      "parameters": {
+      },
+      "properties": {
+      },
+      "content": {
+        "schema": "curve",
+        "version": 1,
+        "timeBase": "time",
+        "length": 0.3,
+        "points": [
+          {
+            "x": 0,
+            "y": 0
+          },
+          {
+            "x": 0.005,
+            "y": 1,
+            "tension": -0.5,
+            "marker": "A"
+          },
+          {
+            "x": 0.2,
+            "y": 1,
+            "tension": 0.483333333333333,
+            "marker": "S",
+            "shape": "curve"
+          },
+          {
+            "x": 0.3,
+            "y": 0,
+            "marker": "R"
+          }
+        ]
+      }
+    },
+    {
+      "id": "node315",
+      "type": "time.gateLength",
+      "position": {
+        "x": -548.26129150390625,
+        "y": 323.087066650390625
+      },
+      "parameters": {
+        "length": 1.0
+      },
+      "properties": {
+      }
+    },
+    {
+      "id": "node316",
+      "type": "util.macro",
+      "position": {
+        "x": -900.5927734375,
+        "y": 236.1126708984375
+      },
+      "parameters": {
+        "util.macro.slot": 0.0,
+        "util.macro.type": 2.0,
+        "util.macro.max": 1.0,
+        "util.macro.min": 0.0,
+        "util.macro.isInteger": 0.0,
+        "util.macro.quantity": 0.0,
+        "util.macro.value": 0.0
+      },
+      "properties": {
+        "title": "Press Me"
+      }
+    },
+    {
+      "id": "node317",
+      "type": "math.multiply",
+      "position": {
+        "x": 1258.7515869140625,
+        "y": 410.08221435546875
+      },
+      "parameters": {
+        "in.1": 0.400000005960464
+      },
+      "properties": {
+      }
+    },
+    {
+      "id": "node318",
+      "type": "math.pitchToFrequency",
+      "position": {
+        "x": -363.97967529296875,
+        "y": 32.056976318359375
+      },
+      "parameters": {
+        "pitch": 34.0
+      },
+      "properties": {
+      }
+    },
+    {
+      "id": "node319",
+      "type": "shape.crush",
+      "position": {
+        "x": 693.2572021484375,
+        "y": 395.504608154296875
+      },
+      "parameters": {
+        "shape.crush.rate": 48000.0,
+        "shape.crush.bits": 3.950000047683716
+      },
+      "properties": {
+        "bypassed": false
+      }
+    },
+    {
+      "id": "node320",
+      "type": "source.triangle",
+      "position": {
+        "x": 371.763885498046875,
+        "y": 310.608154296875
+      },
+      "parameters": {
+      },
+      "properties": {
+      }
+    },
+    {
+      "id": "node321",
+      "type": "source.oscillator",
+      "position": {
+        "x": -461.540924072265625,
+        "y": 685.05511474609375
+      },
+      "parameters": {
+        "source.oscillator.loop": 0.0,
+        "source.oscillator.frequency": 8.0
+      },
+      "properties": {
+      },
+      "content": {
+        "schema": "curve",
+        "version": 1,
+        "timeBase": "cycle",
+        "points": [
+          {
+            "x": 0,
+            "y": 1,
+            "tension": -1,
+            "shape": "curve"
+          },
+          {
+            "x": 1,
+            "y": -1
+          }
+        ]
+      }
+    },
+    {
+      "id": "node322",
+      "type": "view.scope",
+      "position": {
+        "x": -192.530776977539062,
+        "y": 1002.71112060546875
+      },
+      "parameters": {
+        "view.scope.timeWindow": 0.200000002980232
+      },
+      "properties": {
+      }
+    },
+    {
+      "id": "node323",
+      "type": "math.add",
+      "position": {
+        "x": 130.23065185546875,
+        "y": 111.124107360839844
+      },
+      "parameters": {
+      },
+      "properties": {
+      }
+    },
+    {
+      "id": "node324",
+      "type": "math.map",
+      "position": {
+        "x": -192.151107788085938,
+        "y": 624.9200439453125
+      },
+      "parameters": {
+        "math.map.inMin": -1.0,
+        "math.map.outMin": 0.0,
+        "math.map.outMax": 400.0
+      },
+      "properties": {
+      }
+    },
+    {
+      "id": "node325",
+      "type": "shape.waveshaper",
+      "position": {
+        "x": 996.3802490234375,
+        "y": 352.572723388671875
+      },
+      "parameters": {
+        "shape.waveshaper.drive": 5.707919120788574,
+        "shape.waveshaper.bias": 0.863234639167786
+      },
+      "properties": {
+      }
+    }
+  ],
+  "connections": [
+    {
+      "fromNodeId": "node316",
+      "fromPortId": "out",
+      "toNodeId": "node315",
+      "toPortId": "trigger"
+    },
+    {
+      "fromNodeId": "node317",
+      "fromPortId": "out",
+      "toNodeId": "masterOut",
+      "toPortId": "in"
+    },
+    {
+      "fromNodeId": "node314",
+      "fromPortId": "out",
+      "toNodeId": "node320",
+      "toPortId": "source.triangle.amplitude"
+    },
+    {
+      "fromNodeId": "node320",
+      "fromPortId": "out",
+      "toNodeId": "node319",
+      "toPortId": "in"
+    },
+    {
+      "fromNodeId": "node321",
+      "fromPortId": "out",
+      "toNodeId": "node322",
+      "toPortId": "in"
+    },
+    {
+      "fromNodeId": "node316",
+      "fromPortId": "out",
+      "toNodeId": "node321",
+      "toPortId": "trigger"
+    },
+    {
+      "fromNodeId": "node318",
+      "fromPortId": "frequency",
+      "toNodeId": "node323",
+      "toPortId": "in.0"
+    },
+    {
+      "fromNodeId": "node323",
+      "fromPortId": "out",
+      "toNodeId": "node320",
+      "toPortId": "source.triangle.frequency"
+    },
+    {
+      "fromNodeId": "node321",
+      "fromPortId": "out",
+      "toNodeId": "node324",
+      "toPortId": "in"
+    },
+    {
+      "fromNodeId": "node324",
+      "fromPortId": "out",
+      "toNodeId": "node323",
+      "toPortId": "in.1"
+    },
+    {
+      "fromNodeId": "node315",
+      "fromPortId": "gate",
+      "toNodeId": "node314",
+      "toPortId": "gate"
+    },
+    {
+      "fromNodeId": "node319",
+      "fromPortId": "out",
+      "toNodeId": "node325",
+      "toPortId": "in"
+    },
+    {
+      "fromNodeId": "node325",
+      "fromPortId": "out",
+      "toNodeId": "node317",
+      "toPortId": "in.0"
+    }
+  ],
+  "outputNodeId": "masterOut",
+  "outputPortId": "out",
+  "macroValues": [],
+  "view": {
+    "panX": 0.0,
+    "panY": 0.0,
+    "zoom": 1.0
+  },
+  "meta": {
+    "name": "Griddle 808 ahh",
+    "author": "",
+    "createdAtMs": 1.791555666305e12,
+    "modifiedAtMs": 1.791555666305e12
+  },
+  "assets": {
+  }
+}
