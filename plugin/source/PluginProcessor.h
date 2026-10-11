@@ -454,6 +454,7 @@ namespace bazalt
         int prepareToPlayCallCount = 0;
         std::atomic<uint64_t> processBlockCallCount { 0 };
         uint64_t lastLoggedProcessBlockCallCount = 0;
+        juce::uint32 lastProcessBlockLogMs = 0;
 
         // wiki/plans/DomainRedesign.md Batch 2: up to maxOrigins independent
         // origin bundles, replacing the single voiceManager + 8

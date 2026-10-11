@@ -85,8 +85,10 @@ namespace bazalt
 
         // TEMPORARY diagnostic — see the member declarations' own comment.
         const auto current = processBlockCallCount.load (std::memory_order_relaxed);
-        if (current != lastLoggedProcessBlockCallCount)
+        const auto nowMs = juce::Time::getMillisecondCounter();
+        if (current != lastLoggedProcessBlockCallCount && nowMs - lastProcessBlockLogMs >= 5000)
         {
+            lastProcessBlockLogMs = nowMs;
             // Which input buses the host has switched on, and how loud each
             // is — answers "does the sidechain reach Bazalt at all?" without
             // a debugger (Ableton's Sidechain is input bus 1, "Sidechain 1").
@@ -115,6 +117,10 @@ namespace bazalt
     void BazaltAudioProcessor::logDiagnostic (const juce::String& line) const
     {
         auto file = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("BazaltDiagnostics.log");
+        // Capped: past 1 MB the log moves to BazaltDiagnostics.old.log (replacing
+        // the previous one) and starts over, so it never grows without bound.
+        if (file.getSize() > 1024 * 1024)
+            file.moveFileTo (file.getSiblingFile ("BazaltDiagnostics.old.log"));
         file.appendText ("[" + juce::String (juce::Time::getCurrentTime().toMilliseconds()) + "] [instance "
                           + instanceId.toString().substring (0, 8) + "] " + line + "\n");
     }
