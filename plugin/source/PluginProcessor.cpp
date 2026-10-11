@@ -87,9 +87,23 @@ namespace bazalt
         const auto current = processBlockCallCount.load (std::memory_order_relaxed);
         if (current != lastLoggedProcessBlockCallCount)
         {
+            // Which input buses the host has switched on, and how loud each
+            // is — answers "does the sidechain reach Bazalt at all?" without
+            // a debugger (Ableton's Sidechain is input bus 1, "Sidechain 1").
+            juce::String inputs;
+            for (int bus = 0; bus < getBusCount (true); ++bus)
+            {
+                const auto* b = getBus (true, bus);
+                const auto peak = bus == 0 ? mainInputPeakLevel.load (std::memory_order_relaxed)
+                                           : auxPeakLevels[(size_t) (bus - 1)].load (std::memory_order_relaxed);
+                inputs << " " << (b != nullptr ? b->getName() : juce::String (bus)) << "="
+                       << (b != nullptr && b->isEnabled() ? juce::String (b->getNumberOfChannels()) + "ch peak "
+                                                                + juce::String (peak, 4)
+                                                          : juce::String ("off"));
+            }
             logDiagnostic ("processBlock total calls so far: " + juce::String ((juce::int64) current)
                             + " (sampleRate=" + juce::String (currentSampleRate)
-                            + ", blockSize=" + juce::String (currentBlockSize) + ")");
+                            + ", blockSize=" + juce::String (currentBlockSize) + ") inputs:" + inputs);
             lastLoggedProcessBlockCallCount = current;
         }
     }
@@ -982,6 +996,9 @@ namespace bazalt
                 hostInputScratch.copyFrom (bus * channelsPerBus + ch, 0, busBuffer, ch, 0, numSamples);
                 hostBusPresent[(size_t) bus][(size_t) ch] = true;
             }
+
+            if (bus == 0)
+                mainInputPeakLevel.store (channels > 0 ? busBuffer.getMagnitude (0, numSamples) : 0.0f, std::memory_order_relaxed);
         }
     }
 

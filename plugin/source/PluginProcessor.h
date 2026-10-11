@@ -530,6 +530,7 @@ namespace bazalt
         GraphEditController graphEditController { *this };
 
         std::array<std::atomic<float>, (size_t) numAuxBuses> auxPeakLevels {};
+        std::atomic<float> mainInputPeakLevel { 0.0f }; // diagnostic log only
 
         // ARCHITECTURE.md §6: taps wired to main output + the 4 sidechain
         // inputs. telemetryHub must be declared before analysisThread —
