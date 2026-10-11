@@ -73,3 +73,22 @@ TEST_CASE ("A mono aux bus is accepted (a host may offer its sidechain in mono);
     layout.inputBuses.getReference (1) = juce::AudioChannelSet::create5point1();
     CHECK_FALSE (processor.checkBusesLayoutSupported (layout));
 }
+
+// Ableton deactivates and reactivates the plugin around a bus-layout change
+// (switching its sidechain on): releaseResources(), then prepareToPlay() with
+// the same settings. Scopes and meters must come back, not just the audio.
+TEST_CASE ("Visualizations keep running after a release and an unchanged re-prepare", "[plugin][buses]")
+{
+    BazaltAudioProcessor processor;
+    processor.prepareToPlay (44100.0, 512);
+    REQUIRE (processor.isAnalysisRunningForTesting());
+
+    processor.releaseResources();
+    auto layout = processor.getBusesLayout();
+    layout.inputBuses.getReference (1) = juce::AudioChannelSet::mono();
+    REQUIRE (processor.setBusesLayout (layout));
+    processor.prepareToPlay (44100.0, 512);
+
+    CHECK (processor.isAnalysisRunningForTesting());
+    processor.releaseResources();
+}

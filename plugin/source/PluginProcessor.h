@@ -236,6 +236,7 @@ namespace bazalt
             (safe) — tests opt out explicitly, real use never does.
         */
         void setOutputLimiterEnabledForTesting (bool enabled) noexcept { outputLimiterEnabled = enabled; }
+        bool isAnalysisRunningForTesting() const noexcept { return analysisThread.isThreadRunning(); }
         void setHasGlobalDomain (bool hasIt) noexcept { hasGlobalDomain.store (hasIt, std::memory_order_release); }
 
         /** M21: true while the graph has no active origin at all (no

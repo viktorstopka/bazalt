@@ -186,7 +186,15 @@ namespace bazalt
                         + (isRedundantRepeat ? " (REDUNDANT - skipped)" : " (real re-init)"));
 
         if (isRedundantRepeat)
+        {
+            // Nothing to rebuild, but a releaseResources() in between stopped
+            // the analysis thread: Ableton deactivates and reactivates the
+            // plugin around a bus-layout change (switching its sidechain on),
+            // and scopes and meters stayed dead after that while the audio ran.
+            if (! analysisThread.isThreadRunning())
+                analysisThread.startThread();
             return;
+        }
 
         hasBeenPrepared = true;
         currentSampleRate = sampleRate;
