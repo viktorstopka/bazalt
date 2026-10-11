@@ -78,6 +78,7 @@
 #include "bazalt/engine/nodes/DataCurveNode.h"
 #include "bazalt/engine/nodes/DataWavetableNode.h"
 #include "bazalt/engine/nodes/SineOscillatorNode.h"
+#include "bazalt/engine/nodes/AnalysisHearingNodes.h"
 #include "bazalt/engine/nodes/CurvePlayerNode.h"
 #include "bazalt/engine/nodes/DataLookupNode.h"
 #include "bazalt/engine/nodes/NoteGateNode.h"
@@ -226,6 +227,11 @@ namespace bazalt::engine
         factory.registerType ("source.saw", [] { return std::make_unique<nodes::SawOscillatorNode>(); });
         factory.registerType ("source.square", [] { return std::make_unique<nodes::SquareOscillatorNode>(); });
         factory.registerType ("source.triangle", [] { return std::make_unique<nodes::TriangleOscillatorNode>(); });
+        // Hearing a played instrument (wiki/plans/GuitarInput.md).
+        factory.registerType ("analysis.pitch", [] { return std::make_unique<nodes::AnalysisPitchNode>(); });
+        factory.registerType ("analysis.onset", [] { return std::make_unique<nodes::AnalysisOnsetNode>(); });
+        factory.registerType ("analysis.notes", [] { return std::make_unique<nodes::AnalysisNotesNode>(); });
+        factory.registerType ("analysis.phase", [] { return std::make_unique<nodes::AnalysisPhaseNode>(); });
         factory.registerType ("data.lookup", [] { return std::make_unique<nodes::DataLookupNode>(); });
         // Note Stream batch — note.hold/note.select/note.chord deferred (a
         // real, documented engine limit: ExecutionPlan::BlockStep supports

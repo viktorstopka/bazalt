@@ -277,6 +277,13 @@ namespace bazalt::engine::nodes
 
             const auto increment = sampleRate > 0.0 ? (double) frequency / sampleRate : 0.0;
             lastFrequency = frequency;
+            // How fast the read position really moves: the running phase plus
+            // whatever drives Phase (a tracked phase from analysis.phase plays
+            // the shape with Frequency at 0). Band-limiting follows it.
+            auto phaseStep = (double) (phaseOffset - lastPhaseOffset);
+            phaseStep -= std::floor (phaseStep + 0.5);
+            lastPhaseOffset = phaseOffset;
+            const auto readSpeed = std::abs (increment + phaseStep);
             if (trackIndex < phaseTrack.size())
                 phaseTrack[trackIndex++] = (float) ((double) cycleCount + phase);
             float value = 0.0f;
@@ -288,7 +295,7 @@ namespace bazalt::engine::nodes
             {
                 const auto frame = framesFrom != nullptr ? framesFrom->readCompanion (sampleIndex, 0.0f) : 0.0f;
                 value = oneShotDone ? wavetable.readHeld (heldPosition, frame)
-                                    : wavetable.read (CurveView::levelFor (increment), phase + (double) phaseOffset, frame);
+                                    : wavetable.read (CurveView::levelFor (readSpeed), phase + (double) phaseOffset, frame);
             }
             else if (view.isValid())
             {
@@ -297,7 +304,7 @@ namespace bazalt::engine::nodes
                 else
                 {
                     const auto position = phase + (double) phaseOffset;
-                    value = view.hasBandLimitedTables() ? view.read (CurveView::levelFor (increment), position)
+                    value = view.hasBandLimitedTables() ? view.read (CurveView::levelFor (readSpeed), position)
                                                         : view.evaluate ((float) (position - std::floor (position)));
                 }
             }
@@ -410,6 +417,7 @@ namespace bazalt::engine::nodes
         std::vector<float> phaseTrack;
         size_t trackIndex = 0;
         float lastFrequency = defaultFrequencyHz;
+        float lastPhaseOffset = 0.0f;
         bool oneShotDone = false;
         bool synced = false, hostPlaying = false, hostPositionFresh = false;
         double tempoBpm = 120.0, hostPpq = 0.0, beatsPerCycle = 2.0; // Division 1/2, the default

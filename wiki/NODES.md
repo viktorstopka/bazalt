@@ -669,15 +669,49 @@ node can play back or analyse. **In:** `in` — `Audio`; `trigger : Event`; `sto
 Renders an EQ's frequency response as a plain curve, one-way — lets a shape
 designed in the EQ editor drive a waveshaper, remap, or tract profile. **In:** `eq` — `Data(eq-curve)`; `lowFrequency`/`highFrequency` (span to render); `normalise : bool·true`. **Out:** `data` — `Data(curve)`. **Behavior:** renders an EQ's magnitude response as a plain curve so a shape designed in the EQ editor can drive a waveshaper/remap/tract profile — one-way, explicit, never automatic (see `NODES.System.md` §4's matrix).
 
-## analysis 📋 (all — M25)
+## analysis
 
-#### `analysis.onset` — Onset Detector
-Fires an event whenever a new sound event starts in an incoming signal — the
-audio-to-trigger primitive behind hit detection and audio-driven sequencing. **In:** `in` — `Audio`; `sensitivity`; `holdOff`. **Out:** `onset` — `Event`; `strength`. **Structural:** `method` (enum: energy, spectral flux).
+Hearing a played instrument (`wiki/plans/GuitarInput.md`): shared DSP in
+`engine/include/bazalt/engine/AudioAnalysis.h`, nodes in `AnalysisHearingNodes.h`.
 
-#### `analysis.pitch` — Pitch Tracker
-Continuously estimates the fundamental pitch of an incoming signal — turns a
-sung or played note into a Control-rate pitch value with a confidence score. **In:** `in`; `lowestPitch`; `smoothing`. **Out:** `pitch [audio]`; `confidence`; `voiced` — `bool`. **Structural:** `method` (enum: autocorrelation, YIN), `windowSize`.
+#### `analysis.pitch` — Pitch ✅ *(GuitarInput, 2026-10-11)*
+What note is playing. YIN pitch tracking, searching only **Low Note..High Note**
+(default E2..E6): one string's range makes it several times faster and keeps it off
+the wrong octave (a plucked string's 2nd harmonic is often louder than its
+fundamental). **In:** `in` — audio. **Out:** `pitch` — semitones (fractional: bends and
+vibrato show); `frequency` — Hz; `confidence` — 0..1 (noise and silence read low).
+**Parameters:** Low Note, High Note, Strictness (the YIN threshold). Values hold between
+estimates; an estimate needs about two periods of the lowest note in range (≈ 6–12 ms
+on a high E string).
+
+#### `analysis.onset` — Onset ✅ *(GuitarInput, 2026-10-11)*
+A pluck, a hit, a new attack. **In:** `in`. **Out:** `onset` — `Event`; `strength` —
+0..1, the attack's peak over its first 5 ms (a velocity). **Parameters:** Sensitivity
+(how far the attack jumps above the sound so far, default 6 dB — a re-pluck on a
+ringing string rises only ~7–8 dB), Gate (dB), Hold (ms between onsets). Fast envelope
+against a slow one, so a new pluck on a still-ringing string is heard.
+
+#### `analysis.notes` — Audio to Notes ✅ *(GuitarInput, 2026-10-11)*
+A played instrument as a `Note` stream: plug it into a Voice and every pluck plays a
+voice. A note starts at an onset as soon as the pitch is confident (velocity = the
+attack's strength), follows bends while it rings, and ends when the sound fades under
+the gate or the pitch becomes unclear for 40 ms. A new pluck while a note rings ends
+it and starts the next one. **In:** `in`. **Out:** `notes` — `Note`. **Parameters:**
+Low Note, High Note, Sensitivity, Gate. Monophonic: one string (or one melodic line)
+per node.
+
+#### `analysis.phase` — Track Phase ✅ *(GuitarInput, 2026-10-11)*
+The phase (0..1 per cycle) of the note being played, locked to its zero crossings.
+Into an Oscillator's **Phase** (with Frequency at 0), any drawn shape or wavetable plays
+in the instrument's own period and follows every bend — no note detection in between.
+**Divide** 2 is a clean octave down, Multiply 3 / Divide 2 a fifth up. **In:** `in`.
+**Out:** `phase` — 0..1; `frequency` — Hz after the ratio. **Parameters:** Multiply,
+Divide, Gate. The Oscillator and the fixed shapes band-limit by how fast their read
+position really moves (frequency plus the change of Phase), so a shape driven only by
+Phase is still alias-free.
+
+#### `analysis.centroid` — Centroid 📋
+Spectral centroid (brightness) — needs an FFT.
 
 #### `analysis.level` — Level ✅
 How loud a signal is. **In:** `in` — `Audio` (Stereo; mono broadcasts, both channels measured together — no downmix needed); `attack`; `release`. **Out:** `level` — `Control` (linear); `db` — `Control` (dB). **Parameters:** `mode` (RMS over a 50 ms window, then the ballistics; or peak). A full-scale sine reads 0.707 / −3 dB RMS.

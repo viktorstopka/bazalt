@@ -728,3 +728,67 @@ TEST_CASE ("A mono sidechain feeds both of Audio In's outputs", "[plugin][host-i
 
     CHECK (buffer.getSample (0, 50) == Catch::Approx (0.3f + 0.3f * 0.0316f).margin (1.0e-5f));
 }
+
+// wiki/plans/GuitarInput.md: a guitar plays a synth — the main input through
+// Audio to Notes into a Voice, whose sine sounds at the plucked note.
+TEST_CASE ("A plucked note on the input plays a Voice at that pitch", "[plugin][host-input][hearing]")
+{
+    BazaltAudioProcessor processor;
+    processor.prepareToPlay (48000.0, 256);
+
+    NodeGraph graph;
+    graph.addNode ({ "in", "io.audioIn", {}, {}, {} });
+    graph.addNode ({ "notes", "analysis.notes", {}, {}, {} });
+    graph.addNode ({ "voice", "life.voice", {}, {}, {} });
+    graph.addNode ({ "p2f", "math.pitchToFrequency", {}, {}, {} });
+    graph.addNode ({ "sine", "source.sine", {}, {}, {} });
+    graph.addNode ({ "merge", "life.merge", {}, {}, {} });
+    graph.addNode ({ "out", "io.output", {}, {}, {} });
+    graph.addConnection ({ "in", "channel.0", "notes", "in" });
+    graph.addConnection ({ "notes", "notes", "voice", "spawn" });
+    graph.addConnection ({ "voice", "pitch", "p2f", "pitch" });
+    graph.addConnection ({ "p2f", "frequency", "sine", "source.sine.frequency" });
+    graph.addConnection ({ "voice", "gate", "sine", "source.sine.amplitude" });
+    graph.addConnection ({ "sine", "out", "merge", "in" });
+    graph.addConnection ({ "merge", "out", "out", "in" });
+    graph.setOutput ("out", "out");
+    const auto result = processor.getGraphEditController().setGraph (graph);
+    INFO (result.errorMessage);
+    REQUIRE (result.success);
+
+    // A plucked A3 (220 Hz, with a louder 2nd harmonic) on the main input.
+    // The output carries only the synth: the input is not passed through.
+    std::vector<float> rendered;
+    double t = 0.0;
+    for (int block = 0; block < 100; ++block)
+    {
+        juce::AudioBuffer<float> buffer (2, 256);
+        for (int i = 0; i < 256; ++i, t += 1.0 / 48000.0)
+        {
+            const auto v = (float) (0.3 * std::exp (-t * 2.0)
+                                    * (0.6 * std::sin (juce::MathConstants<double>::twoPi * 220.0 * t)
+                                       + 0.9 * std::sin (juce::MathConstants<double>::twoPi * 440.0 * t)));
+            buffer.setSample (0, i, v);
+            buffer.setSample (1, i, v);
+        }
+        juce::MidiBuffer midi;
+        processor.processBlock (buffer, midi);
+        if (block >= 20)
+            rendered.insert (rendered.end(), buffer.getReadPointer (0), buffer.getReadPointer (0) + 256);
+    }
+
+    auto magnitudeAt = [&] (double hz)
+    {
+        double re = 0.0, im = 0.0;
+        for (size_t i = 0; i < rendered.size(); ++i)
+        {
+            const auto angle = juce::MathConstants<double>::twoPi * hz * (double) i / 48000.0;
+            re += rendered[i] * std::cos (angle);
+            im -= rendered[i] * std::sin (angle);
+        }
+        return std::sqrt (re * re + im * im) / (double) rendered.size();
+    };
+    INFO ("220 Hz " << magnitudeAt (220.0) << ", 440 Hz " << magnitudeAt (440.0));
+    CHECK (magnitudeAt (220.0) > 0.2);   // the sine plays the fundamental …
+    CHECK (magnitudeAt (440.0) < 0.05);  // … not the louder octave
+}

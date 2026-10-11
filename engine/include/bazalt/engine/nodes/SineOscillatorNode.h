@@ -187,7 +187,12 @@ namespace bazalt::engine::nodes
             if (trackIndex < phaseTrack.size())
                 phaseTrack[trackIndex++] = (float) ((double) cycleCount + phase);
 
-            const auto dt = sampleRate > 0.0 ? std::fabs ((double) frequency) / sampleRate : 0.0;
+            // The read position moves by the running phase plus whatever drives
+            // Phase (a tracked phase plays the shape with Frequency at 0):
+            // band-limiting follows the sum.
+            auto phaseStep = (double) (phaseOffset - lastPhaseOffset);
+            phaseStep -= std::floor (phaseStep + 0.5);
+            const auto dt = sampleRate > 0.0 ? std::fabs ((double) frequency / sampleRate + phaseStep) : 0.0;
             const auto t = bandLimited::wrap (phase + (double) phaseOffset);
             outputs[0] = (float) (evaluate (waveform, t, dt, pulseWidth) * (double) amplitude);
 
