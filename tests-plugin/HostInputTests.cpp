@@ -676,3 +676,55 @@ TEST_CASE ("Note-on, pitch bend and note-off never allocate on the audio thread"
 
     SUCCEED ("no allocation trap fired");
 }
+
+// The Ableton-instrument case: the host switches the main input off and the
+// sidechain on, so Sidechain 1 arrives in channels 0-1 — the same channels as
+// the main output.
+TEST_CASE ("With the main input off, Sidechain 1 reaches Audio In and its meter reads the sidechain, not the output",
+           "[plugin][host-input][mono]")
+{
+    BazaltAudioProcessor processor;
+    auto layout = processor.getBusesLayout();
+    layout.inputBuses.getReference (0) = juce::AudioChannelSet::disabled();
+    layout.inputBuses.getReference (1) = juce::AudioChannelSet::stereo();
+    REQUIRE (processor.setBusesLayout (layout));
+    processor.prepareToPlay (44100.0, 256);
+    // Audio In (Sidechain 1) x 0.5 -> out: the output differs from the sidechain.
+    NodeGraph graph;
+    graph.addNode ({ "in", "io.audioIn", {}, { { "io.audioIn.bus", 1.0f } }, {} });
+    graph.addNode ({ "half", "math.multiply", {}, { { "in.1", 0.5f } }, {} });
+    graph.addNode ({ "out", "io.output", {}, {}, {} });
+    graph.addConnection ({ "in", "channel.0", "half", "in.0" });
+    graph.addConnection ({ "half", "out", "out", "in" });
+    graph.setOutput ("out", "out");
+    REQUIRE (processor.getGraphEditController().setGraph (graph).success);
+
+    juce::AudioBuffer<float> buffer (2, 256);
+    buffer.clear();
+    fillChannel (buffer, 0, 0.4f); // sidechain left
+    fillChannel (buffer, 1, 0.4f); // sidechain right
+    juce::MidiBuffer midi;
+    processor.processBlock (buffer, midi);
+
+    constexpr auto sidechainPassthroughGain = 0.0316f;
+    CHECK (buffer.getSample (0, 50) == Catch::Approx (0.2f + 0.4f * sidechainPassthroughGain).margin (1.0e-5f));
+    CHECK (processor.getAuxPeakLevel (0) == Catch::Approx (0.4f).margin (1.0e-6f));
+}
+
+TEST_CASE ("A mono sidechain feeds both of Audio In's outputs", "[plugin][host-input][mono]")
+{
+    BazaltAudioProcessor processor;
+    auto layout = processor.getBusesLayout();
+    layout.inputBuses.getReference (1) = juce::AudioChannelSet::mono();
+    REQUIRE (processor.setBusesLayout (layout));
+    processor.prepareToPlay (44100.0, 256);
+    REQUIRE (processor.getGraphEditController().setGraph (monoEffectGraph (1.0f, "channel.1")).success); // the RIGHT output
+
+    juce::AudioBuffer<float> buffer (3, 256); // main L/R + mono sidechain
+    buffer.clear();
+    fillChannel (buffer, 2, 0.3f);
+    juce::MidiBuffer midi;
+    processor.processBlock (buffer, midi);
+
+    CHECK (buffer.getSample (0, 50) == Catch::Approx (0.3f + 0.3f * 0.0316f).margin (1.0e-5f));
+}

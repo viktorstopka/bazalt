@@ -256,16 +256,19 @@ namespace bazalt
         if (layouts.getMainOutputChannelSet() != juce::AudioChannelSet::stereo())
             return false;
 
-        if (layouts.getMainInputChannelSet() != juce::AudioChannelSet::stereo()
-            && ! layouts.getMainInputChannelSet().isDisabled())
+        // Inputs may be stereo, mono or off: a host can offer its sidechain
+        // in mono, and refusing that left the sidechain silently disabled.
+        const auto inputOk = [] (const juce::AudioChannelSet& set)
+        {
+            return set.isDisabled() || set == juce::AudioChannelSet::stereo() || set == juce::AudioChannelSet::mono();
+        };
+
+        if (! inputOk (layouts.getMainInputChannelSet()))
             return false;
 
         for (int i = 0; i < numAuxBuses; ++i)
-        {
-            const auto auxSet = layouts.getChannelSet (true, i + 1);
-            if (! auxSet.isDisabled() && auxSet != juce::AudioChannelSet::stereo())
+            if (! inputOk (layouts.getChannelSet (true, i + 1)))
                 return false;
-        }
 
         return true;
     }
@@ -997,6 +1000,14 @@ namespace bazalt
                 hostBusPresent[(size_t) bus][(size_t) ch] = true;
             }
 
+            // A mono bus (a host may hand the sidechain over in mono) feeds
+            // both of Audio In's outputs.
+            if (channels == 1)
+            {
+                hostInputScratch.copyFrom (bus * channelsPerBus + 1, 0, busBuffer, 0, 0, numSamples);
+                hostBusPresent[(size_t) bus][1] = true;
+            }
+
             if (bus == 0)
                 mainInputPeakLevel.store (channels > 0 ? busBuffer.getMagnitude (0, numSamples) : 0.0f, std::memory_order_relaxed);
         }
@@ -1210,23 +1221,29 @@ namespace bazalt
 
     void BazaltAudioProcessor::updateAuxLevelsAndPassthrough (juce::AudioBuffer<float>& buffer, int numSamples)
     {
+        // Reads the copy captureHostInput made, never the host buffer itself:
+        // by now that buffer holds Bazalt's OUTPUT, and an input bus can share
+        // its channels (an instrument whose main input the host switched off
+        // has Sidechain 1 in channels 0-1) — reading it here measured and
+        // re-mixed Bazalt's own output instead of the sidechain.
+        constexpr auto channelsPerBus = bazalt::engine::HostInputs::channelsPerBus;
         auto* mainLeft = buffer.getWritePointer (0);
         auto* mainRight = buffer.getNumChannels() > 1 ? buffer.getWritePointer (1) : mainLeft;
+        const auto captured = numSamples <= hostInputScratch.getNumSamples();
 
         for (int auxIndex = 0; auxIndex < numAuxBuses; ++auxIndex)
         {
             const auto busIndex = auxIndex + 1; // bus 0 is the main input
-            auto auxBuffer = getBusBuffer (buffer, true, busIndex);
-
             float peak = 0.0f;
 
-            if (auxBuffer.getNumChannels() > 0)
+            if (captured && hostBusPresent[(size_t) busIndex][0])
             {
-                peak = auxBuffer.getMagnitude (0, numSamples);
+                const auto first = busIndex * channelsPerBus;
+                peak = hostInputScratch.getMagnitude (first, 0, numSamples);
 
-                for (int ch = 0; ch < auxBuffer.getNumChannels() && ch < 2; ++ch)
+                for (int ch = 0; ch < channelsPerBus; ++ch)
                 {
-                    const auto* src = auxBuffer.getReadPointer (ch);
+                    const auto* src = hostInputScratch.getReadPointer (first + ch);
                     auto* dst = ch == 0 ? mainLeft : mainRight;
 
                     for (int i = 0; i < numSamples; ++i)
@@ -1234,7 +1251,7 @@ namespace bazalt
                 }
 
                 if (auto* tap = tapPointers[(size_t) (auxIndex + 1)])
-                    tap->push (auxBuffer.getReadPointer (0), numSamples);
+                    tap->push (hostInputScratch.getReadPointer (first), numSamples);
             }
 
             auxPeakLevels[(size_t) auxIndex].store (peak, std::memory_order_relaxed);

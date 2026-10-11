@@ -62,12 +62,14 @@ TEST_CASE ("Activating all 4 sidechain aux buses as stereo is still a supported 
     CHECK (processor.checkBusesLayoutSupported (layout));
 }
 
-TEST_CASE ("A non-stereo aux bus layout is rejected", "[plugin][buses]")
+TEST_CASE ("A mono aux bus is accepted (a host may offer its sidechain in mono); a surround one is not", "[plugin][buses]")
 {
     BazaltAudioProcessor processor;
 
     auto layout = processor.getBusesLayout();
     layout.inputBuses.getReference (1) = juce::AudioChannelSet::mono();
+    CHECK (processor.checkBusesLayoutSupported (layout));
 
+    layout.inputBuses.getReference (1) = juce::AudioChannelSet::create5point1();
     CHECK_FALSE (processor.checkBusesLayoutSupported (layout));
 }
