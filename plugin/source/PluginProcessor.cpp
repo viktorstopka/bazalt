@@ -14,13 +14,6 @@ namespace bazalt
 {
     namespace
     {
-        // -30 dB: numerically measurable at the output (so a test can
-        // inject a signal into an aux bus and confirm it arrived) without
-        // being a meaningful part of the mix. Real sidechain-driven DSP
-        // (ducking, modulation) is a future feature once the graph model
-        // has aux-typed ports — this is the interim "proof" the milestone
-        // asks for, not the final behaviour.
-        constexpr float sidechainPassthroughGain = 0.0316f;
 
         // DomainRedesign.md Batch 2's MIDI-independence mechanism: a
         // sentinel NoteId for a voice triggered by an origin's own internal
@@ -37,8 +30,12 @@ namespace bazalt
                           .withInput ("Input", juce::AudioChannelSet::stereo(), true)
                           .withOutput ("Output", juce::AudioChannelSet::stereo(), true);
 
+        // Sidechain 1 is on from the start: Ableton Live never activates a VST3
+        // aux bus that starts inactive, so a sidechain routed to Bazalt there
+        // reached nothing (the diagnostics log showed "Sidechain 1=off" with
+        // Live's sidechain set). 2-4 stay off until a host asks for them.
         for (int i = 0; i < numAuxBuses; ++i)
-            layout = layout.withInput ("Sidechain " + juce::String (i + 1), juce::AudioChannelSet::stereo(), false);
+            layout = layout.withInput ("Sidechain " + juce::String (i + 1), juce::AudioChannelSet::stereo(), i == 0);
 
         return layout;
     }
@@ -997,8 +994,16 @@ namespace bazalt
 
         for (int bus = 0; bus < bazalt::engine::HostInputs::numAudioBuses; ++bus)
         {
-            const auto busBuffer = getBusBuffer (buffer, true, bus);
-            const auto channels = juce::jmin (channelsPerBus, busBuffer.getNumChannels());
+            if (bus >= getBusCount (true))
+                break;
+
+            // Only the bus's channels the host buffer really holds: a host (or
+            // a test) may hand over fewer channels than the layout declares,
+            // and getBusBuffer would point past the end.
+            const auto firstChannel = getChannelIndexInProcessBlockBuffer (true, bus, 0);
+            const auto channels = juce::jlimit (0, channelsPerBus,
+                                                juce::jmin (getChannelCountOfBus (true, bus), buffer.getNumChannels() - firstChannel));
+            const juce::AudioBuffer<float> busBuffer (buffer.getArrayOfWritePointers() + firstChannel, juce::jmax (0, channels), numSamples);
 
             for (int ch = 0; ch < channels; ++ch)
             {
@@ -1225,7 +1230,7 @@ namespace bazalt
         }
     }
 
-    void BazaltAudioProcessor::updateAuxLevelsAndPassthrough (juce::AudioBuffer<float>& buffer, int numSamples)
+    void BazaltAudioProcessor::updateAuxLevels (int numSamples)
     {
         // Reads the copy captureHostInput made, never the host buffer itself:
         // by now that buffer holds Bazalt's OUTPUT, and an input bus can share
@@ -1233,8 +1238,6 @@ namespace bazalt
         // has Sidechain 1 in channels 0-1) — reading it here measured and
         // re-mixed Bazalt's own output instead of the sidechain.
         constexpr auto channelsPerBus = bazalt::engine::HostInputs::channelsPerBus;
-        auto* mainLeft = buffer.getWritePointer (0);
-        auto* mainRight = buffer.getNumChannels() > 1 ? buffer.getWritePointer (1) : mainLeft;
         const auto captured = numSamples <= hostInputScratch.getNumSamples();
 
         for (int auxIndex = 0; auxIndex < numAuxBuses; ++auxIndex)
@@ -1246,15 +1249,6 @@ namespace bazalt
             {
                 const auto first = busIndex * channelsPerBus;
                 peak = hostInputScratch.getMagnitude (first, 0, numSamples);
-
-                for (int ch = 0; ch < channelsPerBus; ++ch)
-                {
-                    const auto* src = hostInputScratch.getReadPointer (first + ch);
-                    auto* dst = ch == 0 ? mainLeft : mainRight;
-
-                    for (int i = 0; i < numSamples; ++i)
-                        dst[i] += src[i] * sidechainPassthroughGain;
-                }
 
                 if (auto* tap = tapPointers[(size_t) (auxIndex + 1)])
                     tap->push (hostInputScratch.getReadPointer (first), numSamples);
@@ -1284,7 +1278,7 @@ namespace bazalt
         beginTransportForBlock (numSamples);
 
         // Clear only the OUTPUT channels. The aux inputs live beyond them in the
-        // host buffer and updateAuxLevelsAndPassthrough reads them at the end.
+        // host buffer and captureHostInput already copied them at the end.
         for (int ch = 0; ch < getTotalNumOutputChannels() && ch < buffer.getNumChannels(); ++ch)
             buffer.clear (ch, 0, numSamples);
 
@@ -1413,7 +1407,7 @@ namespace bazalt
 
         finalizeInstanceMixIntoOutput (buffer, numSamples, globalPlanForThisBlock);
 
-        updateAuxLevelsAndPassthrough (buffer, numSamples);
+        updateAuxLevels (numSamples);
 
         if (auto* mainTap = tapPointers[0])
             mainTap->push (buffer.getReadPointer (0), buffer.getNumSamples());

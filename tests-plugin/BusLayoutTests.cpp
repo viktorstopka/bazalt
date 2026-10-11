@@ -14,10 +14,10 @@ TEST_CASE ("BazaltAudioProcessor declares main stereo in/out plus 4 aux stereo s
     CHECK (processor.getChannelCountOfBus (true, 0) == 2);
     CHECK (processor.getChannelCountOfBus (false, 0) == 2);
 
-    // Aux buses declare a stereo layout but are inactive by default — a
-    // host that never activates them must still be a supported layout
-    // (ARCHITECTURE.md §4.1).
-    for (int i = 0; i < BazaltAudioProcessor::numAuxBuses; ++i)
+    // Sidechain 1 is active by default (Ableton Live never activates an
+    // inactive VST3 aux bus); 2-4 declare stereo but start inactive.
+    CHECK (processor.getChannelCountOfBus (true, 1) == 2);
+    for (int i = 1; i < BazaltAudioProcessor::numAuxBuses; ++i)
         CHECK (processor.getChannelCountOfBus (true, i + 1) == 0);
 }
 
@@ -35,7 +35,7 @@ TEST_CASE ("Two processor instances get distinct identities", "[plugin][multi-in
     CHECK (a.getInstanceId() != b.getInstanceId());
 }
 
-TEST_CASE ("The default bus layout (main stereo, aux sidechains inactive) is supported", "[plugin][buses]")
+TEST_CASE ("The default bus layout (main stereo, Sidechain 1 on, 2-4 inactive) is supported", "[plugin][buses]")
 {
     BazaltAudioProcessor processor;
     CHECK (processor.checkBusesLayoutSupported (processor.getBusesLayout()));

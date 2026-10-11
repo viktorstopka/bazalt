@@ -339,13 +339,9 @@ TEST_CASE ("io.audioIn bus setting selects a sidechain aux bus", "[plugin][host-
     juce::MidiBuffer midi;
     processor.processBlock (buffer, midi);
 
-    // The aux bus reaches the output twice: through the graph (0.4) and through
-    // the interim sidechain passthrough, which mixes every active aux bus into
-    // the main output at -30 dB (PluginProcessor.cpp, sidechainPassthroughGain).
-    // The passthrough only started working with this change - the clear at the top
-    // of processBlock used to wipe the aux input before it was read.
-    constexpr auto sidechainPassthroughGain = 0.0316f;
-    CHECK (buffer.getSample (0, 50) == Catch::Approx (0.4f + 0.4f * sidechainPassthroughGain).margin (1.0e-6f));
+    // The aux bus reaches the output only through the graph: a sidechain is
+    // never mixed straight into the output (a guitar on it would leak through).
+    CHECK (buffer.getSample (0, 50) == Catch::Approx (0.4f).margin (1.0e-6f));
     CHECK (processor.getAuxPeakLevel (0) == Catch::Approx (0.4f).margin (1.0e-6f));
 }
 
@@ -706,9 +702,28 @@ TEST_CASE ("With the main input off, Sidechain 1 reaches Audio In and its meter 
     juce::MidiBuffer midi;
     processor.processBlock (buffer, midi);
 
-    constexpr auto sidechainPassthroughGain = 0.0316f;
-    CHECK (buffer.getSample (0, 50) == Catch::Approx (0.2f + 0.4f * sidechainPassthroughGain).margin (1.0e-5f));
+    CHECK (buffer.getSample (0, 50) == Catch::Approx (0.2f).margin (1.0e-5f));
     CHECK (processor.getAuxPeakLevel (0) == Catch::Approx (0.4f).margin (1.0e-6f));
+}
+
+// Ableton Live only feeds an aux bus the plugin starts with switched on — no
+// layout change here, just the default one a host sees at load.
+TEST_CASE ("In the default layout Sidechain 1 is on and reaches Audio In", "[plugin][host-input]")
+{
+    BazaltAudioProcessor processor;
+    REQUIRE (processor.getBusesLayout().getChannelSet (true, 1) == juce::AudioChannelSet::stereo());
+    processor.prepareToPlay (44100.0, 256);
+    REQUIRE (processor.getGraphEditController().setGraph (monoEffectGraph (1.0f, "channel.0")).success);
+
+    juce::AudioBuffer<float> buffer (4, 256); // main L/R + Sidechain 1 L/R
+    buffer.clear();
+    fillChannel (buffer, 2, 0.3f);
+    fillChannel (buffer, 3, 0.3f);
+    juce::MidiBuffer midi;
+    processor.processBlock (buffer, midi);
+
+    CHECK (buffer.getSample (0, 50) == Catch::Approx (0.3f).margin (1.0e-5f));
+    CHECK (processor.getAuxPeakLevel (0) == Catch::Approx (0.3f).margin (1.0e-6f));
 }
 
 TEST_CASE ("A mono sidechain feeds both of Audio In's outputs", "[plugin][host-input][mono]")
@@ -726,7 +741,7 @@ TEST_CASE ("A mono sidechain feeds both of Audio In's outputs", "[plugin][host-i
     juce::MidiBuffer midi;
     processor.processBlock (buffer, midi);
 
-    CHECK (buffer.getSample (0, 50) == Catch::Approx (0.3f + 0.3f * 0.0316f).margin (1.0e-5f));
+    CHECK (buffer.getSample (0, 50) == Catch::Approx (0.3f).margin (1.0e-5f));
 }
 
 // wiki/plans/GuitarInput.md: a guitar plays a synth — the main input through

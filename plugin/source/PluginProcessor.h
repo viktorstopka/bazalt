@@ -429,7 +429,7 @@ namespace bazalt
         // designated output resolved Poly, or this block ran monoOnly).
         void finalizeInstanceMixIntoOutput (juce::AudioBuffer<float>& output, int numSamples,
                                              bazalt::engine::ExecutionPlan* globalPlan) noexcept;
-        void updateAuxLevelsAndPassthrough (juce::AudioBuffer<float>& mainOutput, int numSamples);
+        void updateAuxLevels (int numSamples); // aux meters + taps; never mixed into the output
 
         // juce::Timer — periodic (~50ms, ARCHITECTURE.md §3.2) reclaim() on
         // every PlanSwapper below, message-thread only. engine/ has no

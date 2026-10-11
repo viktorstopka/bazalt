@@ -289,15 +289,15 @@ ctest --test-dir build -C Debug -R PluginTests --output-on-failure
   ARCHITECTURE.md §3.2 originally sketched — close enough in effect that
   the doc's own gap is considered closed, but don't assume the exact data
   structure it described exists.
-- The sidechain "passthrough" (`PluginProcessor::updateAuxLevelsAndPassthrough`)
-  mixes each active aux bus into the main output at a fixed -30dB and tracks
-  its peak level — a deliberately simple, measurable proof that audio
-  reaches the engine from all 4 aux buses (ARCHITECTURE.md §4.1), not real
-  sidechain-driven DSP. Until M21 `processBlock` cleared every host-buffer
-  channel, aux inputs included, before this read them; it now clears only the
-  output channels. Real sidechain use goes through `io.audioIn`'s `bus` setting
-  (Aux 1-4 as ordinary Audio signals, ADR-0028) — there are still no aux-typed
-  node ports, and no ducking-style node built on it yet.
+- **Sidechain (2026-10-11).** Sidechain 1 is active by default; 2-4 start
+  inactive. Ableton Live never activates a VST3 aux bus that starts inactive,
+  so with all four off Live's sidechain reached nothing (the user's
+  diagnostics log: `Sidechain 1=off`). The old -30 dB "proof" passthrough that
+  mixed every aux bus into the output is gone (it would leak a guitar on the
+  sidechain into the synth's output); `PluginProcessor::updateAuxLevels` only
+  meters and taps. Sidechain audio reaches the graph through `io.audioIn`'s
+  `bus` setting (Aux 1-4, ADR-0028). `captureHostInput` reads only the
+  channels the host buffer really holds.
 - **Host boundary (M21, ADR-0028).** `io.audioIn`/`io.control`/`io.transport`
   read a plain `HostInputs` struct the plugin fills per `process()` range
   (`ExecutionPlan::applyHostInputs`), never JUCE types. `io.noteIn` is NOT on
