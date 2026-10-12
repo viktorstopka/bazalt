@@ -58,7 +58,7 @@ export function TelemetryScope({ tap, kind, label }: TelemetryScopeProps) {
       const tapData = getInterpolatedTap(tap, frameType)
       if (tapData) {
         if (kind === 'scope') drawScope(ctx, width, height, tapData.payload)
-        else if (kind === 'spectrum') drawSpectrum(ctx, width, height, tapData.payload)
+        else if (kind === 'spectrum') drawSpectrum(ctx, width, height, tapData.payload, tapData.sampleRate)
         else drawMeter(ctx, width, height, tapData.payload)
       }
     }

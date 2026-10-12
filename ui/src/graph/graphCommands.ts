@@ -125,6 +125,12 @@ export function graphSetContent(nodeId: string, content: unknown): Promise<Comma
   return callCommand('graphSetContent', nodeId, JSON.stringify(content))
 }
 
+/** Unwrap (wiki/plans/Factories.md §1): replaces a factory node with the
+    ordinary nodes it is made of — same wiring, same sound, one undo step. */
+export function graphUnwrapNode(nodeId: string): Promise<CommandResult> {
+  return callCommand('graphUnwrapNode', nodeId)
+}
+
 /** While an editor drags: the content goes straight to the running nodes, no
     recompile, no undo step. Commit with graphSetContent on release. */
 export async function graphSetContentLive(nodeId: string, content: unknown): Promise<boolean> {

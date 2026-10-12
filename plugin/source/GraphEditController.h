@@ -155,6 +155,11 @@ namespace bazalt
             setContent(). Same idea as the live slider path (LiveParameterEdits.h). */
         CommandResult setContentLive (const juce::String& nodeId, const juce::var& content);
 
+        /** Unwrap (wiki/plans/Factories.md §1): replaces a factory node with the
+            ordinary nodes it is made of, wired the same and sounding the same
+            (bazalt::engine::unwrapNode, Unwrap.h). One undoable edit. */
+        CommandResult unwrapNode (const juce::String& nodeId);
+
         /** The most image data one patch may carry (wiki/plans/Decorations.md
             §4): an image that would take it past this is refused. */
         static constexpr size_t maxPatchAssetBytes = 5 * 1024 * 1024;

@@ -237,6 +237,20 @@ shelf EQ. **In:** `in`; `frequency [audio]`; `gain` (shown in dB); `slope`. **Ou
 #### `filter.peak` — Peak / Bell ✅
 Boosts or cuts a band around a centre frequency — a parametric/bell EQ band. **In:** `in`; `frequency [audio]`; `gain`; `q`. **Out:** `out`.
 
+#### `filter.eq` — EQ ✅ *(stage 1, 1d)*
+A multi-band EQ drawn in the Factory window over a live spectrum (grey: what it hears,
+pink: what it plays), on the log-frequency axis every spectrum shares. **In:** `in` —
+`Audio` (per channel); `curve` — `Data(eq)` (optional: plays a `data.eqCurve` instead of
+its own bands). **Out:** `out`. **Content:** bands `{type, frequency, gain (dB), q, slope,
+order, enabled}` (`EqCurve.h`), up to 16. **Band types:** Bell, Low / High Shelf, Low /
+High Cut (order 1–4 = 12–48 dB/oct, a Butterworth cascade; Q above 0.707 adds a
+resonant bump), Notch. **Behavior:** bands in series, each run as exactly the primitive
+filters it stands for; an edit glides over ~10 ms. **Unwrap** (node menu): replaced by
+those `filter.peak` / `filter.shelf` / `filter.svf` nodes, wired the same — the render is
+bit-identical (`tests/EqTests.cpp`). Editor: drag a dot (frequency, gain; Shift is
+fine), wheel for width, double-click adds a bell, Snap puts frequencies on notes; the
+cursor reads frequency, note and the curve's gain.
+
 #### `filter.formant` — Formant 📋 *(Correction 1 replaces this entry entirely)*
 Shapes a signal's spectrum through a bank of resonant peaks (formants) and optional
 notches (antiformants) — the filter-only route to vowel-like or nasal colouration
@@ -645,6 +659,12 @@ publisher's companion), so modulating Frame sweeps the timbre sample-accurately.
 Keyframe tables are cached by content, so voice copies and live edits of one keyframe
 rebuild only what changed. Default: a sine morphing into a saw.
 
+#### `data.eqCurve` — EQ Curve ✅ *(stage 1, 1d)*
+One set of EQ bands, drawn in the Factory window, that any number of `filter.eq` nodes
+play — the same carve on several voices or layers, edited once. **Out:** `eq` —
+`Data(eq)`. **Content:** as `filter.eq`'s. Pure content — no inputs. Unwrapping an EQ
+that plays it unwraps these bands; the EQ Curve stays for whatever else reads it.
+
 #### `data.scale` — Scale ✅
 **In:** `root`. **Out:** `data` — `Data(scale)`. **Structural:** `scale` (enum: major, the church modes, pentatonics, blues, whole tone, chromatic — **12 named scales**; "harmonic series" and "custom" are the two catalog items deliberately deferred, both real gaps not silent ones — see below), `octaveSize` (generalizes the 12-tone patterns to other divisions by proportional scaling, not just padding). **A real, documented RT-safety limit:** `root` is a genuine wireable port, but its *live* cable value is never read on the audio thread — rebuilding a `Data` buffer means a heap allocation, forbidden there (CLAUDE.md rule 2); only the value applied via `setParameter()` (the node's own inline slider) actually republishes. A real worker-thread content-rebuild pipeline (`NODES.System.md` §8's own still-open item) is what closes this properly — not built as a side effect of this one node.
 
@@ -866,6 +886,8 @@ audition one point in the graph in isolation without rewiring anything. **In:** 
 A live FFT display of a signal's frequency content — the standard "watch the
 spectrum" view, for seeing what a filter, distortion, or synthesis stage is
 actually doing to the harmonic content. **In:** `in` — `Audio`. **Structural:** `fftSize`, `tilt`, `averaging`.
+Drawn on the EQ editor's log-frequency axis and grid (1d), smoothed like a meter;
+hovering reads frequency, note and level.
 
 #### `view.meter` — Meter
 A live level readout of whatever's wired into it — peak, RMS, true peak, or a
@@ -936,7 +958,7 @@ canvas zoom — so a single-sample pulse is always a visible sliver.
 Shape, unwrap contract, and the shared editor infrastructure are in
 `NODES.System.md` §8 — specs only, here.
 
-#### `factory.eq` — Spectral Factory (EQ)
+#### `factory.eq` — Spectral Factory (EQ) — *built as `filter.eq` + `data.eqCurve` (1d); tilt/mix/output gain, dynamic bands, mid/side, linear phase not built*
 A multi-band parametric EQ with its own editor, that unwraps into ordinary
 `filter.*` nodes once you need to touch what's inside. **Content:** ordered band list `{id, type, frequency, gain, q, enabled, externalized}`. **In:** `in` — `Audio`; `tilt [audio]`; `mix`; `outputGain [audio]`. **Out:** `out` — `Audio`; `curve` — `Data(eq-curve)`. **Structural:** `maxBands` (default 16), `oversampling`. **Unwrap:** one band → matching `filter.peak`/`shelf`/`svf`/`allpass`; whole factory → the series chain + `mix.gain`. **Deferred within this factory:** dynamic bands, mid/side, linear phase (none unwrap into today's primitives).
 

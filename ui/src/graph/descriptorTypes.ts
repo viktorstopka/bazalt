@@ -13,7 +13,7 @@ export type SignalType = 'signal' | 'event' | 'note' | 'spectral' | 'data'
 /** M15, SIGNAL_TYPES.md §2's Data semantic tags — mirrors engine's DataTag
     (Data.h). 'unknown' never satisfies a specific `dataTags`
     requirement; there is no wildcard match. */
-export type DataTag = 'unknown' | 'curve' | 'scale' | 'wavetable' | 'modal-set' | 'sample' | 'ir'
+export type DataTag = 'unknown' | 'curve' | 'scale' | 'wavetable' | 'modal-set' | 'sample' | 'ir' | 'eq'
 
 export type NodeLayoutVariant = 'standard' | 'horizontal' | 'singleton' | 'decoration' | 'glance'
 
@@ -239,6 +239,9 @@ export interface NodeDescriptor {
       loads and runs wherever an existing patch already uses it. Absent on
       mock descriptors. */
   deprecated?: boolean
+  /** A factory that can be replaced by the ordinary nodes it is made of
+      (Unwrap, wiki/plans/Factories.md §1) — the node menu offers it. */
+  canUnwrap?: boolean
   /** UI-only flag, not part of the C++ schema (NODE_EDITOR.md §3's "mock
       (UI-only) descriptors... marked as mocks") — true for every entry in
       mockDescriptors.ts, absent/false for anything NodeFactory::describeAll()

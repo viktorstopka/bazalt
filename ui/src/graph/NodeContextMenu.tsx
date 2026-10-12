@@ -15,11 +15,13 @@ interface NodeContextMenuProps {
   onRename: () => void
   onToggleBypass: () => void
   onSetAsOutput: () => void
+  /** Present only for a factory that can be unwrapped (an EQ). */
+  onUnwrap?: () => void
   onDelete: () => void
   onClose: () => void
 }
 
-export function NodeContextMenu({ x, y, bypassed, onRename, onToggleBypass, onSetAsOutput, onDelete, onClose }: NodeContextMenuProps) {
+export function NodeContextMenu({ x, y, bypassed, onRename, onToggleBypass, onSetAsOutput, onUnwrap, onDelete, onClose }: NodeContextMenuProps) {
   const rootRef = useRef<HTMLDivElement | null>(null)
   const pos = useAutoFlipPosition(x, y, rootRef)
 
@@ -43,6 +45,11 @@ export function NodeContextMenu({ x, y, bypassed, onRename, onToggleBypass, onSe
       <button onClick={onRename}>Rename</button>
       <button onClick={onToggleBypass}>{bypassed ? 'Un-bypass' : 'Toggle Bypass'}</button>
       <button onClick={onSetAsOutput}>Set as Output</button>
+      {onUnwrap && (
+        <button onClick={onUnwrap} title="Replace it with the ordinary nodes it is made of — same sound">
+          Unwrap
+        </button>
+      )}
       <button className="node-context-menu-delete" onClick={onDelete}>
         Delete
       </button>

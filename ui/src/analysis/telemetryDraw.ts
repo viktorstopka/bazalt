@@ -3,6 +3,8 @@
 // (NodePreview.tsx) reuse the exact same drawing code rather than a second
 // copy — "port M5's existing... canvases... reusing M5's existing draw
 // code verbatim" per the M20 plan.
+import { drawFrequencyGrid, drawSpectrumColumns } from './logSpectrum'
+import { spectrumColumnsDb } from '../factory/eqModel'
 import { tokens } from '../theme/tokens'
 
 function linearToDb(x: number): number {
@@ -66,24 +68,18 @@ export function drawScopeFilled(ctx: CanvasRenderingContext2D, width: number, he
   }
 }
 
-export function drawSpectrum(ctx: CanvasRenderingContext2D, width: number, height: number, payload: Float32Array) {
-  const minDb = -80
-  const maxDb = 20
-
-  ctx.strokeStyle = tokens.color.spectrumTrace
-  ctx.lineWidth = 1
-  ctx.beginPath()
-
-  for (let i = 0; i < payload.length; i++) {
-    const db = linearToDb(payload[i])
-    const normalized = Math.max(0, Math.min(1, (db - minDb) / (maxDb - minDb)))
-    const x = (i / payload.length) * width
-    const y = height - normalized * height
-    if (i === 0) ctx.moveTo(x, y)
-    else ctx.lineTo(x, y)
-  }
-
-  ctx.stroke()
+/** A spectrum frame (linear bins up to Nyquist) on the shared log-frequency
+    axis and grid (logSpectrum.ts) — the same reading as the EQ editor and the
+    Spectrum view. */
+export function drawSpectrum(ctx: CanvasRenderingContext2D, width: number, height: number, payload: Float32Array, sampleRate = 48000) {
+  const minDb = -90
+  const maxDb = 6
+  const points = Math.max(32, Math.min(400, Math.round(width)))
+  const columns = spectrumColumnsDb(payload, sampleRate, points)
+  const normDb = 20 * Math.log10(Math.max(1, payload.length / 2)) // a full-scale sine reads ~0 dB
+  for (let i = 0; i < points; i++) columns[i] -= normDb
+  drawFrequencyGrid(ctx, width, height, tokens.color.textSecondary, tokens.color.textSecondary)
+  drawSpectrumColumns(ctx, width, height, columns, { minDb, maxDb, stroke: tokens.color.spectrumTrace })
 }
 
 export function drawMeter(ctx: CanvasRenderingContext2D, width: number, height: number, payload: Float32Array) {

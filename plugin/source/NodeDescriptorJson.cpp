@@ -1,4 +1,5 @@
 #include "NodeDescriptorJson.h"
+#include "bazalt/engine/graph/Unwrap.h"
 
 namespace bazalt
 {
@@ -43,6 +44,7 @@ namespace bazalt
                 case bazalt::engine::DataTag::ModalSet:       return "modal-set";
                 case bazalt::engine::DataTag::Sample:         return "sample";
                 case bazalt::engine::DataTag::ImpulseResponse: return "ir";
+                case bazalt::engine::DataTag::EqCurve:        return "eq";
             }
             jassertfalse;
             return "unknown";
@@ -329,6 +331,7 @@ namespace bazalt
         obj->setProperty ("previews", descriptorListToVar (descriptor.previews, previewDescriptorToVar));
         obj->setProperty ("hasPolymorphicPorts", descriptor.hasPolymorphicPorts);
         obj->setProperty ("deprecated", descriptor.deprecated);
+        obj->setProperty ("canUnwrap", bazalt::engine::canUnwrap (descriptor.typeId)); // Unwrap.h
         return juce::var (obj);
     }
 

@@ -1,6 +1,6 @@
 # Data and Wavetable — roadmap stage 1
 
-**Status:** In progress. Decisions in §1 were taken with the user while planning
+**Status:** 1a–1d built; 1e deferred until after stage 2. Decisions in §1 were taken with the user while planning
 (2026-10-08); everything else is the recommended shape, open to change batch by batch.
 Built so far (batch 1a): one value family in the connection rules (1a.1), the bridge
 adapters removed with schema v12 (1a.2), and the merges with schema v13 (1a.3) — Gain
@@ -31,6 +31,17 @@ make the patches again anyways") — the factory patch list is just Empty; the e
 migration chain stays but is not extended. Not built from 1c: the single-frame
 "Wavetable Frame" node, and import from audio (stage 3). Next: 1d (EQ Curve and
 Spectrum).
+**1d built 2026-10-12:** `filter.eq` (EQ, Filters) and `data.eqCurve` (EQ Curve, Data)
+share one band document (`EqCurve.h`); the EQ plays its own bands or a wired EQ Curve.
+Bands: Bell, Low/High Shelf, Low/High Cut (12–48 dB/oct), Notch — each one or more
+stages that are exactly a Peak/Shelf/SVF node (SVF math now in `SvfCore.h`, shared), so
+**Unwrap** (`Unwrap.h`, node menu) replaces the EQ with those nodes bit-identically.
+Editor in the Factory window over a live pre/post spectrum, cursor reads Hz + note +
+gain, Snap = notes. Every spectrum (the editor, the Spectrum view, the M5 panel) now
+uses one log-frequency axis and grid (`ui/src/analysis/logSpectrum.ts`). Found on the
+way: per-channel lane copies of a content node never received its content (the
+compiler now hands it to every lane). **1e (README/NODE_GUIDE) is deferred until after
+stage 2** (user's instruction, 2026-10-12).
 
 Builds on `Factories.md` (content, editors, unwrap) and replaces its "docked editor
 panel" with a full Factory window (§1, D10). Stage 2's engine work — one plan with an
