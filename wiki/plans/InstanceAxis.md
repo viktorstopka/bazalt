@@ -121,6 +121,15 @@ and matched bit for bit (the parity test lived in `tests-plugin/` at commit 177c
 swappers, voice sums and the mono/global/poly branches were deleted: one swapper, one
 plan, one render path, for every patch.
 
+**Internal trigger chains run once (2026-10-12).** A trigger chain with an `io.noteIn`
+runs per instance (MIDI pokes each instance's note-in). Any other trigger chain — a
+clock, a macro, Events — runs once and feeds only instance 0's allocator, and the
+processor relays each spawn to the instance its VoiceManager picks
+(`InstanceLayout::Group::internallyTriggered`). Before this, the chain was copied into
+every instance, so a node outside the voices could not share the trigger (a toggle
+flipped by the same macro was rejected) and live instances re-spawned themselves from
+their own copies of the clock.
+
 **What sounds different, on purpose.**
 - A mono LFO (any once-only node) feeding voices is **one shared, free-running LFO**.
   It used to be copied into every voice, where each copy reset on note-on.
