@@ -363,7 +363,7 @@ TEST_CASE ("Disconnecting a Note source from instance.allocate.voice.spawn WHILE
     processor.processBlock (buffer, noteOn);
 
     auto* voiceNode = dynamic_cast<bazalt::engine::nodes::InstanceVoiceNode*> (
-        processor.getOriginVoicePlanSwapper (0, 0).peekCurrentPlan()->getNodeById ("alloc"));
+        processor.peekFirstVoicePlanForTesting (0)->getNodeById ("alloc"));
     REQUIRE (voiceNode != nullptr);
     REQUIRE (voiceNode->getGate()); // held, exactly as expected before the disconnect
 
@@ -375,7 +375,7 @@ TEST_CASE ("Disconnecting a Note source from instance.allocate.voice.spawn WHILE
     // (irrelevant to this test either way - re-fetch whatever is live now,
     // same as the real UI/audio path would see it).
     voiceNode = dynamic_cast<bazalt::engine::nodes::InstanceVoiceNode*> (
-        processor.getOriginVoicePlanSwapper (0, 0).peekCurrentPlan()->getNodeById ("alloc"));
+        processor.peekFirstVoicePlanForTesting (0)->getNodeById ("alloc"));
     REQUIRE (voiceNode != nullptr);
     CHECK_FALSE (voiceNode->getGate()); // the actual fix - not stuck at 1 forever
 

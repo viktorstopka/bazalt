@@ -44,6 +44,7 @@ target_sources(PluginTests
         NodeDescriptorJsonTests.cpp
         PatchStateTests.cpp
         PatchSwitchTests.cpp
+        InstanceAxisParityTests.cpp
         StressGraphTests.cpp
         VisualizationTapTests.cpp
         VoiceRenderTests.cpp

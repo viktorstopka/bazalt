@@ -248,6 +248,21 @@ namespace bazalt
         */
         void setMonoOnly (bool isMono) noexcept { monoOnlyGraph.store (isMono, std::memory_order_release); }
 
+        /** The instance axis (wiki/plans/InstanceAxis.md): the whole patch is
+            one instanced plan in the global swapper; every origin is a group
+            of it, driven by its bundle's VoiceManager. Set by
+            GraphEditController after publishing such a plan. */
+        void setInstanceAxisMode (bool on) noexcept { instanceAxisMode.store (on, std::memory_order_release); }
+        bool isInstanceAxisMode() const noexcept { return instanceAxisMode.load (std::memory_order_acquire); }
+
+        /** Tests: the plan that holds origin `slot`'s first voice — its own
+            per-voice plan, or the one instanced plan (whose getNodeById()
+            answers with instance 0's copy). */
+        bazalt::engine::ExecutionPlan* peekFirstVoicePlanForTesting (int slot)
+        {
+            return isInstanceAxisMode() ? globalPlanSwapper.peekCurrentPlan() : originBundles[(size_t) slot].voicePlanSwappers[0].peekCurrentPlan();
+        }
+
         /** DomainRedesign.md §10.1: which origin bundle's own voice-sum IS
             the final output, when hasGlobalDomain is false (the graph's
             designated output itself resolved Poly — the oldest, pre-M17
@@ -386,6 +401,11 @@ namespace bazalt
         void prepareHostInputsForRange (int startSample) noexcept;
         void processPlanRange (bazalt::engine::ExecutionPlan* plan, int startSample, int numSamples) noexcept;
         void renderMonoRange (bazalt::engine::ExecutionPlan* plan, int startSample, int numSamples) noexcept;
+
+        // ---- The instance axis -----------------------------------------------
+        void handleInstancedNoteEvent (const juce::MidiMessage& message, bazalt::engine::ExecutionPlan* plan) noexcept;
+        void renderInstancedRange (bazalt::engine::ExecutionPlan* plan, int startSample, int numSamples) noexcept;
+        void startInstance (bazalt::engine::ExecutionPlan& plan, int group, int instance, float pitch, float velocity, bool viaAllocator) noexcept;
         /** Switches preview taps on for exactly one voice plan of `bundle`
             (the one most recently triggered, or voice 0 before any note)
             and off for the rest. Cheap enough to run every block and on
@@ -469,6 +489,7 @@ namespace bazalt
         bazalt::engine::PlanSwapper globalPlanSwapper;
         std::atomic<bool> hasGlobalDomain { false };
         std::atomic<bool> monoOnlyGraph { false };
+        std::atomic<bool> instanceAxisMode { false };
         std::atomic<int> outputOriginBundleIndex { -1 };
 
         MacroParameters macroParameters;
@@ -524,6 +545,7 @@ namespace bazalt
         // process() call, and a graph-mode switch can land between the two
         // reads of monoOnlyGraph/hasGlobalDomain.
         bool monoRenderedThisBlock = false;
+        bazalt::engine::ExecutionPlan* instancedPlanThisBlock = nullptr; // the instance axis: fetched once per block
         long long internalTransportSamples = 0;
 
         // Declared after everything it depends on (nodeFactory, the

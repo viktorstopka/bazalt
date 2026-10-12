@@ -7,6 +7,7 @@
 #include "bazalt/engine/graph/PortGroups.h"
 #include "bazalt/engine/graph/ProofGraphs.h"
 #include "bazalt/engine/graph/Unwrap.h"
+#include "bazalt/engine/graph/InstanceExpansion.h"
 #include "bazalt/engine/nodes/InstanceMixNode.h"
 #include "bazalt/engine/nodes/InstanceOriginNode.h"
 #include "bazalt/engine/nodes/InstanceSwarmPopulationNode.h"
@@ -1077,6 +1078,7 @@ namespace bazalt
             processor.setHasGlobalDomain (false);
             processor.setOutputOriginBundleIndex (-1);
             processor.setMonoOnly (true); // after the plan is live, so the audio thread never sees the flag first
+            processor.setInstanceAxisMode (false);
             processor.commitOriginBundleAssignments ({}); // every slot empty — no origin exists
             nodeDomains = std::move (newNodeDomains);
 
@@ -1090,6 +1092,9 @@ namespace bazalt
 
             return { true, {} };
         }
+
+        if (useInstanceAxis)
+            return publishInstanced (compiled, split, std::move (newNodeDomains));
 
         // wiki/plans/DomainRedesign.md Batch 2: which numbered bundle slot
         // each of this compile's origins will occupy — computed up front,
@@ -1378,6 +1383,7 @@ namespace bazalt
         processor.setHasGlobalDomain (hasGlobalDomain);
         processor.setOutputOriginBundleIndex (hasGlobalDomain ? -1 : bundleSlotOf (slotForOrigin, split.outputOriginId));
         processor.setMonoOnly (false); // after the voice (and global) plans are live
+        processor.setInstanceAxisMode (false);
         processor.commitOriginBundleAssignments (slotForOrigin); // after everything above is live
         nodeDomains = std::move (newNodeDomains);
 
@@ -1428,6 +1434,105 @@ namespace bazalt
 
         processor.setMacroMappings (deriveMacroMappings (graph));
 
+        return { true, {} };
+    }
+
+    // The instance axis (wiki/plans/InstanceAxis.md): the whole patch compiles
+    // into one plan; each origin is a group of it, driven by its bundle's
+    // VoiceManager (BazaltAudioProcessor::renderInstancedRange).
+    GraphEditController::CommandResult GraphEditController::publishInstanced (const bazalt::engine::NodeGraph& compiled,
+                                                                               const bazalt::engine::MultiplicityResult& split,
+                                                                               std::unordered_map<juce::String, juce::String> newNodeDomains)
+    {
+        auto& factory = processor.getNodeFactory();
+        const bazalt::engine::NodePrepareInfo prepareInfo { sampleRate, blockSize };
+        const auto slotForOrigin = assignOriginBundleSlots (split.origins, processor);
+        const auto layout = bazalt::engine::computeInstanceLayout (split, [] (const juce::String&) { return BazaltAudioProcessor::numVoices; });
+
+        const auto* previousPlan = freshStateOnNextCompile ? nullptr : processor.getGlobalPlanSwapper().peekCurrentPlan();
+        auto result = bazalt::engine::compileWithInstances (compiled, layout, factory, prepareInfo, nextGeneration(), previousPlan);
+        if (! result.success)
+            return { false, result.errorMessage };
+        auto plan = std::make_unique<bazalt::engine::ExecutionPlan> (std::move (result.plan));
+
+        std::array<int, BazaltAudioProcessor::maxOrigins> maxInstancesBySlot {};
+        std::array<int, BazaltAudioProcessor::maxOrigins> swarmPopulationSizeBySlot {};
+        swarmPopulationSizeBySlot.fill (-1);
+
+        for (auto& runtime : plan->instanceGroups)
+        {
+            const auto slot = bundleSlotOf (slotForOrigin, runtime->originId);
+            runtime->bundleSlot = slot;
+            if (slot < 0)
+                continue;
+
+            // A gate that can no longer hear its stop (nothing wired to spawn /
+            // trigger) is released - the per-voice path's stuck-gate rule.
+            const auto& connections = compiled.getConnections();
+            const auto spawnConnected = std::any_of (connections.begin(), connections.end(), [&runtime] (const bazalt::engine::Connection& c)
+                                                     { return c.toNodeId == runtime->originId && (c.toPortId == "spawn" || c.toPortId == "trigger"); });
+
+            for (int i = 0; i < runtime->count; ++i)
+            {
+                auto* node = runtime->originNodes[(size_t) i];
+                if (auto* allocator = dynamic_cast<bazalt::engine::nodes::InstanceOriginNode*> (node))
+                {
+                    if (i == 0)
+                        maxInstancesBySlot[(size_t) slot] = allocator->getMaxInstances();
+                    if (! spawnConnected && allocator->getGate())
+                        allocator->releaseInstance();
+                }
+                else if (auto* swarm = dynamic_cast<bazalt::engine::nodes::InstanceSwarmPopulationNode*> (node))
+                {
+                    swarm->setInstanceSlot (i);
+                    if (i == 0)
+                        swarmPopulationSizeBySlot[(size_t) slot] = swarm->getPopulationSize();
+                }
+            }
+        }
+
+        std::unordered_map<juce::String, std::vector<juce::String>> newStereoOutputs;
+        for (const auto& [nodeId, ports] : plan->stereoOutputPortsByNode)
+            newStereoOutputs[bazalt::engine::baseNodeId (nodeId)] = ports;
+
+        processor.applyPreviewSubscriptions ({}, plan.get());
+
+        auto& swapper = processor.getGlobalPlanSwapper();
+        swapper.reclaim();
+        const auto published = swapper.publish (std::move (plan));
+        jassert (published);
+        juce::ignoreUnused (published);
+
+        hasGlobalDomain = true;
+        processor.setHasGlobalDomain (true);
+        processor.setOutputOriginBundleIndex (-1);
+        processor.setMonoOnly (false);
+        processor.setInstanceAxisMode (true); // after the plan is live
+        processor.commitOriginBundleAssignments (slotForOrigin);
+        nodeDomains = std::move (newNodeDomains);
+
+        for (const auto& origin : split.origins)
+            if (const auto slot = bundleSlotOf (slotForOrigin, origin.originId); slot >= 0)
+                processor.setOriginMaxVoices (slot, maxInstancesBySlot[(size_t) slot]);
+        for (int slot = 0; slot < BazaltAudioProcessor::maxOrigins; ++slot)
+            processor.setSwarmPopulationSize (slot, swarmPopulationSizeBySlot[(size_t) slot]);
+
+        std::unordered_map<juce::String, std::unordered_map<juce::String, PortMultiplicityInfo>> newPortMultiplicity;
+        std::unordered_map<juce::String, int> newOriginBundleIndexByNodeId;
+        markAllPorts (newPortMultiplicity, factory, split.globalGraph, "scalar", {});
+        for (const auto& origin : split.origins)
+        {
+            markAllPorts (newPortMultiplicity, factory, origin.voiceGraph, "poly", origin.originId);
+            if (const auto slot = bundleSlotOf (slotForOrigin, origin.originId); slot >= 0)
+                newOriginBundleIndexByNodeId[origin.originId] = slot;
+            for (const auto& sum : origin.sums)
+                newPortMultiplicity[sum.sumNodeId]["in"] = { "poly", origin.originId };
+        }
+        portMultiplicity = std::move (newPortMultiplicity);
+        originBundleIndexByNodeId = std::move (newOriginBundleIndexByNodeId);
+        stereoOutputs = std::move (newStereoOutputs);
+
+        processor.setMacroMappings (deriveMacroMappings (graph));
         return { true, {} };
     }
 

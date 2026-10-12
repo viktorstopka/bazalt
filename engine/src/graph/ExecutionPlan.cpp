@@ -338,4 +338,20 @@ namespace bazalt::engine
         }
         return indices;
     }
+
+    std::vector<int> ExecutionPlan::findTappableBufferIndicesForAllInstances (const juce::String& baseNodeId, const juce::String& portId) const
+    {
+        if (const auto index = findTappableBufferIndex (baseNodeId, portId); index >= 0)
+            return { index };
+        std::vector<int> indices;
+        for (int i = 0;; ++i)
+        {
+            const auto id = instanceNodeId (baseNodeId, i);
+            if (nodeIdToSlot.find (id) == nodeIdToSlot.end())
+                break;
+            if (const auto index = findTappableBufferIndex (id, portId); index >= 0)
+                indices.push_back (index);
+        }
+        return indices;
+    }
 }

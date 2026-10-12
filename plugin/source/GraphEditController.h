@@ -1,5 +1,6 @@
 #pragma once
 
+#include "bazalt/engine/graph/MultiplicityResolver.h"
 #include "bazalt/engine/graph/NodeGraph.h"
 #include <functional>
 #include <unordered_map>
@@ -273,8 +274,19 @@ namespace bazalt
             editor draws as a stereo cable. */
         const std::unordered_map<juce::String, std::vector<juce::String>>& getStereoOutputs() const noexcept { return stereoOutputs; }
 
+        /** The instance axis (wiki/plans/InstanceAxis.md): when on, a graph
+            with voices compiles into ONE instanced plan (InstanceExpansion.h)
+            instead of one plan per voice. Off until it has proven itself
+            against the per-voice engine (tests-plugin/InstanceAxisParityTests.cpp). */
+        void setUseInstanceAxis (bool on) { useInstanceAxis = on; }
+        bool isUsingInstanceAxis() const noexcept { return useInstanceAxis; }
+
     private:
         CommandResult recompileAndPublish();
+        CommandResult publishInstanced (const bazalt::engine::NodeGraph& compiled,
+                                        const bazalt::engine::MultiplicityResult& split,
+                                        std::unordered_map<juce::String, juce::String> newNodeDomains);
+        bool useInstanceAxis = true;
         uint64_t nextGeneration() noexcept { return generationCounter++; }
 
         BazaltAudioProcessor& processor;

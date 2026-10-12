@@ -538,6 +538,10 @@ namespace bazalt::engine
             (one entry when it runs once; empty if none). Message thread. */
         std::vector<int> findOutputBufferIndicesForAllInstances (const juce::String& baseNodeId, const juce::String& portId) const;
 
+        /** findTappableBufferIndex for every instance of (baseNodeId, portId):
+            the node's own buffer when it runs once, else one per instance. */
+        std::vector<int> findTappableBufferIndicesForAllInstances (const juce::String& baseNodeId, const juce::String& portId) const;
+
         void reset() noexcept
         {
             for (auto& node : nodes)

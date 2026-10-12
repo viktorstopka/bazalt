@@ -375,6 +375,12 @@ namespace bazalt
         if (monoOnlyGraph.load (std::memory_order_acquire))
             return;
 
+        if (instanceAxisMode.load (std::memory_order_acquire))
+        {
+            handleInstancedNoteEvent (message, instancedPlanThisBlock);
+            return;
+        }
+
         // Real host MIDI broadcasts identically to EVERY active origin —
         // an internally-sequenced origin simply has no io.noteIn to receive
         // it, and a real MIDI-driven one gets a voice allocated in its OWN
@@ -529,6 +535,18 @@ namespace bazalt
             const auto bufferIndex = globalPlan->findTappableBufferIndex (subscription.nodeId, subscription.portId);
             if (bufferIndex >= 0)
                 return globalPlan->addTapForBufferIndex (bufferIndex, subscription.tap);
+
+            // The instance axis: a node that runs per instance has one buffer
+            // per instance; the tap sits on all of them and the plan pushes
+            // only the instance its group's previews show.
+            if (! globalPlan->instanceGroups.empty())
+            {
+                auto attached = false;
+                for (const auto index : globalPlan->findTappableBufferIndicesForAllInstances (subscription.nodeId, subscription.portId))
+                    attached = globalPlan->addTapForBufferIndex (index, subscription.tap) || attached;
+                if (attached)
+                    return true;
+            }
         }
 
         // Every origin's own voice plans: a node normally lives in exactly one
@@ -581,9 +599,11 @@ namespace bazalt
         // swappers hold whatever plan they last did, but nothing keeps it
         // current, so it's simply skipped rather than peeked).
         std::vector<bazalt::engine::ExecutionPlan*> peekActiveOriginVoicePlans (
-            std::array<BazaltAudioProcessor::OriginBundle, BazaltAudioProcessor::maxOrigins>& bundles)
+            std::array<BazaltAudioProcessor::OriginBundle, BazaltAudioProcessor::maxOrigins>& bundles, bool processorIsInstanced)
         {
             std::vector<bazalt::engine::ExecutionPlan*> plans;
+            if (processorIsInstanced)
+                return plans; // the instance axis: one plan, the global one — the per-voice swappers hold stale plans
             plans.reserve (bundles.size() * (size_t) BazaltAudioProcessor::numVoices);
             for (auto& bundle : bundles)
             {
@@ -602,7 +622,7 @@ namespace bazalt
         // shape, so it only counts while the graph actually has one.
         const auto hasGlobal = hasGlobalDomain.load (std::memory_order_acquire) || monoOnlyGraph.load (std::memory_order_acquire);
         auto* globalPlan = hasGlobal ? globalPlanSwapper.peekCurrentPlan() : nullptr;
-        const auto voicePlans = peekActiveOriginVoicePlans (originBundles);
+        const auto voicePlans = peekActiveOriginVoicePlans (originBundles, isInstanceAxisMode());
 
         // The port has to exist on the node. Whether anything is wired to it
         // yet is a separate question (below): a viewer is placed before it is
@@ -662,7 +682,7 @@ namespace bazalt
             if (auto* plan = globalPlanSwapper.peekCurrentPlan())
                 plan->removeTap (removedTap);
 
-            for (auto* plan : peekActiveOriginVoicePlans (originBundles))
+            for (auto* plan : peekActiveOriginVoicePlans (originBundles, isInstanceAxisMode()))
                 if (plan != nullptr)
                     plan->removeTap (removedTap);
         }
@@ -1266,6 +1286,227 @@ namespace bazalt
         }
     }
 
+    // ---- The instance axis (wiki/plans/InstanceAxis.md) -------------------
+    // One plan for the whole patch; each origin is a group of it whose
+    // instances this bundle's VoiceManager allocates. Everything the per-voice
+    // path does - steal fades, release by silence, internally triggered
+    // origins, swarm populations - is decided here, per instance, and the plan
+    // runs once per range.
+
+    void BazaltAudioProcessor::startInstance (bazalt::engine::ExecutionPlan& plan, int group, int instance, float pitch, float velocity, bool viaAllocator) noexcept
+    {
+        plan.resetInstance (group, instance); // fresh phase/envelope/filter state, as a per-voice plan's reset()
+        auto& runtime = *plan.instanceGroups[(size_t) group];
+        if (viaAllocator)
+        {
+            if (auto* allocator = dynamic_cast<bazalt::engine::nodes::InstanceOriginNode*> (runtime.originNodes[(size_t) instance]))
+                allocator->spawnInstance (pitch, velocity);
+        }
+        else if (auto* noteIn = dynamic_cast<bazalt::engine::nodes::IoNoteInNode*> (runtime.noteInNodes[(size_t) instance]))
+        {
+            noteIn->injectNoteOn (pitch, velocity);
+        }
+    }
+
+    void BazaltAudioProcessor::handleInstancedNoteEvent (const juce::MidiMessage& message, bazalt::engine::ExecutionPlan* plan) noexcept
+    {
+        if (plan == nullptr)
+            return;
+
+        for (int g = 0; g < (int) plan->instanceGroups.size(); ++g)
+        {
+            auto& runtime = *plan->instanceGroups[(size_t) g];
+            // Only a group that hears notes takes MIDI (the per-voice path also
+            // allocated voices for internally triggered origins, silently).
+            if (runtime.bundleSlot < 0 || runtime.noteInNodes.empty() || runtime.noteInNodes[0] == nullptr)
+                continue;
+            auto& bundle = originBundles[(size_t) runtime.bundleSlot];
+            if (! bundle.active)
+                continue;
+
+            if (message.isNoteOn())
+            {
+                const auto noteId = (bazalt::engine::VoiceManager::NoteId) ((message.getChannel() << 8) | message.getNoteNumber());
+                const auto pitch = (float) message.getNoteNumber();
+                const auto velocity = message.getFloatVelocity();
+                const auto instance = bundle.voiceManager.noteOn (noteId);
+                if (instance < 0 || instance >= runtime.count)
+                    continue;
+                runtime.previewInstance.store (instance, std::memory_order_relaxed);
+                if (bundle.voiceManager.getStage (instance) == bazalt::engine::VoiceStage::Stealing)
+                    bundle.voiceManager.setPendingNoteOn (instance, { noteId, pitch, velocity });
+                else
+                    startInstance (*plan, g, instance, pitch, velocity, false);
+            }
+            else if (message.isNoteOff())
+            {
+                const auto noteId = (bazalt::engine::VoiceManager::NoteId) ((message.getChannel() << 8) | message.getNoteNumber());
+                const auto instance = bundle.voiceManager.noteOff (noteId);
+                if (instance >= 0 && instance < runtime.count)
+                    if (auto* noteIn = dynamic_cast<bazalt::engine::nodes::IoNoteInNode*> (runtime.noteInNodes[(size_t) instance]))
+                        noteIn->injectNoteOff();
+            }
+            else if (message.isPitchWheel())
+            {
+                constexpr float pitchBendRangeSemitones = 2.0f;
+                const auto bend = ((float) message.getPitchWheelValue() - 8192.0f) / 8192.0f * pitchBendRangeSemitones;
+                for (auto* node : runtime.noteInNodes)
+                    if (auto* noteIn = dynamic_cast<bazalt::engine::nodes::IoNoteInNode*> (node))
+                        noteIn->injectPitchBend (bend);
+            }
+        }
+    }
+
+    void BazaltAudioProcessor::renderInstancedRange (bazalt::engine::ExecutionPlan* plan, int startSample, int numSamples) noexcept
+    {
+        using bazalt::engine::VoiceStage;
+
+        if (numSamples <= 0)
+            return;
+        if (plan == nullptr)
+        {
+            monoRenderScratchBuffer.clear (startSample, numSamples);
+            return;
+        }
+
+        while (numSamples > 0)
+        {
+            // A steal that finishes inside this range splits it there: the new
+            // note starts exactly where the old one faded out.
+            auto chunk = numSamples;
+            for (auto& group : plan->instanceGroups)
+            {
+                if (group->bundleSlot < 0)
+                    continue;
+                auto& bundle = originBundles[(size_t) group->bundleSlot];
+                if (! bundle.active || bundle.swarmPopulationSize.load (std::memory_order_relaxed) >= 0)
+                    continue;
+                for (int i = 0; i < group->count; ++i)
+                    if (bundle.voiceManager.getStage (i) == VoiceStage::Stealing)
+                        chunk = juce::jmin (chunk, juce::jmax (1, bundle.voiceManager.getStealFadeSamplesRemaining (i)));
+            }
+
+            for (int g = 0; g < (int) plan->instanceGroups.size(); ++g)
+            {
+                auto& group = *plan->instanceGroups[(size_t) g];
+                for (auto& state : group.instances)
+                    state = {};
+                if (group.bundleSlot < 0)
+                    continue;
+                auto& bundle = originBundles[(size_t) group.bundleSlot];
+                if (! bundle.active)
+                    continue;
+
+                // A swarm population: its first N instances always live.
+                if (const auto population = bundle.swarmPopulationSize.load (std::memory_order_relaxed); population >= 0)
+                {
+                    for (int i = 0; i < juce::jmin (population, group.count); ++i)
+                        group.instances[(size_t) i].run = group.instances[(size_t) i].audible = true;
+                    continue;
+                }
+
+                // An internally triggered origin (no note-in): its own trigger
+                // chain runs in instance 0, which tells us when to spawn or
+                // release - the per-voice path's relay, unchanged.
+                const auto internallyTriggered = group.noteInNodes.empty() || group.noteInNodes[0] == nullptr;
+                if (internallyTriggered)
+                    if (auto* allocator = dynamic_cast<bazalt::engine::nodes::InstanceOriginNode*> (group.originNodes[0]))
+                        if (allocator->consumeSpawnEventsThisBlock() > 0)
+                        {
+                            if (allocator->getGate())
+                            {
+                                const auto pitch = allocator->getPitch();
+                                const auto velocity = allocator->getVelocity();
+                                const auto instance = bundle.voiceManager.noteOn (internalTriggerNoteId);
+                                group.previewInstance.store (instance, std::memory_order_relaxed);
+                                if (bundle.voiceManager.getStage (instance) == VoiceStage::Stealing)
+                                    bundle.voiceManager.setPendingNoteOn (instance, { internalTriggerNoteId, pitch, velocity });
+                                else if (instance != 0)
+                                    startInstance (*plan, g, instance, pitch, velocity, true);
+                            }
+                            else
+                            {
+                                const auto instance = bundle.voiceManager.noteOff (internalTriggerNoteId);
+                                if (instance > 0)
+                                    if (auto* other = dynamic_cast<bazalt::engine::nodes::InstanceOriginNode*> (group.originNodes[(size_t) instance]))
+                                        other->releaseInstance();
+                            }
+                        }
+
+                for (int i = 0; i < group.count; ++i)
+                {
+                    auto& state = group.instances[(size_t) i];
+                    const auto stage = bundle.voiceManager.getStage (i);
+                    if (stage == VoiceStage::Idle)
+                    {
+                        state.run = i == 0; // instance 0 always runs, so a trigger it hears is noticed
+                        continue;
+                    }
+                    state.run = state.audible = true;
+                    if (stage == VoiceStage::Stealing)
+                    {
+                        state.fading = true;
+                        state.rampSamples = juce::jmin (chunk, bundle.voiceManager.getStealFadeSamplesRemaining (i));
+                        state.gainStart = bundle.voiceManager.getStealFadeGain (i);
+                        state.gainEnd = (float) juce::jmax (0, bundle.voiceManager.getStealFadeSamplesRemaining (i) - chunk)
+                                        / (float) bazalt::engine::VoiceManager::stealFadeSamples;
+                    }
+                }
+            }
+
+            processPlanRange (plan, startSample, chunk);
+
+            const auto* out = plan->blockBuffers[(size_t) plan->finalOutputBufferIndex].getBlock().getChannelPointer (0);
+            const auto* outRight = rightOutputOf (*plan, out);
+            auto* scratch = monoRenderScratchBuffer.getWritePointer (0) + startSample;
+            auto* scratchRight = monoRenderScratchBuffer.getWritePointer (1) + startSample;
+            for (int i = 0; i < chunk; ++i)
+            {
+                scratch[i] = out[i];
+                scratchRight[i] = outRight[i];
+            }
+
+            // After the range: finish steals, release instances gone silent.
+            for (int g = 0; g < (int) plan->instanceGroups.size(); ++g)
+            {
+                auto& group = *plan->instanceGroups[(size_t) g];
+                if (group.bundleSlot < 0)
+                    continue;
+                auto& bundle = originBundles[(size_t) group.bundleSlot];
+                if (! bundle.active || bundle.swarmPopulationSize.load (std::memory_order_relaxed) >= 0)
+                    continue;
+
+                int active = 0;
+                for (int i = 0; i < group.count; ++i)
+                {
+                    const auto stage = bundle.voiceManager.getStage (i);
+                    if (stage == VoiceStage::Idle)
+                        continue;
+                    ++active;
+                    if (stage == VoiceStage::Stealing)
+                    {
+                        if (bundle.voiceManager.advanceStealFade (i, chunk))
+                        {
+                            const auto pending = bundle.voiceManager.getPendingNoteOn (i);
+                            startInstance (*plan, g, i, pending.pitch, pending.velocity, pending.noteId == internalTriggerNoteId);
+                            bundle.voiceManager.completeSteal (i);
+                        }
+                    }
+                    else if (stage == VoiceStage::Releasing)
+                    {
+                        if (bundle.voiceManager.updateSilenceAndCheckFinished (i, group.instances[(size_t) i].peak, chunk,
+                                                                                silenceThresholdLinear, silenceHoldTimeSamples))
+                            bundle.voiceManager.voiceFinished (i);
+                    }
+                }
+                bundle.activeVoiceCountThisBlock = active;
+            }
+
+            startSample += chunk;
+            numSamples -= chunk;
+        }
+    }
+
     void BazaltAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiBuffer& midiMessages)
     {
         juce::ScopedNoDenormals noDenormals;
@@ -1298,7 +1539,9 @@ namespace bazalt
         // swapper, run every block (see renderMonoRange). Fetched once, like
         // every origin's own voice plans, per PlanSwapper's contract.
         const auto monoOnly = monoOnlyGraph.load (std::memory_order_acquire);
-        monoRenderedThisBlock = monoOnly;
+        const auto instanced = ! monoOnly && instanceAxisMode.load (std::memory_order_acquire);
+        monoRenderedThisBlock = monoOnly || instanced; // an instanced plan renders into the same scratch
+        instancedPlanThisBlock = nullptr;
 
         bazalt::engine::ExecutionPlan* monoPlan = nullptr;
         bazalt::engine::ExecutionPlan* globalPlanForThisBlock = nullptr;
@@ -1311,7 +1554,25 @@ namespace bazalt
         macroParameters.advanceSmoothers (numSamples);
         liveParameterEdits.advance (numSamples);
 
-        if (monoOnly)
+        if (instanced)
+        {
+            // The instance axis: the whole patch is one plan.
+            instancedPlanThisBlock = globalPlanSwapper.getCurrentPlanForAudioThread();
+            for (auto& bundle : originBundles)
+                for (auto& swapper : bundle.voicePlanSwappers)
+                    swapper.getCurrentPlanForAudioThread(); // read, so a stale per-voice plan can be reclaimed
+            bazalt::engine::ExecutionPlan* plans[1] = { instancedPlanThisBlock };
+            macroParameters.applyToPlans (plans, 1, numSamples);
+            liveParameterEdits.applyToPlans (plans, 1);
+
+            // Previews show each group's most recently played instance.
+            if (instancedPlanThisBlock != nullptr)
+                for (auto& group : instancedPlanThisBlock->instanceGroups)
+                    if (group->bundleSlot >= 0)
+                        group->previewInstance.store (juce::jmax (0, originBundles[(size_t) group->bundleSlot].voiceManager.getMostRecentlyTriggeredVoice()),
+                                                      std::memory_order_relaxed);
+        }
+        else if (monoOnly)
         {
             monoPlan = globalPlanSwapper.getCurrentPlanForAudioThread();
             bazalt::engine::ExecutionPlan* monoPlans[1] = { monoPlan };
@@ -1383,6 +1644,11 @@ namespace bazalt
 
         auto renderRange = [&] (int start, int count)
         {
+            if (instanced)
+            {
+                renderInstancedRange (instancedPlanThisBlock, start, count);
+                return;
+            }
             if (monoOnly)
             {
                 renderMonoRange (monoPlan, start, count);
