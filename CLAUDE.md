@@ -268,13 +268,20 @@ ctest --test-dir build -C Debug -R PluginTests --output-on-failure
   has no real consumer (`allocator`'s own `"start"`/`"stop"` outputs are
   declared but nothing's wired to them) — that's still open, not this
   milestone's job.
-- Each voice still gets its own fully independent `ExecutionPlan` (compiled
-  `numVoices` times from the same `NodeGraph`) — `ExecutionPlan::nodes` is
-  not one shared plan with a separate per-voice state pool keyed by
-  `(voiceIndex, nodeID)` the way an earlier reading of ARCHITECTURE.md §3.2
-  suggested. `PlanSwapper` is wired into `PluginProcessor` (one per voice +
-  one for the global domain, `GraphEditController::recompileAndPublish()`)
-  — live edits recompile and swap. State *continuity* across a recompile,
+- **One plan per patch (the instance axis, batch 2a, 2026-10-12,
+  `wiki/plans/InstanceAxis.md` §6).** The per-voice engine (one
+  `ExecutionPlan` per voice per allocator, voice sums handed to a global plan,
+  separate mono/global/poly paths) is gone. `InstanceExpansion.h` expands the
+  graph so each allocator's poly part appears once per instance (`osc@3`; `'@'`
+  is reserved in node ids), Merge fed per instance becomes `life.reduce`, and
+  the ordinary `GraphCompiler` compiles it into ONE plan in ONE `PlanSwapper`
+  (`GraphEditController::publishPlan`). `ExecutionPlan::instanceGroups` holds
+  each allocator's per-instance run/fade state; `PluginProcessor::renderRange`
+  sets it from the allocator's `VoiceManager`, and `process()` skips instances
+  that don't run. A once-only node feeding voices (a mono LFO) is one shared,
+  free-running node now, no longer a copy per voice reset on note-on.
+  `getNodeById("osc")` answers with instance 0's copy. Live edits recompile
+  and swap. State *continuity* across a recompile,
   the part that used to be "still deferred" here, is real as of M17:
   `GraphCompiler::compile()`'s `previousPlan` parameter (see its own doc
   comment in `GraphCompiler.h`) reuses a node's exact `shared_ptr<Node>`
@@ -420,19 +427,17 @@ ctest --test-dir build -C Debug -R PluginTests --output-on-failure
   full stop. The new model resolves Scalar-vs-Poly per PORT, per compile,
   tagging each `Poly` value with the producing allocator's own node id
   (`originId`) — up to `MultiplicityResolver::maxOrigins` (4) independent
-  allocator/sum pairs now coexist in one graph, each its own physical
-  `ExecutionPlan` bundle, each either MIDI-dispatched (`io.noteIn`) or
+  allocator/sum pairs now coexist in one graph, each a group of the one
+  instanced plan (see the one-plan-per-patch note above), each either MIDI-dispatched (`io.noteIn`) or
   internally triggered, never both for the same origin. `instance.sum` was
   renamed from `instance.mix` in the same redesign (Batch 1b, C++ class
   name `InstanceMixNode` unchanged), then to `life.merge` (title Merge) in
   stage 1's id sweep. Up to `maxSumsPerOrigin` (4)
   Merge nodes may reduce the SAME origin as of 2026-10-05 (direct
   request: a Plate layer summed on its own, added after the main chain's
-  effects): each voice plan exposes one summed output per sum
-  (`ExecutionPlan::sumOutputs`, the first being its final output), and each
-  `OriginBundle` has one accumulator per sum (`instanceMixScratchBuffers`).
-- `GraphEditController::recompileAndPublish()` does a full recompile (8
-  voice plans + up to 1 global plan) on **every single command**, even ones
+  effects): each becomes its own `life.reduce` step in the one plan.
+- `GraphEditController::recompileAndPublish()` does a full recompile (one
+  plan, every instance expanded) on **every single command**, even ones
   that are conceptually one user gesture made of several calls (e.g. a
   future splice-insert: disconnect + addNode + 2×connect). NODE_EDITOR.md
   §6 already flags composite operations as "one undo step" for the UI layer

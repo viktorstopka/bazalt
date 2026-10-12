@@ -47,8 +47,8 @@ namespace bazalt
         involved at all; this comment was never updated when that changed.
         `handleMidiEvent` now makes exactly one direct poke
         (`IoNoteInNode::injectNoteOn`/`injectNoteOff`/`injectPitchBend` on
-        each voice's own `io.noteIn` node, found by type via `findNoteIn`,
-        not by a hardcoded id), and everything downstream of that is
+        each instance's own `io.noteIn` copy, found by type at compile time
+        — InstanceGroupRuntime::noteInNodes), and everything downstream of that is
         ordinary graph wiring through a real `Note`-typed port/buffer.
     */
     class BazaltAudioProcessor final : public juce::AudioProcessor,
@@ -68,47 +68,20 @@ namespace bazalt
         static_assert (maxOrigins == bazalt::engine::ExecutionPlan::maxOrigins
                        && maxSumsPerOrigin == bazalt::engine::ExecutionPlan::maxSumsPerOrigin);
 
-        /** One "life.voice" origin's own runtime state — a
-            fully independent VoiceManager + 8 PlanSwappers, exactly what a
-            single-origin graph already had, just no longer assumed to be
-            the only one. `originNodeId` is this bundle's current origin's
-            own (stable, hand-assigned) node id; empty when `active` is
-            false. Slot assignment (which numbered bundle a given origin id
-            occupies) is decided by GraphEditController and kept STABLE
-            across an edit that doesn't remove the origin — the same
-            "state survives a recompile" property PlanSwapper's own
-            per-node reuse already gives a single voice, now given to an
-            origin's whole VoiceManager too (which voices are Active/Idle
-            is real, valuable state that a plain graph edit — moving a
-            node, tweaking a parameter — must not reset).
-
-            This is a DIFFERENT, deliberately similarly-named struct from
-            the engine-level `MultiplicityOrigin` (MultiplicityResolver.h,
-            NodeGraph-shaped) — don't confuse the two.
+        /** One allocator's runtime: the VoiceManager that decides which of
+            its instances are alive (wiki/plans/InstanceAxis.md — the instances
+            themselves live in the one plan, as a group of it). Slot
+            assignment (which bundle an origin id occupies) is decided by
+            GraphEditController and kept stable across an edit that doesn't
+            remove the origin, so voices mid-note survive a plain edit.
         */
         struct OriginBundle
         {
             bazalt::engine::VoiceManager voiceManager;
-            std::array<bazalt::engine::PlanSwapper, numVoices> voicePlanSwappers;
             juce::String originNodeId;
             bool active = false;
 
-            // This origin's own per-block voice sum — DomainRedesign.md §4's
-            // multiple independent voice regions means every active origin
-            // needs its OWN accumulator, not one shared processor-level
-            // buffer. Sized once in prepareToPlay() for every bundle,
-            // regardless of whether it's active yet (so activating one
-            // mid-session never needs an audio-thread allocation).
-            //
-            // One accumulator per instance.sum reducing this origin (a voice
-            // may feed a main chain and a separate layer, each summed on its
-            // own) — entry 0 is the voices' own final output.
-            std::array<juce::AudioBuffer<float>, maxSumsPerOrigin> instanceMixScratchBuffers;
-
-            // For this origin's own instance.sum "average" mode — was a
-            // single processor-level field before Batch 2; each origin's
-            // own reduction is independent now.
-            int activeVoiceCountThisBlock = 0;
+            int activeVoiceCountThisBlock = 0; // instances alive after the last range
 
             /** Domain Extensions batch: -1 (default) means "an ordinary,
                 demand-driven origin — VoiceManager's own Idle/Active/
@@ -121,7 +94,7 @@ namespace bazalt
                 count, always live')." Written once per recompile, message
                 thread (GraphEditController, mirroring setOriginMaxVoices's
                 own exact pattern); read every block, audio thread
-                (renderOriginVoiceRange) — atomic for that reason, same as
+                (renderRange) — atomic for that reason, same as
                 every other cross-thread origin-bundle flag here.
             */
             std::atomic<int> swarmPopulationSize { -1 };
@@ -237,42 +210,13 @@ namespace bazalt
         */
         void setOutputLimiterEnabledForTesting (bool enabled) noexcept { outputLimiterEnabled = enabled; }
         bool isAnalysisRunningForTesting() const noexcept { return analysisThread.isThreadRunning(); }
-        void setHasGlobalDomain (bool hasIt) noexcept { hasGlobalDomain.store (hasIt, std::memory_order_release); }
-
-        /** M21: true while the graph has no active origin at all (no
-            "life.voice", or a real instance.sum with nothing
-            to reduce — MultiplicityResolver's own monoOnly/empty-origins
-            cases) — the one compiled plan lives in the GLOBAL swapper and
-            runs every block, voices are never allocated. Set by
-            GraphEditController::recompileAndPublish(). Message-thread only.
-        */
-        void setMonoOnly (bool isMono) noexcept { monoOnlyGraph.store (isMono, std::memory_order_release); }
-
-        /** The instance axis (wiki/plans/InstanceAxis.md): the whole patch is
-            one instanced plan in the global swapper; every origin is a group
-            of it, driven by its bundle's VoiceManager. Set by
-            GraphEditController after publishing such a plan. */
-        void setInstanceAxisMode (bool on) noexcept { instanceAxisMode.store (on, std::memory_order_release); }
-        bool isInstanceAxisMode() const noexcept { return instanceAxisMode.load (std::memory_order_acquire); }
-
-        /** Tests: the plan that holds origin `slot`'s first voice — its own
-            per-voice plan, or the one instanced plan (whose getNodeById()
-            answers with instance 0's copy). */
+        /** Tests: the plan holding origin `slot`'s first voice — the one plan
+            (getNodeById() answers an instanced node with instance 0's copy). */
         bazalt::engine::ExecutionPlan* peekFirstVoicePlanForTesting (int slot)
         {
-            return isInstanceAxisMode() ? globalPlanSwapper.peekCurrentPlan() : originBundles[(size_t) slot].voicePlanSwappers[0].peekCurrentPlan();
+            juce::ignoreUnused (slot);
+            return globalPlanSwapper.peekCurrentPlan();
         }
-
-        /** DomainRedesign.md §10.1: which origin bundle's own voice-sum IS
-            the final output, when hasGlobalDomain is false (the graph's
-            designated output itself resolved Poly — the oldest, pre-M17
-            "voice sum is final output" case, now keyed to a specific
-            origin instead of assumed singular). -1 when hasGlobalDomain is
-            true (the global plan's own output is what matters instead) or
-            there is no active origin at all. Message-thread only to set;
-            read on the audio thread by finalizeInstanceMixIntoOutput().
-        */
-        void setOutputOriginBundleIndex (int index) noexcept { outputOriginBundleIndex.store (index, std::memory_order_release); }
 
         // ---- Origin bundle slot management (GraphEditController-facing) ----
         // Message-thread only. See OriginBundle's own doc comment on why
@@ -280,10 +224,6 @@ namespace bazalt
         bool isOriginBundleActive (int index) const noexcept { return originBundles[(size_t) index].active; }
         const juce::String& getOriginBundleOriginId (int index) const noexcept { return originBundles[(size_t) index].originNodeId; }
         OriginBundle& getOriginBundle (int index) noexcept { return originBundles[(size_t) index]; }
-        bazalt::engine::PlanSwapper& getOriginVoicePlanSwapper (int bundleIndex, int voiceIndex) noexcept
-        {
-            return originBundles[(size_t) bundleIndex].voicePlanSwappers[(size_t) voiceIndex];
-        }
 
         /** Commits which origin id occupies each numbered bundle slot,
             after a full recompile has already succeeded (never before —
@@ -316,7 +256,7 @@ namespace bazalt
             -1 for an ordinary (Voice/event-driven) origin, or the real
             populationSize for a swarmPopulation one. See OriginBundle::
             swarmPopulationSize's own doc comment for what this actually
-            changes in renderOriginVoiceRange.
+            changes in renderRange.
         */
         void setSwarmPopulationSize (int bundleIndex, int populationSize) noexcept
         {
@@ -327,8 +267,7 @@ namespace bazalt
             bundle — message-thread safe (both are atomics on VoiceManager).
         */
         /** Domain Extensions batch: a swarmPopulation origin never calls
-            VoiceManager::noteOn() at all (see renderOriginVoiceRange's own
-            comment), so its activeVoiceCount/maxActiveVoices would read a
+            VoiceManager::noteOn() at all (see renderRange), so its activeVoiceCount/maxActiveVoices would read a
             stale 0 forever — wrong for the UI's instance-count badge, which
             should show a healthy swarm as fully populated (e.g. "8/8"), not
             "0/anything". Reports populationSize for both halves instead
@@ -351,10 +290,10 @@ namespace bazalt
         }
 
         /** M20: subscribes a visualization tap for a real node's output
-            port, resolving whether it lives in the global domain (one
-            plan) or SOME origin's own voice domain (8 independent plans
-            per active origin, of which only that origin's most recently
-            triggered voice is switched on — ExecutionPlan::previewTapsEnabled).
+            port in the one plan. A node that runs per instance taps every
+            instance's buffer, and the plan pushes only the instance its
+            group shows (the most recently played one —
+            InstanceGroupRuntime::previewInstance).
             Returns false only if no currently-compiled plan has a node with
             this port (input or output) at all. A port that exists but has
             nothing to tap yet - an unwired input on a view node, or an
@@ -374,25 +313,18 @@ namespace bazalt
         void unsubscribeVisualizationTap (const juce::String& nodeId, const juce::String& portId);
 
         /** ADR-0029: called by GraphEditController just BEFORE it publishes
-            freshly compiled plans (message thread). Re-attaches every live
-            subscription to them and points each active origin's voice taps
-            at that origin's own current voice. The plans aren't visible to
-            the audio thread yet, so there is nothing to race with.
-            `voicePlans` holds every ACTIVE origin's 8 plans concatenated (in
-            bundle-slot order), or is empty for a mono graph; `globalPlan`
-            may be null. A subscription that no longer resolves (its node
+            a freshly compiled plan (message thread). Re-attaches every live
+            subscription to it. The plan isn't visible to the audio thread
+            yet, so there is nothing to race with. A subscription that no longer resolves (its node
             was deleted, say) is kept and simply doesn't attach - the UI
             unsubscribes when its preview unmounts.
         */
-        void applyPreviewSubscriptions (const std::vector<bazalt::engine::ExecutionPlan*>& voicePlans,
-                                        bazalt::engine::ExecutionPlan* globalPlan);
+        void applyPreviewSubscriptions (bazalt::engine::ExecutionPlan* plan);
 
     private:
         static BusesProperties makeBusLayout();
 
-        using VoicePlanPtrs = std::array<bazalt::engine::ExecutionPlan*, numVoices>;
-
-        void handleMidiEvent (const juce::MidiMessage& message, const std::array<VoicePlanPtrs, maxOrigins>& originVoicePlanPtrs);
+        void handleMidiEvent (const juce::MidiMessage& message);
 
         // M21 host boundary (engine/graph/HostInputs.h): what io.audioIn, io.control
         // and io.transport read. All audio-thread only, allocation-free.
@@ -400,56 +332,14 @@ namespace bazalt
         void beginTransportForBlock (int numSamples) noexcept;
         void prepareHostInputsForRange (int startSample) noexcept;
         void processPlanRange (bazalt::engine::ExecutionPlan* plan, int startSample, int numSamples) noexcept;
-        void renderMonoRange (bazalt::engine::ExecutionPlan* plan, int startSample, int numSamples) noexcept;
 
-        // ---- The instance axis -----------------------------------------------
-        void handleInstancedNoteEvent (const juce::MidiMessage& message, bazalt::engine::ExecutionPlan* plan) noexcept;
-        void renderInstancedRange (bazalt::engine::ExecutionPlan* plan, int startSample, int numSamples) noexcept;
+        // ---- The instance axis (wiki/plans/InstanceAxis.md) ----------------
+        // One plan per patch; each allocator is a group of it whose instances
+        // its bundle's VoiceManager allocates.
+        void handleNoteEvent (const juce::MidiMessage& message, bazalt::engine::ExecutionPlan* plan) noexcept;
+        void renderRange (bazalt::engine::ExecutionPlan* plan, int startSample, int numSamples) noexcept;
         void startInstance (bazalt::engine::ExecutionPlan& plan, int group, int instance, float pitch, float velocity, bool viaAllocator) noexcept;
-        /** Switches preview taps on for exactly one voice plan of `bundle`
-            (the one most recently triggered, or voice 0 before any note)
-            and off for the rest. Cheap enough to run every block and on
-            every note-on, which also heals the rare mismatch a note-on can
-            cause mid-publish. */
-        void pointVoiceTapsAtCurrentVoice (OriginBundle& bundle, const VoicePlanPtrs& voicePlans) noexcept;
-        void renderOriginVoiceRange (OriginBundle& bundle, int startSample, int numSamples, const VoicePlanPtrs& voicePlans) noexcept;
-        void triggerVoiceNote (bazalt::engine::ExecutionPlan* plan, float pitch, float velocity) noexcept;
-
-        /** The voice's io.noteIn node, or nullptr. Audio-thread safe: it looks
-            the node up with a String built once at construction. Passing a
-            literal to ExecutionPlan::getNodeById instead builds a heap-
-            allocated juce::String on every call (an M18 bug the RT trap caught
-            in M21). */
-        bazalt::engine::nodes::IoNoteInNode* findNoteIn (bazalt::engine::ExecutionPlan* plan) const noexcept;
-
-        /** The origin's own allocator node, found by this bundle's own
-            `originNodeId` (a member String, never a fresh literal — same
-            RT-safety rule findNoteIn's own comment already states).
-            DomainRedesign.md Batch 2's MIDI-independence mechanism reads
-            gate/pitch/velocity off this directly, and pokes a DIFFERENT
-            voice's own copy directly (bypassing io.noteIn, which this
-            origin may not even have) when an internal trigger needs to
-            move to a voice slot other than the one that detected it.
-
-            Returns `InstanceOriginNode*`, not a concrete node type — Domain
-            Extensions batch generalization, so this one dispatch site (and
-            `renderOriginVoiceRange`'s internal-trigger-relay block below,
-            the only caller) serves Voice, Swarm-transient, and Trigger
-            alike with no branching on concrete type. Real MIDI dispatch
-            (`handleMidiEvent`/`triggerVoiceNote`) stays untouched and never
-            calls this at all — it only ever pokes `io.noteIn` directly, by
-            design (MIDI only ever drives Voice).
-        */
-        bazalt::engine::nodes::InstanceOriginNode* findAllocatorNode (bazalt::engine::ExecutionPlan* plan, const juce::String& originNodeId) const noexcept;
-        void triggerVoiceNoteViaAllocator (bazalt::engine::ExecutionPlan* plan, const juce::String& originNodeId, float pitch, float velocity) noexcept;
-
-        // wiki/plans/UtilMacro.md Finding A: globalPlan is fetched exactly
-        // once per process() call, in processBlock, alongside every other
-        // plan fetch (PlanSwapper.h's own audio-thread contract) - never
-        // re-fetched in here. nullptr whenever hasGlobalDomain is false (the
-        // designated output resolved Poly, or this block ran monoOnly).
-        void finalizeInstanceMixIntoOutput (juce::AudioBuffer<float>& output, int numSamples,
-                                             bazalt::engine::ExecutionPlan* globalPlan) noexcept;
+        void writeOutput (juce::AudioBuffer<float>& output, int numSamples) noexcept;
         void updateAuxLevels (int numSamples); // aux meters + taps; never mixed into the output
 
         // juce::Timer — periodic (~50ms, ARCHITECTURE.md §3.2) reclaim() on
@@ -477,20 +367,10 @@ namespace bazalt
         uint64_t lastLoggedProcessBlockCallCount = 0;
         juce::uint32 lastProcessBlockLogMs = 0;
 
-        // wiki/plans/DomainRedesign.md Batch 2: up to maxOrigins independent
-        // origin bundles, replacing the single voiceManager + 8
-        // voicePlanSwappers a graph used to be limited to. Plus one global
-        // plan swapper, used whenever the graph has any real global content
-        // (DomainRedesign.md §10.2 step 6 — supersedes the original
-        // util.voiceSum boundary); hasGlobalDomain is read on the audio
-        // thread, so it's atomic despite being set only from the message
-        // thread.
+        // One runtime per allocator (its VoiceManager) and the one plan the
+        // whole patch compiles into (wiki/plans/InstanceAxis.md).
         std::array<OriginBundle, maxOrigins> originBundles;
         bazalt::engine::PlanSwapper globalPlanSwapper;
-        std::atomic<bool> hasGlobalDomain { false };
-        std::atomic<bool> monoOnlyGraph { false };
-        std::atomic<bool> instanceAxisMode { false };
-        std::atomic<int> outputOriginBundleIndex { -1 };
 
         MacroParameters macroParameters;
         LiveParameterEdits liveParameterEdits; // values moving while a slider is dragged
@@ -508,12 +388,9 @@ namespace bazalt
         static constexpr float silenceThresholdLinear = 0.0001f;
         int silenceHoldTimeSamples = 0; // computed from sample rate in prepareToPlay
 
-        // The monoOnly path's own scratch buffer — DomainRedesign.md Batch 2
-        // gave each origin bundle its OWN instanceMixScratchBuffer (see
-        // OriginBundle's own comment), so the mono/no-origin-at-all case
-        // (which was never a "voice sum" to begin with) keeps a dedicated
-        // one instead of borrowing an origin bundle's.
-        juce::AudioBuffer<float> monoRenderScratchBuffer;
+        // The plan's output for the whole block, range by range (a block is
+        // split at every MIDI event and every steal that completes).
+        juce::AudioBuffer<float> renderScratchBuffer;
 
         // M21: the host's input, copied out before anything can overwrite it (the
         // main input and output share the host buffer's first two channels), one
@@ -540,12 +417,7 @@ namespace bazalt
         };
         BlockTransport blockTransport;
 
-        // Whether THIS block ran a mono graph. finalizeInstanceMixIntoOutput must
-        // not also fetch the global plan then: PlanSwapper allows one fetch per
-        // process() call, and a graph-mode switch can land between the two
-        // reads of monoOnlyGraph/hasGlobalDomain.
-        bool monoRenderedThisBlock = false;
-        bazalt::engine::ExecutionPlan* instancedPlanThisBlock = nullptr; // the instance axis: fetched once per block
+        bazalt::engine::ExecutionPlan* planThisBlock = nullptr; // fetched once per block (PlanSwapper's contract)
         long long internalTransportSamples = 0;
 
         // Declared after everything it depends on (nodeFactory, the
@@ -576,16 +448,10 @@ namespace bazalt
         };
         std::vector<PreviewSubscription> previewSubscriptions;
 
-        /** Attaches one subscription's tap to whichever of the given plans
-            resolve it: the global plan first (a node lives in exactly one
-            place, other than an origin's own trigger source, which
-            genuinely can be duplicated into more than one origin — a tap on
-            THAT specific node attaches to all of them, no different from
-            attaching to several voice plans already), else every voice plan
-            given. Returns whether it resolved. */
-        bool attachPreviewSubscription (PreviewSubscription& subscription,
-                                        bazalt::engine::ExecutionPlan* globalPlan,
-                                        const std::vector<bazalt::engine::ExecutionPlan*>& voicePlans);
+        /** Attaches one subscription's tap to the plan: the node's own buffer,
+            or every instance's buffer for a node that runs per instance.
+            Returns whether it resolved. */
+        bool attachPreviewSubscription (PreviewSubscription& subscription, bazalt::engine::ExecutionPlan* plan);
 
         double currentSampleRate = 44100.0;
         int currentBlockSize = 512;

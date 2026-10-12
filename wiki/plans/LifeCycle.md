@@ -68,7 +68,7 @@ the same — correlated populations).
 | Batch | What | Done means |
 |---|---|---|
 | **2s — Stochastic suite, first nodes** | Wander, Brownian, Fractal, Events, Lorenz, Rössler, Duffing, Logistic Map. **Built 2026-10-12.** | Each measured for its statistics: OU memory and spread, √t spreading, 1/f scaling exponent, Poisson / clock / bursty interval CV, Hawkes multiplicity, refractory gap, period doubling (`tests/StochasticTests.cpp`). |
-| **2a — Instance axis** | `InstanceAxis.md`: one plan, nodes keep per-instance state, mono runs once, Merge is a step. Built beside the current engine. | Every existing render test matches through both engines; then switch. |
+| **2a — Instance axis** | `InstanceAxis.md`: one plan, nodes keep per-instance state, mono runs once, Merge is a step. Built beside the current engine. **Built 2026-10-12** (`InstanceAxis.md` §6): matched bit for bit, then the per-voice engine was removed. | Every existing render test matches through both engines; then switch. |
 | **2b — Population, Split, Merge** | D2–D4. Remove Voice / Trigger / Swarm nodes (no migrations — factory patches rebuilt). Unison as a nested Population. | A keyboard split, a round robin, "top note → lead chain" and a 100-instance grain cloud built from these alone. Swarm (Transient)'s lost-release bug gone by construction. |
 | **2c — Groups, Class, Trait** | D5–D6. Groups open in place, expose ports, save to a library. | A "Cricket" Class with a body, born 50 times with different traits. |
 | **2d — Vectors, Sense, Move, Locate** | Report §5's vector-on-the-channel-axis decision first, then D7–D8. | Boids from Sense + math + Move; Kuramoto-style sync from Sense's mean phase; a moving source heard moving. |

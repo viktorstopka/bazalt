@@ -12,12 +12,9 @@ namespace bazalt
 
     /** Owns the live, editable NodeGraph and applies commands to it
         (NODE_EDITOR.md §6) — message-thread only. Every graph-shaped
-        command recompiles and republishes fresh plans: 8 voice plans per
-        active "life.voice" origin (up to
-        MultiplicityResolver::maxOrigins simultaneously,
-        wiki/plans/DomainRedesign.md Batch 2), plus one shared global plan
-        whenever the graph has real Scalar-resolved content (supersedes the
-        original util.voiceSum boundary, RECONCILIATION.md 3.1); a command
+        command recompiles and republishes ONE plan for the whole patch, in
+        which every allocator's part runs once per instance
+        (wiki/plans/InstanceAxis.md, InstanceExpansion.h); a command
         that would produce a graph that doesn't compile is rejected and the
         live graph/plans are rolled back to exactly what they were before
         the attempt (CLAUDE.md rule 5 — a bad edit never reaches the audio
@@ -204,7 +201,6 @@ namespace bazalt
             stage 0 — listening is a working state, never part of a patch).
             Undo snapshots use getGraph() and keep them. */
         bazalt::engine::NodeGraph getGraphForSaving() const;
-        bool getHasGlobalDomain() const noexcept { return hasGlobalDomain; }
 
         /** Dev-convenience export, direct instruction ("build that", after
             being asked whether Claude has any quick way to see a patch as
@@ -274,19 +270,12 @@ namespace bazalt
             editor draws as a stereo cable. */
         const std::unordered_map<juce::String, std::vector<juce::String>>& getStereoOutputs() const noexcept { return stereoOutputs; }
 
-        /** The instance axis (wiki/plans/InstanceAxis.md): when on, a graph
-            with voices compiles into ONE instanced plan (InstanceExpansion.h)
-            instead of one plan per voice. Off until it has proven itself
-            against the per-voice engine (tests-plugin/InstanceAxisParityTests.cpp). */
-        void setUseInstanceAxis (bool on) { useInstanceAxis = on; }
-        bool isUsingInstanceAxis() const noexcept { return useInstanceAxis; }
-
     private:
         CommandResult recompileAndPublish();
-        CommandResult publishInstanced (const bazalt::engine::NodeGraph& compiled,
-                                        const bazalt::engine::MultiplicityResult& split,
-                                        std::unordered_map<juce::String, juce::String> newNodeDomains);
-        bool useInstanceAxis = true;
+        CommandResult publishPlan (const bazalt::engine::NodeGraph& compiled,
+                                   const bazalt::engine::MultiplicityResult& split,
+                                   bool monoOnly,
+                                   std::unordered_map<juce::String, juce::String> newNodeDomains);
         uint64_t nextGeneration() noexcept { return generationCounter++; }
 
         BazaltAudioProcessor& processor;
@@ -295,7 +284,6 @@ namespace bazalt
         bool isPrepared = false;
         double sampleRate = 44100.0;
         int blockSize = 512;
-        bool hasGlobalDomain = false;
         bool freshStateOnNextCompile = false; // setGraph: a whole new patch keeps no running state
         std::unordered_map<juce::String, juce::String> nodeDomains;
         std::unordered_map<juce::String, std::unordered_map<juce::String, PortMultiplicityInfo>> portMultiplicity;

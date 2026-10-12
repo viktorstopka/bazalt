@@ -784,11 +784,10 @@ silently auto-inserted `channels.downmix`. Now:
   `CanConnectResult::choices` (`mid/left/right/side`); `connectWithAutoAdapt` makes
   no change without a choice, and the editor asks with a small chooser at the drop
   (`ConnectionChoiceMenu.tsx`). The pick becomes a visible `channels.downmix` in that mode.
-- **Voices are stereo end to end.** A voice plan whose output is stereo is summed
-  into a two-channel scratch buffer; `life.merge` carries two channels when its
-  voices do (a driver-set `life.merge.channels`, not a user parameter); the
-  no-voices render path keeps its right channel. Before this a per-voice pan lost
-  its right channel at the voice sum.
+- **Voices are stereo end to end.** A Merge fed stereo instances becomes a
+  per-channel `life.reduce` (the instance axis, `wiki/plans/InstanceAxis.md` §6), so
+  a per-voice pan keeps both channels through the sum. Before this a per-voice pan
+  lost its right channel at the voice sum.
 - **Visible width.** Compiled plans list their stereo outputs
   (`stereoOutputPortsByNode`, returned with `graphGetNodeMultiplicity`); the editor
   draws those cables as two thin strands.
