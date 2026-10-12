@@ -18,6 +18,7 @@ target_sources(engine
         src/RtAllocationTrap.cpp
         src/graph/CanConnect.cpp
         src/graph/MultiplicityResolver.cpp
+        src/graph/InstanceExpansion.cpp
         src/graph/ExecutionPlan.cpp
         src/graph/GraphCompiler.cpp
         src/patch/PatchSerializer.cpp

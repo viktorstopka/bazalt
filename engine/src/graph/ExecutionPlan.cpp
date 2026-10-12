@@ -1,4 +1,6 @@
 #include "bazalt/engine/graph/ExecutionPlan.h"
+#include "bazalt/engine/graph/InstanceExpansion.h"
+#include "bazalt/engine/nodes/LifeReduceNode.h"
 
 namespace bazalt::engine
 {
@@ -16,11 +18,18 @@ namespace bazalt::engine
         const float* inputPtrs[maxPortsPerNode];
         float* outputPtrs[maxPortsPerNode];
 
+        const auto instanceRuns = [this] (int group, int instance) noexcept
+        {
+            return group < 0 || instanceGroups[(size_t) group]->instances[(size_t) instance].run;
+        };
+
         for (auto& step : steps)
         {
             if (step.kind == Step::Kind::Block)
             {
                 auto& blockStep = step.block;
+                if (! instanceRuns (blockStep.group, blockStep.instance))
+                    continue;
                 auto& node = nodes[(size_t) blockStep.nodeSlot];
 
                 if (blockStep.bypassed)
@@ -70,6 +79,8 @@ namespace bazalt::engine
             else
             {
                 auto& region = step.region;
+                if (! instanceRuns (region.group, region.instance))
+                    continue;
                 const auto numNodesInRegion = (int) region.nodeSlotsInOrder.size();
 
                 float sampleIn[maxPortsPerNode];
@@ -112,6 +123,17 @@ namespace bazalt::engine
             const auto numBuffers = (int) blockBuffers.size();
             for (int i = 0; i < numBuffers; ++i)
             {
+                // The instance axis: only the instance a group's previews show
+                // is pushed, and only while it runs (otherwise its buffer is stale).
+                if ((size_t) i < bufferInstance.size() && bufferInstance[(size_t) i].first >= 0)
+                {
+                    const auto [group, instance] = bufferInstance[(size_t) i];
+                    const auto& runtime = *instanceGroups[(size_t) group];
+                    if (instance != runtime.previewInstance.load (std::memory_order_relaxed)
+                        || ! runtime.instances[(size_t) instance].run)
+                        continue;
+                }
+
                 // A phase source (PreviewKind::PhaseLocked) rides along with
                 // the samples in the same push, so a folded preview's phase
                 // can never disagree with its samples.
@@ -192,5 +214,128 @@ namespace bazalt::engine
             default:
                 return 0.0f;
         }
+    }
+
+    void ExecutionPlan::applyInstanceLayout (const InstanceLayout& layout)
+    {
+        instanceGroups.clear();
+        copySlotsByBaseId.clear();
+        bufferInstance.assign (blockBuffers.size(), { -1, -1 });
+        if (layout.groups.empty())
+            return;
+
+        for (const auto& group : layout.groups)
+        {
+            auto runtime = std::make_unique<InstanceGroupRuntime>();
+            runtime->originId = group.originId;
+            runtime->count = group.count;
+            runtime->instances.assign ((size_t) group.count, {});
+            runtime->originNodes.assign ((size_t) group.count, nullptr);
+            runtime->noteInNodes.assign ((size_t) group.count, nullptr);
+            runtime->nodeSlotsByInstance.assign ((size_t) group.count, {});
+            runtime->regionStepsByInstance.assign ((size_t) group.count, {});
+            instanceGroups.push_back (std::move (runtime));
+        }
+
+        // Each slot (every lane included) -> its graph id's (group, instance).
+        std::vector<std::pair<int, int>> tagOfSlot (nodes.size(), { -1, -1 });
+        for (const auto& [id, slot] : nodeIdToSlot)
+        {
+            int instance = -1;
+            const auto base = baseNodeId (id, &instance);
+            const auto group = instance >= 0 ? layout.groupOf (base) : -1;
+            const auto& lanes = (size_t) slot < laneSlotsBySlot.size() ? laneSlotsBySlot[(size_t) slot] : std::vector<int> { slot };
+            for (const auto laneSlot : lanes)
+            {
+                copySlotsByBaseId[base].push_back (laneSlot);
+                if (group >= 0)
+                {
+                    tagOfSlot[(size_t) laneSlot] = { group, instance };
+                    instanceGroups[(size_t) group]->nodeSlotsByInstance[(size_t) instance].push_back (laneSlot);
+                }
+            }
+            if (group >= 0)
+            {
+                auto& runtime = *instanceGroups[(size_t) group];
+                if (base == runtime.originId)
+                    runtime.originNodes[(size_t) instance] = nodes[(size_t) slot].get();
+                if (const auto type = nodeIdToType.find (id); type != nodeIdToType.end() && type->second == "io.noteIn")
+                    runtime.noteInNodes[(size_t) instance] = nodes[(size_t) slot].get();
+            }
+        }
+        for (auto& [base, slots] : copySlotsByBaseId)
+            std::sort (slots.begin(), slots.end());
+
+        for (size_t s = 0; s < steps.size(); ++s)
+        {
+            auto& step = steps[s];
+            if (step.kind == Step::Kind::Block)
+            {
+                std::tie (step.block.group, step.block.instance) = tagOfSlot[(size_t) step.block.nodeSlot];
+                if (step.block.group >= 0)
+                    for (const auto index : step.block.outputBufferIndices)
+                        bufferInstance[(size_t) index] = { step.block.group, step.block.instance };
+            }
+            else
+            {
+                auto& region = step.region;
+                if (! region.nodeSlotsInOrder.empty())
+                    std::tie (region.group, region.instance) = tagOfSlot[(size_t) region.nodeSlotsInOrder.front()];
+                region.scalarIndices.clear();
+                for (const auto& indices : region.outputScalarIndices)
+                    region.scalarIndices.insert (region.scalarIndices.end(), indices.begin(), indices.end());
+                if (region.group >= 0)
+                {
+                    instanceGroups[(size_t) region.group]->regionStepsByInstance[(size_t) region.instance].push_back ((int) s);
+                    for (const auto& external : region.externalOutputs)
+                        bufferInstance[(size_t) external.bufferIndex] = { region.group, region.instance };
+                }
+            }
+        }
+
+        // Each reduce sums one group: hand it that group's runtime.
+        for (const auto& [id, slot] : nodeIdToSlot)
+        {
+            const auto type = nodeIdToType.find (id);
+            if (type == nodeIdToType.end() || type->second != "life.reduce")
+                continue;
+            auto* first = dynamic_cast<nodes::LifeReduceNode*> (nodes[(size_t) slot].get());
+            const auto group = first != nullptr ? first->getGroupIndex() : -1;
+            if (group < 0 || (size_t) group >= instanceGroups.size())
+                continue;
+            const auto& lanes = (size_t) slot < laneSlotsBySlot.size() ? laneSlotsBySlot[(size_t) slot] : std::vector<int> { slot };
+            for (const auto laneSlot : lanes)
+                if (auto* reduce = dynamic_cast<nodes::LifeReduceNode*> (nodes[(size_t) laneSlot].get()))
+                    reduce->setRuntime (instanceGroups[(size_t) group].get());
+        }
+    }
+
+    void ExecutionPlan::resetInstance (int group, int instance) noexcept
+    {
+        if (group < 0 || (size_t) group >= instanceGroups.size())
+            return;
+        auto& runtime = *instanceGroups[(size_t) group];
+        if (instance < 0 || instance >= runtime.count)
+            return;
+        for (const auto slot : runtime.nodeSlotsByInstance[(size_t) instance])
+            nodes[(size_t) slot]->reset();
+        for (const auto stepIndex : runtime.regionStepsByInstance[(size_t) instance])
+            for (const auto scalar : steps[(size_t) stepIndex].region.scalarIndices)
+                regionScalars[(size_t) scalar] = 0.0f;
+    }
+
+    std::vector<int> ExecutionPlan::findOutputBufferIndicesForAllInstances (const juce::String& baseNodeId, const juce::String& portId) const
+    {
+        std::vector<int> indices;
+        if (const auto index = findOutputBufferIndex (baseNodeId, portId); index >= 0)
+            indices.push_back (index);
+        for (int i = 0;; ++i)
+        {
+            const auto index = findOutputBufferIndex (instanceNodeId (baseNodeId, i), portId);
+            if (index < 0)
+                break;
+            indices.push_back (index);
+        }
+        return indices;
     }
 }

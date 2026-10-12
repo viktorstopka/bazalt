@@ -78,6 +78,7 @@
 #include "bazalt/engine/nodes/DataCurveNode.h"
 #include "bazalt/engine/nodes/DataWavetableNode.h"
 #include "bazalt/engine/nodes/EqNodes.h"
+#include "bazalt/engine/nodes/LifeReduceNode.h"
 #include "bazalt/engine/nodes/StochasticNodes.h"
 #include "bazalt/engine/nodes/ChaosNodes.h"
 #include "bazalt/engine/nodes/SineOscillatorNode.h"
@@ -149,6 +150,7 @@ namespace bazalt::engine
         factory.registerType ("life.swarmPopulation", [] { return std::make_unique<nodes::InstanceSwarmPopulationNode>(); }); // Domain Extensions batch
         factory.registerType ("life.swarmTransient", [] { return std::make_unique<nodes::InstanceSwarmTransientNode>(); }); // Domain Extensions batch
         factory.registerType ("life.trigger", [] { return std::make_unique<nodes::InstanceTriggerNode>(); }); // Domain Extensions batch
+        factory.registerType ("life.reduce", [] { return std::make_unique<nodes::LifeReduceNode>(); }); // internal: Merge on the instance axis (InstanceExpansion.h)
         factory.registerType ("life.merge", [] { return std::make_unique<nodes::InstanceMixNode>(); }); // DomainRedesign.md Batch 1b — renamed from "instance.mix" (C++ class name unchanged)
         factory.registerType ("io.noteIn", [] { return std::make_unique<nodes::IoNoteInNode>(); });
         // M21 Batch A, wave 1 — fixed-arity nodes needing no new infrastructure.
