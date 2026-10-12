@@ -197,9 +197,9 @@ family below), not a fourth entry here anymore.
 |---|---|---|---|---|
 | `lfo.shape` | Implemented |  | Env/LFO Shapes | Done 2026-10-04 (`wiki/plans/SoundPalette.md`) — v1: seven built-in shapes, host-locked sync; `Data(curve)` input waits for `factory.curve`. |
 
-### `random.*` — 2/2 Implemented
+### `random.*` — 6/6 Implemented
 
-`random.stepped`, `random.drift` — both Implemented.
+`random.stepped`, `random.drift` — both Implemented. Stage 2 stochastic batch (2026-10-12): `random.wander` (Ornstein–Uhlenbeck), `random.brownian`, `random.fractal` (1/f), `random.events` (renewal + Hawkes). New `chaos.*` category: `chaos.lorenz`, `chaos.rossler`, `chaos.duffing`, `chaos.logistic`. Tested for their statistics (`tests/StochasticTests.cpp`).
 
 ### `clock.*` — 3/3 Implemented
 
