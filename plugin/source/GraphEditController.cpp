@@ -1073,6 +1073,11 @@ namespace bazalt
         juce::ignoreUnused (published);
 
         processor.commitOriginBundleAssignments (slotForOrigin); // after the plan is live
+        // What the resolver pulled into a voice region only to feed it (an LFO,
+        // a constant) runs once: it is shown as shared, not as voices.
+        for (auto& [nodeId, domain] : newNodeDomains)
+            if (domain == "voice" && layout.groupOf (nodeId) < 0)
+                domain = "global";
         nodeDomains = std::move (newNodeDomains);
 
         for (const auto& origin : split.origins)
@@ -1086,7 +1091,13 @@ namespace bazalt
         markAllPorts (newPortMultiplicity, factory, split.globalGraph, "scalar", {});
         for (const auto& origin : monoOnly ? std::vector<bazalt::engine::MultiplicityOrigin> {} : split.origins)
         {
-            markAllPorts (newPortMultiplicity, factory, origin.voiceGraph, "poly", origin.originId);
+            // Poly (drawn as a stack of cards) only for what really runs per
+            // instance.
+            bazalt::engine::NodeGraph perInstance, once;
+            for (const auto& node : origin.voiceGraph.getNodes())
+                (layout.groupOf (node.id) >= 0 ? perInstance : once).addNode (node);
+            markAllPorts (newPortMultiplicity, factory, once, "scalar", {});
+            markAllPorts (newPortMultiplicity, factory, perInstance, "poly", origin.originId);
             if (const auto slot = bundleSlotOf (slotForOrigin, origin.originId); slot >= 0)
                 newOriginBundleIndexByNodeId[origin.originId] = slot;
             for (const auto& sum : origin.sums)

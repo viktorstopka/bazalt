@@ -250,6 +250,10 @@ TEST_CASE ("getPortMultiplicity() reports poly for a voice-region node's ports (
     graph.addConnection ({ "oscToFreq", "frequency", "osc", "source.oscillator.frequency" });
     graph.addConnection ({ "osc", "out", "sum", "in" });
     graph.addConnection ({ "sum", "out", "masterout", "in" });
+    // An LFO feeding the voices runs once (the instance axis): shared, so it
+    // must not be drawn as a stack of voices.
+    graph.addNode ({ "lfo", "source.sine", {}, { { "source.sine.frequency", 2.0f } }, {} });
+    graph.addConnection ({ "lfo", "out", "osc", "source.oscillator.amplitude" });
     graph.setOutput ("masterout", "out");
 
     BazaltAudioProcessor processor;
@@ -258,6 +262,10 @@ TEST_CASE ("getPortMultiplicity() reports poly for a voice-region node's ports (
     REQUIRE (controller.setGraph (graph).success);
 
     const auto& ports = controller.getPortMultiplicity();
+
+    REQUIRE (ports.count ("lfo") == 1);
+    CHECK (ports.at ("lfo").at ("out").kind == "scalar");
+    CHECK (controller.getNodeDomains().at ("lfo") == "global");
 
     REQUIRE (ports.count ("alloc") == 1);
     REQUIRE (ports.at ("alloc").count ("gate") == 1);
