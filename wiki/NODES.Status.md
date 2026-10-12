@@ -299,14 +299,16 @@ edit. Every later `data.*`/`osc.wavetable`/`sampler.*` node rides on this for fr
 | `data.analyseModes` | To be implemented | **C3** | Analysis+Assemble | FFT/peak-picking modal analysis of a recording. |
 | `data.eqToCurve` | To be implemented | **C1** | EQ/Curve Data | Simple render, but blocked on a real `Data(eq-curve)` producer (`factory.eq`, D-tier) to be meaningful. |
 
-### `analysis.*` — 4 to build (none started)
+### `analysis.*` — 5 Implemented, 1 to build
 
 | Node | Status | Necessity | Batch | Notes |
 |---|---|---|---|---|
 | `analysis.level` | Implemented |  | Analysis+Assemble | Done 2026-10-04 (`wiki/plans/SoundPalette.md`) — RMS/peak, dB output, stereo-aware. |
-| `analysis.onset` | To be implemented | **C2** | Analysis+Assemble | Energy/spectral-flux onset detection. |
+| `analysis.onset` | Implemented | | GuitarInput | Done 2026-10-11 (`wiki/plans/GuitarInput.md`) — fast/slow envelope, strength = attack peak. |
 | `analysis.centroid` | To be implemented | **C2** | Analysis+Assemble | Spectral centroid — needs an FFT. |
-| `analysis.pitch` | To be implemented | **C3** | Analysis+Assemble | Hardest analysis node — autocorrelation/YIN pitch tracking. |
+| `analysis.pitch` | Implemented | | GuitarInput | Done 2026-10-11 — YIN within a note range, confidence. |
+| `analysis.notes` | Implemented | | GuitarInput | Done 2026-10-11 — pitch + onset into a Note stream (Audio to Notes). |
+| `analysis.phase` | Implemented | | GuitarInput | Done 2026-10-11 — zero-crossing phase tracking with Multiply/Divide (octaver). |
 
 ### `instance.*` — domains — 2 Implemented, 3 to build
 

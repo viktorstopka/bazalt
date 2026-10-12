@@ -236,6 +236,7 @@ namespace bazalt
             (safe) — tests opt out explicitly, real use never does.
         */
         void setOutputLimiterEnabledForTesting (bool enabled) noexcept { outputLimiterEnabled = enabled; }
+        bool isAnalysisRunningForTesting() const noexcept { return analysisThread.isThreadRunning(); }
         void setHasGlobalDomain (bool hasIt) noexcept { hasGlobalDomain.store (hasIt, std::memory_order_release); }
 
         /** M21: true while the graph has no active origin at all (no
@@ -429,7 +430,7 @@ namespace bazalt
         // designated output resolved Poly, or this block ran monoOnly).
         void finalizeInstanceMixIntoOutput (juce::AudioBuffer<float>& output, int numSamples,
                                              bazalt::engine::ExecutionPlan* globalPlan) noexcept;
-        void updateAuxLevelsAndPassthrough (juce::AudioBuffer<float>& mainOutput, int numSamples);
+        void updateAuxLevels (int numSamples); // aux meters + taps; never mixed into the output
 
         // juce::Timer — periodic (~50ms, ARCHITECTURE.md §3.2) reclaim() on
         // every PlanSwapper below, message-thread only. engine/ has no
@@ -454,6 +455,7 @@ namespace bazalt
         int prepareToPlayCallCount = 0;
         std::atomic<uint64_t> processBlockCallCount { 0 };
         uint64_t lastLoggedProcessBlockCallCount = 0;
+        juce::uint32 lastProcessBlockLogMs = 0;
 
         // wiki/plans/DomainRedesign.md Batch 2: up to maxOrigins independent
         // origin bundles, replacing the single voiceManager + 8
@@ -530,6 +532,7 @@ namespace bazalt
         GraphEditController graphEditController { *this };
 
         std::array<std::atomic<float>, (size_t) numAuxBuses> auxPeakLevels {};
+        std::atomic<float> mainInputPeakLevel { 0.0f }; // diagnostic log only
 
         // ARCHITECTURE.md §6: taps wired to main output + the 4 sidechain
         // inputs. telemetryHub must be declared before analysisThread —

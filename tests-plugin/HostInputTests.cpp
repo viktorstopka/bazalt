@@ -339,13 +339,9 @@ TEST_CASE ("io.audioIn bus setting selects a sidechain aux bus", "[plugin][host-
     juce::MidiBuffer midi;
     processor.processBlock (buffer, midi);
 
-    // The aux bus reaches the output twice: through the graph (0.4) and through
-    // the interim sidechain passthrough, which mixes every active aux bus into
-    // the main output at -30 dB (PluginProcessor.cpp, sidechainPassthroughGain).
-    // The passthrough only started working with this change - the clear at the top
-    // of processBlock used to wipe the aux input before it was read.
-    constexpr auto sidechainPassthroughGain = 0.0316f;
-    CHECK (buffer.getSample (0, 50) == Catch::Approx (0.4f + 0.4f * sidechainPassthroughGain).margin (1.0e-6f));
+    // The aux bus reaches the output only through the graph: a sidechain is
+    // never mixed straight into the output (a guitar on it would leak through).
+    CHECK (buffer.getSample (0, 50) == Catch::Approx (0.4f).margin (1.0e-6f));
     CHECK (processor.getAuxPeakLevel (0) == Catch::Approx (0.4f).margin (1.0e-6f));
 }
 
@@ -675,4 +671,139 @@ TEST_CASE ("Note-on, pitch bend and note-off never allocate on the audio thread"
     processTrapped (processor, 2, 256, 1, noteOff);
 
     SUCCEED ("no allocation trap fired");
+}
+
+// The Ableton-instrument case: the host switches the main input off and the
+// sidechain on, so Sidechain 1 arrives in channels 0-1 — the same channels as
+// the main output.
+TEST_CASE ("With the main input off, Sidechain 1 reaches Audio In and its meter reads the sidechain, not the output",
+           "[plugin][host-input][mono]")
+{
+    BazaltAudioProcessor processor;
+    auto layout = processor.getBusesLayout();
+    layout.inputBuses.getReference (0) = juce::AudioChannelSet::disabled();
+    layout.inputBuses.getReference (1) = juce::AudioChannelSet::stereo();
+    REQUIRE (processor.setBusesLayout (layout));
+    processor.prepareToPlay (44100.0, 256);
+    // Audio In (Sidechain 1) x 0.5 -> out: the output differs from the sidechain.
+    NodeGraph graph;
+    graph.addNode ({ "in", "io.audioIn", {}, { { "io.audioIn.bus", 1.0f } }, {} });
+    graph.addNode ({ "half", "math.multiply", {}, { { "in.1", 0.5f } }, {} });
+    graph.addNode ({ "out", "io.output", {}, {}, {} });
+    graph.addConnection ({ "in", "channel.0", "half", "in.0" });
+    graph.addConnection ({ "half", "out", "out", "in" });
+    graph.setOutput ("out", "out");
+    REQUIRE (processor.getGraphEditController().setGraph (graph).success);
+
+    juce::AudioBuffer<float> buffer (2, 256);
+    buffer.clear();
+    fillChannel (buffer, 0, 0.4f); // sidechain left
+    fillChannel (buffer, 1, 0.4f); // sidechain right
+    juce::MidiBuffer midi;
+    processor.processBlock (buffer, midi);
+
+    CHECK (buffer.getSample (0, 50) == Catch::Approx (0.2f).margin (1.0e-5f));
+    CHECK (processor.getAuxPeakLevel (0) == Catch::Approx (0.4f).margin (1.0e-6f));
+}
+
+// Ableton Live only feeds an aux bus the plugin starts with switched on — no
+// layout change here, just the default one a host sees at load.
+TEST_CASE ("In the default layout Sidechain 1 is on and reaches Audio In", "[plugin][host-input]")
+{
+    BazaltAudioProcessor processor;
+    REQUIRE (processor.getBusesLayout().getChannelSet (true, 1) == juce::AudioChannelSet::stereo());
+    processor.prepareToPlay (44100.0, 256);
+    REQUIRE (processor.getGraphEditController().setGraph (monoEffectGraph (1.0f, "channel.0")).success);
+
+    juce::AudioBuffer<float> buffer (4, 256); // main L/R + Sidechain 1 L/R
+    buffer.clear();
+    fillChannel (buffer, 2, 0.3f);
+    fillChannel (buffer, 3, 0.3f);
+    juce::MidiBuffer midi;
+    processor.processBlock (buffer, midi);
+
+    CHECK (buffer.getSample (0, 50) == Catch::Approx (0.3f).margin (1.0e-5f));
+    CHECK (processor.getAuxPeakLevel (0) == Catch::Approx (0.3f).margin (1.0e-6f));
+}
+
+TEST_CASE ("A mono sidechain feeds both of Audio In's outputs", "[plugin][host-input][mono]")
+{
+    BazaltAudioProcessor processor;
+    auto layout = processor.getBusesLayout();
+    layout.inputBuses.getReference (1) = juce::AudioChannelSet::mono();
+    REQUIRE (processor.setBusesLayout (layout));
+    processor.prepareToPlay (44100.0, 256);
+    REQUIRE (processor.getGraphEditController().setGraph (monoEffectGraph (1.0f, "channel.1")).success); // the RIGHT output
+
+    juce::AudioBuffer<float> buffer (3, 256); // main L/R + mono sidechain
+    buffer.clear();
+    fillChannel (buffer, 2, 0.3f);
+    juce::MidiBuffer midi;
+    processor.processBlock (buffer, midi);
+
+    CHECK (buffer.getSample (0, 50) == Catch::Approx (0.3f).margin (1.0e-5f));
+}
+
+// wiki/plans/GuitarInput.md: a guitar plays a synth — the main input through
+// Audio to Notes into a Voice, whose sine sounds at the plucked note.
+TEST_CASE ("A plucked note on the input plays a Voice at that pitch", "[plugin][host-input][hearing]")
+{
+    BazaltAudioProcessor processor;
+    processor.prepareToPlay (48000.0, 256);
+
+    NodeGraph graph;
+    graph.addNode ({ "in", "io.audioIn", {}, {}, {} });
+    graph.addNode ({ "notes", "analysis.notes", {}, {}, {} });
+    graph.addNode ({ "voice", "life.voice", {}, {}, {} });
+    graph.addNode ({ "p2f", "math.pitchToFrequency", {}, {}, {} });
+    graph.addNode ({ "sine", "source.sine", {}, {}, {} });
+    graph.addNode ({ "merge", "life.merge", {}, {}, {} });
+    graph.addNode ({ "out", "io.output", {}, {}, {} });
+    graph.addConnection ({ "in", "channel.0", "notes", "in" });
+    graph.addConnection ({ "notes", "notes", "voice", "spawn" });
+    graph.addConnection ({ "voice", "pitch", "p2f", "pitch" });
+    graph.addConnection ({ "p2f", "frequency", "sine", "source.sine.frequency" });
+    graph.addConnection ({ "voice", "gate", "sine", "source.sine.amplitude" });
+    graph.addConnection ({ "sine", "out", "merge", "in" });
+    graph.addConnection ({ "merge", "out", "out", "in" });
+    graph.setOutput ("out", "out");
+    const auto result = processor.getGraphEditController().setGraph (graph);
+    INFO (result.errorMessage);
+    REQUIRE (result.success);
+
+    // A plucked A3 (220 Hz, with a louder 2nd harmonic) on the main input.
+    // The output carries only the synth: the input is not passed through.
+    std::vector<float> rendered;
+    double t = 0.0;
+    for (int block = 0; block < 100; ++block)
+    {
+        juce::AudioBuffer<float> buffer (2, 256);
+        for (int i = 0; i < 256; ++i, t += 1.0 / 48000.0)
+        {
+            const auto v = (float) (0.3 * std::exp (-t * 2.0)
+                                    * (0.6 * std::sin (juce::MathConstants<double>::twoPi * 220.0 * t)
+                                       + 0.9 * std::sin (juce::MathConstants<double>::twoPi * 440.0 * t)));
+            buffer.setSample (0, i, v);
+            buffer.setSample (1, i, v);
+        }
+        juce::MidiBuffer midi;
+        processor.processBlock (buffer, midi);
+        if (block >= 20)
+            rendered.insert (rendered.end(), buffer.getReadPointer (0), buffer.getReadPointer (0) + 256);
+    }
+
+    auto magnitudeAt = [&] (double hz)
+    {
+        double re = 0.0, im = 0.0;
+        for (size_t i = 0; i < rendered.size(); ++i)
+        {
+            const auto angle = juce::MathConstants<double>::twoPi * hz * (double) i / 48000.0;
+            re += rendered[i] * std::cos (angle);
+            im -= rendered[i] * std::sin (angle);
+        }
+        return std::sqrt (re * re + im * im) / (double) rendered.size();
+    };
+    INFO ("220 Hz " << magnitudeAt (220.0) << ", 440 Hz " << magnitudeAt (440.0));
+    CHECK (magnitudeAt (220.0) > 0.2);   // the sine plays the fundamental …
+    CHECK (magnitudeAt (440.0) < 0.05);  // … not the louder octave
 }

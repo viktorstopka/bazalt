@@ -14,10 +14,10 @@ TEST_CASE ("BazaltAudioProcessor declares main stereo in/out plus 4 aux stereo s
     CHECK (processor.getChannelCountOfBus (true, 0) == 2);
     CHECK (processor.getChannelCountOfBus (false, 0) == 2);
 
-    // Aux buses declare a stereo layout but are inactive by default — a
-    // host that never activates them must still be a supported layout
-    // (ARCHITECTURE.md §4.1).
-    for (int i = 0; i < BazaltAudioProcessor::numAuxBuses; ++i)
+    // Sidechain 1 is active by default (Ableton Live never activates an
+    // inactive VST3 aux bus); 2-4 declare stereo but start inactive.
+    CHECK (processor.getChannelCountOfBus (true, 1) == 2);
+    for (int i = 1; i < BazaltAudioProcessor::numAuxBuses; ++i)
         CHECK (processor.getChannelCountOfBus (true, i + 1) == 0);
 }
 
@@ -35,7 +35,7 @@ TEST_CASE ("Two processor instances get distinct identities", "[plugin][multi-in
     CHECK (a.getInstanceId() != b.getInstanceId());
 }
 
-TEST_CASE ("The default bus layout (main stereo, aux sidechains inactive) is supported", "[plugin][buses]")
+TEST_CASE ("The default bus layout (main stereo, Sidechain 1 on, 2-4 inactive) is supported", "[plugin][buses]")
 {
     BazaltAudioProcessor processor;
     CHECK (processor.checkBusesLayoutSupported (processor.getBusesLayout()));
@@ -62,12 +62,33 @@ TEST_CASE ("Activating all 4 sidechain aux buses as stereo is still a supported 
     CHECK (processor.checkBusesLayoutSupported (layout));
 }
 
-TEST_CASE ("A non-stereo aux bus layout is rejected", "[plugin][buses]")
+TEST_CASE ("A mono aux bus is accepted (a host may offer its sidechain in mono); a surround one is not", "[plugin][buses]")
 {
     BazaltAudioProcessor processor;
 
     auto layout = processor.getBusesLayout();
     layout.inputBuses.getReference (1) = juce::AudioChannelSet::mono();
+    CHECK (processor.checkBusesLayoutSupported (layout));
 
+    layout.inputBuses.getReference (1) = juce::AudioChannelSet::create5point1();
     CHECK_FALSE (processor.checkBusesLayoutSupported (layout));
+}
+
+// Ableton deactivates and reactivates the plugin around a bus-layout change
+// (switching its sidechain on): releaseResources(), then prepareToPlay() with
+// the same settings. Scopes and meters must come back, not just the audio.
+TEST_CASE ("Visualizations keep running after a release and an unchanged re-prepare", "[plugin][buses]")
+{
+    BazaltAudioProcessor processor;
+    processor.prepareToPlay (44100.0, 512);
+    REQUIRE (processor.isAnalysisRunningForTesting());
+
+    processor.releaseResources();
+    auto layout = processor.getBusesLayout();
+    layout.inputBuses.getReference (1) = juce::AudioChannelSet::mono();
+    REQUIRE (processor.setBusesLayout (layout));
+    processor.prepareToPlay (44100.0, 512);
+
+    CHECK (processor.isAnalysisRunningForTesting());
+    processor.releaseResources();
 }
