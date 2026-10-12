@@ -1,4 +1,5 @@
 #include "bazalt/engine/graph/InstanceExpansion.h"
+#include <algorithm>
 #include <unordered_set>
 
 namespace bazalt::engine
@@ -41,7 +42,28 @@ namespace bazalt::engine
                 }
             };
             walk (origin.originId, successors);
-            walk (origin.originId, predecessors);
+
+            // The trigger chain: per instance only when MIDI reaches it through
+            // an io.noteIn (each instance's note-in is poked directly).
+            std::unordered_set<juce::String> chain { origin.originId };
+            {
+                std::vector<juce::String> stack { origin.originId };
+                while (! stack.empty())
+                {
+                    const auto id = stack.back();
+                    stack.pop_back();
+                    if (const auto it = predecessors.find (id); it != predecessors.end())
+                        for (const auto& next : it->second)
+                            if (chain.insert (next).second)
+                                stack.push_back (next);
+                }
+            }
+            const auto hearsMidi = std::any_of (chain.begin(), chain.end(), [&origin] (const juce::String& id)
+                                                { const auto* n = origin.voiceGraph.findNode (id); return n != nullptr && n->type == "io.noteIn"; });
+            if (hearsMidi)
+                perInstance.insert (chain.begin(), chain.end());
+            else
+                layout.groups.back().internallyTriggered = true;
 
             for (const auto& id : perInstance)
                 layout.groupOfNode[id] = group;
@@ -125,6 +147,14 @@ namespace bazalt::engine
             }
             else if (fromGroup < 0 && toGroup >= 0)
             {
+                // An internal trigger reaches only instance 0's allocator; the
+                // processor relays each spawn to the instance it picks.
+                const auto& group = layout.groups[(size_t) toGroup];
+                if (group.internallyTriggered && c.toNodeId == group.originId)
+                {
+                    out.addConnection ({ c.fromNodeId, c.fromPortId, instanceNodeId (c.toNodeId, 0), c.toPortId });
+                    continue;
+                }
                 // Runs once, heard by every instance.
                 for (int i = 0; i < layout.groups[(size_t) toGroup].count; ++i)
                     out.addConnection ({ c.fromNodeId, c.fromPortId, instanceNodeId (c.toNodeId, i), c.toPortId });

@@ -14,9 +14,11 @@ namespace bazalt::engine
         that runs per instance appears once per instance (`osc@0` … `osc@7`)
         and everything else appears once.
 
-        - A node **downstream of an allocator** (its poly part) and a node
-          **upstream of it** (its trigger chain — io.noteIn, a clock that
-          spawns it) run per instance, exactly as each voice had its own copy.
+        - A node **downstream of an allocator** (its poly part) runs per
+          instance. Its trigger chain runs per instance only when it holds an
+          io.noteIn (MIDI pokes each instance's note-in); an internal trigger
+          chain (a clock, a macro, Events) runs once and feeds instance 0's
+          copy of the allocator, which the processor relays from.
         - **Every other node runs once** and feeds every instance the same
           signal — a shared LFO is one LFO, in phase everywhere (the old
           engine copied it into each voice, where the copies drifted apart).
@@ -35,6 +37,11 @@ namespace bazalt::engine
         {
             juce::String originId;
             int count = 8;
+            /** No io.noteIn: the allocator is spawned from inside the patch (a
+                clock, a macro, Events). Its trigger chain runs once and only
+                instance 0's copy hears it; the processor relays each spawn to
+                the instance its VoiceManager picks. */
+            bool internallyTriggered = false;
         };
 
         std::vector<Group> groups;

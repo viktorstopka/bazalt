@@ -249,3 +249,47 @@ TEST_CASE ("'@' in a node id is refused: it is reserved for instances", "[engine
     const auto factory = buildDefaultNodeFactory();
     CHECK_FALSE (compileWithInstances (graph, layoutOf (graph, 2), factory, { sampleRate, block }, 1).success);
 }
+
+TEST_CASE ("An internal trigger chain runs once and only instance 0's allocator hears it", "[engine][instanceAxis]")
+{
+    // A clock that spawns the swarm, and a toggle the same clock flips (which
+    // runs once, outside the voices): legal now that the chain isn't copied.
+    NodeGraph graph;
+    graph.addNode ({ "clock", "time.clock", {}, {}, {} });
+    graph.addNode ({ "swarm", "life.swarmTransient", {}, {}, {} });
+    graph.addNode ({ "side", "logic.toggle", {}, {}, {} });
+    graph.addNode ({ "osc", "source.sine", {}, {}, {} });
+    graph.addNode ({ "merge", "life.merge", {}, {}, {} });
+    graph.addConnection ({ "clock", "tick", "swarm", "spawn" });
+    graph.addConnection ({ "clock", "tick", "side", "trigger" });
+    graph.addConnection ({ "swarm", "gate", "osc", "source.sine.amplitude" });
+    graph.addConnection ({ "osc", "out", "merge", "in" });
+    graph.setOutput ("merge", "out");
+
+    const auto layout = layoutOf (graph, 4);
+    REQUIRE (layout.groups.size() == 1);
+    CHECK (layout.groups[0].internallyTriggered);
+    CHECK (layout.groupOf ("clock") == -1);
+    CHECK (layout.groupOf ("swarm") == 0);
+
+    const auto expanded = expandInstances (graph, layout, 1);
+    REQUIRE (expanded.success);
+    int spawnFeeds = 0;
+    for (const auto& c : expanded.graph.getConnections())
+        if (c.fromNodeId == "clock" && c.toPortId == "spawn")
+        {
+            ++spawnFeeds;
+            CHECK (c.toNodeId == "swarm@0");
+        }
+    CHECK (spawnFeeds == 1);
+
+    const auto factory = buildDefaultNodeFactory();
+    CHECK (compileWithInstances (graph, layout, factory, { sampleRate, block }, 1).success);
+}
+
+TEST_CASE ("A MIDI trigger chain still runs per instance", "[engine][instanceAxis]")
+{
+    const auto layout = layoutOf (voicePatch(), 4);
+    CHECK_FALSE (layout.groups[0].internallyTriggered);
+    CHECK (layout.groupOf ("noteIn") == 0);
+}
