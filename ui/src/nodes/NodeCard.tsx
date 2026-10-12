@@ -26,6 +26,8 @@ import { ScopeBody } from './ScopeBody'
 import { CurveThumbnail } from '../factory/CurveThumbnail'
 import { CURVE_FACTORY_TYPES, curveFromContent } from '../factory/curveModel'
 import { WavetableThumbnail } from '../factory/WavetableThumbnail'
+import { EqThumbnail } from '../factory/EqThumbnail'
+import { EQ_FACTORY_TYPES, eqFromContent } from '../factory/eqModel'
 import { WAVETABLE_FACTORY_TYPES, wavetableFromContent } from '../factory/wavetableModel'
 import { MapDiagram } from './MapDiagram'
 import { CycleBody } from './CycleBody'
@@ -738,6 +740,9 @@ function StandardBody({ descriptor, state, instanceId }: { descriptor: NodeDescr
       )}
       {WAVETABLE_FACTORY_TYPES.has(descriptor.typeId) && (
         <WavetableThumbnail doc={wavetableFromContent(state.content)} nodeId={instanceId} />
+      )}
+      {EQ_FACTORY_TYPES.has(descriptor.typeId) && (
+        <EqThumbnail doc={eqFromContent(state.content)} nodeId={instanceId} overridden={connected.has('curve')} />
       )}
       {merged && <MergedRowView row={merged} instanceId={instanceId} connected={connected.has(merged.id)} />}
       {inputs.map((row) => (

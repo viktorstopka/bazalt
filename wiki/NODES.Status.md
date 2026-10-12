@@ -87,6 +87,7 @@ rather than waiting; every `factory.*` node still does want the real thing.
 |---|---|---|---|---|
 | `source.sine` / `saw` / `square` / `triangle` | Implemented | | | Removed in 1b.5, back by request 2026-10-09 (ids moved to `source.*`). |
 | `osc.analog` | Implemented |  | Oscillator Expansion | Done 2026-10-04 (`wiki/plans/SoundPalette.md`) — `fine`, `pulseWidth`, through-zero `phase`, `sync`, real phase-locked preview. |
+| `data.eqCurve` → `filter.eq` | Implemented | | Stage 1d | One EQ curve shared by several EQs. |
 | `data.wavetable` → `source.oscillator` | Implemented | | Stage 1c | No separate wavetable oscillator: the table plugs into the Oscillator's Shape (`wiki/plans/DataAndWavetable.md` D7). |
 | `osc.glottal` | To be implemented | **B3** | PM Voice | Correction 1; LF/Rosenberg parametric pulse model — delicate band-limiting. |
 
@@ -138,6 +139,7 @@ rather than waiting; every `factory.*` node still does want the real thing.
 | `filter.allpass` | Implemented | | | |
 | `filter.shelf` | Implemented | | | |
 | `filter.peak` | Implemented | | | |
+| `filter.eq` | Implemented | | Stage 1d | Done 2026-10-12 — EQ factory (bands in series as Peak/Shelf/SVF stages), Unwrap bit-identical. |
 | `filter.dcBlock` | Implemented | | | |
 | `filter.svf` | Implemented |  | (standalone) | Done 2026-10-04 (`wiki/plans/SoundPalette.md`) — five simultaneous outputs (TPT/Simper), lowpass keeps `out`. |
 | `filter.formant` | To be implemented | **B2** | PM Voice | Bank of bandpass filters over `Data(modal-set)`/vowel table. |
@@ -297,7 +299,7 @@ edit. Every later `data.*`/`osc.wavetable`/`sampler.*` node rides on this for fr
 | `data.record` | To be implemented | **C2** | EQ/Curve Data | Real-time capture + worker-thread handoff, preallocated buffer. |
 | `data.load` | To be implemented | **C3** | Sampler | File I/O + multiple interpretations (sample/wavetable/IR) — real format work, not just DSP. |
 | `data.analyseModes` | To be implemented | **C3** | Analysis+Assemble | FFT/peak-picking modal analysis of a recording. |
-| `data.eqToCurve` | To be implemented | **C1** | EQ/Curve Data | Simple render, but blocked on a real `Data(eq-curve)` producer (`factory.eq`, D-tier) to be meaningful. |
+| `data.eqToCurve` | To be implemented | **C1** | EQ/Curve Data | Simple render; its producer exists now (`data.eqCurve`, 1d). |
 
 ### `analysis.*` — 5 Implemented, 1 to build
 
@@ -354,7 +356,7 @@ building for real, not simplified.
 |---|---|---|---|---|
 | `factory.material` | To be implemented | **D2** | Factories | Editor over `data.material`'s params — the least new mechanism among the six. |
 | `factory.curve` | To be implemented | **D2** | Factories | Editor over `data.table`. |
-| `factory.eq` | To be implemented | **D3** | Factories | Band-list editor + realtime filter bank. |
+| `factory.eq` | Implemented | | Stage 1d | Built as `filter.eq` + `data.eqCurve` (2026-10-12). |
 | `factory.wave` | To be implemented | **D3** | Factories | Wave editor + wavetable data. |
 | `factory.sample` | To be implemented | **D3** | Factories | Sample editor + slicing. |
 | `factory.notes` | To be implemented | **D3** | Factories | Pattern editor — also depends on the whole `note.*`/`clock.*`/`seq.*` family existing first. |

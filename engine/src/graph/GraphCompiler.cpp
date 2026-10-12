@@ -326,6 +326,7 @@ namespace bazalt::engine
         // values that changed on it — its extra channel lanes (below) are
         // reused under exactly the same rule.
         std::vector<char> reusedBySlot ((size_t) numNodes, 0);
+        std::vector<char> contentChangedBySlot ((size_t) numNodes, 0); // a reused node whose content was republished
         std::vector<std::vector<std::pair<juce::String, float>>> parameterChangesBySlot ((size_t) numNodes);
 
         // Every input port ID each node is connected to, indexed once here so
@@ -421,10 +422,14 @@ namespace bazalt::engine
             {
                 const auto previous = previousPlan->nodeIdToAppliedContent.find (instance.id);
                 const auto previousJson = previous != previousPlan->nodeIdToAppliedContent.end() ? previous->second : juce::String();
-                if (previousJson != contentJson && ! node->setContent (instance.content))
+                if (previousJson != contentJson)
                 {
-                    reused = false;
-                    node = nullptr;
+                    contentChangedBySlot[(size_t) slot] = 1;
+                    if (! node->setContent (instance.content))
+                    {
+                        reused = false;
+                        node = nullptr;
+                    }
                 }
             }
 
@@ -702,6 +707,10 @@ namespace bazalt::engine
                                     plan.pendingParameterUpdates.push_back (update);
                         for (const auto& [paramId, value] : parameterChangesBySlot[(size_t) slot])
                             plan.pendingParameterUpdates.push_back ({ laneNode.get(), paramId, value });
+
+                        // Every lane plays the same content as lane zero.
+                        if (contentChangedBySlot[(size_t) slot] && ! laneNode->setContent (instance.content))
+                            laneNode = nullptr;
                     }
                 }
 
@@ -713,6 +722,8 @@ namespace bazalt::engine
                     laneNode->prepare (prepareInfo);
                     for (const auto& [paramId, value] : instance.parameters)
                         laneNode->setParameter (paramId, value);
+                    if (! instance.content.isVoid())
+                        laneNode->setContent (instance.content);
 
                     // A polymorphic node's resolved port types come from its
                     // sources, which are final by now — one replay suffices.

@@ -6,6 +6,7 @@
 #include "bazalt/engine/graph/GraphCompiler.h"
 #include "bazalt/engine/graph/PortGroups.h"
 #include "bazalt/engine/graph/ProofGraphs.h"
+#include "bazalt/engine/graph/Unwrap.h"
 #include "bazalt/engine/nodes/InstanceMixNode.h"
 #include "bazalt/engine/nodes/InstanceOriginNode.h"
 #include "bazalt/engine/nodes/InstanceSwarmPopulationNode.h"
@@ -937,6 +938,15 @@ namespace bazalt
             graph = previousGraph;
 
         return result;
+    }
+
+    GraphEditController::CommandResult GraphEditController::unwrapNode (const juce::String& nodeId)
+    {
+        auto expanded = graph;
+        const auto unwrapped = bazalt::engine::unwrapNode (expanded, nodeId);
+        if (! unwrapped.success)
+            return { false, unwrapped.error };
+        return applyBatch ([&expanded] (bazalt::engine::NodeGraph& g) { g = std::move (expanded); });
     }
 
     GraphEditController::CommandResult GraphEditController::applyBatch (

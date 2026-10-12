@@ -78,6 +78,7 @@ import {
   graphReleaseParameterLive,
   graphSetProperty,
   graphSetContent,
+  graphUnwrapNode,
   graphSetContentLive,
   type CommandResult,
   type NodeMultiplicityBadge,
@@ -1234,6 +1235,14 @@ export function setParameterValue(nodeId: string, parameterId: string, value: nu
       if (node) nodes.set(nodeId, { ...node, parameterValues: { ...node.parameterValues, [parameterId]: value } })
     },
   )
+}
+
+/** Replaces a factory node (an EQ) with the ordinary nodes it is made of —
+    one undo step; the canvas resyncs from the engine afterwards. */
+export function unwrapNode(nodeId: string): void {
+  void withHistory(async () => {
+    await fireCommand(() => graphUnwrapNode(nodeId))
+  })
 }
 
 /** A factory editor's edit, committed: one undo step (graphSetContent). */

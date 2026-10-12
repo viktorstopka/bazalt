@@ -77,6 +77,7 @@
 #include "bazalt/engine/nodes/DataScaleNode.h"
 #include "bazalt/engine/nodes/DataCurveNode.h"
 #include "bazalt/engine/nodes/DataWavetableNode.h"
+#include "bazalt/engine/nodes/EqNodes.h"
 #include "bazalt/engine/nodes/SineOscillatorNode.h"
 #include "bazalt/engine/nodes/AnalysisHearingNodes.h"
 #include "bazalt/engine/nodes/CurvePlayerNode.h"
@@ -175,6 +176,7 @@ namespace bazalt::engine
         factory.registerType ("filter.dcBlock", [] { return std::make_unique<nodes::DcBlockNode>(); });
         // M22 wave 2 — the Biquad family.
         factory.registerType ("filter.peak", [] { return std::make_unique<nodes::PeakFilterNode>(); });
+        factory.registerType ("filter.eq", [] { return std::make_unique<nodes::EqFilterNode>(); }); // plays an EQ curve (1d)
         factory.registerType ("filter.shelf", [] { return std::make_unique<nodes::ShelfFilterNode>(); });
         factory.registerType ("filter.allpass", [] { return std::make_unique<nodes::AllpassFilterNode>(); });
         // M22 wave 3 — filter.ladder, the one node NODE_CATALOG.md itself
@@ -222,6 +224,7 @@ namespace bazalt::engine
         factory.registerType ("source.envelope", [] { return std::make_unique<nodes::CurveEnvelopeNode>(); });
         factory.registerType ("data.curve", [] { return std::make_unique<nodes::DataCurveNode>(); }); // the curve factory (wiki/plans/DataAndWavetable.md 1b)
         factory.registerType ("data.wavetable", [] { return std::make_unique<nodes::DataWavetableNode>(); }); // keyframed wavetable (1c)
+        factory.registerType ("data.eqCurve", [] { return std::make_unique<nodes::DataEqCurveNode>(); }); // EQ bands (1d)
         // The fixed classic shapes, back by direct instruction (2026-10-09).
         factory.registerType ("source.sine", [] { return std::make_unique<nodes::SineOscillatorNode>(); });
         factory.registerType ("source.saw", [] { return std::make_unique<nodes::SawOscillatorNode>(); });

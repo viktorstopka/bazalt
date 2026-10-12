@@ -218,6 +218,12 @@ ctest --test-dir build -C Debug -R PluginTests --output-on-failure
   node state from the previous patch, and the audio thread reads every plan
   swapper each block, played or not — an unread swapper used to fill up and
   freeze the global plan on a stale patch.
+  **1d (2026-10-12):** `filter.eq` + `data.eqCurve` (`EqCurve.h`, `EqNodes.h`) — bands
+  run as exact Peak/Shelf/SVF stages, so **Unwrap** (`Unwrap.h`,
+  `GraphEditController::unwrapNode`, node menu) is bit-identical; SVF math lives in
+  `SvfCore.h` (shared with `SvfFilterNode`). Lane copies of a content node now get its
+  content (they never did). All spectra draw on one log axis (`logSpectrum.ts`).
+  **1e (README/NODE_GUIDE) is deferred until after stage 2** (user's instruction).
 
 - **Fixed, 2026-10-03** — this note used to say the M0 plugin editor's
   release-build WebView always served a hard-coded placeholder HTML string

@@ -8,24 +8,33 @@ import { useEffect, useRef, useState } from 'react'
 import { closeFactory, useOpenFactory } from './factoryStore'
 import { CurveEditor } from './CurveEditor'
 import { WavetableEditor } from './WavetableEditor'
+import { EqEditor } from './EqEditor'
 import { CURVE_FACTORY_TYPES, CYCLE_PRESETS, TIME_PRESETS, type CurveDoc, curveFromContent } from './curveModel'
 import { WAVETABLE_FACTORY_TYPES, WAVETABLE_PRESETS, type WavetableDoc, wavetableFromContent } from './wavetableModel'
+import { EQ_FACTORY_TYPES, EQ_PRESETS, type EqDoc, eqFromContent } from './eqModel'
 import { useGraphSnapshot } from '../graph/useGraphSnapshot'
 import { getDescriptor, redo, setNodeContent, setNodeContentLive, undo } from '../graph/graphStore'
 import './FactoryWindow.css'
 
-type FactoryDoc = CurveDoc | WavetableDoc
+type FactoryDoc = CurveDoc | WavetableDoc | EqDoc
 
 interface Preset {
   name: string
   doc: FactoryDoc
 }
 
-const USER_PRESETS_KEY = { curve: 'bazalt.curvePresets', wavetable: 'bazalt.wavetablePresets' } as const
+const USER_PRESETS_KEY = { curve: 'bazalt.curvePresets', wavetable: 'bazalt.wavetablePresets', eq: 'bazalt.eqPresets' } as const
 type FactoryKind = keyof typeof USER_PRESETS_KEY
 
 const isDocOf = (kind: FactoryKind, doc: unknown) =>
-  kind === 'wavetable' ? Array.isArray((doc as WavetableDoc)?.keyframes) : Array.isArray((doc as CurveDoc)?.points)
+  kind === 'wavetable'
+    ? Array.isArray((doc as WavetableDoc)?.keyframes)
+    : kind === 'eq'
+      ? Array.isArray((doc as EqDoc)?.bands)
+      : Array.isArray((doc as CurveDoc)?.points)
+
+const factoryKindOf = (typeId: string): FactoryKind | null =>
+  WAVETABLE_FACTORY_TYPES.has(typeId) ? 'wavetable' : EQ_FACTORY_TYPES.has(typeId) ? 'eq' : CURVE_FACTORY_TYPES[typeId] ? 'curve' : null
 
 /** Presets the user saved — per browser profile, a convenience; the patch
     itself always carries the content it uses. */
@@ -49,15 +58,16 @@ function saveUserPresets(kind: FactoryKind, presets: Preset[]): void {
 
 export function FactoryWindow() {
   const nodeId = useOpenFactory()
-  const { nodes, canUndo, canRedo } = useGraphSnapshot()
+  const { nodes, wires, canUndo, canRedo } = useGraphSnapshot()
   const node = nodeId ? nodes.find((n) => n.id === nodeId) : undefined
   const [snap, setSnap] = useState(true)
   const [presetsOpen, setPresetsOpen] = useState(false)
   const [naming, setNaming] = useState<string | null>(null)
-  const kind: FactoryKind | null = node ? (WAVETABLE_FACTORY_TYPES.has(node.typeId) ? 'wavetable' : CURVE_FACTORY_TYPES[node.typeId] ? 'curve' : null) : null
+  const kind: FactoryKind | null = node ? factoryKindOf(node.typeId) : null
   const [userPresets, setUserPresets] = useState<Record<FactoryKind, Preset[]>>(() => ({
     curve: loadUserPresets('curve'),
     wavetable: loadUserPresets('wavetable'),
+    eq: loadUserPresets('eq'),
   }))
   const fileRef = useRef<HTMLInputElement | null>(null)
 
@@ -85,9 +95,16 @@ export function FactoryWindow() {
 
   const curve = kind === 'curve' ? curveFromContent(node.content, CURVE_FACTORY_TYPES[node.typeId]) : null
   const wavetable = kind === 'wavetable' ? wavetableFromContent(node.content) : null
-  const doc: FactoryDoc = curve ?? wavetable!
+  const eq = kind === 'eq' ? eqFromContent(node.content) : null
+  const doc: FactoryDoc = curve ?? wavetable ?? eq!
+
+  // What the EQ hears and plays, for the live spectrum: an EQ Curve shows the
+  // first EQ that reads it.
+  const playingEqId =
+    kind !== 'eq' ? null : node.typeId === 'filter.eq' ? node.id : (wires.find((w) => w.fromNodeId === node.id && nodes.find((n) => n.id === w.toNodeId)?.typeId === 'filter.eq')?.toNodeId ?? null)
+  const eqSource = playingEqId ? wires.find((w) => w.toNodeId === playingEqId && w.toPortId === 'in') : undefined
   const title = node.titleOverride || getDescriptor(node.typeId)?.title || node.typeId
-  const builtIn: readonly Preset[] = wavetable ? WAVETABLE_PRESETS : curve!.timeBase === 'time' ? TIME_PRESETS : CYCLE_PRESETS
+  const builtIn: readonly Preset[] = wavetable ? WAVETABLE_PRESETS : eq ? EQ_PRESETS : curve!.timeBase === 'time' ? TIME_PRESETS : CYCLE_PRESETS
   const matching = userPresets[kind].filter((p) => !curve || (p.doc as CurveDoc).timeBase === curve.timeBase)
 
   const commit = (next: FactoryDoc) => setNodeContent(node.id, next)
@@ -98,7 +115,7 @@ export function FactoryWindow() {
       try {
         const json: unknown = JSON.parse(text)
         if (!isDocOf(kind, json)) return
-        commit(curve ? curveFromContent(json, curve.timeBase) : wavetableFromContent(json))
+        commit(curve ? curveFromContent(json, curve.timeBase) : eq ? eqFromContent(json) : wavetableFromContent(json))
       } catch {
         // Not readable: ignore.
       }
@@ -112,12 +129,17 @@ export function FactoryWindow() {
           ← Back
         </button>
         <span className="factory-title">
-          {wavetable ? 'EDIT WAVETABLE' : 'EDIT CURVE'} <span className="factory-subtitle">{title}</span>
+          {wavetable ? 'EDIT WAVETABLE' : eq ? 'EDIT EQ' : 'EDIT CURVE'} <span className="factory-subtitle">{title}</span>
         </span>
         {curve && <span className="factory-timebase">{curve.timeBase === 'time' ? 'Time' : 'Cycle'}</span>}
         {wavetable && <span className="factory-timebase">{wavetable.keyframes.length} keyframes</span>}
+        {eq && <span className="factory-timebase">{eq.bands.length} {eq.bands.length === 1 ? 'band' : 'bands'}</span>}
         <div className="factory-spacer" />
-        <button className={snap ? 'factory-button active' : 'factory-button'} onClick={() => setSnap(!snap)} title="Snap to the grid">
+        <button
+          className={snap ? 'factory-button active' : 'factory-button'}
+          onClick={() => setSnap(!snap)}
+          title={eq ? 'Snap frequencies to notes and gains to half decibels' : 'Snap to the grid'}
+        >
           Snap
         </button>
         <button className="factory-button" onClick={() => undo()} disabled={!canUndo} title="Undo (Ctrl+Z)">
@@ -126,7 +148,7 @@ export function FactoryWindow() {
         <button className="factory-button" onClick={() => redo()} disabled={!canRedo} title="Redo (Ctrl+Shift+Z)">
           Redo
         </button>
-        <button className="factory-button" onClick={() => fileRef.current?.click()} title={wavetable ? 'Import a wavetable (.json)' : 'Import a curve (.json)'}>
+        <button className="factory-button" onClick={() => fileRef.current?.click()} title={wavetable ? 'Import a wavetable (.json)' : eq ? 'Import an EQ (.json)' : 'Import a curve (.json)'}>
           Import
         </button>
         <input
@@ -190,8 +212,23 @@ export function FactoryWindow() {
       </div>
       {curve && <CurveEditor doc={curve} snap={snap} onLive={live} onCommit={commit} />}
       {wavetable && <WavetableEditor doc={wavetable} snap={snap} onLive={live} onCommit={commit} />}
+      {eq && (
+        <EqEditor
+          doc={eq}
+          snap={snap}
+          preTap={eqSource ? { nodeId: eqSource.fromNodeId, portId: eqSource.fromPortId } : undefined}
+          postTap={playingEqId ? { nodeId: playingEqId, portId: 'out' } : undefined}
+          onLive={live}
+          onCommit={commit}
+        />
+      )}
       <div className="factory-footer">
-        {wavetable ? (
+        {eq ? (
+          <>
+            Drag a band&apos;s dot (Shift: fine) · wheel changes its width · double-click adds a bell · Delete removes ·
+            grey is what the EQ hears, pink what it plays{node.typeId === 'filter.eq' ? ' · right-click the node › Unwrap turns it into ordinary filters' : ''}
+          </>
+        ) : wavetable ? (
           <>
             Click a keyframe to edit it, drag it to move · Curve: drag points, double-click to add · Harmonics: drag across the bars to paint, right-click clears ·
             plug the table into an Oscillator&apos;s Shape and move its Frame

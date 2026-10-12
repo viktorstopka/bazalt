@@ -19,7 +19,10 @@ import type { PreviewDescriptor } from '../graph/descriptorTypes'
 import { subscribeNodePreview, unsubscribeNodePreview, tapNameForPreview, frameTypeForPreviewKind } from '../graph/previewSubscriptions'
 import { getInterpolatedTap } from '../telemetry/telemetryClient'
 import { registerPreviewRenderer, unregisterPreviewRenderer } from '../analysis/previewRenderLoop'
-import { drawScopeFilled, drawSpectrum, drawMeter } from '../analysis/telemetryDraw'
+import { drawScopeFilled, drawMeter } from '../analysis/telemetryDraw'
+import { drawFrequencyGrid, drawSpectrumColumns } from '../analysis/logSpectrum'
+import { formatHz, hzToSemitones, spectrumColumnsDb, unitToHz } from '../factory/eqModel'
+import { describePitch } from './pitchReadout'
 import { tokens } from '../theme/tokens'
 import { getCamera } from '../canvas/interactionStore'
 import type { NodeCardState } from './NodeCard'
@@ -79,6 +82,10 @@ function TimeDomainPreview({ nodeId, preview }: { nodeId: string; preview: Previ
   // view.scope's) since M20 - they rendered nothing at all.
   const frameType = frameTypeForPreviewKind(preview.kind)
   const [visible, setVisible] = useState(false)
+  // Spectrum hover: where the cursor is across the plot (0..1), read by the
+  // render loop directly — no React update per mouse move.
+  const cursorRef = useRef<number | null>(null)
+  const spectrumSmoothRef = useRef<Float32Array | null>(null)
 
   useEffect(() => {
     const canvas = canvasRef.current
@@ -160,7 +167,7 @@ function TimeDomainPreview({ nodeId, preview }: { nodeId: string; preview: Previ
       const tapData = getInterpolatedTap(tap, frameType)
       if (tapData) {
         if (preview.kind === 'waveform') drawScopeFilled(ctx, width, height, tapData.payload)
-        else if (preview.kind === 'spectrum') drawSpectrum(ctx, width, height, tapData.payload)
+        else if (preview.kind === 'spectrum') drawLogSpectrum(ctx, width, height, tapData.payload, tapData.sampleRate, spectrumSmoothRef, cursorRef.current)
         else if (preview.kind === 'meter') drawMeter(ctx, width, height, tapData.payload)
       }
     }
@@ -176,8 +183,78 @@ function TimeDomainPreview({ nodeId, preview }: { nodeId: string; preview: Previ
   // it — see this file's own render()/sizeSource comment above for why
   // that split is load-bearing, not just a markup nicety.
   return (
-    <div className="node-preview-canvas-wrap">
+    <div
+      className="node-preview-canvas-wrap"
+      onMouseMove={
+        preview.kind === 'spectrum'
+          ? (e) => {
+              const rect = e.currentTarget.getBoundingClientRect()
+              cursorRef.current = rect.width > 0 ? (e.clientX - rect.left) / rect.width : null
+            }
+          : undefined
+      }
+      onMouseLeave={preview.kind === 'spectrum' ? () => (cursorRef.current = null) : undefined}
+    >
       <canvas className="node-preview-canvas" ref={canvasRef} />
     </div>
   )
+}
+
+const SPECTRUM_MIN_DB = -90
+const SPECTRUM_MAX_DB = 6
+
+/** wiki/plans/DataAndWavetable.md 1d: the Spectrum view on the EQ editor's
+    log-frequency axis and grid (logSpectrum.ts), smoothed like a meter (fast
+    up, slow down), with a hover cursor reading frequency, note and level. */
+function drawLogSpectrum(
+  ctx: CanvasRenderingContext2D,
+  width: number,
+  height: number,
+  payload: Float32Array,
+  sampleRate: number,
+  smoothRef: { current: Float32Array | null },
+  cursor: number | null,
+) {
+  const points = Math.max(32, Math.min(400, Math.round(width)))
+  const columns = spectrumColumnsDb(payload, sampleRate || 48000, points)
+  const normDb = 20 * Math.log10(Math.max(1, payload.length / 2)) // a full-scale sine reads ~0 dB
+  if (!smoothRef.current || smoothRef.current.length !== points) smoothRef.current = new Float32Array(points).fill(Number.NaN)
+  const smooth = smoothRef.current
+  for (let i = 0; i < points; i++) {
+    const target = columns[i] - normDb
+    smooth[i] = Number.isFinite(smooth[i]) && smooth[i] > target ? smooth[i] - (smooth[i] - target) * 0.18 : target
+    columns[i] = smooth[i]
+  }
+
+  drawFrequencyGrid(ctx, width, height, tokens.color.textSecondary, tokens.color.textSecondary, { minDb: SPECTRUM_MIN_DB, maxDb: SPECTRUM_MAX_DB, step: 24 })
+  drawSpectrumColumns(ctx, width, height, columns, {
+    minDb: SPECTRUM_MIN_DB,
+    maxDb: SPECTRUM_MAX_DB,
+    stroke: tokens.color.spectrumTrace,
+    fill: 'rgba(232,121,138,0.12)',
+  })
+
+  if (cursor !== null && cursor >= 0 && cursor <= 1) {
+    const x = Math.round(cursor * width) + 0.5
+    ctx.save()
+    ctx.strokeStyle = tokens.color.textSecondary
+    ctx.setLineDash([2, 3])
+    ctx.beginPath()
+    ctx.moveTo(x, 0)
+    ctx.lineTo(x, height)
+    ctx.stroke()
+    const hz = unitToHz(cursor)
+    const level = columns[Math.min(points - 1, Math.max(0, Math.floor(cursor * points)))]
+    const label = `${formatHz(hz)} ${describePitch(hzToSemitones(hz)).note} ${level.toFixed(0)} dB`
+    ctx.font = '10px monospace'
+    const textWidth = ctx.measureText(label).width
+    const tx = Math.min(width - textWidth - 4, Math.max(4, x + 4))
+    ctx.fillStyle = tokens.color.nodeFill
+    ctx.globalAlpha = 0.85
+    ctx.fillRect(tx - 2, 2, textWidth + 4, 13)
+    ctx.globalAlpha = 1
+    ctx.fillStyle = tokens.color.textPrimary
+    ctx.fillText(label, tx, 12)
+    ctx.restore()
+  }
 }

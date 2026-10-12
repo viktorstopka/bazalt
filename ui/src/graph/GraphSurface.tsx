@@ -22,6 +22,7 @@ import { NodeContextMenu } from './NodeContextMenu'
 import {
   renameNode,
   toggleBypass,
+  unwrapNode,
   toggleBypassMany,
   setAsOutput,
   deleteNodes,
@@ -291,6 +292,14 @@ function NodeWrapper({ node, descriptor, selected, selection, connectedPortIds, 
               setMenuPos(null)
               setAsOutput(node.id)
             }}
+            onUnwrap={
+              resolveNodeDescriptor(node)?.canUnwrap
+                ? () => {
+                    setMenuPos(null)
+                    unwrapNode(node.id)
+                  }
+                : undefined
+            }
             onDelete={() => {
               setMenuPos(null)
               if (selection.has(node.id) && selection.size > 1) deleteNodes([...selection])

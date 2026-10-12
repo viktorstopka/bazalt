@@ -26,7 +26,8 @@ namespace bazalt::engine
         Wavetable,
         ModalSet,
         Sample,
-        ImpulseResponse
+        ImpulseResponse,
+        EqCurve
     };
 
     /** An immutable block of values (SIGNAL_TYPES.md §2). Built once,

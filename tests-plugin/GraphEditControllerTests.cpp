@@ -2,6 +2,7 @@
 #include "PluginProcessor.h"
 #include "bazalt/engine/graph/ProofGraphs.h"
 #include "bazalt/engine/graph/CurveData.h"
+#include "bazalt/engine/graph/EqCurve.h"
 #include "bazalt/engine/patch/PatchSerializer.h"
 #include <algorithm>
 #include <atomic>
@@ -1190,4 +1191,37 @@ TEST_CASE ("setContent stores a node's content and keeps the running node; setCo
     CHECK (controller.setContentLive ("osc", bazalt::engine::CurveDocument::saw().toVar()).success);
     CHECK (juce::JSON::toString (controller.getGraph().findNode ("osc")->content) == graphBefore); // live is not an edit
     CHECK_FALSE (controller.setContent ("nope", square).success);
+}
+
+// wiki/plans/DataAndWavetable.md 1d: Unwrap through the command bridge.
+TEST_CASE ("unwrapNode replaces an EQ with its filters and keeps the output wired", "[plugin][GraphEditController][unwrap]")
+{
+    BazaltAudioProcessor processor;
+    processor.prepareToPlay (44100.0, 512);
+    auto& controller = processor.getGraphEditController();
+
+    bazalt::engine::NodeGraph graph;
+    graph.addNode ({ "saw", "source.saw", {}, {}, {} });
+    bazalt::engine::NodeInstance eq { "eq", "filter.eq", {}, {}, {} };
+    bazalt::engine::EqCurveDocument doc;
+    bazalt::engine::EqBand bell;
+    bell.gainDb = 6.0f;
+    doc.bands = { bell };
+    eq.content = doc.toVar();
+    graph.addNode (eq);
+    graph.addNode ({ "out", "io.output", {}, {}, {} });
+    graph.addConnection ({ "saw", "out", "eq", "in" });
+    graph.addConnection ({ "eq", "out", "out", "in" });
+    graph.setOutput ("out", "out");
+    REQUIRE (controller.setGraph (graph).success);
+
+    REQUIRE (controller.unwrapNode ("eq").success);
+    const auto& after = controller.getGraph();
+    CHECK (after.findNode ("eq") == nullptr);
+    REQUIRE (after.findNode ("eq_1") != nullptr);
+    CHECK (after.findNode ("eq_1")->type == "filter.peak");
+    const auto& connections = after.getConnections();
+    CHECK (std::any_of (connections.begin(), connections.end(), [] (const auto& c) { return c.fromNodeId == "eq_1" && c.toNodeId == "out"; }));
+
+    CHECK_FALSE (controller.unwrapNode ("saw").success); // not a factory
 }

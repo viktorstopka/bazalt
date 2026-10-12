@@ -359,6 +359,11 @@ namespace bazalt
             completion (result.success);
         });
 
+        options = options.withNativeFunction ("graphUnwrapNode", [&processor] (Args args, Completion completion)
+        {
+            completion (commandResultToVar (processor.getGraphEditController().unwrapNode (argString (args, 0))));
+        });
+
         options = options.withNativeFunction ("graphSetOutput", [&processor] (Args args, Completion completion)
         {
             auto& controller = processor.getGraphEditController();
