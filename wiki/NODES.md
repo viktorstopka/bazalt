@@ -378,6 +378,57 @@ source. **In:** `trigger : Event` (free-runs at `rate` when unconnected); `rate 
 #### `random.drift` — Drift ✅
 Slow, correlated, natural wander. **In:** `rate`; `amount`; `centering` (0 = free Brownian walk, 1 = strongly pulled to centre — literally the leak coefficient of a one-pole leaky-integrated walk). **Out:** `out` — `float·Bipolar [audio]`. **Structural:** `spectrum` (enum: brown, pink, white-filtered), `seed`. **Behavior:** clamped to stay in range.
 
+
+#### `random.wander` — Wander ✅ *(stage 2, stochastic batch)*
+An Ornstein–Uhlenbeck process: Brownian motion pulled back toward a centre — "keep
+roughly the same direction, but don't become periodic". **In:** `memory` (s — how long it
+keeps going one way, the correlation time), `spread` (how far it strays), `center`
+(where it is pulled; wire a slow signal and it wanders around it). **Out:** `out` —
+Bipolar. **Structural:** `seed` (0 = new each load). Exact update, so its statistics do
+not depend on sample rate or block size.
+
+#### `random.brownian` — Brownian ✅ *(stage 2)*
+A random walk with nothing pulling it back (Wiener process). **In:** `speed` (typical
+travel per √s), `reset` — Event (back to 0). **Out:** `out`. **Structural:** `edges`
+(Reflect / Wrap), `seed`.
+
+#### `random.fractal` — Fractal ✅ *(stage 2)*
+1/f-type variation on every timescale at once (micro jitter, mid swells, slow drift from
+one source): smooth components one octave apart, weighted to 1/f^β. **In:** `smoothness`
+(β from 1, pink, to 3, long smooth arcs), `slowest` (s — the longest timescale; flat
+below it), `amount`. **Out:** `out`. **Structural:** `seed`.
+
+#### `random.events` — Events ✅ *(stage 2)*
+When things happen — a point process. **In:** `rate` (Hz), `regularity` (0 bursty, 0.5
+Poisson, 1 nearly a clock — Gamma-distributed gaps, a renewal process), `clustering`
+(Hawkes self-excitation: each event sets off follow-ups; expected follow-ups per event),
+`clusterTime` (s), `refractory` (s — the shortest allowed gap). **Out:** `event` — Event;
+`size` — 0..1, a new random value at each event. **Structural:** `seed`.
+
+## chaos — deterministic chaos
+
+No noise inside: a few equations whose motion never repeats but keeps a recognisable
+shape. Every node runs as a modulator or as a sound. **Structural (all):** `seed` (nudges
+the start point; 0 = new each load).
+
+#### `chaos.lorenz` — Lorenz ✅ *(stage 2)*
+Two lobes, switching unpredictably. **In:** `rate` (Hz, roughly lobe orbits per second),
+`rho` (below ~24.7 it settles; ~28 the butterfly). **Out:** `out` (X), `y`, `z`.
+
+#### `chaos.rossler` — Rössler ✅ *(stage 2)*
+A spiral that period-doubles into chaos as `c` rises (2.5 one cycle, 3.5 two, ~4 four,
+5.7 chaos). **In:** `frequency` (Hz — it spirals at about this pitch), `c`. **Out:** `out`
+(X), `y`, `z`.
+
+#### `chaos.duffing` — Duffing ✅ *(stage 2)*
+A driven double-well oscillator: rocks in one well when gently driven, jumps between them
+chaotically when pushed. **In:** `frequency` (Hz — the drive), `drive` (γ), `damping` (δ).
+**Out:** `out` (position), `velocity`.
+
+#### `chaos.logistic` — Logistic Map ✅ *(stage 2)*
+x ← r·x·(1−x), one step per tick. **In:** `trigger` — Event (steps on events when wired),
+`rate` (Hz otherwise), `growth` (r: settles below 3, alternates to 3.45, then 4, 8 …,
+chaos past ~3.57). **Out:** `out` (0..1), `step` — Event.
 ## clock and seq
 
 #### `time.clock` — Clock ✅

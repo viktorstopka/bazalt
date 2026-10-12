@@ -78,6 +78,8 @@
 #include "bazalt/engine/nodes/DataCurveNode.h"
 #include "bazalt/engine/nodes/DataWavetableNode.h"
 #include "bazalt/engine/nodes/EqNodes.h"
+#include "bazalt/engine/nodes/StochasticNodes.h"
+#include "bazalt/engine/nodes/ChaosNodes.h"
 #include "bazalt/engine/nodes/SineOscillatorNode.h"
 #include "bazalt/engine/nodes/AnalysisHearingNodes.h"
 #include "bazalt/engine/nodes/CurvePlayerNode.h"
@@ -185,6 +187,15 @@ namespace bazalt::engine
         // M22 wave 4 — random.stepped, random.drift.
         factory.registerType ("random.stepped", [] { return std::make_unique<nodes::RandomSteppedNode>(); });
         factory.registerType ("random.drift", [] { return std::make_unique<nodes::RandomDriftNode>(); });
+        // The stochastic suite (wiki/plans/LifeCycle.md): processes with memory, 1/f, point processes, chaos.
+        factory.registerType ("random.wander", [] { return std::make_unique<nodes::WanderNode>(); });
+        factory.registerType ("random.brownian", [] { return std::make_unique<nodes::BrownianNode>(); });
+        factory.registerType ("random.fractal", [] { return std::make_unique<nodes::FractalNode>(); });
+        factory.registerType ("random.events", [] { return std::make_unique<nodes::EventsNode>(); });
+        factory.registerType ("chaos.lorenz", [] { return std::make_unique<nodes::LorenzNode>(); });
+        factory.registerType ("chaos.rossler", [] { return std::make_unique<nodes::RosslerNode>(); });
+        factory.registerType ("chaos.duffing", [] { return std::make_unique<nodes::DuffingNode>(); });
+        factory.registerType ("chaos.logistic", [] { return std::make_unique<nodes::LogisticMapNode>(); });
         // M22 wave 5 — space.pan, space.width; ADR-0023 Amendment (M22)
         // settles the left/right-vs-Channels::Stereo question these first
         // real stereo nodes raised.

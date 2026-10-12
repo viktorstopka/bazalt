@@ -17,6 +17,20 @@ modular vocabulary, built on one instance axis.
 
 ## 1. Decisions (from the conversation)
 
+**Stochastic suite (second conversation, 2026-10-12).** The ChatGPT brief on the
+Stochastic and Natural Suite (recorded with the roadmap on 2026-10-08) is the other half
+of stage 2. Decisions: names say what a thing does when that is possible and use the
+proper scientific name when a plain one would be forced (Wander, Events; Lorenz, Rössler,
+Duffing, Logistic Map); every process is also a sound; candidates get built rather than
+compared in listening tests, and the ones that don't earn their place are removed later;
+`random.drift` stays. **Built first, because they need no instance axis:** Wander (OU),
+Brownian, Fractal (1/f), Events (renewal + Hawkes), Lorenz, Rössler, Duffing, Logistic
+Map — see batch 2s. **Later:** Distribution (Data, drawn in the Factory window; feeds
+Class traits and Events), Markov (a sequence with a grammar — birdsong syntax), and a
+**Shared** amount on random nodes inside a Population (0 every instance its own, 1 all
+the same — correlated populations).
+
+
 - **D1 — Three layers, biology never makes sound.** Life (who exists), Identity (what each
   one is), Environment (what they share and sense). Sound stays ordinary DSP; there is no
   Cricket, Purr or Bird node — those are example patches.
@@ -53,6 +67,7 @@ modular vocabulary, built on one instance axis.
 
 | Batch | What | Done means |
 |---|---|---|
+| **2s — Stochastic suite, first nodes** | Wander, Brownian, Fractal, Events, Lorenz, Rössler, Duffing, Logistic Map. **Built 2026-10-12.** | Each measured for its statistics: OU memory and spread, √t spreading, 1/f scaling exponent, Poisson / clock / bursty interval CV, Hawkes multiplicity, refractory gap, period doubling (`tests/StochasticTests.cpp`). |
 | **2a — Instance axis** | `InstanceAxis.md`: one plan, nodes keep per-instance state, mono runs once, Merge is a step. Built beside the current engine. | Every existing render test matches through both engines; then switch. |
 | **2b — Population, Split, Merge** | D2–D4. Remove Voice / Trigger / Swarm nodes (no migrations — factory patches rebuilt). Unison as a nested Population. | A keyboard split, a round robin, "top note → lead chain" and a 100-instance grain cloud built from these alone. Swarm (Transient)'s lost-release bug gone by construction. |
 | **2c — Groups, Class, Trait** | D5–D6. Groups open in place, expose ports, save to a library. | A "Cricket" Class with a body, born 50 times with different traits. |
