@@ -395,3 +395,40 @@ TEST_CASE ("Disconnecting a Note source from instance.allocate.voice.spawn WHILE
     processor.processBlock (buffer, noteOff);
     CHECK_FALSE (voiceNode->getGate());
 }
+
+TEST_CASE ("The first note on each instance draws its own random1/random2", "[plugin][instanceAxis]")
+{
+    // Every instance compiles its own copy of the allocator, each counting its
+    // own spawns: without the instance slot in the seed, the first note on
+    // instance 0 and the first on instance 1 drew identical numbers.
+    NodeGraph graph;
+    graph.addNode ({ "noteIn", "io.noteIn", {}, {}, {} });
+    graph.addNode ({ "alloc", "life.voice", {}, {}, {} });
+    graph.addNode ({ "osc", "source.sine", {}, {}, {} });
+    graph.addNode ({ "sum", "life.merge", {}, {}, {} });
+    graph.addNode ({ "out", "io.output", {}, {}, {} });
+    graph.addConnection ({ "noteIn", "notes", "alloc", "spawn" });
+    graph.addConnection ({ "alloc", "gate", "osc", "source.sine.amplitude" });
+    graph.addConnection ({ "osc", "out", "sum", "in" });
+    graph.addConnection ({ "sum", "out", "out", "in" });
+    graph.setOutput ("out", "out");
+
+    BazaltAudioProcessor processor;
+    processor.prepareToPlay (48000.0, 256);
+    REQUIRE (processor.getGraphEditController().setGraph (graph).success);
+    juce::AudioBuffer<float> buffer (2, 256);
+    juce::MidiBuffer midi;
+    midi.addEvent (juce::MidiMessage::noteOn (1, 60, 0.8f), 0);
+    midi.addEvent (juce::MidiMessage::noteOn (1, 64, 0.8f), 0);
+    processor.processBlock (buffer, midi);
+
+    auto* plan = processor.peekFirstVoicePlanForTesting (0);
+    REQUIRE (plan != nullptr);
+    std::vector<float> drawn;
+    for (int i = 0; i < BazaltAudioProcessor::numVoices; ++i)
+        if (auto* voice = dynamic_cast<bazalt::engine::nodes::InstanceVoiceNode*> (plan->getNodeById ("alloc@" + juce::String (i))))
+            if (voice->getGate())
+                drawn.push_back (voice->getRandom1());
+    REQUIRE (drawn.size() == 2);
+    CHECK (drawn[0] != drawn[1]);
+}

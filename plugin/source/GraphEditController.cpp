@@ -1044,6 +1044,7 @@ namespace bazalt
                 auto* node = runtime->originNodes[(size_t) i];
                 if (auto* allocator = dynamic_cast<bazalt::engine::nodes::InstanceOriginNode*> (node))
                 {
+                    allocator->setSpawnSlot (i);
                     if (i == 0)
                         maxInstancesBySlot[(size_t) slot] = allocator->getMaxInstances();
                     if (! spawnConnected && allocator->getGate())

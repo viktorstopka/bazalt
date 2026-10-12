@@ -151,7 +151,7 @@ namespace bazalt::engine::nodes
             ++instanceIndex;
 
             // 09-28-InstanceAllocator.2's own determinism, reused verbatim.
-            auto perSpawnRandom = juce::Random (combineInstanceSeed (seed, instanceIndex));
+            auto perSpawnRandom = juce::Random (combineInstanceSeed (seed, spawnOrdinal (instanceIndex)));
             random1Value = perSpawnRandom.nextFloat() * 2.0f - 1.0f;
             random2Value = perSpawnRandom.nextFloat() * 2.0f - 1.0f;
             positionValue = perSpawnRandom.nextFloat() * 2.0f - 1.0f;

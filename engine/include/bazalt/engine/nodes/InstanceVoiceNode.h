@@ -217,7 +217,7 @@ namespace bazalt::engine::nodes
             // nextFloat() calls had already happened this run - neither of
             // which is reproducible across runs, hosts, or even two voices
             // racing in a different note order.
-            auto perSpawnRandom = juce::Random (combineInstanceSeed (seed, instanceIndex));
+            auto perSpawnRandom = juce::Random (combineInstanceSeed (seed, spawnOrdinal (instanceIndex)));
             random1Value = perSpawnRandom.nextFloat() * 2.0f - 1.0f;
             random2Value = perSpawnRandom.nextFloat() * 2.0f - 1.0f;
 
@@ -270,6 +270,8 @@ namespace bazalt::engine::nodes
         bool getGate() const noexcept override { return gate; }
         float getPitch() const noexcept override { return pitch; }
         float getVelocity() const noexcept override { return velocity; }
+        float getRandom1() const noexcept { return random1Value; }
+        float getRandom2() const noexcept { return random2Value; }
 
         /** InstanceOriginNode's generic dispatch surface — forwards to the
             real noteOn()/noteOff() below, which stay the real, direct-poke

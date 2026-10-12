@@ -76,5 +76,19 @@ namespace bazalt::engine::nodes
             stored parameter value.
         */
         virtual int getMaxInstances() const noexcept { return 1; }
+
+        /** Which instance this copy is (the instance axis compiles one copy of
+            the allocator per instance). It goes into each spawn's random1 /
+            random2 next to that copy's own spawn count: without it, the first
+            note on every instance drew the same numbers. Slot 0 keeps the
+            sequence it always had. */
+        void setSpawnSlot (int slot) noexcept { spawnSlot = slot; }
+
+    protected:
+        /** The ordinal a spawn's randoms are drawn from (combineInstanceSeed). */
+        int spawnOrdinal (int instanceIndex) const noexcept { return instanceIndex + spawnSlot * 1000003; }
+
+    private:
+        int spawnSlot = 0;
     };
 }
