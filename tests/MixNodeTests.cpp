@@ -15,12 +15,12 @@ namespace
 
 TEST_CASE ("math.blend mixes A and B by Amount under either law", "[engine][nodes][blend]")
 {
-    BlendNode node; // not prepared: no smoothing
+    BlendNode node;
     float out = 0.0f;
 
     auto mixOf = [&] (float a, float b, float amount)
     {
-        const float inputs[3] = { a, b, amount };
+        const float inputs[4] = { a, b, amount, 0.0f }; // Glide 0: no smoothing
         node.processSample (inputs, &out);
         return out;
     };
@@ -48,7 +48,7 @@ TEST_CASE ("math.blend clamps Amount, and an unwired Amount uses its stored valu
     BlendNode node;
     float out = 0.0f;
 
-    float inputs[3] = { 1.0f, 0.0f, 2.0f }; // clamps to 1 -> all B
+    float inputs[4] = { 1.0f, 0.0f, 2.0f, 0.0f }; // clamps to 1 -> all B (Glide 0)
     node.processSample (inputs, &out);
     CHECK (out == 0.0f);
 

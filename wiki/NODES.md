@@ -321,6 +321,7 @@ is suspended for this codebase; a saved graph naming `mix.sum` fails to load wit
 plain "Unknown node type" today, not a silent reinterpretation.
 
 #### `mix.crossfade` — Crossfade ✅
+**Now `math.blend` — Blend (stage 1a; Crossfade and Select merged).** **Glide (2026-10-12):** how fast Amount moves (5 ms default, so a flipping Boolean never clicks); **0 switches on the sample** — a valve, the old Select. Old patches' Select migrates to Glide 0: the user's original Cat Purr closes a 4 ms valve, and a 5 ms glide never let it close, so it went silent.
 Blends continuously between two signals by position — from a discrete A/B switch
 at one extreme to an even blend at the mid-point. **In:** `a`, `b` — `Audio`; `position [audio]`. **Out:** `out`. **Structural:** `law` (enum: linear, equal power).
 

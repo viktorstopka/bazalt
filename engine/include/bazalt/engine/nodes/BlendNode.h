@@ -14,8 +14,10 @@ namespace bazalt::engine::nodes
         and quantity, taken from what is wired (A outranks B); stereo runs per
         channel.
 
-        Amount is smoothed (~5 ms) so a jump — a Boolean flipping, a stepped
-        value — never clicks. The law decides how the two gains follow Amount:
+        Amount glides (**Glide**, 5 ms by default) so a jump — a Boolean
+        flipping, a stepped value — never clicks. Glide 0 switches on the
+        sample: a valve, a sample-accurate select (the old Select migrates to
+        it — a 4 ms gate through a 5 ms glide never fully closed). The law decides how the two gains follow Amount:
         - linear: `A*(1-t) + B*t` — unity gain, right for correlated material
           and for any value that is not a sound.
         - equal power: `A*cos(t·π/2) + B*sin(t·π/2)` — constant power for two
@@ -31,13 +33,14 @@ namespace bazalt::engine::nodes
 
         void prepare (const NodePrepareInfo& info) override
         {
-            smoothingCoeff = std::exp (-1.0f / (smoothingSeconds * (float) info.sampleRate));
+            sampleRate = (float) info.sampleRate;
+            glideCache = -1.0f;
             reset();
         }
 
         void reset() override { smoothedAmount = -1.0f; }
 
-        int getNumInputPorts() const noexcept override { return 3; }
+        int getNumInputPorts() const noexcept override { return 4; }
         int getNumOutputPorts() const noexcept override { return 1; }
 
         juce::String getTitle() const override { return "Blend"; }
@@ -65,6 +68,9 @@ namespace bazalt::engine::nodes
                                  .minValue = 0.0f, .maxValue = 1.0f, .defaultValue = defaultAmount,
                                  .hasFallbackWhenUnconnected = true, .quantity = Quantity::Unipolar,
                                  .polarity = Polarity::Unipolar },
+                PortDescriptor { .id = "math.blend.glide", .type = SignalType::Signal, .label = "Glide", .unit = "s",
+                                 .minValue = 0.0f, .maxValue = 1.0f, .defaultValue = smoothingSeconds,
+                                 .hasFallbackWhenUnconnected = true, .quantity = Quantity::Time },
             };
         }
 
@@ -88,12 +94,21 @@ namespace bazalt::engine::nodes
                 equalPower = std::lround (value) == 1;
             else if (parameterId == "math.blend.amount")
                 storedAmount = value;
+            else if (parameterId == "math.blend.glide")
+                storedGlide = value;
         }
 
         void processSample (const float* inputs, float* outputs) noexcept override
         {
             const auto raw = std::isnan (inputs[2]) ? storedAmount : inputs[2];
             const auto target = std::isfinite (raw) ? std::clamp (raw, 0.0f, 1.0f) : defaultAmount;
+
+            const auto glide = juce::jmax (0.0f, std::isnan (inputs[3]) ? storedGlide : inputs[3]);
+            if (glide != glideCache)
+            {
+                glideCache = glide;
+                smoothingCoeff = glide > 0.0f ? std::exp (-1.0f / (glide * sampleRate)) : 0.0f;
+            }
 
             // The first sample starts where it is asked to, never glides in from 0.
             smoothedAmount = smoothedAmount < 0.0f ? target : target + smoothingCoeff * (smoothedAmount - target);
@@ -117,6 +132,8 @@ namespace bazalt::engine::nodes
     private:
         bool equalPower = false;
         float storedAmount = defaultAmount;
+        float storedGlide = smoothingSeconds;
+        float sampleRate = 48000.0f, glideCache = -1.0f;
         float smoothingCoeff = 0.0f;
         float smoothedAmount = -1.0f;
     };
