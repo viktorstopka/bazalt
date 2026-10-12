@@ -279,6 +279,7 @@ Bit depth and sample-rate reduction — deliberately not antialiased. **In:** `i
 ## delay
 
 #### `time.delay` — Delay ✅
+**As built (2026-10-12):** `in` takes on what is wired to it — a signal or an **Event** ("this trigger once more, 30 ms later": a second contact, an echoed hit); `By` in samples, up to 96000 (2 s at 48 kHz). A signal is read between samples (linear, so a modulated delay glides); an Event moves by whole samples, never smeared. Feedback/damping/mix below are the catalog's fuller design, not built yet.
 A single tap of delayed signal with feedback and damping — the basic echo/comb
 building block behind delays, chorus, and feedback networks. **In:** `in` — `Audio`; `time [audio]`; `feedback` (hard-limited); `damping`; `mix`. **Out:** `out` — `Audio`. **Structural:** `maxTime`, `interpolation` (enum: linear, allpass, cubic), `timeMode` (enum: free, tempo-synced, samples). **Native:** the delay at the heart of every feedback structure.
 
@@ -346,6 +347,7 @@ Moves every partial by the same number of Hz (harmonic → inharmonic, bell-like
 ## env — envelopes
 
 #### `source.envelope` — Envelope ✅ *(stage 1, 1b — replaces env.adsr)*
+**Down / Up (2026-10-12):** two Event inputs that are the gate as two moments — Down starts the curve (again, if running), Up releases it from S. A one-shot curve (no S) plays whole on Down alone. Mixes freely with `gate`.
 The same curve player in Time mode (`DataAndWavetable.md` D6): the curve's x is
 seconds, its points carry markers (A, D, S, H, R …). **In:** `shape` (as above, own
 curve by default: an ADSR); `gate`; `amplitude`; `timeScale` (stretches the whole
@@ -577,6 +579,7 @@ These are the nodes `canConnect` inserts automatically where it can (see
 still need placing by hand). Ordinary nodes the user can also place directly.
 
 #### `math.map` — Map ✅ *(design/Map.png — redesigned 2026-10-04)*
+**Unit (2026-10-12):** what the output means (Number by default; Frequency, Pitch, Time …). Named, the result keeps its meaning through Add / Multiply (`QuantityAlgebra.h`: Hz × a number is Hz, a pitch + a wobble is a pitch, Hz × Hz is a plain number), so computed frequencies reach a Hz port without an identity Map. An auto-inserted Map is given its destination's unit.
 The one rescaling adapter: `in` mapped linearly from **In Min…In Max** onto
 **Out Min…Out Max**, clamped. Formerly `adapt.remap` ("Remap"); the old
 two-parameter Map (a fixed 0–1 / −1–1 input onto `min`/`max`) was the special
@@ -605,6 +608,7 @@ Map, and what `canConnect` auto-inserts when a real-quantity source feeds a
 modulation-range port. **In:** `in` (real quantity), `low`, `high`. **Out:** `out` — `float·Unipolar`. The inverse of Map.
 
 #### `logic.threshold` — Threshold
+**As built (2026-10-12):** a Schmitt trigger. **In:** `by`; `threshold` (On); `hysteresis` (turns off only past On − Hysteresis). **Structural:** `direction` (Rising: on above / Falling: on below). **Out:** `onThreshold` (On, Event), `off` (Event), `gate` (Bool, held while on).
 Watches a Control signal cross a threshold and fires an Event on the way up and
 down — the Control → Event adapter `canConnect` auto-inserts. **In:** `in`; `threshold` (default: mid-range of the source); `hysteresis`. **Out:** `rise`/`fall` — `Event`; `above` — `bool`. The Control → Event adapter.
 
@@ -881,6 +885,7 @@ A fixed value with no input at all — the basic "just a number" source for
 biasing, offsetting, or feeding a structural default into a modulation chain. **Out:** `out` — `Control`, contract configurable on the node.
 
 #### `util.macro` — Macro ✅ *(real as of `wiki/plans/UtilMacro.md` — ADR-0030 amends ADR-0015, doesn't reverse it)*
+**Remembers its position (2026-10-12):** a saved patch stores each macro's knob as `util.macro.default` and opens there (`GraphEditController::getGraphForSaving` / `setGraph`); a Trigger macro stores nothing.
 A host-automatable, smoothed version of Constant — claims one of 32 fixed
 host-automation slots (`slot`; -1 means unclaimed) and exposes that slot's own
 smoothed value through an ordinary, freely-wireable `Control` output, real DSP

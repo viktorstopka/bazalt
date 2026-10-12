@@ -72,7 +72,7 @@ the same — correlated populations).
 | **2b — Population, Split, Merge** | D2–D4. Remove Voice / Trigger / Swarm nodes (no migrations — factory patches rebuilt). Unison as a nested Population. | A keyboard split, a round robin, "top note → lead chain" and a 100-instance grain cloud built from these alone. Swarm (Transient)'s lost-release bug gone by construction. |
 | **2c — Groups, Class, Trait** | D5–D6. Groups open in place, expose ports, save to a library. | A "Cricket" Class with a body, born 50 times with different traits. |
 | **2d — Vectors, Sense, Move, Locate** | Report §5's vector-on-the-channel-axis decision first, then D7–D8. | Boids from Sense + math + Move; Kuramoto-style sync from Sense's mean phase; a moving source heard moving. |
-| **2e — Sound models** | Jittered impulse train; driven nonlinear oscillator. Example patches: cricket field (Dolbear temperature), purr, bird (pressure/tension gestures), fire from the guitar. | Each patch in `ui/src/patches/factory/`, loaded by the factory-patch test. |
+| **2e — Sound models** | Jittered impulse train; driven nonlinear oscillator; **Gesture** — one Factory curve document with several named lanes on one timeline (an owl's loudness, pitch and quaver; a bird's pressure and tension), one output per lane, one Time Scale (agreed 2026-10-12: the Owl patch needed four Envelopes kept in step by hand). Example patches: cricket field (Dolbear temperature), purr, bird (pressure/tension gestures), fire from the guitar. | Each patch in `ui/src/patches/factory/`, loaded by the factory-patch test. |
 
 ## 3. Risks
 

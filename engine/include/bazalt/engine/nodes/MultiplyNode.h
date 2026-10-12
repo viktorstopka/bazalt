@@ -1,5 +1,7 @@
 #pragma once
 
+#include "bazalt/engine/graph/QuantityAlgebra.h"
+
 #include "bazalt/engine/nodes/GrowableGroupNode.h"
 #include <array>
 #include <cmath>
@@ -70,34 +72,9 @@ namespace bazalt::engine::nodes
             perPortQuantity[(size_t) priority] = source.quantity;
             perPortHasQuantity[(size_t) priority] = true;
 
-            // A waveform combined with anything is still a waveform: any Audio
-            // input makes the result Audio. Otherwise the unanimous rule above,
-            // where a Boolean counts as no quantity at all.
-            auto agreed = Quantity::Dimensionless;
-            auto anyReal = false;
-            auto conflict = false;
-            auto anyAudio = false;
-            for (int i = 0; i < maxInputs; ++i)
-            {
-                if (! perPortHasQuantity[(size_t) i])
-                    continue;
-                const auto q = perPortQuantity[(size_t) i];
-                anyAudio = anyAudio || q == Quantity::Audio;
-                if (q == Quantity::Dimensionless || q == Quantity::Boolean || q == Quantity::Audio)
-                    continue;
-
-                if (! anyReal)
-                {
-                    agreed = perPortQuantity[(size_t) i];
-                    anyReal = true;
-                }
-                else if (perPortQuantity[(size_t) i] != agreed)
-                {
-                    conflict = true;
-                    break;
-                }
-            }
-            resolvedQuantity = anyAudio ? Quantity::Audio : (anyReal && ! conflict) ? agreed : Quantity::Dimensionless;
+            // What the sum / product means: QuantityAlgebra.h (Hz × a number is
+            // Hz, a pitch + a wobble is a pitch, Hz × Hz is nothing).
+            resolvedQuantity = quantityAlgebra::combine (quantityAlgebra::Operation::Product, perPortQuantity, perPortHasQuantity);
         }
 
         std::vector<PortDescriptor> getInputPorts() const override

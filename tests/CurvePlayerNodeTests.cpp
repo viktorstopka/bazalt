@@ -141,7 +141,7 @@ TEST_CASE ("The Envelope's straight ADSR is the old env.adsr's linear shape", "[
     REQUIRE (envelope.setContent (CurveDocument::adsr (attack, decay, sustain, release, 0.0f).toVar()));
 
     constexpr int releaseAt = 14400; // 300 ms
-    const auto ours = render (envelope, { 0.0f, 0.0f, unwired, unwired }, 28800,
+    const auto ours = render (envelope, { 0.0f, 0.0f, unwired, unwired, 0.0f, 0.0f }, 28800,
                               [] (int i, std::vector<float>& in) { in[1] = i < releaseAt ? 1.0f : 0.0f; });
     const auto expected = [&] (int i)
     {
@@ -171,14 +171,14 @@ TEST_CASE ("An envelope without an S marker plays whole on each gate; Time Scale
     envelope.prepare ({ sampleRate, 64 });
     REQUIRE (envelope.setContent (oneShot.toVar()));
     const auto gatePulse = [] (int i, std::vector<float>& in) { in[1] = i < 10 ? 1.0f : 0.0f; };
-    const auto out = render (envelope, { 0.0f, 0.0f, unwired, unwired }, 9600, gatePulse);
+    const auto out = render (envelope, { 0.0f, 0.0f, unwired, unwired, 0.0f, 0.0f }, 9600, gatePulse);
     CHECK (out[2400] == Catch::Approx (1.0f).margin (0.01)); // peaks at 50 ms although the gate is long gone
     CHECK (out[6000] == Catch::Approx (0.0f).margin (1.0e-4));
 
     CurveEnvelopeNode slow;
     slow.prepare ({ sampleRate, 64 });
     REQUIRE (slow.setContent (oneShot.toVar()));
-    const auto stretched = render (slow, { 0.0f, 0.0f, unwired, 2.0f }, 9600, gatePulse);
+    const auto stretched = render (slow, { 0.0f, 0.0f, unwired, 2.0f, 0.0f, 0.0f }, 9600, gatePulse);
     CHECK (stretched[4800] == Catch::Approx (1.0f).margin (0.01)); // twice as long
 }
 
@@ -188,7 +188,7 @@ TEST_CASE ("A retriggered envelope starts from where it is, not from zero", "[en
     envelope.prepare ({ sampleRate, 64 });
     REQUIRE (envelope.setContent (CurveDocument::adsr (0.05f, 0.1f, 0.6f, 0.3f, 0.0f).toVar()));
     // Gate on, off during the release, on again.
-    const auto out = render (envelope, { 0.0f, 0.0f, unwired, unwired }, 24000,
+    const auto out = render (envelope, { 0.0f, 0.0f, unwired, unwired, 0.0f, 0.0f }, 24000,
                              [] (int i, std::vector<float>& in) { in[1] = (i < 9600 || i >= 12000) ? 1.0f : 0.0f; });
     CHECK (out[11999] > 0.2f);
     CHECK (std::abs (out[12001] - out[11999]) < 0.01f);
@@ -235,9 +235,9 @@ TEST_CASE ("A reset envelope hears its next gate as a new note", "[engine][curve
     CurveEnvelopeNode envelope;
     envelope.prepare ({ sampleRate, 64 });
     REQUIRE (envelope.setContent (CurveDocument::adsr (0.01f, 0.1f, 0.8f, 0.1f, 0.0f).toVar()));
-    render (envelope, { 0.0f, 1.0f, unwired, unwired }, 4800);
+    render (envelope, { 0.0f, 1.0f, unwired, unwired, 0.0f, 0.0f }, 4800);
     envelope.reset();
-    const auto after = render (envelope, { 0.0f, 1.0f, unwired, unwired }, 9600); // past attack + decay
+    const auto after = render (envelope, { 0.0f, 1.0f, unwired, unwired, 0.0f, 0.0f }, 9600); // past attack + decay
     CHECK (after[600] > 0.9f); // it started again: past the 10 ms attack
     CHECK (after.back() == Catch::Approx (0.8f).margin (1.0e-3));
 }
@@ -269,4 +269,36 @@ TEST_CASE ("A one-shot wavetable holds the end of its cycle too", "[engine][curv
     const WavetableView view (buffer.get());
     CHECK (view.readHeld (1.0 - 1.0e-6, 0.0f) == Catch::Approx (1.0f).margin (0.01f));
     CHECK (view.read (0, 1.0 - 1.0e-6, 0.0f) < 0.0f); // the periodic read blends back into the start
+}
+
+TEST_CASE ("Down and Up drive the Envelope like a gate made of two moments", "[engine][curvePlayer]")
+{
+    // Envelope inputs: shape, gate, amplitude, time scale, down, up.
+    CurveEnvelopeNode envelope;
+    envelope.prepare ({ sampleRate, 64 });
+    REQUIRE (envelope.setContent (CurveDocument::adsr (0.01f, 0.1f, 0.5f, 0.2f, 0.0f).toVar()));
+    constexpr int downAt = 100, upAt = 14400;
+    const auto out = render (envelope, { 0.0f, unwired, unwired, unwired, 0.0f, 0.0f }, 28800,
+                             [] (int i, std::vector<float>& in)
+                             {
+                                 in[4] = i == downAt ? 1.0f : 0.0f;
+                                 in[5] = i == upAt ? 1.0f : 0.0f;
+                             });
+    CHECK (out[50] == Catch::Approx (0.0f).margin (1.0e-4));
+    CHECK (out[10000] == Catch::Approx (0.5f).margin (1.0e-3)); // held at S between the two moments
+    CHECK (out.back() == Catch::Approx (0.0f).margin (1.0e-4)); // released by Up
+
+    // A one-shot plays whole on Down alone; a second Down restarts it.
+    CurveDocument oneShot;
+    oneShot.timeBase = CurveDocument::TimeBase::Time;
+    oneShot.lengthSeconds = 0.1f;
+    oneShot.points = { { 0.0f, 0.0f }, { 0.05f, 1.0f }, { 0.1f, 0.0f } };
+    CurveEnvelopeNode shot;
+    shot.prepare ({ sampleRate, 64 });
+    REQUIRE (shot.setContent (oneShot.toVar()));
+    const auto played = render (shot, { 0.0f, unwired, unwired, unwired, 0.0f, 0.0f }, 9600,
+                                [] (int i, std::vector<float>& in) { in[4] = (i == 0 || i == 6000) ? 1.0f : 0.0f; });
+    CHECK (played[2400] == Catch::Approx (1.0f).margin (0.01));
+    CHECK (played[5500] == Catch::Approx (0.0f).margin (1.0e-4));
+    CHECK (played[8400] == Catch::Approx (1.0f).margin (0.01)); // the second Down, 50 ms later
 }

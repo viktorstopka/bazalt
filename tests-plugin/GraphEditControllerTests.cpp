@@ -1,4 +1,5 @@
 #include <catch2/catch_test_macros.hpp>
+#include <catch2/catch_approx.hpp>
 #include "PluginProcessor.h"
 #include "bazalt/engine/graph/ProofGraphs.h"
 #include "bazalt/engine/graph/CurveData.h"
@@ -1224,4 +1225,28 @@ TEST_CASE ("unwrapNode replaces an EQ with its filters and keeps the output wire
     CHECK (std::any_of (connections.begin(), connections.end(), [] (const auto& c) { return c.fromNodeId == "eq_1" && c.toNodeId == "out"; }));
 
     CHECK_FALSE (controller.unwrapNode ("saw").success); // not a factory
+}
+
+TEST_CASE ("A saved patch remembers where its macros are and opens there", "[plugin][GraphEditController][macro]")
+{
+    bazalt::engine::NodeGraph graph;
+    graph.addNode ({ "strength", "util.macro", {}, { { "util.macro.slot", 3.0f } }, {} });
+    graph.addNode ({ "hit", "util.macro", {}, { { "util.macro.slot", 4.0f }, { "util.macro.type", 2.0f } }, {} });
+    graph.addNode ({ "out", "io.output", {}, {}, {} });
+    graph.setOutput ("out", "out");
+
+    BazaltAudioProcessor processor;
+    processor.prepareToPlay (48000.0, 256);
+    auto& controller = processor.getGraphEditController();
+    REQUIRE (controller.setGraph (graph).success);
+    processor.getMacroParameter (3).setValueNotifyingHost (0.7f);
+    const auto saved = controller.getGraphForSaving();
+    CHECK (saved.findNode ("strength")->parameters.at ("util.macro.default") == Catch::Approx (0.7f));
+    CHECK (saved.findNode ("hit")->parameters.count ("util.macro.default") == 0); // a trigger is a moment
+
+    BazaltAudioProcessor fresh;
+    fresh.prepareToPlay (48000.0, 256);
+    REQUIRE (static_cast<juce::AudioProcessorParameter&> (fresh.getMacroParameter (3)).getValue() != Catch::Approx (0.7f));
+    REQUIRE (fresh.getGraphEditController().setGraph (saved).success);
+    CHECK (static_cast<juce::AudioProcessorParameter&> (fresh.getMacroParameter (3)).getValue() == Catch::Approx (0.7f));
 }

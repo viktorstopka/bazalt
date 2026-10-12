@@ -74,6 +74,13 @@ namespace bazalt
         // (MacroNode.h's own doc comment on why -1, not a real slot
         // number, is the declared default) or the parameter is somehow
         // missing entirely — both treated identically to "unclaimed".
+        // A Trigger macro is a moment, not a position: nothing to remember.
+        bool isTriggerMacro (const bazalt::engine::NodeInstance& node)
+        {
+            const auto type = node.parameters.find ("util.macro.type");
+            return type != node.parameters.end() && type->second >= 1.5f;
+        }
+
         int macroSlotOf (const bazalt::engine::NodeInstance& node)
         {
             const auto it = node.parameters.find ("util.macro.slot");
@@ -642,6 +649,11 @@ namespace bazalt
                         instance.parameters["math.map.outMin"] = range->first;
                         instance.parameters["math.map.outMax"] = range->second;
                     }
+                    // …and its meaning, when the destination has a real one, so
+                    // the Map's output can go on through Add / Multiply.
+                    if (const auto q = (int) toPort->quantity; q > 0 && q <= 9 && toPort->quantity != bazalt::engine::Quantity::Unipolar
+                                                                    && toPort->quantity != bazalt::engine::Quantity::Bipolar)
+                        instance.parameters["math.map.quantity"] = (float) q;
                 }
                 else if (step.seedFromDestinationRange && toPort->minValue.has_value() && toPort->maxValue.has_value())
                 {
@@ -890,7 +902,16 @@ namespace bazalt
         auto result = recompileAndPublish();
         freshStateOnNextCompile = false;
         if (! result.success)
+        {
             graph = previousGraph;
+            return result;
+        }
+
+        // A patch's macros open where they were saved (getGraphForSaving).
+        for (const auto& node : graph.getNodes())
+            if (const auto slot = macroSlotOf (node); slot >= 0 && slot < MacroParameters::numMacros && ! isTriggerMacro (node))
+                if (const auto stored = node.parameters.find ("util.macro.default"); stored != node.parameters.end())
+                    processor.getMacroParameter (slot).setValueNotifyingHost (juce::jlimit (0.0f, 1.0f, stored->second));
 
         return result;
     }
@@ -1116,8 +1137,16 @@ namespace bazalt
     {
         auto saved = graph;
         for (const auto& node : graph.getNodes())
+        {
             if (node.type == "view.listen")
                 saved.removeNode (node.id);
+
+            // Every macro remembers where its knob is, so the patch opens the
+            // way it was saved (setGraph puts it back).
+            if (const auto slot = macroSlotOf (node); slot >= 0 && slot < MacroParameters::numMacros && ! isTriggerMacro (node))
+                if (auto* stored = const_cast<bazalt::engine::NodeInstance*> (saved.findNode (node.id)))
+                    stored->parameters["util.macro.default"] = static_cast<juce::AudioProcessorParameter&> (processor.getMacroParameter (slot)).getValue();
+        }
         return saved;
     }
 
