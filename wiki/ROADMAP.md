@@ -7,7 +7,7 @@ stage into buildable batches live in `wiki/plans/`:
 |---|---|
 | 0. User experience polish | small, built directly (no plan file) |
 | 1. Data manipulation and wavetable synthesis | `plans/DataAndWavetable.md` |
-| 2. Stochastic-natural and life-cycle suite | `plans/InstanceAxis.md` (the engine half, direction agreed); a research report comes before the rest |
+| 2. Stochastic-natural and life-cycle suite | `reports/LifeAndBiology_2026-10-12.md` (research), `plans/LifeCycle.md` (proposed), `plans/InstanceAxis.md` (the engine half) |
 | 3. Sampling and audio data suite | — |
 | 4. Physical suite | `plans/BakedPhysics.md`, `plans/SpatialScene.md` (earlier proposals) |
 | 5. Standard DSP effects suite | — |
