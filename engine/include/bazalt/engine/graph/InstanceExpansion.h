@@ -46,6 +46,9 @@ namespace bazalt::engine
 
         std::vector<Group> groups;
         std::unordered_map<juce::String, int> groupOfNode; // absent: runs once
+        /** Per node: the (Split id, branch) pairs it runs under — only for the
+            members those Splits put in those branches (empty: every member). */
+        std::unordered_map<juce::String, std::vector<std::pair<juce::String, int>>> branchesOfNode;
 
         int groupOf (const juce::String& nodeId) const noexcept
         {

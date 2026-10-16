@@ -276,6 +276,8 @@ namespace bazalt::engine::nodes
             durationSamples = (int64_t) std::llround ((double) durationSeconds * sampleRate);
             order = orderIn;
             startEvent = true;
+            if (runtime != nullptr && slot < (int) runtime->birthOrder.size())
+                runtime->birthOrder[(size_t) slot] = order;
             auto random = juce::Random (combineInstanceSeed (seed, order));
             random1 = random.nextFloat() * 2.0f - 1.0f;
             random2 = random.nextFloat() * 2.0f - 1.0f;

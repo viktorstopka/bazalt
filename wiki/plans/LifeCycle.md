@@ -120,7 +120,18 @@ proposal it was built from.
   ordinal), age, alive (how many live now), random1 / random2, position, start / stop.
 - MIDI is just "born on a note": the Note input takes `io.noteIn` as today.
 
-**2b.3 — Split (`life.split`).** One instance stream in, N branches out; each instance
+**2b.3 — Split (`life.split`). Built 2026-10-16** (`LifeSplitNode.h`). As built: four
+fixed branch outputs (`branch.0`–`branch.3`, `in` passed through with its quantity) and
+`branch` (index); rules **Ranges** (At 1–3), **Modulo**, **Rank** (highest key first;
+lowest = a negated key); **Key** defaults to `in`; **Decide** at birth or always (read at the
+end of the block, so a member born mid-block is sorted by its own key). The layout marks
+every node only one branch reaches (`InstanceLayout::branchesOfNode`); the plan gates those
+steps on their instance's Split copy (`BranchGate`) and zeroes their outputs when skipped.
+Rank at birth compares with members born earlier only (`InstanceGroupRuntime::birthOrder`),
+so it doesn't depend on step order. Kept nodes get their runtime / key-table pointers on the
+audio thread at the new plan's first block (`ExecutionPlan::pendingBindings`) — a kept node
+may still be running in the old plan. Velocity layers and conditions are Ranges on another
+Key. The proposal it was built from: One instance stream in, N branches out; each instance
 belongs to exactly one branch by a rule — pitch ranges, velocity ranges, birth order
 mod N, rank (highest / lowest note), or a per-instance condition signal. A branch's nodes
 run only for its instances: the plan tags those steps with the branch, and an instance's

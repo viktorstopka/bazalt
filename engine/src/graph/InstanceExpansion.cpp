@@ -68,6 +68,40 @@ namespace bazalt::engine
 
             for (const auto& id : perInstance)
                 layout.groupOfNode[id] = group;
+
+            // Split (LifeSplitNode): what only branch k reaches runs only for
+            // branch k's members. A node reached from two branches of one Split
+            // runs for all of them.
+            for (const auto& node : origin.voiceGraph.getNodes())
+            {
+                if (node.type != "life.split" || perInstance.count (node.id) == 0)
+                    continue;
+                std::unordered_map<juce::String, int> branchOf; // -1: reached from more than one branch
+                for (const auto& c : origin.voiceGraph.getConnections())
+                {
+                    if (c.fromNodeId != node.id || ! c.fromPortId.startsWith ("branch."))
+                        continue;
+                    const auto branch = c.fromPortId.fromFirstOccurrenceOf (".", false, false).getIntValue();
+                    std::vector<juce::String> stack { c.toNodeId };
+                    std::unordered_set<juce::String> seen;
+                    while (! stack.empty())
+                    {
+                        const auto id = stack.back();
+                        stack.pop_back();
+                        if (perInstance.count (id) == 0 || ! seen.insert (id).second)
+                            continue;
+                        const auto [it, inserted] = branchOf.try_emplace (id, branch);
+                        if (! inserted && it->second != branch)
+                            it->second = -1;
+                        if (const auto next = successors.find (id); next != successors.end())
+                            for (const auto& to : next->second)
+                                stack.push_back (to);
+                    }
+                }
+                for (const auto& [id, branch] : branchOf)
+                    if (branch >= 0)
+                        layout.branchesOfNode[id].push_back ({ node.id, branch });
+            }
         }
         return layout;
     }

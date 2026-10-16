@@ -62,6 +62,7 @@ namespace bazalt::engine
         int groupIndex = 0;              // this group's index in the plan
         int alive = 0;                   // members alive now (written by the driver, read by Population's Alive)
         int births = 0;                  // births so far: the next member's order (the driver counts)
+        std::vector<int> birthOrder;     // per instance: the order it was born with (Population writes it)
         InstanceBirthSink* birthSink = nullptr; // set by the driver before the plan is published
         /** Population's birth copy when births come from inside the patch
             (nullptr otherwise): the group's members start only through it. */

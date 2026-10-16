@@ -8,6 +8,7 @@
 #include <juce_core/juce_core.h>
 #include <algorithm>
 #include <array>
+#include <functional>
 #include <atomic>
 #include <memory>
 #include <unordered_map>
@@ -16,6 +17,7 @@
 namespace bazalt::engine
 {
     struct InstanceLayout;
+    namespace nodes { class LifeSplitNode; }
 
     /** Immutable, flat, compiled artifact (ARCHITECTURE.md §3.1/§3.2):
         node instances, a linear schedule of block-rate steps and
@@ -86,6 +88,13 @@ namespace bazalt::engine
             int index = -1;
         };
 
+        struct BranchGate
+        {
+            const nodes::LifeSplitNode* split = nullptr;
+            int branch = 0;
+        };
+        static constexpr int maxBranchGates = 4; // Splits nested inside one another
+
         struct BlockStep
         {
             int nodeSlot = -1;
@@ -125,6 +134,11 @@ namespace bazalt::engine
             // this step belongs to; -1 runs once, every block.
             int group = -1;
             int instance = -1;
+            // Split (LifeSplitNode): this step runs only while its instance's
+            // copy of each Split here has it in the given branch; otherwise it
+            // is skipped and its outputs read silence.
+            std::array<BranchGate, maxBranchGates> gates {};
+            int numGates = 0;
         };
 
         struct PerSampleRegionStep
@@ -148,6 +162,11 @@ namespace bazalt::engine
             // keeps instances apart), so the region carries one tag.
             int group = -1;
             int instance = -1;
+            // Split (LifeSplitNode): this step runs only while its instance's
+            // copy of each Split here has it in the given branch; otherwise it
+            // is skipped and its outputs read silence.
+            std::array<BranchGate, maxBranchGates> gates {};
+            int numGates = 0;
             std::vector<int> scalarIndices; // every regionScalars entry this region owns — what resetInstance() zeroes
         };
 
@@ -413,6 +432,13 @@ namespace bazalt::engine
             unapplied updates on to the next one. */
         MovableAtomicBool pendingParametersApplied;
 
+        /** Pointers a kept node needs into THIS plan (a Population member's
+            group runtime, a Split's key table). A node carried over from the
+            previous plan may be running right now, so the audio thread binds
+            them itself at this plan's first process(), like the updates above. */
+        std::vector<std::function<void()>> pendingBindings;
+        MovableAtomicBool bindingsApplied;
+
         void setPreviewTapsEnabled (bool enabled) noexcept { previewTapsEnabled.value.store (enabled, std::memory_order_relaxed); }
         bool arePreviewTapsEnabled() const noexcept { return previewTapsEnabled.value.load (std::memory_order_relaxed); }
 
@@ -462,6 +488,9 @@ namespace bazalt::engine
             id — what a macro or a live edit sets, and what getNodeById() falls
             back to for an instanced node (its instance 0). */
         std::unordered_map<juce::String, std::vector<int>> copySlotsByBaseId;
+
+        /** One key table per Split (an entry per instance), what Rank compares. */
+        std::vector<std::vector<float>> splitKeyTables;
 
         /** Message thread, after compile, before publishing: tags every step
             and buffer with its instance, builds the group runtimes, resolves

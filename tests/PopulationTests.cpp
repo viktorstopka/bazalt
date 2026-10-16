@@ -163,3 +163,68 @@ TEST_CASE ("Population: each member knows its order, and its randoms follow from
     // The same patch replays the same randoms (Seed).
     CHECK (render (clockedPopulation (1000.0f, 0, 0.1f), 37, 48 * 3 + 1).randoms == rendered.randoms);
 }
+
+namespace
+{
+    /** Held members born by a clock; Split by Order into two branches, branch 0
+        counted ×1 and branch 1 ×10, each summed by its own Merge. */
+    NodeGraph splitPatch (float rule, float at1, float decide)
+    {
+        auto graph = clockedPopulation (1000.0f, 0, 0.1f);
+        graph.removeConnection ("pop", "gate", "merge", "in");
+        graph.removeNode ("merge");
+        graph.addNode ({ "split", "life.split", {}, { { "life.split.rule", rule }, { "life.split.at1", at1 },
+                                                      { "life.split.decide", decide } }, {} });
+        graph.addNode ({ "one", "math.multiply", {}, { { "in.1", 1.0f } }, {} });
+        graph.addNode ({ "ten", "math.multiply", {}, { { "in.1", 10.0f } }, {} });
+        graph.addNode ({ "merge0", "life.merge", {}, {}, {} });
+        graph.addNode ({ "merge1", "life.merge", {}, {}, {} });
+        graph.addNode ({ "sum", "math.add", {}, {}, {} });
+        graph.addConnection ({ "pop", "gate", "split", "in" });
+        graph.addConnection ({ "pop", "order", "split", "key" });
+        graph.addConnection ({ "split", "branch.0", "one", "in.0" });
+        graph.addConnection ({ "split", "branch.1", "ten", "in.0" });
+        graph.addConnection ({ "one", "out", "merge0", "in" });
+        graph.addConnection ({ "ten", "out", "merge1", "in" });
+        graph.addConnection ({ "merge0", "out", "sum", "in.0" });
+        graph.addConnection ({ "merge1", "out", "sum", "in.1" });
+        graph.addConnection ({ "sum", "out", "out", "in" });
+        return graph;
+    }
+}
+
+TEST_CASE ("Split sorts members into branches by Ranges, Modulo and Rank, and a branch runs only for its own",
+           "[engine][population][split][2b]")
+{
+    constexpr int afterFourBirths = 48 * 3 + 1;
+    // Modulo 2 on Order: 0 and 2 in branch 0, 1 and 3 in branch 1 → 2 + 20.
+    CHECK (render (splitPatch (1.0f, 0.0f, 0.0f), 64, afterFourBirths).out.back() == 22.0f);
+    // Ranges at 0.5: order 0 below, 1-3 above → 1 + 30.
+    CHECK (render (splitPatch (0.0f, 0.5f, 0.0f), 64, afterFourBirths).out.back() == 31.0f);
+    // Rank, re-decided always: only the newest (highest order) leads → 1 + 30.
+    CHECK (render (splitPatch (2.0f, 0.0f, 1.0f), 64, afterFourBirths).out.back() == 31.0f);
+    // Rank decided at birth: each newborn was the highest when it was born → 4 × 1.
+    CHECK (render (splitPatch (2.0f, 0.0f, 0.0f), 64, afterFourBirths).out.back() == 4.0f);
+    // Block-size invariant.
+    CHECK (render (splitPatch (1.0f, 0.0f, 0.0f), 64, 1000).out == render (splitPatch (1.0f, 0.0f, 0.0f), 37, 1000).out);
+}
+
+TEST_CASE ("A branch's steps are skipped for members outside it", "[engine][population][split][2b]")
+{
+    const auto graph = splitPatch (1.0f, 0.0f, 0.0f);
+    const auto factory = buildDefaultNodeFactory();
+    const auto split = MultiplicityResolver::split (graph);
+    REQUIRE (split.success);
+    const auto layout = computeInstanceLayout (split, [] (const juce::String&) { return 16; });
+    REQUIRE (layout.branchesOfNode.count ("one") == 1);
+    REQUIRE (layout.branchesOfNode.at ("one").front() == std::pair<juce::String, int> { "split", 0 });
+    REQUIRE (layout.branchesOfNode.at ("ten").front() == std::pair<juce::String, int> { "split", 1 });
+    CHECK (layout.branchesOfNode.count ("split") == 0);
+
+    auto result = compileWithInstances (graph, layout, factory, { sampleRate, 64 }, 1);
+    REQUIRE (result.success);
+    int gated = 0;
+    for (const auto& step : result.plan.steps)
+        gated += step.kind == ExecutionPlan::Step::Kind::Block && step.block.numGates > 0;
+    CHECK (gated == 32); // one and ten, 16 copies each
+}

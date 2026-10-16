@@ -2,12 +2,21 @@
 #include "bazalt/engine/graph/InstanceExpansion.h"
 #include "bazalt/engine/nodes/LifePopulationNode.h"
 #include "bazalt/engine/nodes/LifeReduceNode.h"
+#include "bazalt/engine/nodes/LifeSplitNode.h"
+#include <unordered_set>
 
 namespace bazalt::engine
 {
     void ExecutionPlan::process (int numSamples) noexcept
     {
         jassert (numSamples <= maxBlockSize);
+
+        if (! bindingsApplied.value.load (std::memory_order_relaxed))
+        {
+            for (const auto& bind : pendingBindings)
+                bind();
+            bindingsApplied.value.store (true, std::memory_order_relaxed);
+        }
 
         if (! pendingParametersApplied.value.load (std::memory_order_relaxed))
         {
@@ -23,6 +32,13 @@ namespace bazalt::engine
         {
             return group < 0 || instanceGroups[(size_t) group]->instances[(size_t) instance].run;
         };
+        const auto gatesOpen = [] (const auto& gates, int numGates) noexcept
+        {
+            for (int g = 0; g < numGates; ++g)
+                if (gates[(size_t) g].split->getBranch() != gates[(size_t) g].branch)
+                    return false;
+            return true;
+        };
 
         for (auto& step : steps)
         {
@@ -31,6 +47,13 @@ namespace bazalt::engine
                 auto& blockStep = step.block;
                 if (! instanceRuns (blockStep.group, blockStep.instance))
                     continue;
+                if (! gatesOpen (blockStep.gates, blockStep.numGates))
+                {
+                    // Not this member's branch: no work, and silence for whoever reads it.
+                    for (const auto index : blockStep.outputBufferIndices)
+                        std::fill_n (blockBuffers[(size_t) index].getBlock().getChannelPointer (0), numSamples, 0.0f);
+                    continue;
+                }
                 auto& node = nodes[(size_t) blockStep.nodeSlot];
 
                 if (blockStep.bypassed)
@@ -82,6 +105,12 @@ namespace bazalt::engine
                 auto& region = step.region;
                 if (! instanceRuns (region.group, region.instance))
                     continue;
+                if (! gatesOpen (region.gates, region.numGates))
+                {
+                    for (const auto& external : region.externalOutputs)
+                        std::fill_n (blockBuffers[(size_t) external.bufferIndex].getBlock().getChannelPointer (0), numSamples, 0.0f);
+                    continue;
+                }
                 const auto numNodesInRegion = (int) region.nodeSlotsInOrder.size();
 
                 float sampleIn[maxPortsPerNode];
@@ -231,6 +260,7 @@ namespace bazalt::engine
             runtime->originId = group.originId;
             runtime->count = group.count;
             runtime->instances.assign ((size_t) group.count, {});
+            runtime->birthOrder.assign ((size_t) group.count, 0);
             runtime->originNodes.assign ((size_t) group.count, nullptr);
             runtime->noteInNodes.assign ((size_t) group.count, nullptr);
             runtime->nodeSlotsByInstance.assign ((size_t) group.count, {});
@@ -301,17 +331,70 @@ namespace bazalt::engine
             runtime.groupIndex = (int) g;
             for (int i = 0; i < runtime.count; ++i)
                 if (auto* member = dynamic_cast<nodes::LifePopulationNode*> (runtime.originNodes[(size_t) i]))
-                {
-                    member->setRuntime (&runtime);
-                    member->setSlot (i);
-                }
+                    pendingBindings.push_back ([member, r = &runtime, i]
+                                               {
+                                                   member->setRuntime (r);
+                                                   member->setSlot (i);
+                                               });
             if (const auto slot = nodeIdToSlot.find (birthNodeId (runtime.originId)); slot != nodeIdToSlot.end())
                 if (auto* birth = dynamic_cast<nodes::LifePopulationNode*> (nodes[(size_t) slot->second].get()))
                 {
-                    birth->setRuntime (&runtime);
+                    pendingBindings.push_back ([birth, r = &runtime] { birth->setRuntime (r); });
                     runtime.birthNode = birth;
                 }
         }
+
+        // Split: each step under a branch is gated by its own instance's copy
+        // of that Split; every copy of one Split shares a key table (Rank).
+        std::vector<juce::String> baseOfSlot (nodes.size());
+        for (const auto& [id, slot] : nodeIdToSlot)
+        {
+            const auto base = baseNodeId (id);
+            const auto& lanes = (size_t) slot < laneSlotsBySlot.size() ? laneSlotsBySlot[(size_t) slot] : std::vector<int> { slot };
+            for (const auto laneSlot : lanes)
+                baseOfSlot[(size_t) laneSlot] = base;
+        }
+        const auto splitCopy = [this] (const juce::String& splitId, int instance) -> nodes::LifeSplitNode*
+        {
+            const auto it = nodeIdToSlot.find (instanceNodeId (splitId, instance));
+            return it == nodeIdToSlot.end() ? nullptr : dynamic_cast<nodes::LifeSplitNode*> (nodes[(size_t) it->second].get());
+        };
+        const auto gate = [&] (int slot, int instance, auto& gates, int& numGates)
+        {
+            if (slot < 0 || instance < 0)
+                return;
+            const auto it = layout.branchesOfNode.find (baseOfSlot[(size_t) slot]);
+            if (it == layout.branchesOfNode.end())
+                return;
+            for (const auto& [splitId, branch] : it->second)
+                if (auto* split = splitCopy (splitId, instance); split != nullptr && numGates < maxBranchGates)
+                    gates[(size_t) numGates++] = { split, branch };
+        };
+        for (auto& step : steps)
+        {
+            if (step.kind == Step::Kind::Block)
+                gate (step.block.nodeSlot, step.block.instance, step.block.gates, step.block.numGates);
+            else if (! step.region.nodeSlotsInOrder.empty())
+                gate (step.region.nodeSlotsInOrder.front(), step.region.instance, step.region.gates, step.region.numGates);
+        }
+        for (size_t g = 0; g < instanceGroups.size(); ++g)
+        {
+            auto& runtime = *instanceGroups[g];
+            std::unordered_set<juce::String> splits;
+            for (const auto& [id, slot] : nodeIdToSlot)
+                if (const auto type = nodeIdToType.find (id); type != nodeIdToType.end() && type->second == "life.split")
+                    if (int instance = -1; baseNodeId (id, &instance) != id && layout.groupOf (baseNodeId (id)) == (int) g)
+                        splits.insert (baseNodeId (id));
+            for (const auto& splitId : splits)
+            {
+                auto* table = splitKeyTables.emplace_back ((size_t) runtime.count, 0.0f).data();
+                for (int i = 0; i < runtime.count; ++i)
+                    if (auto* split = splitCopy (splitId, i))
+                        pendingBindings.push_back ([split, r = &runtime, table, i] { split->setShared (r, table, i); });
+            }
+        }
+
+        bindingsApplied.value.store (pendingBindings.empty(), std::memory_order_relaxed);
 
         // Each reduce sums one group: hand it that group's runtime.
         for (const auto& [id, slot] : nodeIdToSlot)

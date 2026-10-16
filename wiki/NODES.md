@@ -817,6 +817,17 @@ its gate falls a member keeps sounding until silent (200 ms under -80 dB), then 
 A rate input of its own was planned and left out on purpose: Events already is the rate, with
 regularity and clustering on top.
 
+#### `life.split` — Split ✅ *(new, wiki/plans/LifeCycle.md 2b.3, 2026-10-16)*
+
+Sorts a Population's members into up to four branches; each member is in exactly one, and
+whatever hangs off `branch.k` runs only for branch k's members (skipped, no CPU, for the
+rest). **In:** `in` (passes through, quantity inherited), `key` (what the rule reads; `in`
+when unwired). **Out:** `branch.0`–`branch.3`, `branch` (index). **Settings:** Rule (Ranges
+with At 1–3 / Modulo / Rank — highest key first), Branches (2–4), Decide (at birth / always).
+Examples: keyboard zones (Ranges on pitch), velocity layers (Ranges on velocity), round robin
+(Modulo on Order), lead + pad (Rank on pitch: the top note gets branch 0). A Merge after each
+branch, or one Merge after the branches join, sums them back.
+
 #### `life.voice` — Voice ✅ *(renamed from `instance.allocator`, 09-28-InstanceAllocator.3; renamed again from `instance.voice`, 09-29-AddMenu.1, to make room for `life.swarmPopulation`/`swarmTransient`/`trigger` as siblings under one Add-menu category)*
 Opens an instanced region. Was "one node, several configurations" (a `configuration`
 enum for Voice/Swarm-population/Swarm-transient/Trigger); three of those four options
