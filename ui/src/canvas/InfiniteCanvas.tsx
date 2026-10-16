@@ -14,6 +14,8 @@ import { importSampleFile, isAudioFile } from '../samples/samples'
 import {
   addImageAt,
   addSampleAt,
+  dropSampleOnNode,
+  getSnapshot,
   addMapFromMainOutput,
   addNode,
   addSumOfNodes,
@@ -1089,6 +1091,17 @@ export const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, InfiniteCanvasPro
       }
     }
 
+    /** One file dropped on a node that takes a sample: it goes there. */
+    const importSampleOnto = async (file: File, nodeId: string, portId: string | undefined): Promise<void> => {
+      const result = await importSampleFile(file)
+      if (!result.success || !result.id) reportError(`Couldn't add the sample: ${result.errorMessage}`)
+      else if (!(await dropSampleOnNode(nodeId, portId, result.id, file.name))) {
+        const node = getSnapshot().nodes.find((n) => n.id === nodeId)
+        await addSampleAt((node?.x ?? 0) - 260, node?.y ?? 0, result.id, file.name)
+      }
+      requestFrame()
+    }
+
     const onDrop = (e: DragEvent): void => {
       const all = [...(e.dataTransfer?.files ?? [])]
       const images = all.filter((f) => f.type.startsWith('image/'))
@@ -1096,6 +1109,12 @@ export const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, InfiniteCanvasPro
       if (images.length === 0 && sounds.length === 0) return
       e.preventDefault()
       const rect = canvas.getBoundingClientRect()
+      const port = closestPortAnchor(e.target)
+      const onNodeId = port?.nodeId ?? closestNodeId(e.target)
+      if (images.length === 0 && sounds.length === 1 && onNodeId) {
+        void importSampleOnto(sounds[0], onNodeId, port?.direction === 'input' ? port.portId : undefined)
+        return
+      }
       if (images.length > 0) void importImagesAt(images, e.clientX - rect.left, e.clientY - rect.top)
       if (sounds.length > 0) void importSamplesAt(sounds, e.clientX - rect.left, e.clientY - rect.top)
     }

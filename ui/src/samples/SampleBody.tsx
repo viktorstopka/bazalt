@@ -3,6 +3,7 @@
 // the sample is missing from the library.
 import { useEffect, useRef, useState } from 'react'
 import { setNodeContent, reportError } from '../graph/graphStore'
+import { openFactory } from '../factory/factoryStore'
 import { tokens } from '../theme/tokens'
 import { importSampleFile, pickAudioFile, sampleInfo, sampleOverview, type SampleInfo } from './samples'
 import './SampleBody.css'
@@ -119,7 +120,28 @@ export function SampleBody({ nodeId, content }: { nodeId?: string; content: unkn
 
   return (
     <div className="sample-body">
-      <canvas ref={canvasRef} className="sample-body-wave" style={{ width: WIDTH, height: HEIGHT }} />
+      <canvas
+        ref={canvasRef}
+        className="sample-body-wave"
+        style={{ width: WIDTH, height: HEIGHT }}
+        onDoubleClick={(e) => {
+          e.stopPropagation()
+          if (nodeId) openFactory(nodeId)
+        }}
+      />
+      {nodeId && (
+        <button
+          className="sample-body-edit"
+          onMouseDown={(e) => e.stopPropagation()}
+          onClick={(e) => {
+            e.stopPropagation()
+            openFactory(nodeId)
+          }}
+          title="Edit the region, loop and slices"
+        >
+          Edit
+        </button>
+      )}
       <div className="sample-body-caption">
         <span className="sample-body-name" title={doc.name}>
           {doc.name || 'Sample'}

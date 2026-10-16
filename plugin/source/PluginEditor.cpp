@@ -2,6 +2,7 @@
 #include "UserPatchLibrary.h"
 #include "NodeDescriptorJson.h"
 #include "bazalt/engine/patch/PatchSerializer.h"
+#include "bazalt/engine/graph/SampleAnalysis.h"
 #include "bazalt/engine/telemetry/TelemetryFrame.h"
 #include <optional>
 
@@ -464,6 +465,23 @@ namespace bazalt
                     values.add (hi);
                 }
             completion (values);
+        });
+
+        // The Sample factory's "Detect" / "Slice at transients"
+        // (SampleAnalysis.h): { root (NaN as null), slices: [seconds] }.
+        options = options.withNativeFunction ("sampleAnalyse", [] (Args args, Completion completion)
+        {
+            auto* obj = new juce::DynamicObject();
+            if (const auto source = bazalt::engine::SampleStore::instance().find (argString (args, 0)))
+            {
+                const auto root = bazalt::engine::sampleAnalysis::rootPitch (*source);
+                obj->setProperty ("root", std::isfinite (root) ? juce::var (root) : juce::var());
+                juce::Array<juce::var> slices;
+                for (const auto t : bazalt::engine::sampleAnalysis::transients (*source, juce::jlimit (1.0f, 30.0f, argFloat (args, 1))))
+                    slices.add (t);
+                obj->setProperty ("slices", slices);
+            }
+            completion (juce::var (obj));
         });
 
         // A sample relinked or imported after its nodes were compiled.

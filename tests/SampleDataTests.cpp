@@ -97,3 +97,36 @@ TEST_CASE ("The Sample node publishes its region, reports a missing sample, and 
     CHECK (length[10] == Catch::Approx (0.5f));
     SampleStore::instance().clearForTesting();
 }
+
+#include "bazalt/engine/graph/SampleAnalysis.h"
+
+TEST_CASE ("The Sample factory hears a sample's note and its attacks", "[engine][sample][3a]")
+{
+    const auto sr = 48000.0;
+    SampleSource tone;
+    tone.sampleRate = sr;
+    tone.frames = (int) sr; // 1 s of A3 (MIDI 57, 220 Hz)
+    for (int f = 0; f < tone.frames; ++f)
+        tone.data.push_back ((float) std::sin (juce::MathConstants<double>::twoPi * 220.0 * f / sr) * 0.5f);
+    CHECK (sampleAnalysis::rootPitch (tone) == Catch::Approx (57.0f).margin (0.1f));
+
+    SampleSource silence;
+    silence.sampleRate = sr;
+    silence.frames = 4800;
+    silence.data.assign (4800, 0.0f);
+    CHECK (std::isnan (sampleAnalysis::rootPitch (silence)));
+
+    // Four decaying noise bursts at 0.1, 0.4, 0.7 and 1.0 s.
+    SampleSource hits;
+    hits.sampleRate = sr;
+    hits.frames = (int) (1.3 * sr);
+    hits.data.assign ((size_t) hits.frames, 0.0f);
+    juce::Random random (7);
+    for (const auto at : { 0.1, 0.4, 0.7, 1.0 })
+        for (int i = 0; i < (int) (0.08 * sr); ++i)
+            hits.data[(size_t) (at * sr) + (size_t) i] = (random.nextFloat() * 2.0f - 1.0f) * std::exp (-(float) i / (0.01f * (float) sr));
+    const auto times = sampleAnalysis::transients (hits);
+    REQUIRE (times.size() == 4);
+    for (size_t i = 0; i < 4; ++i)
+        CHECK (times[i] == Catch::Approx (0.1 + 0.3 * (double) i).margin (0.01));
+}

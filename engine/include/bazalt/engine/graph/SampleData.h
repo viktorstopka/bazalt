@@ -4,6 +4,8 @@
 #include <juce_audio_basics/juce_audio_basics.h>
 #include <juce_core/juce_core.h>
 #include <algorithm>
+#include <array>
+#include <limits>
 #include <cmath>
 #include <map>
 #include <memory>
@@ -102,6 +104,7 @@ namespace bazalt::engine
         bool normalise = false;
         double fadeIn = 0.0, fadeOut = 0.0;
         std::vector<double> slices; // seconds from the region's start
+        float rootPitch = std::numeric_limits<float>::quiet_NaN(); // the sample's own note (detected or set)
 
         static SampleRegion fromVar (const juce::var& content)
         {
@@ -125,6 +128,8 @@ namespace bazalt::engine
             r.normalise = (bool) content.getProperty ("normalise", false);
             r.fadeIn = juce::jmax (0.0, num ("fadeIn", 0.0));
             r.fadeOut = juce::jmax (0.0, num ("fadeOut", 0.0));
+            if (const auto root = content.getProperty ("root", {}); root.isDouble() || root.isInt())
+                r.rootPitch = (float) (double) root;
             if (const auto* slices = content.getProperty ("slices", {}).getArray())
                 for (const auto& s : *slices)
                     r.slices.push_back ((double) s);
@@ -150,9 +155,60 @@ namespace bazalt::engine
             for (const auto v : slices)
                 s.add (v);
             o->setProperty ("slices", s);
+            if (std::isfinite (rootPitch))
+                o->setProperty ("root", rootPitch);
             return juce::var (o);
         }
     };
+
+    /** Fills `buffer.sampleMeta.mipLevels`: each level is the one before,
+        low-passed at a quarter of its rate (a 31-tap windowed-sinc half-band)
+        and decimated by 2. Up to 4 levels — a sample played 16× too fast
+        still doesn't alias. Message / worker thread. */
+    inline void buildSampleMipLevels (DataBuffer& buffer, int maxLevels = 4)
+    {
+        constexpr int taps = 31;
+        static const auto kernel = []
+        {
+            std::array<float, taps> k {};
+            double sum = 0.0;
+            for (int i = 0; i < taps; ++i)
+            {
+                const auto x = (double) (i - taps / 2);
+                const auto sinc = std::abs (x) < 1.0e-9 ? 1.0 : std::sin (juce::MathConstants<double>::halfPi * x) / (juce::MathConstants<double>::halfPi * x);
+                const auto window = 0.42 - 0.5 * std::cos (juce::MathConstants<double>::twoPi * i / (taps - 1))
+                                    + 0.08 * std::cos (2.0 * juce::MathConstants<double>::twoPi * i / (taps - 1));
+                k[(size_t) i] = (float) (sinc * window);
+                sum += sinc * window;
+            }
+            for (auto& v : k)
+                v = (float) (v / sum);
+            return k;
+        }();
+
+        auto& levels = buffer.sampleMeta.mipLevels;
+        levels.clear();
+        const auto channels = buffer.channels();
+        const float* previous = buffer.rawData();
+        auto previousFrames = buffer.frames();
+        for (int level = 0; level < maxLevels && previousFrames >= 64; ++level)
+        {
+            const auto frames = previousFrames / 2;
+            std::vector<float> next ((size_t) frames * (size_t) channels);
+            for (int f = 0; f < frames; ++f)
+                for (int c = 0; c < channels; ++c)
+                {
+                    float sum = 0.0f;
+                    for (int t = 0; t < taps; ++t)
+                        if (const auto from = f * 2 + t - taps / 2; from >= 0 && from < previousFrames)
+                            sum += previous[(size_t) from * (size_t) channels + (size_t) c] * kernel[(size_t) t];
+                    next[(size_t) f * (size_t) channels + (size_t) c] = sum;
+                }
+            levels.push_back (std::move (next));
+            previous = levels.back().data();
+            previousFrames = frames;
+        }
+    }
 
     /** The region of `source` as a published Data(sample) buffer: trimmed,
         reversed, faded, gained, normalised; loop and slices as frame markers
@@ -215,6 +271,9 @@ namespace bazalt::engine
             buffer->sampleMeta.loopStart = loopStart;
             buffer->sampleMeta.loopEnd = loopEnd;
         }
+        buildSampleMipLevels (*buffer);
+        if (std::isfinite (region.rootPitch))
+            buffer->sampleMeta.rootPitch = region.rootPitch;
         for (const auto s : region.slices)
             if (const auto frame = (int) std::lround (s * sr); frame >= 0 && frame < frames)
                 buffer->sampleMeta.slices.push_back (frame);

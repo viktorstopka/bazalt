@@ -1,0 +1,72 @@
+.sample-editor-body {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px 20px;
+  overflow: auto;
+}
+.sample-editor-wave {
+  position: relative;
+  border: 1px solid var(--color-nodeBorder);
+  border-radius: var(--radius-sm);
+  cursor: crosshair;
+  user-select: none;
+}
+.sample-editor-wave canvas {
+  display: block;
+}
+.sample-editor-marker {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 0;
+  border-left: 1px solid;
+  pointer-events: none;
+}
+.sample-editor-marker span {
+  position: absolute;
+  top: 0;
+  left: -7px;
+  min-width: 14px;
+  padding: 0 2px;
+  text-align: center;
+  font-size: 10px;
+  color: #111;
+  border-radius: 2px;
+  cursor: ew-resize;
+}
+.sample-editor-missing {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--color-textSecondary);
+}
+.sample-editor-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 14px;
+  font-size: 12px;
+  color: var(--color-textSecondary);
+}
+.sample-editor-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.sample-editor-field {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.sample-editor-field input[type='number'] {
+  width: 64px;
+  background: var(--color-nodeFill);
+  border: 1px solid var(--color-nodeBorder);
+  border-radius: var(--radius-sm);
+  color: var(--color-textPrimary);
+  padding: 2px 4px;
+}

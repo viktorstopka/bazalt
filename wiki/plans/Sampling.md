@@ -1,6 +1,6 @@
 # Sampling — audio as a material, not just a sound
 
-**Status:** In progress. 3a.1 built 2026-10-16 (see §10); the rest proposed, 2026-10-16. Stage 3 of `wiki/ROADMAP.md` (3a, then 3b), planned with
+**Status:** In progress. 3a.1 and 3a.2 built 2026-10-16 (see §10); the rest proposed, 2026-10-16. Stage 3 of `wiki/ROADMAP.md` (3a, then 3b), planned with
 the user after 2b landed. No code exists yet. `Wavesets.md` is part of this stage and
 builds on the live buffer defined here. `BakedPhysics.md`'s event track turns into a
 special case of the sample defined here (§4.5).
@@ -465,6 +465,22 @@ bodies all play through it.
   - the node body shows the waveform with its region, the name and length;
   - an empty node shows "Load sample…"; a missing sample shows "Missing: name" and "Find…",
     which relinks and keeps the region.
-- Not yet: dropping a file onto a port (comes with the Sampler, 3a.2); editing the region
-  (the Sample factory, 3a.2); many-channel samples in the library (FLAC stops at 8 — bakes,
-  3b).
+- Not yet: many-channel samples in the library (FLAC stops at 8 — bakes, 3b).
+
+**3a.2 (2026-10-16).**
+- `source.sampler` (`SamplerNode.h`): start/stop events, Position, Rate, Pitch against the
+  root, slices, channel, Loop Off/Forward/Ping-pong/While held, Linear/Cubic/Sinc (8-tap
+  Lanczos, 256 phases). Speed above 1.5× reads mip level ⌊log2(speed/1.5)⌋+1, built by
+  `buildSampleMipLevels` (31-tap half-band, up to 4 levels) when the region is published.
+  Rate 0 is a scrub: Position is the read head.
+- `SampleAnalysis.h`: `rootPitch` (the median of the PitchTracker's confident estimates, to
+  the cent; NaN for a drum) and `transients` (the OnsetDetector, sensitivity in dB, a
+  minimum gap). The UI reaches them through `sampleAnalyse`.
+- The Sample factory (`ui/src/samples/SampleEditor.tsx`): markers dragged live and committed
+  on release; double-click adds a slice, right-click removes one; Detect root; Slice at
+  transients with a sensitivity; its own undo.
+- Dropping an audio file on a Sampler (or on its `sample` input) makes a Sample node wired
+  into it; on a Sample node it replaces the sample (`dropSampleOnNode`).
+- Tests: `tests/SamplerTests.cpp` (rate, pitch/slices/loop, scrub, anti-aliasing,
+  block-size invariance), the analysis case in `tests/SampleDataTests.cpp`, and a Sampler
+  in a Voice played from MIDI in `tests-plugin/SampleLibraryTests.cpp`.

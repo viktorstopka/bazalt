@@ -114,3 +114,13 @@ export function pickAudioFile(): Promise<File | null> {
     input.click()
   })
 }
+
+export interface SampleAnalysis {
+  root?: number | null
+  slices?: number[]
+}
+
+/** Detected root note and transients (seconds in the sample) — the Sample factory. */
+export function analyseSample(id: string, sensitivityDb: number): Promise<SampleAnalysis> {
+  return call<SampleAnalysis>('sampleAnalyse', {}, id, sensitivityDb)
+}

@@ -77,6 +77,9 @@ namespace bazalt::engine
             int loopStart = -1, loopEnd = -1; // frames; -1: no loop
             std::vector<int> slices;          // frames, ascending
             float rootPitch = std::numeric_limits<float>::quiet_NaN();
+            /** Band-limited copies at half, quarter, … the rate (same channel
+                layout), for players reading faster than the sample's rate. */
+            std::vector<std::vector<float>> mipLevels;
         };
         SampleMeta sampleMeta;
 

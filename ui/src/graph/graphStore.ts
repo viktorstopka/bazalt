@@ -1179,6 +1179,33 @@ export async function addSampleAt(x: number, y: number, sampleId: string, name: 
   })
 }
 
+/** An audio file dropped onto a node (wiki/plans/Sampling.md 3a.2). On a
+    Sample node it replaces the sample (the old region's times belong to the
+    old file, so it starts over); on a node with a Sample input (a Sampler) a
+    new Sample node appears to its left, wired in — into `portId` when the
+    file landed on that input. False: the node takes no sample. */
+export async function dropSampleOnNode(nodeId: string, portId: string | undefined, sampleId: string, name: string): Promise<boolean> {
+  const node = nodes.get(nodeId)
+  if (!node) return false
+  if (node.typeId === 'data.sample') {
+    await withHistory(async () => {
+      await fireCommand(() => graphSetContent(nodeId, { sample: sampleId, name }))
+    })
+    return true
+  }
+  const inputs = getDescriptor(node.typeId)?.inputs ?? []
+  const takesSample = (p: PortDescriptor): boolean => p.type === 'data' && p.dataTags.includes('sample')
+  const input = inputs.find((p) => p.id === portId && takesSample(p)) ?? inputs.find(takesSample)
+  if (!input) return false
+  const id = makeId('node')
+  await withHistory(async () => {
+    if (!(await fireCommand(() => graphAddNode('data.sample', id, node.x - 260, node.y)))) return
+    if (!(await fireCommand(() => graphSetContent(id, { sample: sampleId, name })))) return
+    await fireCommand(() => graphConnectWithAutoAdapt(id, 'sample', nodeId, input.id))
+  })
+  return true
+}
+
 /** Shows a message in the top bar's error slot (e.g. an image that couldn't
     be read) without any command having run. */
 export function reportError(message: string): void {

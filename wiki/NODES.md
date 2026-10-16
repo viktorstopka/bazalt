@@ -828,7 +828,22 @@ One sound from the sample library, with a non-destructive region as its content 
 loop, fades, gain, reverse, normalise, slices). Drop an audio file on the canvas to make one.
 **Out:** `sample` — `Data(sample)` (channels with their meaning, loop/slice markers);
 `length` (s). A sample missing from the library publishes silence and the node offers
-"Find…" to relink it. Players (Sampler, Convolver, Wavesets) arrive in 3a.2 and later.
+"Find…" to relink it. Edit (or double-click) opens the Sample factory: drag Start/End/
+Loop/slice markers on the waveform, Gain, Fades, Reverse, Normalise, Root note (Detect), and
+"Slice at transients". Drop a new file on the node to replace its sample.
+
+#### `source.sampler` — Sampler ✅ *(new, wiki/plans/Sampling.md 3a.2, 2026-10-16)*
+
+Plays a `Data(sample)`. **In:** `sample`; `start`/`stop` (Events); Position (0–1, where
+Start begins — at Rate 0 it *is* the read head, a scrub); Rate (×, negative plays backwards);
+`pitch` (st — wired, the sample plays at Pitch against its root note, 60 when it has none);
+`slice` (plays from slice n to the next); `channel`; `gate` (for Loop "While held").
+**Out:** `out` (stereo; mono samples on both sides), `playing`, `position` (0–1), `end`
+(Event). **Settings:** Loop (Off / Forward / Ping-pong / While held), Interpolation (Linear /
+Cubic / Sinc — 8-tap Lanczos), Start (When it starts / Wait for Start). Played faster than
+1.5× it reads a pre-filtered half-rate copy of the sample, so it doesn't alias. Under a
+Population each member plays its own copy from birth. Drop an audio file on a Sampler to
+make a Sample node wired into it.
 
 #### `life.split` — Split ✅ *(new, wiki/plans/LifeCycle.md 2b.3, 2026-10-16)*
 

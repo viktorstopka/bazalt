@@ -146,3 +146,62 @@ TEST_CASE ("Export with samples embeds them; opening it with an empty library br
     CHECK (buffer->frames() == 4800); // the 0.1 s region
     bazalt::engine::SampleStore::instance().clearForTesting();
 }
+
+TEST_CASE ("A Sampler in a Voice plays its sample at the keys' pitches", "[plugin][sample][3a]")
+{
+    TempDir temp;
+    bazalt::engine::SampleStore::instance().clearForTesting();
+    BazaltAudioProcessor processor;
+    processor.prepareToPlay (48000.0, 512);
+    auto& c = processor.getGraphEditController();
+    c.setSampleLibraryForTesting (SampleLibrary (temp.dir));
+    const auto imported = c.getSampleLibrary().importFile ("sine.wav", sineWav());
+    REQUIRE (imported.success);
+
+    // The 440 Hz sine is A4 (69); the key an octave up should sound at 880 Hz.
+    bazalt::engine::NodeGraph g;
+    g.addNode ({ "notes", "io.noteIn", {}, {}, {} });
+    g.addNode ({ "voice", "life.population", {}, {}, {} });
+    bazalt::engine::NodeInstance sample { "sine", "data.sample", {}, {}, {} };
+    sample.content = juce::JSON::parse (R"({ "sample": ")" + imported.source->id + R"(", "name": "sine.wav", "root": 69 })");
+    g.addNode (sample);
+    g.addNode ({ "sampler", "source.sampler", {}, {}, {} });
+    g.addNode ({ "merge", "life.merge", {}, {}, {} });
+    g.addNode ({ "masterOut", "io.output", {}, {}, {} });
+    g.addConnection ({ "notes", "notes", "voice", "notes" });
+    g.addConnection ({ "voice", "pitch", "sampler", "pitch" });
+    g.addConnection ({ "sine", "sample", "sampler", "sample" });
+    g.addConnection ({ "sampler", "out", "merge", "in" });
+    g.addConnection ({ "merge", "out", "masterOut", "in" });
+    g.setOutput ("masterOut", "out");
+    const auto loaded = c.setGraph (g);
+    INFO (loaded.errorMessage);
+    REQUIRE (loaded.success);
+
+    std::vector<float> out;
+    juce::AudioBuffer<float> buffer (2, 512);
+    for (int b = 0; b < 8; ++b)
+    {
+        buffer.clear();
+        juce::MidiBuffer midi;
+        if (b == 0)
+            midi.addEvent (juce::MidiMessage::noteOn (1, 81, (juce::uint8) 100), 0);
+        processor.processBlock (buffer, midi);
+        out.insert (out.end(), buffer.getReadPointer (0), buffer.getReadPointer (0) + 512);
+    }
+    // The sample lasts 0.25 s at 440 Hz, so 0.125 s an octave up: read the first 0.1 s.
+    out.resize (4800);
+    const auto magnitude = [&out] (double hz)
+    {
+        double re = 0.0, im = 0.0;
+        for (size_t i = 0; i < out.size(); ++i)
+        {
+            re += out[i] * std::cos (juce::MathConstants<double>::twoPi * hz * (double) i / 48000.0);
+            im -= out[i] * std::sin (juce::MathConstants<double>::twoPi * hz * (double) i / 48000.0);
+        }
+        return std::sqrt (re * re + im * im) / (double) out.size();
+    };
+    INFO ("880 " << magnitude (880.0) << " 440 " << magnitude (440.0));
+    CHECK (magnitude (880.0) > 0.1);
+    CHECK (magnitude (440.0) < 0.01);
+}

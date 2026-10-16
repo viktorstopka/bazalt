@@ -9,6 +9,7 @@ import { closeFactory, useOpenFactory } from './factoryStore'
 import { CurveEditor } from './CurveEditor'
 import { WavetableEditor } from './WavetableEditor'
 import { EqEditor } from './EqEditor'
+import { SampleEditor } from '../samples/SampleEditor'
 import { CURVE_FACTORY_TYPES, CYCLE_PRESETS, TIME_PRESETS, type CurveDoc, curveFromContent } from './curveModel'
 import { WAVETABLE_FACTORY_TYPES, WAVETABLE_PRESETS, type WavetableDoc, wavetableFromContent } from './wavetableModel'
 import { EQ_FACTORY_TYPES, EQ_PRESETS, type EqDoc, eqFromContent } from './eqModel'
@@ -91,6 +92,8 @@ export function FactoryWindow() {
     return () => window.removeEventListener('keydown', onKeyDown)
   }, [nodeId])
 
+  if (nodeId && node && node.typeId === 'data.sample')
+    return <SampleEditor nodeId={node.id} content={node.content} title={node.titleOverride || getDescriptor(node.typeId)?.title || node.typeId} />
   if (!nodeId || !node || !kind) return null
 
   const curve = kind === 'curve' ? curveFromContent(node.content, CURVE_FACTORY_TYPES[node.typeId]) : null
