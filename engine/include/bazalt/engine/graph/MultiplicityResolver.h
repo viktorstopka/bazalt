@@ -23,6 +23,14 @@ namespace bazalt::engine
         juce::String originId;
         NodeGraph voiceGraph;
 
+        /** wiki/plans/LifeCycle.md 2b.5: the Population this one lives inside
+            (empty at the top level). A Population is nested when one of its
+            inputs comes from another's members, or — with no inputs of its own
+            (a unison, born Always) — when its members meet another's. Each
+            member of the parent then has its own set of this one's members; a
+            Merge of them runs once per parent member. */
+        juce::String parentOriginId;
+
         /** One "life.merge" reducing this origin: the sum node and the
             voice-side port that feeds it. */
         struct Sum

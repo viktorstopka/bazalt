@@ -58,6 +58,12 @@ export const PRESETS: readonly Preset[] = [
     build: () => single('Swarm', { 'life.population.size': 8, 'life.population.born': 1 }),
   },
   {
+    id: 'unison',
+    title: 'Unison',
+    blurb: 'Three copies of each voice: wire its Random 1 into the voice pitch; it lives inside the voice.',
+    build: () => single('Unison', { 'life.population.size': 3, 'life.population.born': 1 }),
+  },
+  {
     id: 'grainCloud',
     title: 'Grain Cloud',
     blurb: 'Events at 40 Hz give birth to 50 ms grains, up to 64 at once.',

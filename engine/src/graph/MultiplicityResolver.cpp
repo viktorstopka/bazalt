@@ -90,6 +90,37 @@ namespace bazalt::engine
         for (const auto& originId : originIds)
             resolvedOrigin[originId] = originId;
 
+        // 2b.5, nesting: origin -> the origin it lives inside.
+        std::unordered_map<juce::String, juce::String> parentOf;
+        const auto isAncestor = [&parentOf] (const juce::String& ancestor, juce::String of)
+        {
+            for (auto it = parentOf.find (of); it != parentOf.end(); it = parentOf.find (of))
+            {
+                of = it->second;
+                if (of == ancestor)
+                    return true;
+            }
+            return false;
+        };
+        // Where values of origins a and b meet: the inner one, or an error.
+        // An origin with no inputs and no parent yet nests into the other.
+        const auto meet = [&] (const juce::String& a, const juce::String& b, bool& nestedNow) -> juce::String
+        {
+            nestedNow = false;
+            if (a == b || isAncestor (b, a))
+                return a;
+            if (isAncestor (a, b))
+                return b;
+            for (const auto& [inner, outer] : { std::pair { b, a }, std::pair { a, b } })
+                if (parentOf.count (inner) == 0 && predecessorsOf.count (inner) == 0 && ! isAncestor (inner, outer))
+                {
+                    parentOf[inner] = outer;
+                    nestedNow = true;
+                    return inner;
+                }
+            return {};
+        };
+
         // Fixed-point forward pass (step 2 of the class doc comment):
         // resolvedOrigin only ever grows, so this converges in at most
         // nodes.size() passes.
@@ -100,8 +131,44 @@ namespace bazalt::engine
 
             for (const auto& node : nodes)
             {
-                if (originIdSet.count (node.id) > 0 || sumIdSet.count (node.id) > 0)
-                    continue; // fixed by type id — never re-derived from its own inputs here
+                // A Population fed by another one's members lives inside it.
+                if (originIdSet.count (node.id) > 0)
+                {
+                    if (parentOf.count (node.id) > 0)
+                        continue;
+                    if (const auto predIt = predecessorsOf.find (node.id); predIt != predecessorsOf.end())
+                        for (const auto& fromId : predIt->second)
+                            if (const auto it = resolvedOrigin.find (fromId); it != resolvedOrigin.end() && it->second != node.id)
+                            {
+                                if (isAncestor (node.id, it->second))
+                                {
+                                    result.errorMessage = "Population '" + node.id + "' is fed by its own members' Population '"
+                                                          + it->second + "' — a loop of Populations";
+                                    return result;
+                                }
+                                parentOf[node.id] = it->second;
+                                changed = true;
+                                break;
+                            }
+                    continue;
+                }
+
+                // A Merge of a nested Population's members runs once per
+                // member of the Population it lives inside.
+                if (sumIdSet.count (node.id) > 0)
+                {
+                    if (resolvedOrigin.count (node.id) > 0)
+                        continue;
+                    for (const auto& c : connections)
+                        if (c.toNodeId == node.id && c.toPortId == instanceSumInputPortId)
+                            if (const auto it = resolvedOrigin.find (c.fromNodeId); it != resolvedOrigin.end())
+                                if (const auto parent = parentOf.find (it->second); parent != parentOf.end())
+                                {
+                                    resolvedOrigin[node.id] = parent->second;
+                                    changed = true;
+                                }
+                    continue;
+                }
 
                 const auto predIt = predecessorsOf.find (node.id);
                 if (predIt == predecessorsOf.end())
@@ -120,14 +187,22 @@ namespace bazalt::engine
                     }
                     else if (foundOrigin != it->second)
                     {
-                        result.errorMessage = "Node '" + node.id + "' is fed by two different voice allocators ('"
-                                               + foundOrigin + "', '" + it->second
-                                               + "') and can't combine them directly — reduce one to Scalar (with its own instance.sum) first";
-                        return result;
+                        bool nestedNow = false;
+                        const auto inner = meet (foundOrigin, it->second, nestedNow);
+                        if (inner.isEmpty())
+                        {
+                            result.errorMessage = "Node '" + node.id + "' is fed by two different Populations ('" + foundOrigin + "', '"
+                                                   + it->second + "') that don't live inside one another — Merge one of them first";
+                            return result;
+                        }
+                        changed = changed || nestedNow;
+                        foundOrigin = inner;
                     }
                 }
 
-                if (foundOrigin.isNotEmpty() && resolvedOrigin.find (node.id) == resolvedOrigin.end())
+                // A node fed by an outer member and then by an inner one moves inward.
+                if (const auto current = resolvedOrigin.find (node.id); foundOrigin.isNotEmpty()
+                    && (current == resolvedOrigin.end() || (current->second != foundOrigin && isAncestor (current->second, foundOrigin))))
                 {
                     resolvedOrigin[node.id] = foundOrigin;
                     changed = true;
@@ -229,6 +304,8 @@ namespace bazalt::engine
         {
             MultiplicityOrigin origin;
             origin.originId = originId;
+            if (const auto parent = parentOf.find (originId); parent != parentOf.end())
+                origin.parentOriginId = parent->second;
 
             const auto& members = voiceMembers[originId];
             for (const auto& node : nodes)

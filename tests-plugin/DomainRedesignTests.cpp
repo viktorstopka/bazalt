@@ -541,3 +541,126 @@ TEST_CASE ("Population's When full: Ignore keeps the first members, stealing kee
         CHECK (processor.getOriginActiveVoiceCount (0) == 4);
     }
 }
+
+TEST_CASE ("Unison: every voice gets its own born-Always Population, which ends with the voice", "[plugin][population][nested][2b]")
+{
+    NodeGraph g;
+    g.addNode ({ "noteIn", "io.noteIn", {}, {}, {} });
+    g.addNode ({ "voice", "life.population", {}, { { "life.population.size", 4.0f } }, {} });
+    g.addNode ({ "uni", "life.population", {}, { { "life.population.born", 1.0f }, { "life.population.size", 3.0f } }, {} });
+    g.addNode ({ "detune", "math.add", {}, {}, {} });
+    g.addNode ({ "p2f", "math.pitchToFrequency", {}, {}, {} });
+    g.addNode ({ "osc", "source.saw", {}, {}, {} });
+    g.addNode ({ "amp", "math.multiply", {}, {}, {} });
+    g.addNode ({ "perVoice", "life.merge", {}, {}, {} });
+    g.addNode ({ "voices", "life.merge", {}, {}, {} });
+    g.addNode ({ "masterout", "io.output", {}, {}, {} });
+    g.addConnection ({ "noteIn", "notes", "voice", "notes" });
+    g.addConnection ({ "voice", "pitch", "detune", "in.0" });
+    g.addConnection ({ "uni", "random1", "detune", "in.1" });
+    g.addConnection ({ "detune", "out", "p2f", "pitch" });
+    g.addConnection ({ "p2f", "frequency", "osc", "source.saw.frequency" });
+    g.addConnection ({ "osc", "out", "amp", "in.0" });
+    g.addConnection ({ "voice", "gate", "amp", "in.1" });
+    g.addConnection ({ "amp", "out", "perVoice", "in" });
+    g.addConnection ({ "perVoice", "out", "voices", "in" });
+    g.addConnection ({ "voices", "out", "masterout", "in" });
+    g.setOutput ("masterout", "out");
+
+    BazaltAudioProcessor processor;
+    processor.prepareToPlay (48000.0, 512);
+    const auto result = processor.getGraphEditController().setGraph (g);
+    INFO (result.errorMessage);
+    REQUIRE (result.success);
+    int voiceBundle = -1, uniBundle = -1;
+    for (int i = 0; i < BazaltAudioProcessor::maxOrigins; ++i)
+        if (processor.isOriginBundleActive (i))
+            (processor.getOriginBundleOriginId (i) == "voice" ? voiceBundle : uniBundle) = i;
+    REQUIRE (voiceBundle >= 0);
+    REQUIRE (uniBundle >= 0);
+
+    juce::AudioBuffer<float> buffer (2, 512);
+    juce::MidiBuffer midi;
+    midi.addEvent (juce::MidiMessage::noteOn (1, 60, 0.8f), 0);
+    midi.addEvent (juce::MidiMessage::noteOn (1, 67, 0.8f), 100);
+    buffer.clear();
+    processor.processBlock (buffer, midi);
+    juce::MidiBuffer none;
+    buffer.clear();
+    processor.processBlock (buffer, none);
+    CHECK (processor.getOriginActiveVoiceCount (voiceBundle) == 2);
+    CHECK (processor.getOriginActiveVoiceCount (uniBundle) == 6); // three per voice
+    CHECK (buffer.getMagnitude (0, 0, 512) > 0.1f);
+
+    juce::MidiBuffer off;
+    off.addEvent (juce::MidiMessage::noteOff (1, 60), 0);
+    off.addEvent (juce::MidiMessage::noteOff (1, 67), 0);
+    processor.processBlock (buffer, off);
+    for (int block = 0; block < 40; ++block) // past the 200 ms silence hold
+        processor.processBlock (buffer, none);
+    CHECK (processor.getOriginActiveVoiceCount (voiceBundle) == 0);
+    CHECK (processor.getOriginActiveVoiceCount (uniBundle) == 0); // ended with their voices
+}
+
+TEST_CASE ("Grains per voice: each voice's own Events gives birth to its own grains", "[plugin][population][nested][2b]")
+{
+    NodeGraph g;
+    g.addNode ({ "noteIn", "io.noteIn", {}, {}, {} });
+    g.addNode ({ "voice", "life.population", {}, { { "life.population.size", 2.0f } }, {} });
+    g.addNode ({ "rate", "math.multiply", {}, { { "in.1", 400.0f } }, {} });
+    g.addNode ({ "events", "random.events", {}, {}, {} });
+    g.addNode ({ "grains", "life.population", {}, { { "life.population.size", 8.0f }, { "life.population.lives", 1.0f },
+                                                     { "life.population.duration", 0.01f } }, {} });
+    g.addNode ({ "osc", "source.sine", {}, { { "source.sine.frequency", 900.0f } }, {} });
+    g.addNode ({ "perVoice", "life.merge", {}, {}, {} });
+    g.addNode ({ "voices", "life.merge", {}, {}, {} });
+    g.addNode ({ "masterout", "io.output", {}, {}, {} });
+    g.addConnection ({ "noteIn", "notes", "voice", "notes" });
+    g.addConnection ({ "voice", "gate", "rate", "in.0" });
+    g.addConnection ({ "rate", "out", "events", "random.events.rate" });
+    g.addConnection ({ "events", "event", "grains", "born" });
+    g.addConnection ({ "grains", "gate", "osc", "source.sine.amplitude" });
+    g.addConnection ({ "osc", "out", "perVoice", "in" });
+    g.addConnection ({ "perVoice", "out", "voices", "in" });
+    g.addConnection ({ "voices", "out", "masterout", "in" });
+    g.setOutput ("masterout", "out");
+
+    BazaltAudioProcessor processor;
+    processor.prepareToPlay (48000.0, 512);
+    const auto result = processor.getGraphEditController().setGraph (g);
+    INFO (result.errorMessage);
+    REQUIRE (result.success);
+    int grainBundle = -1;
+    for (int i = 0; i < BazaltAudioProcessor::maxOrigins; ++i)
+        if (processor.isOriginBundleActive (i) && processor.getOriginBundleOriginId (i) == "grains")
+            grainBundle = i;
+    REQUIRE (grainBundle >= 0);
+    CHECK (processor.getOriginMaxVoices (grainBundle) == 16); // 8 per voice × 2 voices
+
+    juce::AudioBuffer<float> buffer (2, 512);
+    juce::MidiBuffer none;
+    for (int block = 0; block < 4; ++block)
+        processor.processBlock (buffer, none);
+    CHECK (processor.getOriginActiveVoiceCount (grainBundle) == 0); // no voice, no grains
+
+    juce::MidiBuffer on;
+    on.addEvent (juce::MidiMessage::noteOn (1, 60, 0.8f), 0);
+    processor.processBlock (buffer, on);
+    float loudest = 0.0f;
+    for (int block = 0; block < 10; ++block)
+    {
+        processor.processBlock (buffer, none);
+        loudest = std::max (loudest, buffer.getMagnitude (0, 0, 512));
+    }
+    CHECK (loudest > 0.1f);
+    const auto alive = processor.getOriginActiveVoiceCount (grainBundle);
+    CHECK (alive > 0);
+    CHECK (alive <= 8); // only the one voice's slice
+
+    juce::MidiBuffer off;
+    off.addEvent (juce::MidiMessage::noteOff (1, 60), 0);
+    processor.processBlock (buffer, off);
+    for (int block = 0; block < 40; ++block)
+        processor.processBlock (buffer, none);
+    CHECK (processor.getOriginActiveVoiceCount (grainBundle) == 0);
+}

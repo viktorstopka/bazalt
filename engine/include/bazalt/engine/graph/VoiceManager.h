@@ -122,9 +122,13 @@ namespace bazalt::engine
             plan yet; `Active` only begins once `completeSteal()` runs
             (PluginProcessor::renderVoiceRange, once the fade finishes).
         */
-        int noteOn (NoteId noteId, int limit = std::numeric_limits<int>::max()) noexcept
+        int noteOn (NoteId noteId, int limit = std::numeric_limits<int>::max()) noexcept { return noteOn (noteId, 0, limit); }
+
+        /** Allocates within voices [first, limit) only — a nested Population's
+            members of one parent member (wiki/plans/LifeCycle.md 2b.5). */
+        int noteOn (NoteId noteId, int first, int limit) noexcept
         {
-            auto index = findIdleVoice (limit);
+            auto index = findIdleVoice (first, limit);
             if (index != -1)
             {
                 auto& voice = voices[(size_t) index];
@@ -139,7 +143,7 @@ namespace bazalt::engine
 
             if (stealPolicy.load (std::memory_order_relaxed) == (int) StealPolicy::Ignore)
                 return -1;
-            index = stealVoice (limit);
+            index = stealVoice (first, limit);
             auto& voice = voices[(size_t) index];
             voice.stage = VoiceStage::Stealing;
             voice.stealFadeSamplesRemaining = stealFadeSamples;
@@ -301,18 +305,18 @@ namespace bazalt::engine
             return std::max (1, std::min ({ (int) voices.size(), maxActiveVoices.load (std::memory_order_relaxed), limit }));
         }
 
-        int findIdleVoice (int limit) const noexcept
+        int findIdleVoice (int first, int limit) const noexcept
         {
             const auto ceiling = ceilingFor (limit);
-            for (int i = 0; i < ceiling; ++i)
+            for (int i = first; i < ceiling; ++i)
                 if (voices[(size_t) i].stage == VoiceStage::Idle)
                     return i;
             return -1;
         }
 
-        int stealVoice (int limit) const noexcept
+        int stealVoice (int first, int limit) const noexcept
         {
-            const auto ceiling = ceilingFor (limit);
+            const auto ceiling = std::max (first + 1, ceilingFor (limit));
             int oldestReleasing = -1;
             uint64_t oldestReleasingAge = 0;
             int oldestOverall = -1;
@@ -322,7 +326,7 @@ namespace bazalt::engine
             {
                 // A voice already being stolen is skipped: its fade is under way.
                 int quietest = -1;
-                for (int i = 0; i < ceiling; ++i)
+                for (int i = first; i < ceiling; ++i)
                     if (voices[(size_t) i].stage != VoiceStage::Stealing
                         && (quietest == -1 || voices[(size_t) i].level < voices[(size_t) quietest].level))
                         quietest = i;
@@ -330,7 +334,7 @@ namespace bazalt::engine
                     return quietest;
             }
 
-            for (int i = 0; i < ceiling; ++i)
+            for (int i = first; i < ceiling; ++i)
             {
                 const auto& voice = voices[(size_t) i];
 

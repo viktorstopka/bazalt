@@ -37,7 +37,9 @@ namespace bazalt::engine
         struct Group
         {
             juce::String originId;
-            int count = 8;
+            int count = 8;            // every member of the group, all parent members included
+            int membersPerParent = 8; // its own Size: members per member of its parent (count, at the top level)
+            int parent = -1;          // the group it lives inside (2b.5), -1 at the top
             /** No io.noteIn: members are born from inside the patch (a clock, a
                 macro, Events, or Always). Its trigger chain runs once and feeds
                 the birth copy. */
@@ -45,6 +47,7 @@ namespace bazalt::engine
         };
 
         std::vector<Group> groups;
+        juce::String errorMessage; // a layout that can't be built (too many members, ...)
         std::unordered_map<juce::String, int> groupOfNode; // absent: runs once
         /** Per node: the (Split id, branch) pairs it runs under — only for the
             members those Splits put in those branches (empty: every member). */

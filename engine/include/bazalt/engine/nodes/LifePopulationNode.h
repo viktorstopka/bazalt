@@ -147,6 +147,8 @@ namespace bazalt::engine::nodes
                 storedDuration = value;
             else if (id == "life.population.birthGroup") // internal: set by the instance expansion on the birth copy
                 birthGroup = asInt - 1;
+            else if (id == "life.population.parentInstance") // internal: a nested birth copy's parent member
+                parentInstance = asInt;
         }
 
         int getSize() const noexcept { return size; }
@@ -299,7 +301,7 @@ namespace bazalt::engine::nodes
             {
                 if (! alwaysBorn)
                     for (int i = 0; i < size; ++i)
-                        sink.born (*runtime, 0, storedPitch, storedVelocity, -1.0f);
+                        sink.born (*runtime, 0, storedPitch, storedVelocity, -1.0f, parentInstance);
                 alwaysBorn = true;
                 return;
             }
@@ -316,10 +318,10 @@ namespace bazalt::engine::nodes
                     if (note.stopEvent)
                         releaseHeld (sink, s, note.pitch);
                     if (note.startEvent)
-                        remember (sink.born (*runtime, s, note.pitch, note.velocity, duration), note.pitch);
+                        remember (sink.born (*runtime, s, note.pitch, note.velocity, duration, parentInstance), note.pitch);
                 }
                 if (read (inputs, bornIn, s, 0.0f) > 0.0f)
-                    remember (sink.born (*runtime, s, birthPitch, birthVelocity, duration), -2.0f);
+                    remember (sink.born (*runtime, s, birthPitch, birthVelocity, duration, parentInstance), -2.0f);
                 if (read (inputs, releaseIn, s, 0.0f) > 0.0f)
                     releaseHeld (sink, s, -3.0f);
             }
@@ -355,7 +357,7 @@ namespace bazalt::engine::nodes
 
     private:
         double sampleRate = 48000.0;
-        int size = 8, seed = 1, birthGroup = -1;
+        int size = 8, seed = 1, birthGroup = -1, parentInstance = -1;
         bool always = false;
         Lives lives = Lives::Hold;
         WhenFull whenFull = WhenFull::StealOldest;

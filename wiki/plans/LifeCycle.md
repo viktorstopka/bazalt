@@ -149,7 +149,18 @@ becomes an Add-menu preset of Population (no migrations — user's instruction; 
 patches and the user's AppData patches rebuilt). Docs. After 2b, "never rename ids"
 (CLAUDE.md rule 3) is proposed for re-enabling — saved patches are now a real workflow.
 
-**2b.5 — Nested Populations (unison).** A Population inside a Population's poly part
+**2b.5 — Nested Populations (unison). Built 2026-10-16.** A Population lives inside
+another when one of its inputs comes from the other's members (grains born by a voice's own
+Events), or — with no inputs of its own (a unison, born Always) — when its members meet the
+other's (`MultiplicityOrigin::parentOriginId`). Members are flattened, not a second id
+axis: the inner group has Size × the parent's count members (`osc@7` is voice 2's member 1
+of 3), each parent member owning its own slice; the total is capped at 128 (an error, not a
+silent cap). A birth copy runs per parent member (`uni@birth@2`) and births go into that
+member's slice (`VoiceManager::noteOn (id, first, limit)`); a Merge of the inner members runs
+per parent member (`perVoice@2`, a reduce of its slice). Inner members run only while their
+parent member runs, and end when it ends or starts again (`endNestedMembers`). Not built: an
+inner Population born from a Note In (an error), a Merge reducing a grandchild directly.
+Add-menu preset: Unison. The proposal: A Population inside a Population's poly part
 expands as a second axis (`osc@3@2`). Last, because it touches expansion and the
 runtime's instance bookkeeping most; may slip to 2c if 2b.1–2b.4 grow.
 

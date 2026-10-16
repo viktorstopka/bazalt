@@ -12,10 +12,47 @@ namespace bazalt::engine
         if (split.monoOnly)
             return layout;
 
+        // Groups in the resolver's order, then (2b.5) a nested group's
+        // members per parent member times the parent's count; parents are
+        // marked before the groups inside them, so an inner group's nodes
+        // end up in it.
         for (const auto& origin : split.origins)
         {
-            const auto group = (int) layout.groups.size();
-            layout.groups.push_back ({ origin.originId, juce::jmax (1, countFor (origin.originId)) });
+            InstanceLayout::Group group;
+            group.originId = origin.originId;
+            group.membersPerParent = juce::jmax (1, countFor (origin.originId));
+            layout.groups.push_back (group);
+        }
+        for (size_t g = 0; g < split.origins.size(); ++g)
+            for (size_t p = 0; p < split.origins.size(); ++p)
+                if (split.origins[g].parentOriginId == split.origins[p].originId)
+                    layout.groups[g].parent = (int) p;
+        std::vector<int> order;
+        {
+            std::vector<int> depth (layout.groups.size(), 0);
+            for (size_t g = 0; g < layout.groups.size(); ++g)
+            {
+                auto d = 0;
+                for (auto p = layout.groups[g].parent; p >= 0 && d <= (int) layout.groups.size(); p = layout.groups[(size_t) p].parent)
+                    ++d;
+                depth[g] = d;
+                order.push_back ((int) g);
+            }
+            std::stable_sort (order.begin(), order.end(), [&depth] (int a, int b) { return depth[(size_t) a] < depth[(size_t) b]; });
+        }
+        for (const auto g : order)
+        {
+            auto& group = layout.groups[(size_t) g];
+            group.count = group.membersPerParent * (group.parent >= 0 ? layout.groups[(size_t) group.parent].count : 1);
+            if (group.count > maxInstancesPerGroup && layout.errorMessage.isEmpty())
+                layout.errorMessage = "Population '" + group.originId + "' would run " + juce::String (group.count)
+                                      + " members (its Size times the Populations it lives inside) — at most "
+                                      + juce::String (maxInstancesPerGroup);
+        }
+
+        for (const auto group : order)
+        {
+            const auto& origin = split.origins[(size_t) group];
 
             // Within the origin's region: what the allocator feeds (its poly
             // part) and what feeds the allocator (its trigger chain) run per
@@ -29,6 +66,10 @@ namespace bazalt::engine
             }
 
             std::unordered_set<juce::String> perInstance { origin.originId };
+            // A Merge of a nested Population runs per member of this one.
+            for (const auto& node : origin.voiceGraph.getNodes())
+                if (node.type == "life.merge")
+                    perInstance.insert (node.id);
             const auto walk = [&perInstance] (const juce::String& start, auto& edges)
             {
                 std::vector<juce::String> stack { start };
@@ -42,7 +83,8 @@ namespace bazalt::engine
                                 stack.push_back (next);
                 }
             };
-            walk (origin.originId, successors);
+            for (const auto start : std::vector<juce::String> (perInstance.begin(), perInstance.end()))
+                walk (start, successors);
 
             // The trigger chain: per instance only when MIDI reaches it through
             // an io.noteIn (each instance's note-in is poked directly).
@@ -61,10 +103,16 @@ namespace bazalt::engine
             }
             const auto hearsMidi = std::any_of (chain.begin(), chain.end(), [&origin] (const juce::String& id)
                                                 { const auto* n = origin.voiceGraph.findNode (id); return n != nullptr && n->type == "io.noteIn"; });
+            if (hearsMidi && layout.groups[(size_t) group].parent >= 0 && layout.errorMessage.isEmpty())
+                layout.errorMessage = "Population '" + origin.originId + "' lives inside another one, so its members are born "
+                                      "from inside that one's members — not from a Note In";
             if (hearsMidi)
                 perInstance.insert (chain.begin(), chain.end());
             else
-                layout.groups.back().internallyTriggered = true;
+                layout.groups[(size_t) group].internallyTriggered = true;
+            // A nested Population's birth copies run once per parent member.
+            if (! hearsMidi && layout.groups[(size_t) group].parent >= 0)
+                layout.groupOfNode[birthNodeId (origin.originId)] = layout.groups[(size_t) group].parent;
 
             for (const auto& id : perInstance)
                 layout.groupOfNode[id] = group;
@@ -123,18 +171,43 @@ namespace bazalt::engine
                 return result;
             }
 
-        // A Merge fed per instance becomes a reduce of that group.
+        if (layout.errorMessage.isNotEmpty())
+        {
+            result.errorMessage = layout.errorMessage;
+            return result;
+        }
+
+        const auto& groups = layout.groups;
+        const auto parentOf = [&groups] (int g) { return g >= 0 ? groups[(size_t) g].parent : -1; };
+        const auto isAncestor = [&] (int ancestor, int g)
+        {
+            for (auto p = parentOf (g); p >= 0; p = parentOf (p))
+                if (p == ancestor)
+                    return true;
+            return false;
+        };
+        // Member `i` of group g → the member of its ancestor group it lives in.
+        const auto ancestorInstance = [&] (int g, int i, int ancestor)
+        {
+            for (; g != ancestor && g >= 0; g = parentOf (g))
+                i /= groups[(size_t) g].membersPerParent;
+            return i;
+        };
+
+        // A Merge fed per instance becomes a reduce of that group — once, or
+        // (2b.5) once per member of the group it lives in, over that member's
+        // own slice of the nested group.
         std::unordered_map<juce::String, int> reduceGroupOf;
         for (const auto& c : graph.getConnections())
             if (c.toPortId == "in")
                 if (const auto* to = graph.findNode (c.toNodeId); to != nullptr && to->type == "life.merge")
-                    if (const auto group = layout.groupOf (c.fromNodeId); group >= 0)
+                    if (const auto group = layout.groupOf (c.fromNodeId); group >= 0 && group != layout.groupOf (c.toNodeId))
                         reduceGroupOf[c.toNodeId] = group;
 
         auto& out = result.graph;
-        // A reduce of one group under `id`: one node when the group fits one
-        // reduce's inputs, else leaves of LifeReduceNode::maxInputs instances
-        // (`id@r0`, `id@r1`, …) summed by a combine node under `id`.
+        // A reduce of members [first, first + count) of one group under `id`:
+        // one node when they fit one reduce's inputs, else leaves of
+        // LifeReduceNode::maxInputs members summed by a combine node under `id`.
         const auto reduceNode = [generation] (const juce::String& id, int group, NodePosition position)
         {
             NodeInstance reduce { id, "life.reduce", position, {}, {} };
@@ -142,15 +215,22 @@ namespace bazalt::engine
                                   { "life.reduce.generation", (float) (generation % 1000000000ull) } };
             return reduce;
         };
-        const auto leafId = [] (const juce::String& id, int leaf) { return id + "@r" + juce::String (leaf); };
-        constexpr int leafWidth = nodes::LifeReduceNode::maxInputs;
-        const auto addReduction = [&] (const juce::String& id, int group, bool average, NodePosition position)
+        // Leaves of a top-level reduce are `id@r0`, … ; of a per-member one
+        // (`merge@3`) `merge#r0@3`, so they run with that member.
+        const auto leafId = [] (const juce::String& id, int leaf)
         {
-            const auto count = layout.groups[(size_t) group].count;
+            int instance = -1;
+            const auto base = baseNodeId (id, &instance);
+            return instance < 0 ? id + "@r" + juce::String (leaf) : instanceNodeId (base + "#r" + juce::String (leaf), instance);
+        };
+        constexpr int leafWidth = nodes::LifeReduceNode::maxInputs;
+        const auto addReduction = [&] (const juce::String& id, int group, bool average, NodePosition position, int first, int count)
+        {
             if (count <= leafWidth)
             {
                 auto reduce = reduceNode (id, group, position);
                 reduce.parameters["life.reduce.count"] = (float) count;
+                reduce.parameters["life.reduce.first"] = (float) first;
                 reduce.parameters["life.reduce.average"] = average ? 1.0f : 0.0f;
                 out.addNode (reduce);
                 return;
@@ -165,52 +245,88 @@ namespace bazalt::engine
             {
                 auto reduce = reduceNode (leafId (id, leaf), group, position);
                 reduce.parameters["life.reduce.count"] = (float) juce::jmin (leafWidth, count - leaf * leafWidth);
-                reduce.parameters["life.reduce.first"] = (float) (leaf * leafWidth);
+                reduce.parameters["life.reduce.first"] = (float) (first + leaf * leafWidth);
                 out.addNode (reduce);
                 out.addConnection ({ leafId (id, leaf), "out", id, "in." + juce::String (leaf) });
             }
         };
-        // Where instance `i` enters the reduction under `id`.
-        const auto reductionInput = [&] (const juce::String& id, int group, int i) -> std::pair<juce::String, juce::String>
+        // Where member `i` (counted from the reduce's first) enters the reduction under `id`.
+        const auto reductionInput = [&] (const juce::String& id, int count, int i) -> std::pair<juce::String, juce::String>
         {
-            if (layout.groups[(size_t) group].count <= leafWidth)
+            if (count <= leafWidth)
                 return { id, "in." + juce::String (i) };
             return { leafId (id, i / leafWidth), "in." + juce::String (i % leafWidth) };
         };
 
         // A Population born from inside the patch gets a birth copy: it alone
         // hears the inputs, and starts members at the sample of each birth
-        // (LifePopulationNode). A hidden cable (births → afterBirths) runs it before them.
-        std::vector<bool> hasBirthCopy (layout.groups.size(), false);
-        for (size_t g = 0; g < layout.groups.size(); ++g)
-            if (const auto* origin = graph.findNode (layout.groups[g].originId);
-                origin != nullptr && origin->type == "life.population" && layout.groups[g].internallyTriggered)
+        // (LifePopulationNode). A hidden cable (births → afterBirths) runs it
+        // before them. A nested one has a birth copy per parent member
+        // (`pop@birth@3`), each starting members only in that member's slice.
+        std::vector<bool> hasBirthCopy (groups.size(), false);
+        for (size_t g = 0; g < groups.size(); ++g)
+            if (const auto* origin = graph.findNode (groups[g].originId);
+                origin != nullptr && origin->type == "life.population" && groups[g].internallyTriggered)
                 hasBirthCopy[g] = true;
+        const auto birthCopies = [&] (int g)
+        {
+            std::vector<juce::String> ids;
+            const auto& origin = groups[(size_t) g].originId;
+            if (parentOf (g) < 0)
+                ids.push_back (birthNodeId (origin));
+            else
+                for (int o = 0; o < groups[(size_t) parentOf (g)].count; ++o)
+                    ids.push_back (instanceNodeId (birthNodeId (origin), o));
+            return ids;
+        };
 
         for (const auto& node : graph.getNodes())
         {
-            if (const auto group = layout.groupOf (node.id); group >= 0)
+            const auto group = layout.groupOf (node.id);
+            if (const auto it = reduceGroupOf.find (node.id); it != reduceGroupOf.end())
             {
-                for (int i = 0; i < layout.groups[(size_t) group].count; ++i)
+                const auto mode = node.parameters.find ("life.merge.mode");
+                const auto average = mode != node.parameters.end() && mode->second >= 0.5f;
+                const auto& fed = groups[(size_t) it->second];
+                if (group < 0)
+                {
+                    addReduction (node.id, it->second, average, node.position, 0, fed.count);
+                }
+                else
+                {
+                    if (fed.parent != group)
+                    {
+                        result.errorMessage = "Merge '" + node.id + "' reduces a Population that doesn't live directly inside its own";
+                        return result;
+                    }
+                    for (int o = 0; o < groups[(size_t) group].count; ++o)
+                        addReduction (instanceNodeId (node.id, o), it->second, average, node.position, o * fed.membersPerParent,
+                                      fed.membersPerParent);
+                }
+            }
+            else if (group >= 0)
+            {
+                for (int i = 0; i < groups[(size_t) group].count; ++i)
                 {
                     auto copy = node;
                     copy.id = instanceNodeId (node.id, i);
                     out.addNode (copy);
                 }
-                if (hasBirthCopy[(size_t) group] && node.id == layout.groups[(size_t) group].originId)
+                if (hasBirthCopy[(size_t) group] && node.id == groups[(size_t) group].originId)
                 {
-                    auto birth = node;
-                    birth.id = birthNodeId (node.id);
-                    birth.parameters["life.population.birthGroup"] = (float) (group + 1);
-                    out.addNode (birth);
-                    for (int i = 0; i < layout.groups[(size_t) group].count; ++i)
-                        out.addConnection ({ birth.id, "births", instanceNodeId (node.id, i), "afterBirths" });
+                    const auto copies = birthCopies (group);
+                    const auto perCopy = groups[(size_t) group].count / (int) copies.size();
+                    for (int o = 0; o < (int) copies.size(); ++o)
+                    {
+                        auto birth = node;
+                        birth.id = copies[(size_t) o];
+                        birth.parameters["life.population.birthGroup"] = (float) (group + 1);
+                        birth.parameters["life.population.parentInstance"] = (float) (parentOf (group) < 0 ? -1 : o);
+                        out.addNode (birth);
+                        for (int i = o * perCopy; i < (o + 1) * perCopy; ++i)
+                            out.addConnection ({ birth.id, "births", instanceNodeId (node.id, i), "afterBirths" });
+                    }
                 }
-            }
-            else if (const auto it = reduceGroupOf.find (node.id); it != reduceGroupOf.end())
-            {
-                const auto mode = node.parameters.find ("life.merge.mode");
-                addReduction (node.id, it->second, mode != node.parameters.end() && mode->second >= 0.5f, node.position);
             }
             else
             {
@@ -222,44 +338,77 @@ namespace bazalt::engine
         {
             const auto fromGroup = layout.groupOf (c.fromNodeId);
             const auto toGroup = layout.groupOf (c.toNodeId);
+            const auto fromNode = [&] (int i) { return fromGroup >= 0 ? instanceNodeId (c.fromNodeId, i) : c.fromNodeId; };
 
-            if (fromGroup >= 0 && toGroup >= 0)
+            // Into a Population with a birth copy: only the birth copy hears it.
+            if (toGroup >= 0 && hasBirthCopy[(size_t) toGroup] && c.toNodeId == groups[(size_t) toGroup].originId)
             {
-                if (fromGroup != toGroup)
+                const auto copies = birthCopies (toGroup);
+                const auto parent = parentOf (toGroup);
+                if (fromGroup == toGroup || (fromGroup >= 0 && fromGroup != parent && ! isAncestor (fromGroup, parent)))
                 {
-                    result.errorMessage = "'" + c.toNodeId + "' is fed by two different allocators";
+                    result.errorMessage = "'" + c.fromNodeId + "' can't give birth to the Population '" + c.toNodeId
+                                          + "': it doesn't live outside it";
                     return result;
                 }
-                for (int i = 0; i < layout.groups[(size_t) fromGroup].count; ++i)
+                for (int o = 0; o < (int) copies.size(); ++o)
+                    out.addConnection ({ fromNode (fromGroup >= 0 ? ancestorInstance (parent, o, fromGroup) : 0), c.fromPortId,
+                                         copies[(size_t) o], c.toPortId });
+                continue;
+            }
+
+            // Into a reduce (a Merge).
+            if (const auto it = reduceGroupOf.find (c.toNodeId); it != reduceGroupOf.end() && c.toPortId == "in")
+            {
+                if (fromGroup != it->second)
+                {
+                    result.errorMessage = "Merge '" + c.toNodeId + "' is fed by two different Populations";
+                    return result;
+                }
+                const auto& fed = groups[(size_t) fromGroup];
+                if (toGroup < 0)
+                {
+                    for (int i = 0; i < fed.count; ++i)
+                    {
+                        const auto [toNode, toPort] = reductionInput (c.toNodeId, fed.count, i);
+                        out.addConnection ({ instanceNodeId (c.fromNodeId, i), c.fromPortId, toNode, toPort });
+                    }
+                }
+                else
+                {
+                    for (int i = 0; i < fed.count; ++i)
+                    {
+                        const auto o = i / fed.membersPerParent;
+                        const auto [toNode, toPort] = reductionInput (instanceNodeId (c.toNodeId, o), fed.membersPerParent, i % fed.membersPerParent);
+                        out.addConnection ({ instanceNodeId (c.fromNodeId, i), c.fromPortId, toNode, toPort });
+                    }
+                }
+                continue;
+            }
+
+            if (fromGroup >= 0 && fromGroup == toGroup)
+            {
+                for (int i = 0; i < groups[(size_t) fromGroup].count; ++i)
                     out.addConnection ({ instanceNodeId (c.fromNodeId, i), c.fromPortId, instanceNodeId (c.toNodeId, i), c.toPortId });
             }
-            else if (fromGroup < 0 && toGroup >= 0)
+            else if (toGroup >= 0 && (fromGroup < 0 || isAncestor (fromGroup, toGroup)))
             {
-                // Births from inside the patch reach only the birth copy, which
-                // starts members at their sample (LifePopulationNode).
-                const auto& group = layout.groups[(size_t) toGroup];
-                if (hasBirthCopy[(size_t) toGroup] && c.toNodeId == group.originId)
-                {
-                    out.addConnection ({ c.fromNodeId, c.fromPortId, birthNodeId (c.toNodeId), c.toPortId });
-                    continue;
-                }
-                // Runs once, heard by every instance.
-                for (int i = 0; i < layout.groups[(size_t) toGroup].count; ++i)
-                    out.addConnection ({ c.fromNodeId, c.fromPortId, instanceNodeId (c.toNodeId, i), c.toPortId });
+                // Once-only, heard by every member; or an outer member, heard by
+                // each member that lives inside it.
+                for (int i = 0; i < groups[(size_t) toGroup].count; ++i)
+                    out.addConnection ({ fromNode (fromGroup >= 0 ? ancestorInstance (toGroup, i, fromGroup) : 0), c.fromPortId,
+                                         instanceNodeId (c.toNodeId, i), c.toPortId });
+            }
+            else if (fromGroup >= 0 && toGroup < 0)
+            {
+                result.errorMessage = "'" + c.toNodeId + "' runs once but is fed per instance from '" + c.fromNodeId
+                                      + "' — put a Merge between them";
+                return result;
             }
             else if (fromGroup >= 0)
             {
-                if (reduceGroupOf.count (c.toNodeId) == 0 || c.toPortId != "in")
-                {
-                    result.errorMessage = "'" + c.toNodeId + "' runs once but is fed per instance from '" + c.fromNodeId
-                                          + "' — put a Merge between them";
-                    return result;
-                }
-                for (int i = 0; i < layout.groups[(size_t) fromGroup].count; ++i)
-                {
-                    const auto [toNode, toPort] = reductionInput (c.toNodeId, fromGroup, i);
-                    out.addConnection ({ instanceNodeId (c.fromNodeId, i), c.fromPortId, toNode, toPort });
-                }
+                result.errorMessage = "'" + c.toNodeId + "' is fed by two different Populations — put a Merge between them";
+                return result;
             }
             else
             {
@@ -272,10 +421,10 @@ namespace bazalt::engine
         if (outputGroup >= 0)
         {
             const auto count = layout.groups[(size_t) outputGroup].count;
-            addReduction (outputReduceNodeId(), outputGroup, false, {});
+            addReduction (outputReduceNodeId(), outputGroup, false, {}, 0, count);
             for (int i = 0; i < count; ++i)
             {
-                const auto [toNode, toPort] = reductionInput (outputReduceNodeId(), outputGroup, i);
+                const auto [toNode, toPort] = reductionInput (outputReduceNodeId(), count, i);
                 out.addConnection ({ instanceNodeId (graph.getOutputNodeId(), i), graph.getOutputPortId(), toNode, toPort });
             }
             out.setOutput (outputReduceNodeId(), "out");

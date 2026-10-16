@@ -418,8 +418,9 @@ ctest --test-dir build -C Debug -R PluginTests --output-on-failure
   allocator** (Voice / Trigger / Swarm are its Add-menu presets, `ui/src/graph/presets.ts`;
   the old types are gone, no migration — by request). Births from inside the patch go
   through a birth copy (`pop@birth`) and start members at their exact sample;
-  `life.split` gates branch steps per member. The notes below that say `life.voice`
-  describe the allocator before 2b.
+  `life.split` gates branch steps per member; a Population inside another one's
+  members (unison, grains per voice) gets a slice of members per outer member
+  (2b.5). The notes below that say `life.voice` describe the allocator before 2b.
 - `life.merge`/`life.voice` (were `instance.sum`/`instance.allocate.voice`
   until schema v14)/`MultiplicityResolver`
   (`wiki/NODES.System.md` §5, `wiki/plans/DomainRedesign.md`) are real and

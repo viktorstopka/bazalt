@@ -656,6 +656,7 @@ namespace bazalt
     void BazaltAudioProcessor::startInstance (bazalt::engine::ExecutionPlan& plan, int group, int instance, float pitch, float velocity, bool viaAllocator) noexcept
     {
         plan.resetInstance (group, instance); // fresh phase/envelope/filter state for this instance only
+        endNestedMembers (plan, group, instance);
         auto& runtime = *plan.instanceGroups[(size_t) group];
         if (viaAllocator)
         {
@@ -669,7 +670,7 @@ namespace bazalt
     }
 
     int BazaltAudioProcessor::born (bazalt::engine::InstanceGroupRuntime& group, int offset, float pitch, float velocity,
-                                    float durationSeconds) noexcept
+                                    float durationSeconds, int parentInstance) noexcept
     {
         using bazalt::engine::VoiceStage;
         if (planThisBlock == nullptr || group.bundleSlot < 0)
@@ -681,8 +682,11 @@ namespace bazalt
         const auto noteId = nextBirthNoteId++;
         if (nextBirthNoteId < firstBirthNoteId)
             nextBirthNoteId = firstBirthNoteId; // wrapped
-        const auto instance = bundle.voiceManager.noteOn (noteId, group.count);
-        if (instance < 0 || instance >= group.count)
+        // A nested Population's members of one parent member are its own slice.
+        const auto first = parentInstance >= 0 ? parentInstance * group.membersPerParent : 0;
+        const auto limit = parentInstance >= 0 ? first + group.membersPerParent : group.count;
+        const auto instance = bundle.voiceManager.noteOn (noteId, first, limit);
+        if (instance < first || instance >= limit)
             return -1; // full, and When full is Ignore
 
         auto* member = dynamic_cast<bazalt::engine::nodes::LifePopulationNode*> (group.originNodes[(size_t) instance]);
@@ -701,12 +705,31 @@ namespace bazalt
         // Its steps come after the birth copy's in this same block (the order
         // cable), so it starts at the very sample it was born.
         planThisBlock->resetInstance (group.groupIndex, instance);
+        endNestedMembers (*planThisBlock, group.groupIndex, instance);
         auto& state = group.instances[(size_t) instance];
         state = {};
         state.run = state.audible = true;
         if (member != nullptr)
             member->spawnAt (offset, pitch, velocity, durationSeconds, order);
         return instance;
+    }
+
+    void BazaltAudioProcessor::endNestedMembers (bazalt::engine::ExecutionPlan& plan, int group, int instance) noexcept
+    {
+        for (auto& child : plan.instanceGroups)
+        {
+            if (child->parentGroup != group || child->bundleSlot < 0)
+                continue;
+            auto& voices = originBundles[(size_t) child->bundleSlot].voiceManager;
+            const auto first = instance * child->membersPerParent;
+            for (int i = first; i < juce::jmin (child->count, first + child->membersPerParent); ++i)
+            {
+                if (voices.getStage (i) != bazalt::engine::VoiceStage::Idle)
+                    voices.voiceFinished (i);
+                child->instances[(size_t) i] = {};
+                endNestedMembers (plan, child->groupIndex, i);
+            }
+        }
     }
 
     void BazaltAudioProcessor::release (bazalt::engine::InstanceGroupRuntime& group, int instance, int offset) noexcept
@@ -828,6 +851,17 @@ namespace bazalt
                 }
             }
 
+            // 2b.5: a nested member runs only while the member it lives in runs.
+            for (auto& group : plan->instanceGroups)
+                if (group->parentGroup >= 0 && group->membersPerParent > 0)
+                    for (int i = 0; i < group->count; ++i)
+                    {
+                        const auto& parent = plan->instanceGroups[(size_t) group->parentGroup]->instances[(size_t) (i / group->membersPerParent)];
+                        auto& state = group->instances[(size_t) i];
+                        state.run = state.run && parent.run;
+                        state.audible = state.audible && parent.run;
+                    }
+
             processPlanRange (plan, startSample, chunk);
 
             const auto* out = plan->blockBuffers[(size_t) plan->finalOutputBufferIndex].getBlock().getChannelPointer (0);
@@ -878,7 +912,10 @@ namespace bazalt
                     {
                         if (bundle.voiceManager.updateSilenceAndCheckFinished (i, group.instances[(size_t) i].peak, chunk,
                                                                                 silenceThresholdLinear, silenceHoldTimeSamples))
+                        {
                             bundle.voiceManager.voiceFinished (i);
+                            endNestedMembers (*plan, g, i);
+                        }
                     }
                 }
                 // Instances the plan no longer has (its count went down in an

@@ -393,8 +393,14 @@ TEST_CASE ("A node fed directly by two different origins' Poly outputs is reject
            "[engine][MultiplicityResolver][DomainRedesign]")
 {
     NodeGraph graph;
+    // Both born by their own clocks: independent, neither inside the other.
+    // (Two that meet with no inputs of their own nest — 2b.5's unison.)
     graph.addNode ({ "allocA", "life.population", {}, {}, {} });
     graph.addNode ({ "allocB", "life.population", {}, {}, {} });
+    graph.addNode ({ "clockA", "time.clock", {}, {}, {} });
+    graph.addNode ({ "clockB", "time.clock", {}, {}, {} });
+    graph.addConnection ({ "clockA", "tick", "allocA", "born" });
+    graph.addConnection ({ "clockB", "tick", "allocB", "born" });
     graph.addNode ({ "ringmod", "math.multiply", {}, {}, {} });
     graph.addNode ({ "masterout", "io.output", {}, {}, {} });
 

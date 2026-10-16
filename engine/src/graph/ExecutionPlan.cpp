@@ -261,6 +261,8 @@ namespace bazalt::engine
             runtime->count = group.count;
             runtime->instances.assign ((size_t) group.count, {});
             runtime->birthOrder.assign ((size_t) group.count, 0);
+            runtime->parentGroup = group.parent;
+            runtime->membersPerParent = group.membersPerParent;
             runtime->originNodes.assign ((size_t) group.count, nullptr);
             runtime->noteInNodes.assign ((size_t) group.count, nullptr);
             runtime->nodeSlotsByInstance.assign ((size_t) group.count, {});
@@ -336,12 +338,22 @@ namespace bazalt::engine
                                                    member->setRuntime (r);
                                                    member->setSlot (i);
                                                });
-            if (const auto slot = nodeIdToSlot.find (birthNodeId (runtime.originId)); slot != nodeIdToSlot.end())
-                if (auto* birth = dynamic_cast<nodes::LifePopulationNode*> (nodes[(size_t) slot->second].get()))
-                {
-                    pendingBindings.push_back ([birth, r = &runtime] { birth->setRuntime (r); });
-                    runtime.birthNode = birth;
-                }
+            // The birth copy, or (nested) one per parent member: `pop@birth@3`.
+            std::vector<juce::String> birthIds { birthNodeId (runtime.originId) };
+            if (runtime.parentGroup >= 0)
+            {
+                birthIds.clear();
+                for (int o = 0; o < instanceGroups[(size_t) runtime.parentGroup]->count; ++o)
+                    birthIds.push_back (instanceNodeId (birthNodeId (runtime.originId), o));
+            }
+            for (const auto& birthId : birthIds)
+                if (const auto slot = nodeIdToSlot.find (birthId); slot != nodeIdToSlot.end())
+                    if (auto* birth = dynamic_cast<nodes::LifePopulationNode*> (nodes[(size_t) slot->second].get()))
+                    {
+                        pendingBindings.push_back ([birth, r = &runtime] { birth->setRuntime (r); });
+                        if (runtime.birthNode == nullptr)
+                            runtime.birthNode = birth;
+                    }
         }
 
         // Split: each step under a branch is gated by its own instance's copy

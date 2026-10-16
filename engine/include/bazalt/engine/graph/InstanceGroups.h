@@ -50,7 +50,10 @@ namespace bazalt::engine
     struct InstanceBirthSink
     {
         virtual ~InstanceBirthSink() = default;
-        virtual int born (InstanceGroupRuntime& group, int offset, float pitch, float velocity, float durationSeconds) noexcept = 0;
+        /** `parentInstance`: for a nested Population (2b.5), the parent member
+            whose own slice of members this birth goes into; -1 at the top. */
+        virtual int born (InstanceGroupRuntime& group, int offset, float pitch, float velocity, float durationSeconds,
+                          int parentInstance) noexcept = 0;
         virtual void release (InstanceGroupRuntime& group, int instance, int offset) noexcept = 0;
     };
 
@@ -60,6 +63,8 @@ namespace bazalt::engine
         int count = 0;                   // instances in this group
         int bundleSlot = -1;             // which of the driver's per-origin bundles drives it (set by the driver)
         int groupIndex = 0;              // this group's index in the plan
+        int parentGroup = -1;            // 2b.5: the group it lives inside (-1 at the top)
+        int membersPerParent = 0;        // ... and its members per member of that group (its Size)
         int alive = 0;                   // members alive now (written by the driver, read by Population's Alive)
         int births = 0;                  // births so far: the next member's order (the driver counts)
         std::vector<int> birthOrder;     // per instance: the order it was born with (Population writes it)

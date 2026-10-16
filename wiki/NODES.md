@@ -816,6 +816,11 @@ processor for a slot mid-plan (`InstanceBirthSink`); a hidden cable runs it befo
 its gate falls a member keeps sounding until silent (200 ms under -80 dB), then its slot is free.
 A rate input of its own was planned and left out on purpose: Events already is the rate, with
 regularity and clustering on top.
+**Nesting (2b.5):** a Population fed by another one's members (grains born by each voice's own
+Events), or one with no inputs that meets another's members (a unison: born Always, wire its
+Random 1 into the voice's pitch), lives inside it — every outer member gets its own Size
+members, which end with it. A Merge of the inner members inside the outer chain sums each
+outer member's own. Up to 128 members in all (Size × the outer count).
 
 #### `life.split` — Split ✅ *(new, wiki/plans/LifeCycle.md 2b.3, 2026-10-16)*
 

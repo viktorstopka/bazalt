@@ -24,9 +24,11 @@ namespace
         std::vector<int> bornAt; // absolute sample of each birth
         int blockStart = 0;
 
-        int born (InstanceGroupRuntime& group, int offset, float pitch, float velocity, float duration) noexcept override
+        int born (InstanceGroupRuntime& group, int offset, float pitch, float velocity, float duration, int parent) noexcept override
         {
-            for (int i = 0; i < group.count; ++i)
+            const auto first = parent >= 0 ? parent * group.membersPerParent : 0;
+            const auto last = parent >= 0 ? first + group.membersPerParent : group.count;
+            for (int i = first; i < last; ++i)
             {
                 auto& state = group.instances[(size_t) i];
                 if (state.run)
@@ -227,4 +229,90 @@ TEST_CASE ("A branch's steps are skipped for members outside it", "[engine][popu
     for (const auto& step : result.plan.steps)
         gated += step.kind == ExecutionPlan::Step::Kind::Block && step.block.numGates > 0;
     CHECK (gated == 32); // one and ten, 16 copies each
+}
+
+namespace
+{
+    /** noteIn → Voice; a unison Population (born Always, 3 members, no inputs)
+        inside each voice detunes it; Merge per voice, then Merge of voices. */
+    NodeGraph unisonPatch()
+    {
+        NodeGraph g;
+        g.addNode ({ "noteIn", "io.noteIn", {}, {}, {} });
+        g.addNode ({ "voice", "life.population", {}, { { "life.population.size", 4.0f } }, {} });
+        g.addNode ({ "uni", "life.population", {}, { { "life.population.born", 1.0f }, { "life.population.size", 3.0f } }, {} });
+        g.addNode ({ "detune", "math.add", {}, {}, {} });
+        g.addNode ({ "p2f", "math.pitchToFrequency", {}, {}, {} });
+        g.addNode ({ "osc", "source.saw", {}, {}, {} });
+        g.addNode ({ "amp", "math.multiply", {}, {}, {} });
+        g.addNode ({ "perVoice", "life.merge", {}, {}, {} });
+        g.addNode ({ "voices", "life.merge", {}, {}, {} });
+        g.addNode ({ "out", "io.output", {}, {}, {} });
+        g.addConnection ({ "noteIn", "notes", "voice", "notes" });
+        g.addConnection ({ "voice", "pitch", "detune", "in.0" });
+        g.addConnection ({ "uni", "random1", "detune", "in.1" });
+        g.addConnection ({ "detune", "out", "p2f", "pitch" });
+        g.addConnection ({ "p2f", "frequency", "osc", "source.saw.frequency" });
+        g.addConnection ({ "osc", "out", "amp", "in.0" });
+        g.addConnection ({ "voice", "gate", "amp", "in.1" });
+        g.addConnection ({ "amp", "out", "perVoice", "in" });
+        g.addConnection ({ "perVoice", "out", "voices", "in" });
+        g.addConnection ({ "voices", "out", "out", "in" });
+        g.setOutput ("out", "out");
+        return g;
+    }
+}
+
+TEST_CASE ("A Population with no inputs that meets another one's members lives inside it (unison)",
+           "[engine][population][nested][2b]")
+{
+    const auto graph = unisonPatch();
+    const auto split = MultiplicityResolver::split (graph);
+    INFO (split.errorMessage);
+    REQUIRE (split.success);
+    REQUIRE (split.origins.size() == 2);
+    const auto& uni = split.origins[0].originId == "uni" ? split.origins[0] : split.origins[1];
+    CHECK (uni.parentOriginId == "voice");
+
+    const auto layout = computeInstanceLayout (split, [] (const juce::String& id) { return id == "uni" ? 3 : 4; });
+    REQUIRE (layout.errorMessage.isEmpty());
+    const auto uniGroup = layout.groupOf ("uni");
+    const auto voiceGroup = layout.groupOf ("voice");
+    REQUIRE (uniGroup >= 0);
+    CHECK (layout.groups[(size_t) uniGroup].parent == voiceGroup);
+    CHECK (layout.groups[(size_t) uniGroup].count == 12); // 3 per voice × 4 voices
+    CHECK (layout.groupOf ("osc") == uniGroup);
+    CHECK (layout.groupOf ("perVoice") == voiceGroup); // one Merge per voice
+    CHECK (layout.groupOf ("voices") == -1);
+
+    const auto expanded = expandInstances (graph, layout, 1);
+    INFO (expanded.errorMessage);
+    REQUIRE (expanded.success);
+    CHECK (expanded.graph.findNode ("uni@birth@3") != nullptr); // a birth copy per voice
+    const auto* reduce = expanded.graph.findNode ("perVoice@2");
+    REQUIRE (reduce != nullptr);
+    CHECK (reduce->type == "life.reduce");
+    CHECK (reduce->parameters.at ("life.reduce.first") == 6.0f); // voice 2's slice: members 6-8
+    // Voice 1's pitch reaches its own three members only.
+    int fromVoice1 = 0;
+    for (const auto& c : expanded.graph.getConnections())
+        if (c.fromNodeId == "voice@1" && c.fromPortId == "pitch")
+        {
+            ++fromVoice1;
+            CHECK ((c.toNodeId == "detune@3" || c.toNodeId == "detune@4" || c.toNodeId == "detune@5"));
+        }
+    CHECK (fromVoice1 == 3);
+
+    const auto factory = buildDefaultNodeFactory();
+    auto compiled = compileWithInstances (graph, layout, factory, { sampleRate, 64 }, 1);
+    INFO (compiled.errorMessage);
+    CHECK (compiled.success);
+}
+
+TEST_CASE ("Too many nested members is an error, not a silent cap", "[engine][population][nested][2b]")
+{
+    const auto split = MultiplicityResolver::split (unisonPatch());
+    REQUIRE (split.success);
+    const auto layout = computeInstanceLayout (split, [] (const juce::String& id) { return id == "uni" ? 16 : 16; });
+    CHECK (layout.errorMessage.contains ("256"));
 }

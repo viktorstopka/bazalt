@@ -283,7 +283,11 @@ namespace bazalt
 
     private:
         // InstanceBirthSink: a birth inside the plan, mid-process, on the audio thread.
-        int born (bazalt::engine::InstanceGroupRuntime& group, int offset, float pitch, float velocity, float durationSeconds) noexcept override;
+        int born (bazalt::engine::InstanceGroupRuntime& group, int offset, float pitch, float velocity, float durationSeconds,
+                  int parentInstance) noexcept override;
+        /** 2b.5: a member starting again or ending takes the members of every
+            Population nested inside it with it. Audio thread. */
+        void endNestedMembers (bazalt::engine::ExecutionPlan& plan, int group, int instance) noexcept;
         void release (bazalt::engine::InstanceGroupRuntime& group, int instance, int offset) noexcept override;
         bazalt::engine::VoiceManager::NoteId nextBirthNoteId = firstBirthNoteId;
         // MIDI note ids are (channel << 8) | note, below this.

@@ -1071,7 +1071,7 @@ namespace bazalt
                 using Policy = bazalt::engine::VoiceManager::StealPolicy;
                 using WhenFull = bazalt::engine::nodes::LifePopulationNode::WhenFull;
                 const auto whenFull = population->getWhenFull();
-                maxInstancesBySlot[(size_t) slot] = population->getSize();
+                maxInstancesBySlot[(size_t) slot] = runtime->count; // its Size, times the members it lives inside (2b.5)
 
                 // Held members nothing can release any more (their note source
                 // was just unwired) are released, never left sounding — on
