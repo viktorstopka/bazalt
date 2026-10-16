@@ -205,21 +205,35 @@ TEST_CASE ("Rössler doubles its period as c rises", "[engine][chaos]")
 {
     // Distinct heights of the x maxima: one value on a clean cycle, two after
     // the first doubling, many in chaos.
-    const auto distinctPeaks = [] (float c)
+    // Peaks of a period-n cycle form n tight clusters; sampling can move one
+    // peak by a fraction of a step, so peaks are grouped by gaps rather than
+    // rounded into fixed buckets (a boundary between buckets split one cluster
+    // into two on one compiler and not another). A fixed seed keeps the start
+    // the same on every run.
+    const auto peaksOf = [] (float c)
     {
         RosslerNode rossler;
+        rossler.setParameter ("chaos.rossler.seed", 7.0f);
         const auto x = run (rossler, { 200.0f, c }, 3.0);
-        std::set<int> heights;
+        std::vector<float> peaks;
         for (size_t i = x.size() / 2; i + 1 < x.size(); ++i)
             if (x[i] > x[i - 1] && x[i] >= x[i + 1])
-                heights.insert ((int) std::lround (x[i] * 50.0f));
-        return heights.size();
+                peaks.push_back (x[i]);
+        std::sort (peaks.begin(), peaks.end());
+        return peaks;
     };
-    CHECK (distinctPeaks (2.5f) <= 2);
-    const auto doubled = distinctPeaks (3.5f);
-    CHECK (doubled >= 2);
-    CHECK (doubled <= 4);
-    CHECK (distinctPeaks (5.7f) > 8);
+    const auto clusters = [] (const std::vector<float>& peaks)
+    {
+        size_t count = peaks.empty() ? 0 : 1;
+        for (size_t i = 1; i < peaks.size(); ++i)
+            count += peaks[i] - peaks[i - 1] > 0.05f;
+        return count;
+    };
+    CHECK (clusters (peaksOf (2.5f)) == 1);
+    CHECK (clusters (peaksOf (3.5f)) == 2);
+    const auto chaotic = peaksOf (5.7f);
+    REQUIRE (chaotic.size() > 8);
+    CHECK (chaotic.back() - chaotic.front() > 0.2f); // spread out, not a few fixed heights
 }
 
 TEST_CASE ("Duffing stays in one well when gently driven and jumps between them when pushed", "[engine][chaos]")

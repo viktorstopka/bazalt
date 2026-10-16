@@ -74,6 +74,50 @@ the same — correlated populations).
 | **2d — Vectors, Sense, Move, Locate** | Report §5's vector-on-the-channel-axis decision first, then D7–D8. | Boids from Sense + math + Move; Kuramoto-style sync from Sense's mean phase; a moving source heard moving. |
 | **2e — Sound models** | Jittered impulse train; driven nonlinear oscillator; **Gesture** — one Factory curve document with several named lanes on one timeline (an owl's loudness, pitch and quaver; a bird's pressure and tension), one output per lane, one Time Scale (agreed 2026-10-12: the Owl patch needed four Envelopes kept in step by hand). Example patches: cricket field (Dolbear temperature), purr, bird (pressure/tension gestures), fire from the guitar. | Each patch in `ui/src/patches/factory/`, loaded by the factory-patch test. |
 
+## 2b in detail (2026-10-16)
+
+The order of work moved stage 3a/3b in between 2b and 2c (`wiki/ROADMAP.md`); 2b is next.
+
+**2b.1 — Counts and caps (engine).**
+- An allocator's instance count is its own setting (Population's **Size**; the legacy
+  nodes' Max Instances until they go), read at compile time — a structural change
+  recompiles. Cap 128 per allocator; the real bound is CPU and memory (every per-instance
+  node exists Size times — a 2 s delay inside a 128-voice Population is 128 delay lines).
+- VoiceManager is preallocated to the cap in `prepareToPlay` and limited by
+  `setMaxActiveVoices`, so nothing is resized under the audio thread.
+- Allocators per patch: 4 → 16 (bundles preallocated). The per-allocator Merge limit goes
+  (each Merge is already its own `life.reduce`); `life.reduce` takes up to 128 inputs.
+- The card stack shows the real count.
+
+**2b.2 — Population (`life.population`).**
+- **Born:** on a note (Note input) / on an event (Event input) / at a rate (Rate, Hz, with
+  Regularity — the Events node's renewal process built in) / always (all alive from the
+  start).
+- **Lives:** while held, then until silent / a fixed time (Duration) / until silent /
+  forever. "Until silent" is today's 200 ms silence detection; the explicit choices are
+  what the Owl's breath hack and Fire's never-silent floor needed (`wiki/TODO.md`).
+- **When full:** steal oldest / steal quietest / ignore the new one.
+- **Size**, **Seed** (fixed, or new each load).
+- **Identity outputs:** gate, pitch, velocity, index (which instance), order (birth
+  ordinal), age, alive (how many live now), random1 / random2, position, start / stop.
+- MIDI is just "born on a note": the Note input takes `io.noteIn` as today.
+
+**2b.3 — Split (`life.split`).** One instance stream in, N branches out; each instance
+belongs to exactly one branch by a rule — pitch ranges, velocity ranges, birth order
+mod N, rank (highest / lowest note), or a per-instance condition signal. A branch's nodes
+run only for its instances: the plan tags those steps with the branch, and an instance's
+run flag is set per branch (no CPU for instances that aren't in it). Merge after the
+branches sums them back.
+
+**2b.4 — Removal.** Voice, Trigger, Swarm (Transient) and Swarm (Population) go; each
+becomes an Add-menu preset of Population (no migrations — user's instruction; factory
+patches and the user's AppData patches rebuilt). Docs. After 2b, "never rename ids"
+(CLAUDE.md rule 3) is proposed for re-enabling — saved patches are now a real workflow.
+
+**2b.5 — Nested Populations (unison).** A Population inside a Population's poly part
+expands as a second axis (`osc@3@2`). Last, because it touches expansion and the
+runtime's instance bookkeeping most; may slip to 2c if 2b.1–2b.4 grow.
+
 ## 3. Risks
 
 See the report §8: vectors in the type system, Groups as their own feature, Split
