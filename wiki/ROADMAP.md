@@ -8,7 +8,7 @@ stage into buildable batches live in `wiki/plans/`:
 | 0. User experience polish | small, built directly (no plan file) |
 | 1. Data manipulation and wavetable synthesis | `plans/DataAndWavetable.md` |
 | 2. Stochastic-natural and life-cycle suite | `reports/LifeAndBiology_2026-10-12.md` (research), `plans/LifeCycle.md` (proposed), `plans/InstanceAxis.md` (the engine half) |
-| 3. Sampling and audio data suite | `plans/Wavesets.md` (proposed — the first piece); the rest still to be planned |
+| 3. Sampling and audio data suite | `plans/Sampling.md` (proposed — the whole stage: samples as recorded cables, Capture and Bake, the Convolver, captured rooms/materials), `plans/Wavesets.md` (proposed — part of 3a) |
 | 4. Physical suite | `plans/BakedPhysics.md`, `plans/SpatialScene.md` (earlier proposals) |
 | 5. Standard DSP effects suite | — |
 
@@ -21,10 +21,12 @@ of stage 2.
 2. **2b** — Population, Split, Merge, no fixed voice / allocator limits, explicit
    lifetimes (`plans/LifeCycle.md`). Goes first because granular needs it and it is the
    last big removal of node types before the "never rename ids" rule comes back.
-3. **3a** — live recording buffer, sample player, audio files as Data, the **Waveset**
-   family (Live Interleave first, `plans/Wavesets.md`), Spectrogram.
-4. **3b** — granular built from Population, Convolver, the effect build ("Erosion") with
-   its effect / instrument distinction.
+3. **3a** — samples as Data (library, file drop), Sampler, live Record buffer and
+   Capture, the **Waveset** family (Live Interleave first, `plans/Wavesets.md`),
+   Spectrogram, sample → wavetable (`plans/Sampling.md` 3a.1–3a.6).
+4. **3b** — the Convolver as a response player, granular built from Population, Bake
+   (with axes), capture assistants (room, material, body), positional rooms for whole
+   Populations, the effect build ("Erosion") (`plans/Sampling.md` 3b.1–3b.7).
 5. **2c–2e** and stochastic part 2 — Groups / Class / Trait, vectors / Sense / Move /
    Locate, sound models + Gesture, Distribution / Markov / Shared.
 6. **1e** — README and NODE_GUIDE.

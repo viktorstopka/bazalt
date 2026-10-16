@@ -1,6 +1,9 @@
 # Baked Physics — simulations recorded as instructions, not audio
 
 **Status:** Proposed, 2026-10-04. Vision and staging only — not scheduled, no code.
+**2026-10-16:** `Sampling.md` §4.4 H replaces this plan's `Data(event-track)` with a
+`Data(sample)` holding Event and control channels, played by the Sampler — no separate
+type or player.
 Depends on `Factories.md` (a physics scene is a factory) and builds directly on the
 PM Core nodes that already exist.
 
