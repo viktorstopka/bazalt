@@ -41,6 +41,11 @@ namespace bazalt::engine::nodes
         S to the end, starting from the current level. No S marker: the whole
         curve plays on each rising gate (a one-shot). A loop range repeats
         while the gate is held. Time Scale stretches the whole curve.
+        **Down** and **Up** are the gate as two moments, for a trigger instead
+        of a held signal: Down starts the curve (again, if it is running), Up
+        releases it from S. Down alone plays a one-shot curve whole; with an S
+        marker it holds until an Up arrives. Either drives the same envelope as
+        Gate, so a patch can mix both.
 
         The Oscillator is a phase source (Node::isPhaseSource), so view.cycle
         and every phase-locked preview downstream fold their real samples by
@@ -88,13 +93,14 @@ namespace bazalt::engine::nodes
             stage = Stage::Idle;
             finished = false;
             previousGate = false; // a reset voice must see its next gate as a rising edge
+            eventGate = false;
             time = 0.0;
             output = 0.0f;
             offset = 0.0f;
             lastBuffer = nullptr;
         }
 
-        int getNumInputPorts() const noexcept override { return mode == Mode::Oscillator ? 6 : 4; }
+        int getNumInputPorts() const noexcept override { return 6; }
 
         bool wantsHostInputs() const noexcept override { return mode == Mode::Oscillator; }
 
@@ -170,6 +176,8 @@ namespace bazalt::engine::nodes
                                  .minValue = 0.05f, .maxValue = 20.0f, .defaultValue = 1.0f,
                                  .isLogScale = true, .hasFallbackWhenUnconnected = true, .quantity = Quantity::Ratio,
                                  .curve = Curve::Logarithmic },
+                PortDescriptor { .id = "down", .type = SignalType::Event, .label = "Down" },
+                PortDescriptor { .id = "up", .type = SignalType::Event, .label = "Up" },
             };
         }
 
@@ -326,7 +334,21 @@ namespace bazalt::engine::nodes
 
         float envelopeSample (const float* inputs) noexcept
         {
-            const auto gate = ! std::isnan (inputs[1]) && inputs[1] > 0.5f;
+            // Down / Up hold the gate between two moments; a Down while held
+            // restarts the curve.
+            const auto down = ! std::isnan (inputs[4]) && inputs[4] > 0.5f;
+            const auto up = ! std::isnan (inputs[5]) && inputs[5] > 0.5f;
+            if (down)
+            {
+                if (eventGate || (! std::isnan (inputs[1]) && inputs[1] > 0.5f))
+                    previousGate = false;
+                eventGate = true;
+            }
+            else if (up)
+            {
+                eventGate = false;
+            }
+            const auto gate = (! std::isnan (inputs[1]) && inputs[1] > 0.5f) || eventGate;
             const auto amplitude = read (inputs, 2, storedAmplitude);
             const auto timeScale = juce::jmax (0.001f, read (inputs, 3, storedTimeScale));
 
@@ -424,7 +446,7 @@ namespace bazalt::engine::nodes
 
         // Envelope
         Stage stage = Stage::Idle;
-        bool previousGate = false, finished = false;
+        bool previousGate = false, finished = false, eventGate = false;
         double time = 0.0, startGapEnd = 1.0, releaseFrom = 0.0;
         float startGap = 0.0f, releaseGap = 0.0f;
 

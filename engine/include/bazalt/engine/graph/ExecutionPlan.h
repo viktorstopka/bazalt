@@ -1,6 +1,7 @@
 #pragma once
 
 #include "bazalt/engine/graph/Node.h"
+#include "bazalt/engine/graph/InstanceGroups.h"
 #include "bazalt/engine/graph/NoteEvent.h"
 #include "bazalt/engine/AlignedBuffer.h"
 #include "bazalt/engine/telemetry/Tap.h"
@@ -14,6 +15,8 @@
 
 namespace bazalt::engine
 {
+    struct InstanceLayout;
+
     /** Immutable, flat, compiled artifact (ARCHITECTURE.md §3.1/§3.2):
         node instances, a linear schedule of block-rate steps and
         per-sample region steps, and the buffers wiring them together.
@@ -117,6 +120,11 @@ namespace bazalt::engine
             // has no output to fill."
             bool bypassed = false;
             int bypassOutputBufferIndex = -1;
+
+            // The instance axis (applyInstanceLayout): which group and instance
+            // this step belongs to; -1 runs once, every block.
+            int group = -1;
+            int instance = -1;
         };
 
         struct PerSampleRegionStep
@@ -135,6 +143,12 @@ namespace bazalt::engine
                 int bufferIndex = -1;
             };
             std::vector<ExternalOutput> externalOutputs;
+
+            // Every node of a region belongs to the same instance (expansion
+            // keeps instances apart), so the region carries one tag.
+            int group = -1;
+            int instance = -1;
+            std::vector<int> scalarIndices; // every regionScalars entry this region owns — what resetInstance() zeroes
         };
 
         struct Step
@@ -493,6 +507,41 @@ namespace bazalt::engine
         */
         void process (int numSamples) noexcept;
 
+        // ---- The instance axis (wiki/plans/InstanceAxis.md) ----------------
+        /** One runtime per allocator ("group"), when the plan was compiled from
+            an instance-expanded graph (InstanceExpansion.h). Empty otherwise —
+            then every step runs, as always. unique_ptr: a runtime holds an
+            atomic and its address is handed to the reduces. */
+        std::vector<std::unique_ptr<InstanceGroupRuntime>> instanceGroups;
+
+        /** (group, instance) of each blockBuffers entry's producer, or (-1, -1)
+            for a once-only one: a preview taps only the instance it shows. */
+        std::vector<std::pair<int, int>> bufferInstance;
+
+        /** Every node slot (all instances, all lanes) per editable-graph node
+            id — what a macro or a live edit sets, and what getNodeById() falls
+            back to for an instanced node (its instance 0). */
+        std::unordered_map<juce::String, std::vector<int>> copySlotsByBaseId;
+
+        /** Message thread, after compile, before publishing: tags every step
+            and buffer with its instance, builds the group runtimes, resolves
+            each instance's allocator / note-in, and hands the reduces their
+            runtime. */
+        void applyInstanceLayout (const InstanceLayout& layout);
+
+        /** Audio thread: a fresh start for one instance — every node of it
+            reset, its feedback loops' memory cleared (what reset() does for a
+            whole per-voice plan). */
+        void resetInstance (int group, int instance) noexcept;
+
+        /** The blockBuffers indices of (baseNodeId, portId) for every instance
+            (one entry when it runs once; empty if none). Message thread. */
+        std::vector<int> findOutputBufferIndicesForAllInstances (const juce::String& baseNodeId, const juce::String& portId) const;
+
+        /** findTappableBufferIndex for every instance of (baseNodeId, portId):
+            the node's own buffer when it runs once, else one per instance. */
+        std::vector<int> findTappableBufferIndicesForAllInstances (const juce::String& baseNodeId, const juce::String& portId) const;
+
         void reset() noexcept
         {
             for (auto& node : nodes)
@@ -510,7 +559,10 @@ namespace bazalt::engine
         Node* getNodeById (const juce::String& nodeId) const
         {
             const auto it = nodeIdToSlot.find (nodeId);
-            return it == nodeIdToSlot.end() ? nullptr : nodes[(size_t) it->second].get();
+            if (it != nodeIdToSlot.end())
+                return nodes[(size_t) it->second].get();
+            const auto copies = copySlotsByBaseId.find (nodeId);
+            return copies == copySlotsByBaseId.end() || copies->second.empty() ? nullptr : nodes[(size_t) copies->second.front()].get();
         }
 
         /** setParameter() on every lane of a node (StereoChannels.md) — what a
@@ -519,6 +571,12 @@ namespace bazalt::engine
             if the plan has no such node. */
         bool setParameterOnAllLanes (const juce::String& nodeId, const juce::String& parameterId, float value) const noexcept
         {
+            if (const auto copies = copySlotsByBaseId.find (nodeId); copies != copySlotsByBaseId.end())
+            {
+                for (const auto slot : copies->second)
+                    nodes[(size_t) slot]->setParameter (parameterId, value);
+                return true;
+            }
             const auto it = nodeIdToSlot.find (nodeId);
             if (it == nodeIdToSlot.end())
                 return false;

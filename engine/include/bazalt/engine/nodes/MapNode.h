@@ -81,7 +81,23 @@ namespace bazalt::engine::nodes
 
         std::vector<PortDescriptor> getOutputPorts() const override
         {
-            return { PortDescriptor { .id = "out", .type = SignalType::Signal, .isPrimaryOutput = true } };
+            return { PortDescriptor { .id = "out", .type = SignalType::Signal, .isPrimaryOutput = true, .quantity = outputQuantity } };
+        }
+
+        /** What the output means: a frequency, a pitch, a time… Dimensionless (a
+            plain number, the default) fits anywhere; naming it lets the result go
+            on through Add / Multiply and still reach a Hz or semitone port (an
+            auto-inserted Map is given its destination's). Same list and ordinals
+            as util.macro's quantity. */
+        std::vector<ParameterDescriptor> getParameters() const override
+        {
+            return { ParameterDescriptor { .id = "math.map.quantity", .minValue = 0.0f, .maxValue = 9.0f, .defaultValue = 0.0f,
+                                           .displayName = "Unit", .isInteger = true, .kind = ValueKind::Enum,
+                                           .enumOptions = { { "dimensionless", "Number" }, { "frequency", "Frequency" },
+                                                            { "pitch", "Pitch" }, { "time", "Time" }, { "gain", "Gain" },
+                                                            { "ratio", "Ratio" }, { "unipolar", "Unipolar" },
+                                                            { "bipolar", "Bipolar" }, { "count", "Count" }, { "phase", "Phase" } },
+                                           .isStructural = true } };
         }
 
         void setParameter (const juce::String& parameterId, float value) override
@@ -94,6 +110,8 @@ namespace bazalt::engine::nodes
                 outMinValue = value;
             else if (parameterId == "math.map.outMax")
                 outMaxValue = value;
+            else if (parameterId == "math.map.quantity")
+                outputQuantity = (Quantity) juce::jlimit (0, 9, (int) std::lround (value));
         }
 
         void processSample (const float* inputs, float* outputs) noexcept override
@@ -115,5 +133,6 @@ namespace bazalt::engine::nodes
         float inMaxValue = 1.0f;
         float outMinValue = 0.0f;
         float outMaxValue = 1.0f;
+        Quantity outputQuantity = Quantity::Dimensionless;
     };
 }

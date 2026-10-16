@@ -1,6 +1,7 @@
 #pragma once
 
 #include "bazalt/engine/graph/Node.h"
+#include "bazalt/engine/nodes/InheritingPortsNode.h"
 #include "bazalt/engine/graph/ValueTypes.h"
 #include <cmath>
 #include <vector>
@@ -30,18 +31,27 @@ namespace bazalt::engine::nodes
         this via setParameter() (compile-time graph parameters or a
         post-compile call on the live node — ProofGraphs.h, render-cli,
         ProofGraphRenderTests.cpp) keeps working completely unchanged.
+
+        **It delays anything that flows** (2026-10-12): a signal, or an Event —
+        "this trigger once more, 30 ms later" (a paw lifting off, a second
+        contact). The input takes on what is wired to it. A signal is read
+        between samples (linear), so a modulated delay glides instead of
+        stepping; an Event is moved by whole samples, never smeared. Up to
+        96000 samples (2 s at 48 kHz).
     */
-    class DelayNode : public Node
+    class DelayNode : public InheritingPortsNode
     {
     public:
         static constexpr int numInputs = 2;
         static constexpr int numOutputs = 1;
+        static constexpr int defaultMaxDelaySamples = 96000;
 
-        explicit DelayNode (int maxDelaySamplesIn = 4096) noexcept : maxDelaySamples (maxDelaySamplesIn) {}
+        explicit DelayNode (int maxDelaySamplesIn = defaultMaxDelaySamples) noexcept
+            : InheritingPortsNode (Quantity::Audio), maxDelaySamples (maxDelaySamplesIn) {}
 
         void prepare (const NodePrepareInfo&) override
         {
-            buffer.assign ((size_t) maxDelaySamples, 0.0f);
+            buffer.assign ((size_t) maxDelaySamples + 1, 0.0f);
             writeIndex = 0;
         }
 
@@ -57,17 +67,23 @@ namespace bazalt::engine::nodes
         juce::String getTitle() const override { return "Delay"; }
         juce::String getCategory() const override { return "Time"; }
 
+        void resolveIncomingPort (const juce::String& toPortId, const PortDescriptor& source) noexcept override
+        {
+            if (toPortId == "in")
+                offer (0, source, true);
+        }
+
         std::vector<PortDescriptor> getInputPorts() const override
         {
             return {
-                perChannel ({ .id = "in", .type = SignalType::Signal, .quantity = Quantity::Audio }),
+                perChannel ({ .id = "in", .type = resolvedType, .quantity = resolvedQuantity, .polymorphism = PortPolymorphism::SignalAndQuantity }),
                 ValueTypes::timeSamplesPort ("time.delay.samples", "By", maxDelaySamples, 200.0f),
             };
         }
 
         std::vector<PortDescriptor> getOutputPorts() const override
         {
-            return { perChannel ({ .id = "out", .type = SignalType::Signal, .quantity = Quantity::Audio }) };
+            return { perChannel ({ .id = "out", .type = resolvedType, .quantity = resolvedQuantity, .polymorphism = PortPolymorphism::SignalAndQuantity }) };
         }
 
         std::vector<ParameterDescriptor> getParameters() const override { return {}; }
@@ -75,7 +91,7 @@ namespace bazalt::engine::nodes
         void setParameter (const juce::String& parameterId, float value) override
         {
             if (parameterId == "time.delay.samples")
-                delaySamples = juce::jlimit (1, maxDelaySamples, (int) std::lround (value));
+                delaySamples = juce::jlimit (1.0f, (float) maxDelaySamples, value);
         }
 
         void processSample (const float* inputs, float* outputs) noexcept override
@@ -86,21 +102,30 @@ namespace bazalt::engine::nodes
             // re-clamped per sample since a live modulator isn't bound by
             // setParameter()'s own clamp.
             const auto modulation = inputs[1];
-            const auto activeSamples = std::isnan (modulation) ? delaySamples : juce::jlimit (1, maxDelaySamples, (int) std::lround (modulation));
+            auto active = std::isnan (modulation) ? delaySamples : juce::jlimit (1.0f, (float) maxDelaySamples, modulation);
+            if (resolvedType == SignalType::Event)
+                active = std::round (active); // a moment is moved, never smeared
 
-            auto readIndex = writeIndex - activeSamples;
+            const auto size = (int) buffer.size();
+            const auto whole = (int) active;
+            const auto fraction = active - (float) whole;
+            auto readIndex = writeIndex - whole;
             if (readIndex < 0)
-                readIndex += maxDelaySamples;
+                readIndex += size;
+            auto older = readIndex - 1;
+            if (older < 0)
+                older += size;
 
-            outputs[0] = buffer[(size_t) readIndex];
+            const auto a = buffer[(size_t) readIndex];
+            outputs[0] = fraction > 0.0f ? a + (buffer[(size_t) older] - a) * fraction : a;
 
             buffer[(size_t) writeIndex] = inputs[0];
-            writeIndex = (writeIndex + 1) % maxDelaySamples;
+            writeIndex = (writeIndex + 1) % size;
         }
 
     private:
         int maxDelaySamples;
-        int delaySamples = 200;
+        float delaySamples = 200.0f;
         std::vector<float> buffer;
         int writeIndex = 0;
     };

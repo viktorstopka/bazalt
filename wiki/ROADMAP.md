@@ -8,9 +8,27 @@ stage into buildable batches live in `wiki/plans/`:
 | 0. User experience polish | small, built directly (no plan file) |
 | 1. Data manipulation and wavetable synthesis | `plans/DataAndWavetable.md` |
 | 2. Stochastic-natural and life-cycle suite | `reports/LifeAndBiology_2026-10-12.md` (research), `plans/LifeCycle.md` (proposed), `plans/InstanceAxis.md` (the engine half) |
-| 3. Sampling and audio data suite | — |
+| 3. Sampling and audio data suite | `plans/Wavesets.md` (proposed — the first piece); the rest still to be planned |
 | 4. Physical suite | `plans/BakedPhysics.md`, `plans/SpatialScene.md` (earlier proposals) |
 | 5. Standard DSP effects suite | — |
+
+**Order of work (agreed 2026-10-16).** Stage 2 is large, and sampling matters more to the
+user's day-to-day use (Bazalt as a live effect on guitar) than its biological half. So
+stage 3 moves in between: finish the life-cycle core first, then sampling, then the rest
+of stage 2.
+
+1. Merge the instance axis (2a) to master.
+2. **2b** — Population, Split, Merge, no fixed voice / allocator limits, explicit
+   lifetimes (`plans/LifeCycle.md`). Goes first because granular needs it and it is the
+   last big removal of node types before the "never rename ids" rule comes back.
+3. **3a** — live recording buffer, sample player, audio files as Data, the **Waveset**
+   family (Live Interleave first, `plans/Wavesets.md`), Spectrogram.
+4. **3b** — granular built from Population, Convolver, the effect build ("Erosion") with
+   its effect / instrument distinction.
+5. **2c–2e** and stochastic part 2 — Groups / Class / Trait, vectors / Sense / Move /
+   Locate, sound models + Gesture, Distribution / Markov / Shared.
+6. **1e** — README and NODE_GUIDE.
+7. Stage 4, then stage 5.
 
 Decisions taken while planning, 2026-10-08: Listen is never saved with the patch; the
 effect build is a second build of the same code (working name **Bazalt Erosion**, not

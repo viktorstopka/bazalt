@@ -1,8 +1,9 @@
 # Instance Axis — one plan instead of a plan per voice
 
-**Status:** Proposed, 2026-10-08 — direction agreed with the user, scheduled for
-roadmap stage 2 (`wiki/ROADMAP.md`). No code exists yet. Stage 1
-(`DataAndWavetable.md`, D2/D4) prepares the model and the card-stack visuals.
+**Status:** Built (batch 2a), 2026-10-12 — the plugin runs every patch as one plan;
+the per-voice engine is gone. Proposed 2026-10-08. §6 says how it was built and what
+is still open (§4's single allocator and lifting the 8/4 limits are batch 2b,
+`LifeCycle.md`).
 
 ---
 
@@ -88,6 +89,55 @@ nowhere today come for free (born on an event, living while a gate is held). Ins
 do not see each other here — interaction between instances (a flock, voices tuning to
 each other) is a separate question for stage 2's research. Final shape after that
 research; the Merge node (was Voice Sum) closes any of them.
+
+## 6. As built (2a, 2026-10-12)
+
+**By expansion, not by a new compiler.** `InstanceExpansion.h` turns the edited graph
+into one graph to compile: every node an allocator's poly part (and its trigger chain —
+`io.noteIn`, a clock that spawns it) contains appears once per instance as `id@i`;
+everything else appears once. A Merge fed per instance becomes `life.reduce`
+(`LifeReduceNode.h`, one input per instance); an output that itself runs per instance
+gets an implicit `__output.reduce` in front of it. The unchanged `GraphCompiler`
+compiles that — lanes, feedback regions, polymorphic ports, Data and Note wiring and
+state carried across recompiles (copies keep stable ids) all work as before.
+`ExecutionPlan::applyInstanceLayout` then tags every step and buffer with its
+(group, instance), and `'@'` is refused in user node ids.
+
+**The runtime.** Each allocator is an `InstanceGroupRuntime` on the plan: per instance
+`run`, `audible`, `fading` + a steal ramp, and the `peak` the reduce measured.
+`ExecutionPlan::process()` skips every step of an instance that doesn't run (an idle
+voice costs nothing) and `resetInstance()` gives one instance fresh state.
+`BazaltAudioProcessor::renderRange` drives the groups from each allocator's
+`VoiceManager` exactly as the per-voice engine did — steal fades split the range where
+they complete, release ends on silence, swarm populations always run, instance 0 of an
+internally triggered allocator always runs so its trigger is heard. Previews tap every
+instance's buffer and the plan pushes only the most recently played one.
+
+**Proof, then the switch.** Before the old engine was removed, both engines rendered
+the same patches and MIDI (chords, steals, releases; subtractive, stereo, no-Merge
+output, Init Patch, swarm population, internally triggered swarm, every factory patch)
+and matched bit for bit (the parity test lived in `tests-plugin/` at commit 177cb91);
+`tests/InstanceAxisTests.cpp` keeps the engine-level parity case. Then the per-voice
+swappers, voice sums and the mono/global/poly branches were deleted: one swapper, one
+plan, one render path, for every patch.
+
+**Internal trigger chains run once (2026-10-12).** A trigger chain with an `io.noteIn`
+runs per instance (MIDI pokes each instance's note-in). Any other trigger chain — a
+clock, a macro, Events — runs once and feeds only instance 0's allocator, and the
+processor relays each spawn to the instance its VoiceManager picks
+(`InstanceLayout::Group::internallyTriggered`). Before this, the chain was copied into
+every instance, so a node outside the voices could not share the trigger (a toggle
+flipped by the same macro was rejected) and live instances re-spawned themselves from
+their own copies of the clock.
+
+**What sounds different, on purpose.**
+- A mono LFO (any once-only node) feeding voices is **one shared, free-running LFO**.
+  It used to be copied into every voice, where each copy reset on note-on.
+- MIDI no longer allocates instances in an internally triggered allocator (the
+  per-voice engine did, silently, with nothing to play them).
+
+**Still as before (batch 2b):** 8 instances per allocator, 4 allocators, at most 31
+inputs per reduce (a tree for more), the four allocator nodes.
 
 ## 5. Open questions
 

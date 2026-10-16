@@ -250,6 +250,10 @@ TEST_CASE ("getPortMultiplicity() reports poly for a voice-region node's ports (
     graph.addConnection ({ "oscToFreq", "frequency", "osc", "source.oscillator.frequency" });
     graph.addConnection ({ "osc", "out", "sum", "in" });
     graph.addConnection ({ "sum", "out", "masterout", "in" });
+    // An LFO feeding the voices runs once (the instance axis): shared, so it
+    // must not be drawn as a stack of voices.
+    graph.addNode ({ "lfo", "source.sine", {}, { { "source.sine.frequency", 2.0f } }, {} });
+    graph.addConnection ({ "lfo", "out", "osc", "source.oscillator.amplitude" });
     graph.setOutput ("masterout", "out");
 
     BazaltAudioProcessor processor;
@@ -258,6 +262,10 @@ TEST_CASE ("getPortMultiplicity() reports poly for a voice-region node's ports (
     REQUIRE (controller.setGraph (graph).success);
 
     const auto& ports = controller.getPortMultiplicity();
+
+    REQUIRE (ports.count ("lfo") == 1);
+    CHECK (ports.at ("lfo").at ("out").kind == "scalar");
+    CHECK (controller.getNodeDomains().at ("lfo") == "global");
 
     REQUIRE (ports.count ("alloc") == 1);
     REQUIRE (ports.at ("alloc").count ("gate") == 1);
@@ -363,7 +371,7 @@ TEST_CASE ("Disconnecting a Note source from instance.allocate.voice.spawn WHILE
     processor.processBlock (buffer, noteOn);
 
     auto* voiceNode = dynamic_cast<bazalt::engine::nodes::InstanceVoiceNode*> (
-        processor.getOriginVoicePlanSwapper (0, 0).peekCurrentPlan()->getNodeById ("alloc"));
+        processor.peekFirstVoicePlanForTesting (0)->getNodeById ("alloc"));
     REQUIRE (voiceNode != nullptr);
     REQUIRE (voiceNode->getGate()); // held, exactly as expected before the disconnect
 
@@ -375,7 +383,7 @@ TEST_CASE ("Disconnecting a Note source from instance.allocate.voice.spawn WHILE
     // (irrelevant to this test either way - re-fetch whatever is live now,
     // same as the real UI/audio path would see it).
     voiceNode = dynamic_cast<bazalt::engine::nodes::InstanceVoiceNode*> (
-        processor.getOriginVoicePlanSwapper (0, 0).peekCurrentPlan()->getNodeById ("alloc"));
+        processor.peekFirstVoicePlanForTesting (0)->getNodeById ("alloc"));
     REQUIRE (voiceNode != nullptr);
     CHECK_FALSE (voiceNode->getGate()); // the actual fix - not stuck at 1 forever
 
@@ -386,4 +394,41 @@ TEST_CASE ("Disconnecting a Note source from instance.allocate.voice.spawn WHILE
     noteOff.addEvent (juce::MidiMessage::noteOff (1, 60), 0);
     processor.processBlock (buffer, noteOff);
     CHECK_FALSE (voiceNode->getGate());
+}
+
+TEST_CASE ("The first note on each instance draws its own random1/random2", "[plugin][instanceAxis]")
+{
+    // Every instance compiles its own copy of the allocator, each counting its
+    // own spawns: without the instance slot in the seed, the first note on
+    // instance 0 and the first on instance 1 drew identical numbers.
+    NodeGraph graph;
+    graph.addNode ({ "noteIn", "io.noteIn", {}, {}, {} });
+    graph.addNode ({ "alloc", "life.voice", {}, {}, {} });
+    graph.addNode ({ "osc", "source.sine", {}, {}, {} });
+    graph.addNode ({ "sum", "life.merge", {}, {}, {} });
+    graph.addNode ({ "out", "io.output", {}, {}, {} });
+    graph.addConnection ({ "noteIn", "notes", "alloc", "spawn" });
+    graph.addConnection ({ "alloc", "gate", "osc", "source.sine.amplitude" });
+    graph.addConnection ({ "osc", "out", "sum", "in" });
+    graph.addConnection ({ "sum", "out", "out", "in" });
+    graph.setOutput ("out", "out");
+
+    BazaltAudioProcessor processor;
+    processor.prepareToPlay (48000.0, 256);
+    REQUIRE (processor.getGraphEditController().setGraph (graph).success);
+    juce::AudioBuffer<float> buffer (2, 256);
+    juce::MidiBuffer midi;
+    midi.addEvent (juce::MidiMessage::noteOn (1, 60, 0.8f), 0);
+    midi.addEvent (juce::MidiMessage::noteOn (1, 64, 0.8f), 0);
+    processor.processBlock (buffer, midi);
+
+    auto* plan = processor.peekFirstVoicePlanForTesting (0);
+    REQUIRE (plan != nullptr);
+    std::vector<float> drawn;
+    for (int i = 0; i < BazaltAudioProcessor::numVoices; ++i)
+        if (auto* voice = dynamic_cast<bazalt::engine::nodes::InstanceVoiceNode*> (plan->getNodeById ("alloc@" + juce::String (i))))
+            if (voice->getGate())
+                drawn.push_back (voice->getRandom1());
+    REQUIRE (drawn.size() == 2);
+    CHECK (drawn[0] != drawn[1]);
 }

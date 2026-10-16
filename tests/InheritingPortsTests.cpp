@@ -79,12 +79,12 @@ namespace
 TEST_CASE ("math.blend picks A at Amount 0 and B at Amount 1, and blends between them",
            "[engine][nodes][math][inheriting]")
 {
-    BlendNode node; // not prepared: no smoothing, each sample lands on its Amount
+    BlendNode node;
     float out = 0.0f;
 
     auto blend = [&] (float a, float b, float amount)
     {
-        const float inputs[3] = { a, b, amount };
+        const float inputs[4] = { a, b, amount, 0.0f }; // Glide 0: each sample lands on its Amount
         node.processSample (inputs, &out);
         return out;
     };
@@ -93,6 +93,26 @@ TEST_CASE ("math.blend picks A at Amount 0 and B at Amount 1, and blends between
     CHECK (blend (10.0f, 20.0f, 1.0f) == 20.0f); // a Boolean Amount is the old Select
     CHECK (blend (10.0f, 20.0f, 0.5f) == Catch::Approx (15.0f));
     CHECK (blend (10.0f, 20.0f, unwired) == Catch::Approx (15.0f)); // unwired: the stored 0.5
+}
+
+TEST_CASE ("math.blend glides its Amount, and Glide 0 switches on the sample", "[engine][nodes][math][inheriting]")
+{
+    BlendNode node;
+    node.prepare ({ 48000.0, 64 });
+    float out = 0.0f;
+    const float start[4] = { 0.0f, 1.0f, 0.0f, unwired };
+    node.processSample (start, &out);
+    const float flip[4] = { 0.0f, 1.0f, 1.0f, unwired };
+    node.processSample (flip, &out);
+    CHECK (out < 0.1f); // the default 5 ms glide: barely moved after one sample
+
+    BlendNode valve;
+    valve.prepare ({ 48000.0, 64 });
+    valve.setParameter ("math.blend.glide", 0.0f);
+    valve.processSample (start, &out);
+    const float flipNow[4] = { 0.0f, 1.0f, 1.0f, unwired };
+    valve.processSample (flipNow, &out);
+    CHECK (out == 1.0f);
 }
 
 TEST_CASE ("math.blend's A, B and Out adopt the wired type and quantity; Amount stays a 0..1 value",
@@ -158,7 +178,7 @@ TEST_CASE ("math.blend smooths a jump in Amount instead of stepping, at any samp
         BlendNode node;
         node.prepare ({ sampleRate, 64 });
         float out = 0.0f;
-        float inputs[3] = { 0.0f, 1.0f, 0.0f };
+        float inputs[4] = { 0.0f, 1.0f, 0.0f, std::numeric_limits<float>::quiet_NaN() }; // Glide unwired: the default
         node.processSample (inputs, &out);
         CHECK (out == 0.0f); // starts where it is asked to
 

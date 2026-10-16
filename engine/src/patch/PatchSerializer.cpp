@@ -963,6 +963,7 @@ namespace bazalt::engine
                         // whenTrue is B, and an unwired condition (false) is Amount 0.
                         object->setProperty ("type", "math.blend");
                         parameters.setProperty ("math.blend.amount", 0.0f);
+                        parameters.setProperty ("math.blend.glide", 0.0f); // Select switched on the sample
                         inputRenames[id] = { { "whenFalse", "a" }, { "whenTrue", "b" }, { "condition", "math.blend.amount" } };
                     }
                     else if (type == "view.scope.control" || type == "view.scope.modulation" || type == "view.gate")

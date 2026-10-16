@@ -76,6 +76,9 @@ add_executable(EngineTests
     HearingTests.cpp
     EqTests.cpp
     StochasticTests.cpp
+    InstanceAxisTests.cpp
+    QuantityAlgebraTests.cpp
+    DelayTests.cpp
     CurvePlayerNodeTests.cpp
     VoiceManagerTests.cpp
 )

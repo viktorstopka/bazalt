@@ -7,6 +7,7 @@
 #include "bazalt/engine/graph/PortGroups.h"
 #include "bazalt/engine/graph/ProofGraphs.h"
 #include "bazalt/engine/graph/Unwrap.h"
+#include "bazalt/engine/graph/InstanceExpansion.h"
 #include "bazalt/engine/nodes/InstanceMixNode.h"
 #include "bazalt/engine/nodes/InstanceOriginNode.h"
 #include "bazalt/engine/nodes/InstanceSwarmPopulationNode.h"
@@ -68,54 +69,18 @@ namespace bazalt
             return nullptr;
         }
 
-        // DomainRedesign.md Batch 1: MultiplicityResolver::split() always
-        // points globalGraph's own output designation at the GRAPH's real
-        // designated output — meaningful when that output resolved Scalar
-        // (split.hasGlobalDomain true, the ordinary case), but dangling
-        // when it resolved Poly instead (the origin's own voice-sum is the
-        // real audible output; globalGraph still gets compiled whenever it
-        // has OTHER, unrelated Scalar content, purely so GraphCompiler's
-        // validation runs on it — see recompileAndPublish()'s own comment).
-        // GraphCompiler requires a real node+port to compile against
-        // regardless of whether anything downstream ever reads it, so this
-        // retargets it to literally any real output port on any node
-        // globalGraph actually contains — never read by the driver in this
-        // case, exactly like DomainSplitter's own "point at the allocator's
-        // gate" fallback for an unbridged voiceGraph.
-        void ensureGlobalGraphHasAValidOutput (bazalt::engine::NodeGraph& globalGraph, const bazalt::engine::NodeFactory& factory)
-        {
-            if (globalGraph.findNode (globalGraph.getOutputNodeId()) != nullptr)
-                return; // the real output IS a member — nothing to do
-
-            for (const auto& node : globalGraph.getNodes())
-            {
-                auto instance = factory.create (node.type);
-                if (instance == nullptr)
-                    continue;
-
-                const auto ports = instance->getOutputPorts();
-                if (! ports.empty())
-                {
-                    globalGraph.setOutput (node.id, ports[0].id);
-                    return;
-                }
-            }
-
-            // Every node globalGraph contains is a pure sink (no output port
-            // at all, e.g. a lone, disconnected view.scope) — a real but
-            // extremely narrow gap: nothing here can give GraphCompiler a
-            // target, so this graph's own validation can't run this edit.
-            // Left as the resolver's own (now-dangling) designation; the
-            // compile below will fail with GraphCompiler's own clear
-            // "output node not found" message rather than silently
-            // succeeding against the wrong thing.
-        }
-
         // wiki/plans/UtilMacro.md Batch 2: which numbered host slot (0-31)
         // a "util.macro" node claims, or -1 if it's the unclaimed sentinel
         // (MacroNode.h's own doc comment on why -1, not a real slot
         // number, is the declared default) or the parameter is somehow
         // missing entirely — both treated identically to "unclaimed".
+        // A Trigger macro is a moment, not a position: nothing to remember.
+        bool isTriggerMacro (const bazalt::engine::NodeInstance& node)
+        {
+            const auto type = node.parameters.find ("util.macro.type");
+            return type != node.parameters.end() && type->second >= 1.5f;
+        }
+
         int macroSlotOf (const bazalt::engine::NodeInstance& node)
         {
             const auto it = node.parameters.find ("util.macro.slot");
@@ -684,6 +649,11 @@ namespace bazalt
                         instance.parameters["math.map.outMin"] = range->first;
                         instance.parameters["math.map.outMax"] = range->second;
                     }
+                    // …and its meaning, when the destination has a real one, so
+                    // the Map's output can go on through Add / Multiply.
+                    if (const auto q = (int) toPort->quantity; q > 0 && q <= 9 && toPort->quantity != bazalt::engine::Quantity::Unipolar
+                                                                    && toPort->quantity != bazalt::engine::Quantity::Bipolar)
+                        instance.parameters["math.map.quantity"] = (float) q;
                 }
                 else if (step.seedFromDestinationRange && toPort->minValue.has_value() && toPort->maxValue.has_value())
                 {
@@ -881,9 +851,6 @@ namespace bazalt
                     running->setContent (content);
         };
         apply (processor.getGlobalPlanSwapper().peekCurrentPlan());
-        for (int slot = 0; slot < BazaltAudioProcessor::maxOrigins; ++slot)
-            for (int i = 0; i < BazaltAudioProcessor::numVoices; ++i)
-                apply (processor.getOriginVoicePlanSwapper (slot, i).peekCurrentPlan());
         return { true, {} };
     }
 
@@ -935,7 +902,16 @@ namespace bazalt
         auto result = recompileAndPublish();
         freshStateOnNextCompile = false;
         if (! result.success)
+        {
             graph = previousGraph;
+            return result;
+        }
+
+        // A patch's macros open where they were saved (getGraphForSaving).
+        for (const auto& node : graph.getNodes())
+            if (const auto slot = macroSlotOf (node); slot >= 0 && slot < MacroParameters::numMacros && ! isTriggerMacro (node))
+                if (const auto stored = node.parameters.find ("util.macro.default"); stored != node.parameters.end())
+                    processor.getMacroParameter (slot).setValueNotifyingHost (juce::jlimit (0.0f, 1.0f, stored->second));
 
         return result;
     }
@@ -1003,8 +979,8 @@ namespace bazalt
         // A graph with a real instance.sum but no instance.allocate.voice
         // anywhere (every one currently unwired, since a wired one with no
         // Poly source is rejected by the resolver itself) has nothing to
-        // run per-voice at all — treated exactly like monoOnly for the
-        // runtime's purposes (one always-on global plan, no voice plans).
+        // run per instance at all — treated exactly like monoOnly (one plan,
+        // no instance groups).
         const auto effectiveMonoOnly = split.monoOnly || split.origins.empty();
 
         // 09-28-InstanceAllocator arc: computed once here, uniformly, for
@@ -1042,188 +1018,60 @@ namespace bazalt
                     newNodeDomains[node.id] = "voice";
         }
 
-        const bazalt::engine::NodePrepareInfo prepareInfo { sampleRate, blockSize };
+        return publishPlan (effectiveMonoOnly ? split.globalGraph : compiled, split, effectiveMonoOnly, std::move (newNodeDomains));
+    }
+
+    // The instance axis (wiki/plans/InstanceAxis.md): the whole patch compiles
+    // into one plan; each allocator is a group of it, driven by its bundle's
+    // VoiceManager (BazaltAudioProcessor::renderRange). A graph with no
+    // allocator compiles as is: the same plan with no groups.
+    GraphEditController::CommandResult GraphEditController::publishPlan (const bazalt::engine::NodeGraph& compiled,
+                                                                          const bazalt::engine::MultiplicityResult& split,
+                                                                          bool monoOnly,
+                                                                          std::unordered_map<juce::String, juce::String> newNodeDomains)
+    {
         auto& factory = processor.getNodeFactory();
+        const bazalt::engine::NodePrepareInfo prepareInfo { sampleRate, blockSize };
+        const auto slotForOrigin = monoOnly ? std::array<juce::String, BazaltAudioProcessor::maxOrigins> {}
+                                            : assignOriginBundleSlots (split.origins, processor);
+        const auto layout = monoOnly ? bazalt::engine::InstanceLayout {}
+                                     : bazalt::engine::computeInstanceLayout (split, [] (const juce::String&) { return BazaltAudioProcessor::numVoices; });
 
-        // M21 (DOMAINS.md §7): a graph with no active origin has no poly
-        // region, so the whole graph compiles ONCE and is published as the one
-        // global plan, which the processor runs every block. No voice plans are
-        // touched: every origin bundle is deactivated, and the next non-mono
-        // edit recompiles and republishes every one of them fresh.
-        if (effectiveMonoOnly)
-        {
-            const auto* previousPlan = freshStateOnNextCompile ? nullptr : processor.getGlobalPlanSwapper().peekCurrentPlan();
+        const auto* previousPlan = freshStateOnNextCompile ? nullptr : processor.getGlobalPlanSwapper().peekCurrentPlan();
+        auto result = bazalt::engine::compileWithInstances (compiled, layout, factory, prepareInfo, nextGeneration(), previousPlan);
+        if (! result.success)
+            return { false, result.errorMessage };
+        auto plan = std::make_unique<bazalt::engine::ExecutionPlan> (std::move (result.plan));
 
-            auto monoCompile = bazalt::engine::GraphCompiler::compile (
-                split.globalGraph, factory, prepareInfo, nextGeneration(), previousPlan);
-
-            if (! monoCompile.success)
-                return { false, monoCompile.errorMessage };
-
-            auto monoPlan = std::make_unique<bazalt::engine::ExecutionPlan> (std::move (monoCompile.plan));
-            auto newStereoOutputs = monoPlan->stereoOutputPortsByNode;
-
-            // ADR-0029: re-attach live preview taps to the new plan while
-            // nothing else can see it (a tap pointer lives on a plan).
-            processor.applyPreviewSubscriptions ({}, monoPlan.get());
-
-            auto& swapper = processor.getGlobalPlanSwapper();
-            swapper.reclaim();
-            const auto published = swapper.publish (std::move (monoPlan));
-            jassert (published);
-            juce::ignoreUnused (published);
-
-            hasGlobalDomain = false;
-            processor.setHasGlobalDomain (false);
-            processor.setOutputOriginBundleIndex (-1);
-            processor.setMonoOnly (true); // after the plan is live, so the audio thread never sees the flag first
-            processor.commitOriginBundleAssignments ({}); // every slot empty — no origin exists
-            nodeDomains = std::move (newNodeDomains);
-
-            std::unordered_map<juce::String, std::unordered_map<juce::String, PortMultiplicityInfo>> newPortMultiplicity;
-            markAllPorts (newPortMultiplicity, factory, split.globalGraph, "scalar", {});
-            portMultiplicity = std::move (newPortMultiplicity);
-            originBundleIndexByNodeId.clear();
-            stereoOutputs = std::move (newStereoOutputs);
-
-            processor.setMacroMappings (deriveMacroMappings (graph));
-
-            return { true, {} };
-        }
-
-        // wiki/plans/DomainRedesign.md Batch 2: which numbered bundle slot
-        // each of this compile's origins will occupy — computed up front,
-        // read-only, so every compile below can reuse the RIGHT slot's
-        // previously-published plans for state-pool continuity, and so the
-        // eventual commit (only once everything below succeeds) is a
-        // single, simple pass.
-        const auto slotForOrigin = assignOriginBundleSlots (split.origins, processor);
-
-        // origin voice plans, keyed by bundle slot (only the slots this
-        // compile actually uses are populated) — kept as raw owning arrays
-        // rather than one flat vector so a failure partway through never
-        // needs to guess which entries belong to which origin.
-        std::array<std::array<std::unique_ptr<bazalt::engine::ExecutionPlan>, BazaltAudioProcessor::numVoices>, BazaltAudioProcessor::maxOrigins> newVoicePlansBySlot;
-
-        // wiki/plans/DomainRedesign.md Batch 4: this origin's own
-        // "life.voice.maxInstances", read off the REAL
-        // compiled node (whatever the graph's own NodeInstance::parameters
-        // actually applied, default included) — captured per-slot here
-        // and enforced (VoiceManager::setMaxActiveVoices) only once every
-        // compile below has succeeded, at the same commit point everything
-        // else in this function already waits for.
         std::array<int, BazaltAudioProcessor::maxOrigins> maxInstancesBySlot {};
-
-        // Domain Extensions batch: -1 (default) for every slot unless a
-        // swarmPopulation origin is found there below — see
-        // BazaltAudioProcessor::OriginBundle::swarmPopulationSize's own doc
-        // comment for what this actually changes in renderOriginVoiceRange.
         std::array<int, BazaltAudioProcessor::maxOrigins> swarmPopulationSizeBySlot {};
         swarmPopulationSizeBySlot.fill (-1);
 
-        for (const auto& origin : split.origins)
+        for (auto& runtime : plan->instanceGroups)
         {
-            const auto slot = bundleSlotOf (slotForOrigin, origin.originId);
-            jassert (slot >= 0); // assignOriginBundleSlots() always places every origin it's given
+            const auto slot = bundleSlotOf (slotForOrigin, runtime->originId);
+            runtime->bundleSlot = slot;
+            if (slot < 0)
+                continue;
 
-            // Real, found-live bug (direct feedback: "when I disconnect
-            // scale quantize from Voice it sometimes gets stuck on gate
-            // being 1"): InstanceVoiceNode's own gate/pitch/velocity state
-            // only ever changes on a Note-block start/stop edge
-            // (consumeNoteBlock() -> noteOn()/noteOff(), InstanceVoiceNode.h).
-            // Once nothing feeds "spawn" at all, consumeNoteBlock() is
-            // never called again, so a gate that was true the instant the
-            // wire disappeared stays true forever — and M17's own
-            // state-pool reuse then carries that exact stuck object
-            // forward across every LATER recompile too, since removing an
-            // unrelated incoming connection never changes this node's own
-            // (id, type, parameters). Computed once per origin (a static
-            // fact about origin.voiceGraph's own connection list, the same
-            // for every voice lane's compiled copy below), not per lane.
-            // Checks both "spawn" (Voice/Swarm-transient's own input id) and
-            // "trigger" (Trigger's own, Domain Extensions Batch 4) — the two
-            // event-driven origin types' own spawn-source port ids.
-            const auto spawnConnected = std::any_of (
-                origin.voiceGraph.getConnections().begin(), origin.voiceGraph.getConnections().end(),
-                [&origin] (const bazalt::engine::Connection& c)
-                {
-                    return c.toNodeId == origin.originId
-                           && (c.toPortId == "spawn" || c.toPortId == "trigger");
-                });
+            // A gate that can no longer hear its stop (nothing wired to spawn /
+            // trigger) is released, never left sounding.
+            const auto& connections = compiled.getConnections();
+            const auto spawnConnected = std::any_of (connections.begin(), connections.end(), [&runtime] (const bazalt::engine::Connection& c)
+                                                     { return c.toNodeId == runtime->originId && (c.toPortId == "spawn" || c.toPortId == "trigger"); });
 
-            for (int i = 0; i < BazaltAudioProcessor::numVoices; ++i)
+            for (int i = 0; i < runtime->count; ++i)
             {
-                // M17 state pool: this voice's currently-published plan (if
-                // any) is passed as `previousPlan` so GraphCompiler can reuse
-                // unchanged nodes' DSP state — peekCurrentPlan(), not
-                // getCurrentPlanForAudioThread() (see PlanSwapper.h's own
-                // comment on why that distinction matters here). Reads from
-                // the SAME slot this origin already occupies (or a freshly
-                // empty one for a brand-new origin) — never a different
-                // origin's own plans.
-                const auto* previousPlan = freshStateOnNextCompile ? nullptr : processor.getOriginVoicePlanSwapper (slot, i).peekCurrentPlan();
-
-                auto compileResult = bazalt::engine::GraphCompiler::compile (
-                    origin.voiceGraph, factory, prepareInfo, nextGeneration(), previousPlan);
-
-                if (! compileResult.success)
-                    return { false, compileResult.errorMessage };
-
-                newVoicePlansBySlot[(size_t) slot][(size_t) i] =
-                    std::make_unique<bazalt::engine::ExecutionPlan> (std::move (compileResult.plan));
-
-                // One summed output per instance.sum reducing this origin:
-                // the first is the plan's own final output, every further
-                // one is read straight off its feeding port's buffer.
+                auto* node = runtime->originNodes[(size_t) i];
+                if (auto* allocator = dynamic_cast<bazalt::engine::nodes::InstanceOriginNode*> (node))
                 {
-                    auto& plan = *newVoicePlansBySlot[(size_t) slot][(size_t) i];
-                    plan.sumOutputs[0] = { plan.finalOutputBufferIndex, plan.finalOutputBufferIndexRight };
-                    plan.numSumOutputs = 1;
-                    for (size_t s = 1; s < origin.sums.size(); ++s)
-                    {
-                        const auto& sum = origin.sums[s];
-                        const auto left = plan.findOutputBufferIndex (sum.fromNodeId, sum.fromPortId);
-                        if (left < 0)
-                            return { false, "Merge '" + sum.sumNodeId + "' is fed from inside a feedback loop — "
-                                                "take its input from outside the loop" };
-                        plan.sumOutputs[s] = { left, plan.findRightOutputBufferIndex (sum.fromNodeId, sum.fromPortId) };
-                        plan.numSumOutputs = (int) s + 1;
-                    }
-                }
-
-                // Domain Extensions batch: InstanceOriginNode*, not the
-                // concrete InstanceVoiceNode* this used to be — Swarm-
-                // transient/Trigger need this same maxInstances capture +
-                // stuck-gate cleanup, not just Voice. getMaxInstances()/
-                // getGate()/releaseInstance() are all real InstanceOriginNode
-                // interface methods now.
-                if (auto* allocator = dynamic_cast<bazalt::engine::nodes::InstanceOriginNode*> (
-                        newVoicePlansBySlot[(size_t) slot][(size_t) i]->getNodeById (origin.originId)))
-                {
+                    allocator->setSpawnSlot (i);
                     if (i == 0)
                         maxInstancesBySlot[(size_t) slot] = allocator->getMaxInstances();
-
-                    // Only when genuinely stuck (still gated, with no way
-                    // left to ever hear a stop edge) — never spam a
-                    // spurious release on every recompile of an ordinary,
-                    // never-wired-up allocator, which would incorrectly
-                    // read as a real transition to PluginProcessor's own
-                    // internal-trigger detection (InstanceVoiceNode.h's
-                    // consumeSpawnEventsThisBlock() doc comment). spawnConnected
-                    // (above) already checks both "spawn" and "trigger".
                     if (! spawnConnected && allocator->getGate())
                         allocator->releaseInstance();
                 }
-                // Domain Extensions batch: a swarm-population origin has no
-                // noteOn()-driven instanceIndex at all (nothing ever spawns
-                // it — "fixed count, always live") — this is the one and
-                // only place anything tells each of the N physically-
-                // compiled copies which slot it is, needed so
-                // populationSize/seed can differ each copy's own
-                // gate/random/position deterministically. See
-                // InstanceSwarmPopulationNode.h's own doc comment.
-                else if (auto* swarm = dynamic_cast<bazalt::engine::nodes::InstanceSwarmPopulationNode*> (
-                             newVoicePlansBySlot[(size_t) slot][(size_t) i]->getNodeById (origin.originId)))
+                else if (auto* swarm = dynamic_cast<bazalt::engine::nodes::InstanceSwarmPopulationNode*> (node))
                 {
                     swarm->setInstanceSlot (i);
                     if (i == 0)
@@ -1232,202 +1080,56 @@ namespace bazalt
             }
         }
 
-        std::unique_ptr<bazalt::engine::ExecutionPlan> newGlobalPlan;
-        // Compile globalGraph whenever it has real content — NOT only when
-        // split.hasGlobalDomain is true. Those are different questions
-        // under this resolver (DomainRedesign.md §10.2 step 6): hasGlobalDomain
-        // says whether the AUDIO PATH needs the global plan's own output to
-        // override some origin's raw voice sum (unchanged meaning, still
-        // gates processor.setHasGlobalDomain() below); it says nothing about
-        // whether globalGraph is EMPTY. When the designated output itself
-        // resolved Poly (hasGlobalDomain false) there can still be real,
-        // unrelated Scalar content elsewhere in the graph (an origin's own
-        // trigger source never leaks in here — the resolver's own
-        // globalMembers rule excludes it — but an ordinary orphan node, or
-        // one mid-construction, does) that still needs to actually compile
-        // — skipping it here used to mean GraphCompiler's own validation
-        // (an invalid port, a growable-group overflow, ...) never ran on
-        // it at all, silently accepting a malformed edit. It's compiled and
-        // published regardless (harmless: the audio thread never runs it
-        // while hasGlobalDomain is false, exactly as before this fix), so
-        // that malformed content still fails the compile and rolls back.
-        // wiki/plans/StereoChannels.md: each origin's instance.sum carries as
-        // many channels as that origin's voices produce, known only now that
-        // the voice plans are compiled.
-        for (const auto& origin : split.origins)
-        {
-            const auto slot = bundleSlotOf (slotForOrigin, origin.originId);
-            if (slot < 0)
-                continue;
-            const auto& voicePlan = newVoicePlansBySlot[(size_t) slot][0];
-            if (voicePlan == nullptr)
-                continue;
-            for (size_t s = 0; s < origin.sums.size(); ++s)
-                if (auto* sumNode = split.globalGraph.findNode (origin.sums[s].sumNodeId))
-                    sumNode->parameters[bazalt::engine::nodes::InstanceMixNode::channelsParameterId] =
-                        voicePlan->sumOutputs[s].right >= 0 ? 2.0f : 1.0f;
-        }
-
-        if (! split.globalGraph.getNodes().empty())
-        {
-            // Real, found-live bug (direct feedback: "moving a node's
-            // position restarts the whole sound"): unlike the per-voice
-            // compile above, this call never passed `previousPlan` at all -
-            // every global-domain node (everything from instance.sum
-            // onward: pan, output, any post-mix effect) got a completely
-            // fresh Node instance on EVERY recompile, discarding whatever
-            // state it held, on every single edit including a plain move.
-            // The per-voice loop above already gets this right; this branch
-            // just never had its own matching peekCurrentPlan() call.
-            const auto* previousGlobalPlan = freshStateOnNextCompile ? nullptr : processor.getGlobalPlanSwapper().peekCurrentPlan();
-
-            ensureGlobalGraphHasAValidOutput (split.globalGraph, factory);
-
-            auto globalCompileResult = bazalt::engine::GraphCompiler::compile (
-                split.globalGraph, factory, prepareInfo, nextGeneration(), previousGlobalPlan);
-
-            if (! globalCompileResult.success)
-                return { false, globalCompileResult.errorMessage };
-
-            newGlobalPlan = std::make_unique<bazalt::engine::ExecutionPlan> (std::move (globalCompileResult.plan));
-
-            // One shared global plan can now carry several origins'
-            // instance.sum nodes at once (DomainRedesign.md §4's multiple
-            // independent voice regions) — each hand-off is keyed by that
-            // origin's own stable bundle slot, the same index the audio
-            // thread already has for that origin's own scratch buffer.
-            for (const auto& origin : split.origins)
-            {
-                const auto slot = bundleSlotOf (slotForOrigin, origin.originId);
-                if (slot < 0)
-                    continue;
-
-                for (size_t s = 0; s < origin.sums.size(); ++s)
-                    newGlobalPlan->externalInputNodeIds[(size_t) slot][s] = origin.sums[s].sumNodeId;
-            }
-        }
-
-        // ADR-0029: re-attach live preview taps to the new plans before any of
-        // them is published - until then the audio thread cannot see them, so
-        // this cannot race. Without it every edit silently detached every
-        // preview (a tap pointer lives on a plan, and every edit builds new ones).
-        {
-            std::vector<bazalt::engine::ExecutionPlan*> voicePlanPointers;
-            voicePlanPointers.reserve (split.origins.size() * (size_t) BazaltAudioProcessor::numVoices);
-
-            for (const auto& origin : split.origins)
-            {
-                const auto slot = bundleSlotOf (slotForOrigin, origin.originId);
-                for (auto& plan : newVoicePlansBySlot[(size_t) slot])
-                    voicePlanPointers.push_back (plan.get());
-            }
-
-            processor.applyPreviewSubscriptions (voicePlanPointers, newGlobalPlan.get());
-        }
-
-        // A node lives in one origin's voice plans (identical across its
-        // voices) or in the global plan; collect before the plans are handed off.
         std::unordered_map<juce::String, std::vector<juce::String>> newStereoOutputs;
-        for (const auto& origin : split.origins)
-        {
-            const auto slot = bundleSlotOf (slotForOrigin, origin.originId);
-            if (slot < 0)
-                continue;
-            if (const auto& plan = newVoicePlansBySlot[(size_t) slot][0])
-                for (const auto& [nodeId, ports] : plan->stereoOutputPortsByNode)
-                    newStereoOutputs[nodeId] = ports;
-        }
-        if (newGlobalPlan)
-            for (const auto& [nodeId, ports] : newGlobalPlan->stereoOutputPortsByNode)
-                newStereoOutputs[nodeId] = ports;
+        for (const auto& [nodeId, ports] : plan->stereoOutputPortsByNode)
+            newStereoOutputs[bazalt::engine::baseNodeId (nodeId)] = ports;
 
-        // Every compile succeeded — publish. Never partially publish on a
-        // failure path above; this is the point past which the edit is
-        // committed. PlanSwapper's 4-slot pool is normally kept clear by
-        // the plugin's ~50ms reclaim timer (PluginProcessor::timerCallback),
-        // but that timer doesn't run in a headless test (no message loop),
-        // and even in a real host several edits within one 50ms window
-        // (e.g. a UI dragging a slider, each tick its own setParameterValue
-        // command) could outrun it. Reclaiming right before every publish
-        // makes success here independent of that timer's schedule — with
-        // one edit in flight at a time, reclaim() always frees at least one
-        // of the 4 slots, so this isn't a busy/blocking loop in practice.
-        for (const auto& origin : split.origins)
-        {
-            const auto slot = bundleSlotOf (slotForOrigin, origin.originId);
+        // ADR-0029: re-attach live preview taps to the new plan while nothing
+        // else can see it (a tap pointer lives on a plan).
+        processor.applyPreviewSubscriptions (plan.get());
 
-            for (int i = 0; i < BazaltAudioProcessor::numVoices; ++i)
-            {
-                auto& swapper = processor.getOriginVoicePlanSwapper (slot, i);
-                swapper.reclaim();
-                const auto published = swapper.publish (std::move (newVoicePlansBySlot[(size_t) slot][(size_t) i]));
-                jassert (published);
-                juce::ignoreUnused (published);
-            }
-        }
+        auto& swapper = processor.getGlobalPlanSwapper();
+        swapper.reclaim();
+        const auto published = swapper.publish (std::move (plan));
+        jassert (published);
+        juce::ignoreUnused (published);
 
-        if (newGlobalPlan)
-        {
-            processor.getGlobalPlanSwapper().reclaim();
-            const auto published = processor.getGlobalPlanSwapper().publish (std::move (newGlobalPlan));
-            jassert (published);
-            juce::ignoreUnused (published);
-        }
-
-        hasGlobalDomain = split.hasGlobalDomain;
-        processor.setHasGlobalDomain (hasGlobalDomain);
-        processor.setOutputOriginBundleIndex (hasGlobalDomain ? -1 : bundleSlotOf (slotForOrigin, split.outputOriginId));
-        processor.setMonoOnly (false); // after the voice (and global) plans are live
-        processor.commitOriginBundleAssignments (slotForOrigin); // after everything above is live
+        processor.commitOriginBundleAssignments (slotForOrigin); // after the plan is live
+        // What the resolver pulled into a voice region only to feed it (an LFO,
+        // a constant) runs once: it is shown as shared, not as voices.
+        for (auto& [nodeId, domain] : newNodeDomains)
+            if (domain == "voice" && layout.groupOf (nodeId) < 0)
+                domain = "global";
         nodeDomains = std::move (newNodeDomains);
 
-        // wiki/plans/DomainRedesign.md Batch 4: the instance-count badge's
-        // "maxCount" half, actually enforced now (VoiceManager::
-        // setMaxActiveVoices) rather than merely read back for display.
         for (const auto& origin : split.origins)
-        {
-            const auto slot = bundleSlotOf (slotForOrigin, origin.originId);
-            if (slot >= 0)
+            if (const auto slot = bundleSlotOf (slotForOrigin, origin.originId); slot >= 0)
                 processor.setOriginMaxVoices (slot, maxInstancesBySlot[(size_t) slot]);
-        }
-
-        // Domain Extensions batch: ALL maxOrigins slots, unconditionally -
-        // not just this compile's occupied ones (unlike the maxInstances
-        // loop just above). A slot whose origin was just deleted, or
-        // changed from swarmPopulation to Voice/something else, MUST have
-        // this reset back to -1 here, or a stale >= 0 value would keep
-        // forcing phantom always-on voices into what's now an ordinary
-        // demand-driven origin - a real correctness bug, not just a cosmetic
-        // staleness the way a stale maxInstances ceiling would be.
         for (int slot = 0; slot < BazaltAudioProcessor::maxOrigins; ++slot)
             processor.setSwarmPopulationSize (slot, swarmPopulationSizeBySlot[(size_t) slot]);
 
-        // DomainDot's real replacement — per-port, not per-node (§2.4's two
-        // boundary node types have real mixed per-port shapes).
         std::unordered_map<juce::String, std::unordered_map<juce::String, PortMultiplicityInfo>> newPortMultiplicity;
         std::unordered_map<juce::String, int> newOriginBundleIndexByNodeId;
-
         markAllPorts (newPortMultiplicity, factory, split.globalGraph, "scalar", {});
-        for (const auto& origin : split.origins)
+        for (const auto& origin : monoOnly ? std::vector<bazalt::engine::MultiplicityOrigin> {} : split.origins)
         {
-            markAllPorts (newPortMultiplicity, factory, origin.voiceGraph, "poly", origin.originId);
-            const auto slot = bundleSlotOf (slotForOrigin, origin.originId);
-            if (slot >= 0)
+            // Poly (drawn as a stack of cards) only for what really runs per
+            // instance.
+            bazalt::engine::NodeGraph perInstance, once;
+            for (const auto& node : origin.voiceGraph.getNodes())
+                (layout.groupOf (node.id) >= 0 ? perInstance : once).addNode (node);
+            markAllPorts (newPortMultiplicity, factory, once, "scalar", {});
+            markAllPorts (newPortMultiplicity, factory, perInstance, "poly", origin.originId);
+            if (const auto slot = bundleSlotOf (slotForOrigin, origin.originId); slot >= 0)
                 newOriginBundleIndexByNodeId[origin.originId] = slot;
-
-            // instance.sum's own "in" port is the one fixed exception: the
-            // NODE lives in globalGraph (marked scalar above), but this ONE
-            // port specifically reduces a real Poly signal.
             for (const auto& sum : origin.sums)
                 newPortMultiplicity[sum.sumNodeId]["in"] = { "poly", origin.originId };
         }
-
         portMultiplicity = std::move (newPortMultiplicity);
         originBundleIndexByNodeId = std::move (newOriginBundleIndexByNodeId);
         stereoOutputs = std::move (newStereoOutputs);
 
         processor.setMacroMappings (deriveMacroMappings (graph));
-
         return { true, {} };
     }
 
@@ -1435,8 +1137,16 @@ namespace bazalt
     {
         auto saved = graph;
         for (const auto& node : graph.getNodes())
+        {
             if (node.type == "view.listen")
                 saved.removeNode (node.id);
+
+            // Every macro remembers where its knob is, so the patch opens the
+            // way it was saved (setGraph puts it back).
+            if (const auto slot = macroSlotOf (node); slot >= 0 && slot < MacroParameters::numMacros && ! isTriggerMacro (node))
+                if (auto* stored = const_cast<bazalt::engine::NodeInstance*> (saved.findNode (node.id)))
+                    stored->parameters["util.macro.default"] = static_cast<juce::AudioProcessorParameter&> (processor.getMacroParameter (slot)).getValue();
+        }
         return saved;
     }
 

@@ -1,4 +1,5 @@
 #include <catch2/catch_test_macros.hpp>
+#include "bazalt/engine/nodes/DelayNode.h"
 #include "PluginProcessor.h"
 #include "bazalt/engine/graph/ProofGraphs.h"
 #include "bazalt/engine/graph/Node.h"
@@ -81,12 +82,14 @@ TEST_CASE ("connectWithAutoAdapt inserts and seeds a real adapt.map node for Uni
     REQUIRE (mapNode != nullptr);
 
     // Output range seeded from the destination port's own range —
-    // delay.line's default maxDelaySamples is 4096 (DelayNode.h's
-    // constructor default); input range from the Unipolar source, 0..1.
+    // time.delay's default maxDelaySamples (DelayNode::defaultMaxDelaySamples);
+    // input range from the Unipolar source, 0..1.
     REQUIRE (mapNode->parameters.count ("math.map.outMin") == 1);
     CHECK (mapNode->parameters.at ("math.map.outMin") == 1.0f);
     REQUIRE (mapNode->parameters.count ("math.map.outMax") == 1);
-    CHECK (mapNode->parameters.at ("math.map.outMax") == 4096.0f);
+    CHECK (mapNode->parameters.at ("math.map.outMax") == (float) bazalt::engine::nodes::DelayNode::defaultMaxDelaySamples);
+    // …and the Map names its output a time, so it can go on through math.
+    CHECK (mapNode->parameters.at ("math.map.quantity") == (float) bazalt::engine::Quantity::Time);
     REQUIRE (mapNode->parameters.count ("math.map.inMin") == 1);
     CHECK (mapNode->parameters.at ("math.map.inMin") == 0.0f);
     CHECK (mapNode->parameters.at ("math.map.inMax") == 1.0f);
