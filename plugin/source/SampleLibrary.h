@@ -19,6 +19,21 @@ namespace bazalt
         concern (CLAUDE.md rule 4). Message thread (the WebView handlers and
         GraphEditController) — decoding a long file takes a moment, never the
         audio thread. */
+    /** Standard base64 (RFC 4648) — what the WebView's FileReader and patch
+        files use. Not juce::MemoryBlock::fromBase64Encoding / toBase64Encoding:
+        those are JUCE's own "size.chars" format and can't read a browser's base64. */
+    inline bool decodeBase64 (const juce::String& text, juce::MemoryBlock& bytes)
+    {
+        bytes.reset();
+        juce::MemoryOutputStream out (bytes, false);
+        return juce::Base64::convertFromBase64 (out, text.trim());
+    }
+
+    inline juce::String encodeBase64 (const juce::MemoryBlock& bytes)
+    {
+        return juce::Base64::toBase64 (bytes.getData(), bytes.getSize());
+    }
+
     class SampleLibrary
     {
     public:

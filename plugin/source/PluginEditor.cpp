@@ -418,7 +418,7 @@ namespace bazalt
         options = options.withNativeFunction ("sampleImport", [&processor] (Args args, Completion completion)
         {
             juce::MemoryBlock bytes;
-            if (! bytes.fromBase64Encoding (argString (args, 1)))
+            if (! decodeBase64 (argString (args, 1), bytes) || bytes.isEmpty())
             {
                 auto* obj = new juce::DynamicObject();
                 obj->setProperty ("success", false);

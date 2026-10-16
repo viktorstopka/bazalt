@@ -265,3 +265,24 @@ TEST_CASE ("Freezing a Record of a pitch cable gives a Pitch sample in the libra
                                                              (uint8_t) bazalt::engine::Quantity::Audio);
     CHECK (published->sampleMeta.channelQuantities.at (0) == (uint8_t) bazalt::engine::Quantity::Pitch);
 }
+
+TEST_CASE ("A file arrives from the WebView as standard base64", "[plugin][sample][3a]")
+{
+    // What FileReader.readAsDataURL gives (after "data:...;base64,"): RFC 4648.
+    juce::MemoryBlock man ("Man", 3);
+    CHECK (encodeBase64 (man) == "TWFu");
+    juce::MemoryBlock decoded;
+    REQUIRE (decodeBase64 ("TWFu", decoded));
+    CHECK (decoded == man);
+
+    TempDir temp;
+    bazalt::engine::SampleStore::instance().clearForTesting();
+    const SampleLibrary library (temp.dir);
+    const auto wav = sineWav();
+    juce::MemoryBlock bytes;
+    REQUIRE (decodeBase64 (encodeBase64 (wav), bytes));
+    CHECK (bytes == wav);
+    const auto imported = library.importFile ("sine.wav", bytes);
+    INFO (imported.errorMessage);
+    CHECK (imported.success);
+}

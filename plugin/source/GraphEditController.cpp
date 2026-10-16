@@ -1173,7 +1173,7 @@ namespace bazalt
             if (assetId.startsWith (sampleAssetPrefix))
             {
                 juce::MemoryBlock bytes;
-                if (bytes.fromBase64Encoding (asset.data))
+                if (decodeBase64 (asset.data, bytes))
                     sampleLibrary.importAs (assetId.fromFirstOccurrenceOf (sampleAssetPrefix, false, false), {}, bytes);
                 embedded.push_back (assetId);
             }
@@ -1304,7 +1304,7 @@ namespace bazalt
             const auto bytes = sampleLibrary.storedBytes (id);
             if (bytes.isEmpty())
                 return { false, "The sample '" + node.content.getProperty ("name", id).toString() + "' is missing - find it first" };
-            doc.assets[sampleAssetPrefix + id] = { "audio/flac", bytes.toBase64Encoding() };
+            doc.assets[sampleAssetPrefix + id] = { "audio/flac", encodeBase64 (bytes) };
         }
 
         const auto parentDir = file.getParentDirectory();
