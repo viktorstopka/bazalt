@@ -1,4 +1,5 @@
 #include "GraphEditController.h"
+#include "bazalt/engine/nodes/LifePopulationNode.h"
 #include <optional>
 #include "PluginProcessor.h"
 #include "bazalt/engine/graph/CanConnect.h"
@@ -1034,8 +1035,26 @@ namespace bazalt
         const bazalt::engine::NodePrepareInfo prepareInfo { sampleRate, blockSize };
         const auto slotForOrigin = monoOnly ? std::array<juce::String, BazaltAudioProcessor::maxOrigins> {}
                                             : assignOriginBundleSlots (split.origins, processor);
+        // Each allocator runs as many instances as its own count asks for —
+        // read off a scratch node with the patch's parameters, so the node
+        // type alone decides what its count means.
+        const auto instanceCountOf = [&factory, &compiled] (const juce::String& originId)
+        {
+            const auto* instance = compiled.findNode (originId);
+            auto node = instance != nullptr ? factory.create (instance->type) : nullptr;
+            if (node == nullptr)
+                return 1;
+            for (const auto& [id, value] : instance->parameters)
+                node->setParameter (id, value);
+            auto count = 1;
+            if (const auto* allocator = dynamic_cast<const bazalt::engine::nodes::InstanceOriginNode*> (node.get()))
+                count = allocator->getMaxInstances();
+            else if (const auto* swarm = dynamic_cast<const bazalt::engine::nodes::InstanceSwarmPopulationNode*> (node.get()))
+                count = swarm->getPopulationSize();
+            return juce::jlimit (1, BazaltAudioProcessor::maxInstances, count);
+        };
         const auto layout = monoOnly ? bazalt::engine::InstanceLayout {}
-                                     : bazalt::engine::computeInstanceLayout (split, [] (const juce::String&) { return BazaltAudioProcessor::numVoices; });
+                                     : bazalt::engine::computeInstanceLayout (split, instanceCountOf);
 
         const auto* previousPlan = freshStateOnNextCompile ? nullptr : processor.getGlobalPlanSwapper().peekCurrentPlan();
         auto result = bazalt::engine::compileWithInstances (compiled, layout, factory, prepareInfo, nextGeneration(), previousPlan);
@@ -1047,10 +1066,14 @@ namespace bazalt
         std::array<int, BazaltAudioProcessor::maxOrigins> swarmPopulationSizeBySlot {};
         swarmPopulationSizeBySlot.fill (-1);
 
+        std::array<bazalt::engine::VoiceManager::StealPolicy, BazaltAudioProcessor::maxOrigins> stealPolicyBySlot {};
+        stealPolicyBySlot.fill (bazalt::engine::VoiceManager::StealPolicy::Oldest);
+
         for (auto& runtime : plan->instanceGroups)
         {
             const auto slot = bundleSlotOf (slotForOrigin, runtime->originId);
             runtime->bundleSlot = slot;
+            runtime->birthSink = processor.getBirthSink();
             if (slot < 0)
                 continue;
 
@@ -1063,12 +1086,21 @@ namespace bazalt
             for (int i = 0; i < runtime->count; ++i)
             {
                 auto* node = runtime->originNodes[(size_t) i];
+                if (auto* member = dynamic_cast<bazalt::engine::nodes::LifePopulationNode*> (node); member != nullptr && i == 0)
+                {
+                    using Policy = bazalt::engine::VoiceManager::StealPolicy;
+                    using WhenFull = bazalt::engine::nodes::LifePopulationNode::WhenFull;
+                    const auto whenFull = member->getWhenFull();
+                    stealPolicyBySlot[(size_t) slot] = whenFull == WhenFull::Ignore     ? Policy::Ignore
+                                                     : whenFull == WhenFull::StealQuietest ? Policy::Quietest
+                                                                                         : Policy::Oldest;
+                }
                 if (auto* allocator = dynamic_cast<bazalt::engine::nodes::InstanceOriginNode*> (node))
                 {
                     allocator->setSpawnSlot (i);
                     if (i == 0)
                         maxInstancesBySlot[(size_t) slot] = allocator->getMaxInstances();
-                    if (! spawnConnected && allocator->getGate())
+                    if (! spawnConnected && allocator->getGate() && dynamic_cast<bazalt::engine::nodes::LifePopulationNode*> (node) == nullptr)
                         allocator->releaseInstance();
                 }
                 else if (auto* swarm = dynamic_cast<bazalt::engine::nodes::InstanceSwarmPopulationNode*> (node))
@@ -1104,7 +1136,10 @@ namespace bazalt
 
         for (const auto& origin : split.origins)
             if (const auto slot = bundleSlotOf (slotForOrigin, origin.originId); slot >= 0)
+            {
                 processor.setOriginMaxVoices (slot, maxInstancesBySlot[(size_t) slot]);
+                processor.setOriginStealPolicy (slot, stealPolicyBySlot[(size_t) slot]);
+            }
         for (int slot = 0; slot < BazaltAudioProcessor::maxOrigins; ++slot)
             processor.setSwarmPopulationSize (slot, swarmPopulationSizeBySlot[(size_t) slot]);
 

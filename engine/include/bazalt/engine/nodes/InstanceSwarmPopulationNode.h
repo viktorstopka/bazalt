@@ -1,5 +1,6 @@
 #pragma once
 
+#include "bazalt/engine/graph/InstanceGroups.h"
 #include "bazalt/engine/graph/Node.h"
 #include "bazalt/engine/graph/ValueTypes.h"
 #include "bazalt/engine/nodes/InstanceSeeding.h"
@@ -89,7 +90,7 @@ namespace bazalt::engine::nodes
                 // many instances are ALWAYS live, full stop.
                 ParameterDescriptor { .id = "life.swarmPopulation.populationSize",
                                        .minValue = 1.0f,
-                                       .maxValue = 64.0f,
+                                       .maxValue = (float) maxInstancesPerGroup,
                                        .defaultValue = 8.0f,
                                        .displayName = "Population Size",
                                        .isInteger = true,

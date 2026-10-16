@@ -220,70 +220,10 @@ namespace bazalt::engine
             (Node::setContent()'s contract makes that safe on a running node). */
         std::unordered_map<juce::String, juce::String> nodeIdToAppliedContent;
 
-        // Empty (each entry) for an ordinary plan. Set once, by whoever
-        // compiles this plan, before it's ever published (PlanSwapper) —
-        // never mutated after, so reading it from the audio thread via a
-        // published pointer is exactly as safe as reading anything else on
-        // this otherwise-immutable object. Generic on purpose (not
-        // "instanceSumNodeId"): any future node type that needs a per-block
-        // value supplied from outside its own graph (InstanceMixNode.h is
-        // the first, superseding the original VoiceSumNode.h — M17) can reuse this
-        // same mechanism rather than each inventing its own thread-safe
-        // driver-to-audio-thread handoff.
-        //
-        // wiki/plans/DomainRedesign.md Batch 2: generalized from a single
-        // juce::String to one entry per possible origin — the ONE shared
-        // global plan can now contain several "life.merge" nodes at once
-        // (one per origin bridging into it, DomainRedesign.md §4's multiple
-        // independent voice regions), each needing its own driver hand-off.
-        // Indexed by origin BUNDLE slot (BazaltAudioProcessor::OriginBundle),
-        // the same stable index GraphEditController assigns when compiling —
-        // not by any property of the node graph itself. Sized to
-        // MultiplicityResolver::maxOrigins's own value (4) directly rather
-        // than by including that header here — ExecutionPlan is GraphCompiler's
-        // OWN output type and shouldn't need to know about the resolver that
-        // runs before it; keep the two numbers in sync if either changes.
-        //
-        // Several instance.sum nodes may reduce one origin (a voice feeding a
-        // main chain AND a separate layer), so each origin slot holds up to
-        // maxSumsPerOrigin ids, in the same order as that origin's voice
-        // plans' `sumOutputs` (MultiplicityResolver::maxSumsPerOrigin — keep
-        // in sync, same reasoning as maxOrigins).
-        static constexpr int maxOrigins = 4;
-        static constexpr int maxSumsPerOrigin = 4;
-        std::array<std::array<juce::String, maxSumsPerOrigin>, maxOrigins> externalInputNodeIds;
-
-        // Voice plans only: which buffers each of this origin's instance.sum
-        // nodes reads, in externalInputNodeIds' order (entry 0 is always the
-        // plan's own final output). `right` is -1 for a mono signal. Set once
-        // before publish, like externalInputNodeIds; `numSumOutputs` is 1
-        // for a plan with no instance.sum (the final output alone).
-        struct SumOutput
-        {
-            int left = -1;
-            int right = -1;
-        };
-        std::array<SumOutput, maxSumsPerOrigin> sumOutputs {};
-        int numSumOutputs = 0;
-
-        // Real bug found live (09-28-InstanceAllocator arc): PluginProcessor
-        // used to find the plan's io.noteIn node by a HARDCODED instance id
-        // ("noteIn") rather than by type — the UI's own Add-menu auto-
-        // generates ordinary ids ("node2", "node3", ...) for a placed node,
-        // never that specific magic string, so a patch built entirely
-        // through the normal editor workflow silently never received a
-        // single MIDI note: findNoteIn() always returned nullptr, gate
-        // never moved, and nothing anywhere said why. Resolved here instead
-        // — the id of whichever node has type "io.noteIn" in this graph
-        // (empty if none), exactly once at compile time, the same pattern
-        // externalInputNodeIds above already established for "the driver
-        // needs to find one well-known node by a property of the graph,
-        // not by asking the user to type the right id." Only the first
-        // io.noteIn found (graph declaration order) is used — today's real
-        // usage never has more than one per voice region; a graph that
-        // somehow did would silently pick one, exactly as today's
-        // hardcoded-id version could already silently pick the wrong node
-        // if a second one happened to be named "noteIn".
+        // The id of whichever node has type "io.noteIn" (empty if none),
+        // resolved once at compile time — the driver finds it by type, never
+        // by a magic id (a note-in the editor named "node7" used to hear no
+        // MIDI at all). Only the first one found is used.
         juce::String noteInNodeId;
 
         std::vector<AlignedBuffer> blockBuffers;    // one per block-rate node-output port

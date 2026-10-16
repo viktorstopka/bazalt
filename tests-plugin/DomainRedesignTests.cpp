@@ -91,7 +91,7 @@ TEST_CASE ("An internally-sequenced origin (clock -> gate length -> note.assembl
     CHECK (processor.getOriginBundleOriginId (0) == "aalloc");
 
     auto anyVoiceEverRan = false;
-    for (int v = 0; v < BazaltAudioProcessor::numVoices; ++v)
+    for (int v = 0; v < BazaltAudioProcessor::maxInstances; ++v)
         if (processor.getOriginBundle (0).voiceManager.getStage (v) != bazalt::engine::VoiceStage::Idle)
             anyVoiceEverRan = true;
     CHECK (anyVoiceEverRan);
@@ -145,7 +145,7 @@ TEST_CASE ("Two independent origin/sum pairs, each driven by its own internal cl
     for (int bundle = 0; bundle < 2; ++bundle)
     {
         auto anyVoiceEverRan = false;
-        for (int v = 0; v < BazaltAudioProcessor::numVoices; ++v)
+        for (int v = 0; v < BazaltAudioProcessor::maxInstances; ++v)
             if (processor.getOriginBundle (bundle).voiceManager.getStage (v) != bazalt::engine::VoiceStage::Idle)
                 anyVoiceEverRan = true;
         CHECK (anyVoiceEverRan);
@@ -231,7 +231,7 @@ TEST_CASE ("An origin that disappears from the graph deactivates its bundle; a n
     REQUIRE (controller.setGraph (graph).success);
     REQUIRE (processor.isOriginBundleActive (0));
     CHECK (processor.getOriginBundleOriginId (0) == "alloc");
-    for (int v = 0; v < BazaltAudioProcessor::numVoices; ++v)
+    for (int v = 0; v < BazaltAudioProcessor::maxInstances; ++v)
         CHECK (processor.getOriginBundle (0).voiceManager.getStage (v) == bazalt::engine::VoiceStage::Idle);
 }
 
@@ -425,10 +425,117 @@ TEST_CASE ("The first note on each instance draws its own random1/random2", "[pl
     auto* plan = processor.peekFirstVoicePlanForTesting (0);
     REQUIRE (plan != nullptr);
     std::vector<float> drawn;
-    for (int i = 0; i < BazaltAudioProcessor::numVoices; ++i)
+    for (int i = 0; i < BazaltAudioProcessor::maxInstances; ++i)
         if (auto* voice = dynamic_cast<bazalt::engine::nodes::InstanceVoiceNode*> (plan->getNodeById ("alloc@" + juce::String (i))))
             if (voice->getGate())
                 drawn.push_back (voice->getRandom1());
     REQUIRE (drawn.size() == 2);
     CHECK (drawn[0] != drawn[1]);
+}
+
+TEST_CASE ("A Voice runs as many instances as its Max Instances asks for, then shrinks without leftovers",
+           "[plugin][2b]")
+{
+    NodeGraph graph;
+    graph.addNode ({ "noteIn", "io.noteIn", {}, {}, {} });
+    graph.addNode ({ "alloc", "life.voice", {}, { { "life.voice.maxInstances", 40.0f } }, {} });
+    graph.addNode ({ "p2f", "math.pitchToFrequency", {}, {}, {} });
+    graph.addNode ({ "osc", "source.sine", {}, {}, {} });
+    graph.addNode ({ "sum", "life.merge", {}, {}, {} });
+    graph.addNode ({ "masterout", "io.output", {}, {}, {} });
+    graph.addConnection ({ "noteIn", "notes", "alloc", "spawn" });
+    graph.addConnection ({ "alloc", "pitch", "p2f", "pitch" });
+    graph.addConnection ({ "p2f", "frequency", "osc", "source.sine.frequency" });
+    graph.addConnection ({ "alloc", "gate", "osc", "source.sine.amplitude" });
+    graph.addConnection ({ "osc", "out", "sum", "in" });
+    graph.addConnection ({ "sum", "out", "masterout", "in" });
+    graph.setOutput ("masterout", "out");
+
+    BazaltAudioProcessor processor;
+    processor.prepareToPlay (44100.0, 512);
+    auto& controller = processor.getGraphEditController();
+    REQUIRE (controller.setGraph (graph).success);
+    CHECK (processor.getOriginMaxVoices (0) == 40);
+
+    juce::AudioBuffer<float> buffer (2, 512);
+    juce::MidiBuffer midi;
+    for (int note = 0; note < 30; ++note)
+        midi.addEvent (juce::MidiMessage::noteOn (1, 30 + note, 0.05f), 0);
+    processor.processBlock (buffer, midi);
+    midi.clear();
+    processor.processBlock (buffer, midi);
+    CHECK (processor.getOriginActiveVoiceCount (0) == 30); // no stealing: all 30 hold
+
+    // Fewer instances: the voices past the new count are freed, not left hanging.
+    graph.findNode ("alloc")->parameters["life.voice.maxInstances"] = 4.0f;
+    REQUIRE (controller.setGraph (graph).success);
+    for (int block = 0; block < 4; ++block)
+        processor.processBlock (buffer, midi);
+    CHECK (processor.getOriginMaxVoices (0) == 4);
+    CHECK (processor.getOriginActiveVoiceCount (0) <= 4);
+}
+
+namespace
+{
+    /** clock → Population → sine (gated) → Merge → out, through the real processor. */
+    NodeGraph populationPatch (float clockHz, float size, float lives, float whenFull, float duration)
+    {
+        NodeGraph graph;
+        graph.addNode ({ "clock", "time.clock", {}, { { "time.clock.rate", clockHz } }, {} });
+        graph.addNode ({ "pop", "life.population", {}, { { "life.population.size", size }, { "life.population.lives", lives },
+                                                          { "life.population.whenFull", whenFull },
+                                                          { "life.population.duration", duration } }, {} });
+        graph.addNode ({ "p2f", "math.pitchToFrequency", {}, {}, {} });
+        graph.addNode ({ "osc", "source.sine", {}, {}, {} });
+        graph.addNode ({ "sum", "life.merge", {}, {}, {} });
+        graph.addNode ({ "masterout", "io.output", {}, {}, {} });
+        graph.addConnection ({ "clock", "tick", "pop", "born" });
+        graph.addConnection ({ "pop", "pitch", "p2f", "pitch" });
+        graph.addConnection ({ "p2f", "frequency", "osc", "source.sine.frequency" });
+        graph.addConnection ({ "pop", "gate", "osc", "source.sine.amplitude" });
+        graph.addConnection ({ "osc", "out", "sum", "in" });
+        graph.addConnection ({ "sum", "out", "masterout", "in" });
+        graph.setOutput ("masterout", "out");
+        return graph;
+    }
+}
+
+TEST_CASE ("A Population born from a clock plays through the processor, and its members end after their Duration",
+           "[plugin][population][2b]")
+{
+    BazaltAudioProcessor processor;
+    processor.prepareToPlay (48000.0, 512);
+    const auto result = processor.getGraphEditController().setGraph (populationPatch (20.0f, 8.0f, 1.0f, 0.0f, 0.01f));
+    INFO (result.errorMessage);
+    REQUIRE (result.success);
+
+    juce::AudioBuffer<float> buffer (2, 512);
+    juce::MidiBuffer noMidi;
+    float loudest = 0.0f;
+    for (int block = 0; block < 40; ++block)
+    {
+        buffer.clear();
+        processor.processBlock (buffer, noMidi);
+        loudest = std::max (loudest, buffer.getMagnitude (0, 0, 512));
+    }
+    CHECK (loudest > 0.05f);
+    // 20 births a second, each 10 ms long and gone 200 ms after: never all 8 at once.
+    CHECK (processor.getOriginActiveVoiceCount (0) < 8);
+    CHECK (processor.getOriginActiveVoiceCount (0) > 0);
+}
+
+TEST_CASE ("Population's When full: Ignore keeps the first members, stealing keeps the slots busy", "[plugin][population][2b]")
+{
+    for (const auto whenFull : { 0.0f, 2.0f })
+    {
+        BazaltAudioProcessor processor;
+        processor.prepareToPlay (48000.0, 512);
+        // Held forever (While held, nothing releases): 4 slots fill up and stay full.
+        REQUIRE (processor.getGraphEditController().setGraph (populationPatch (200.0f, 4.0f, 0.0f, whenFull, 0.1f)).success);
+        juce::AudioBuffer<float> buffer (2, 512);
+        juce::MidiBuffer noMidi;
+        for (int block = 0; block < 20; ++block)
+            processor.processBlock (buffer, noMidi);
+        CHECK (processor.getOriginActiveVoiceCount (0) == 4);
+    }
 }

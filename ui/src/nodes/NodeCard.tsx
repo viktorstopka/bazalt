@@ -210,7 +210,8 @@ function splitPorts(descriptor: NodeDescriptor): { merged: MergedRow | null; inp
   // as its own row either - a terminal "Master Out" node shouldn't show a
   // wireable output glyph at all, merged row or not.
   const visibleOutputs = descriptor.outputs.filter((o) => !o.hidden)
-  const primaryInput = descriptor.inputs[0] as PortDescriptor | undefined
+  const visibleInputs = descriptor.inputs.filter((i) => !i.hidden) // Population's internal order cable
+  const primaryInput = visibleInputs[0] as PortDescriptor | undefined
   const primaryOutput = (visibleOutputs.find((o) => o.isPrimaryOutput) ?? visibleOutputs[0]) as PortDescriptor | undefined
 
   const merged = primaryInput && primaryOutput && isSameProperty(primaryInput, primaryOutput)
@@ -219,7 +220,7 @@ function splitPorts(descriptor: NodeDescriptor): { merged: MergedRow | null; inp
 
   return {
     merged,
-    inputs: descriptor.inputs.filter((p) => p !== merged?.input).map((port) => ({ kind: 'port', direction: 'input', port })),
+    inputs: visibleInputs.filter((p) => p !== merged?.input).map((port) => ({ kind: 'port', direction: 'input', port })),
     outputs: visibleOutputs.filter((p) => p !== merged?.output).map((port) => ({ kind: 'port', direction: 'output', port })),
   }
 }
@@ -837,7 +838,7 @@ function HorizontalBody({ descriptor, state, instanceId }: { descriptor: NodeDes
   return (
     <div className="node-horizontal-body">
       <div className="node-horizontal-column">
-        {descriptor.inputs.map((port) => (
+        {descriptor.inputs.filter((port) => !port.hidden).map((port) => (
           <PortRow
             key={port.id}
             direction="input"

@@ -79,6 +79,7 @@ add_executable(EngineTests
     InstanceAxisTests.cpp
     QuantityAlgebraTests.cpp
     DelayTests.cpp
+    PopulationTests.cpp
     CurvePlayerNodeTests.cpp
     VoiceManagerTests.cpp
 )

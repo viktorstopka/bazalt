@@ -1,4 +1,5 @@
 #include "PluginProcessor.h"
+#include "bazalt/engine/nodes/LifePopulationNode.h"
 #include "PluginEditor.h"
 #include "bazalt/engine/graph/ProofGraphs.h"
 #include "bazalt/engine/graph/GraphCompiler.h"
@@ -138,7 +139,7 @@ namespace bazalt
                 // predecessor's voice state (which lanes are Active/Idle)
                 // means nothing here; start fresh, exactly like a brand-new
                 // origin would.
-                bundle.voiceManager.prepare (numVoices);
+                bundle.voiceManager.prepare (maxInstances);
                 bundle.originNodeId = newId;
             }
             // else: the SAME origin persists across this edit — its
@@ -202,7 +203,7 @@ namespace bazalt
 
         for (auto& bundle : originBundles)
         {
-            bundle.voiceManager.prepare (numVoices);
+            bundle.voiceManager.prepare (maxInstances);
             bundle.active = false;
             bundle.originNodeId = {};
         }
@@ -675,6 +676,57 @@ namespace bazalt
         }
     }
 
+    int BazaltAudioProcessor::born (bazalt::engine::InstanceGroupRuntime& group, int offset, float pitch, float velocity,
+                                    float durationSeconds) noexcept
+    {
+        using bazalt::engine::VoiceStage;
+        if (planThisBlock == nullptr || group.bundleSlot < 0)
+            return -1;
+        auto& bundle = originBundles[(size_t) group.bundleSlot];
+        if (! bundle.active)
+            return -1;
+
+        const auto noteId = nextBirthNoteId++;
+        if (nextBirthNoteId < firstBirthNoteId)
+            nextBirthNoteId = firstBirthNoteId; // wrapped
+        const auto instance = bundle.voiceManager.noteOn (noteId, group.count);
+        if (instance < 0 || instance >= group.count)
+            return -1; // full, and When full is Ignore
+
+        auto* member = dynamic_cast<bazalt::engine::nodes::LifePopulationNode*> (group.originNodes[(size_t) instance]);
+        const auto order = group.births++;
+        group.previewInstance.store (instance, std::memory_order_relaxed);
+        group.alive = bundle.voiceManager.getActiveVoiceCount();
+        if (bundle.voiceManager.getStage (instance) == VoiceStage::Stealing)
+        {
+            // The stolen member fades out first; renderRange starts the new one after.
+            bundle.voiceManager.setPendingNoteOn (instance, { noteId, pitch, velocity });
+            if (member != nullptr)
+                member->setNextBirth (order, durationSeconds);
+            return -1;
+        }
+
+        // Its steps come after the birth copy's in this same block (the order
+        // cable), so it starts at the very sample it was born.
+        planThisBlock->resetInstance (group.groupIndex, instance);
+        auto& state = group.instances[(size_t) instance];
+        state = {};
+        state.run = state.audible = true;
+        if (member != nullptr)
+            member->spawnAt (offset, pitch, velocity, durationSeconds, order);
+        return instance;
+    }
+
+    void BazaltAudioProcessor::release (bazalt::engine::InstanceGroupRuntime& group, int instance, int offset) noexcept
+    {
+        if (group.bundleSlot < 0 || instance < 0 || instance >= group.count)
+            return;
+        if (originBundles[(size_t) group.bundleSlot].voiceManager.getStage (instance) != bazalt::engine::VoiceStage::Active)
+            return;
+        if (auto* member = dynamic_cast<bazalt::engine::nodes::LifePopulationNode*> (group.originNodes[(size_t) instance]))
+            member->releaseAt (offset);
+    }
+
     void BazaltAudioProcessor::handleNoteEvent (const juce::MidiMessage& message, bazalt::engine::ExecutionPlan* plan) noexcept
     {
         if (plan == nullptr)
@@ -696,10 +748,12 @@ namespace bazalt
                 const auto noteId = (bazalt::engine::VoiceManager::NoteId) ((message.getChannel() << 8) | message.getNoteNumber());
                 const auto pitch = (float) message.getNoteNumber();
                 const auto velocity = message.getFloatVelocity();
-                const auto instance = bundle.voiceManager.noteOn (noteId);
+                const auto instance = bundle.voiceManager.noteOn (noteId, runtime.count);
                 if (instance < 0 || instance >= runtime.count)
                     continue;
                 runtime.previewInstance.store (instance, std::memory_order_relaxed);
+                if (auto* member = dynamic_cast<bazalt::engine::nodes::LifePopulationNode*> (runtime.originNodes[(size_t) instance]))
+                    member->setNextBirth (runtime.births++, -1.0f);
                 if (bundle.voiceManager.getStage (instance) == bazalt::engine::VoiceStage::Stealing)
                     bundle.voiceManager.setPendingNoteOn (instance, { noteId, pitch, velocity });
                 else
@@ -777,7 +831,7 @@ namespace bazalt
                 // release; the spawn moves to the instance the VoiceManager
                 // picks.
                 const auto internallyTriggered = group.noteInNodes.empty() || group.noteInNodes[0] == nullptr;
-                if (internallyTriggered)
+                if (internallyTriggered && group.birthNode == nullptr)
                     if (auto* allocator = dynamic_cast<bazalt::engine::nodes::InstanceOriginNode*> (group.originNodes[0]))
                         if (allocator->consumeSpawnEventsThisBlock() > 0)
                         {
@@ -785,7 +839,7 @@ namespace bazalt
                             {
                                 const auto pitch = allocator->getPitch();
                                 const auto velocity = allocator->getVelocity();
-                                const auto instance = bundle.voiceManager.noteOn (internalTriggerNoteId);
+                                const auto instance = bundle.voiceManager.noteOn (internalTriggerNoteId, group.count);
                                 group.previewInstance.store (instance, std::memory_order_relaxed);
                                 if (bundle.voiceManager.getStage (instance) == VoiceStage::Stealing)
                                     bundle.voiceManager.setPendingNoteOn (instance, { internalTriggerNoteId, pitch, velocity });
@@ -807,7 +861,10 @@ namespace bazalt
                     const auto stage = bundle.voiceManager.getStage (i);
                     if (stage == VoiceStage::Idle)
                     {
-                        state.run = i == 0; // instance 0 always runs, so a trigger it hears is noticed
+                        // Instance 0 of an old-style internal trigger always runs,
+                        // so a trigger it hears is noticed. A Population's birth
+                        // copy hears for its members instead.
+                        state.run = i == 0 && group.birthNode == nullptr;
                         continue;
                     }
                     state.run = state.audible = true;
@@ -851,12 +908,20 @@ namespace bazalt
                     if (stage == VoiceStage::Idle)
                         continue;
                     ++active;
+                    bundle.voiceManager.setLevel (i, group.instances[(size_t) i].peak);
+                    // A Population member whose gate fell on its own (Duration, a
+                    // Release event) starts its release.
+                    if (stage == VoiceStage::Active)
+                        if (auto* member = dynamic_cast<bazalt::engine::nodes::LifePopulationNode*> (group.originNodes[(size_t) i]);
+                            member != nullptr && ! member->getGate())
+                            bundle.voiceManager.releaseVoice (i);
                     if (stage == VoiceStage::Stealing)
                     {
                         if (bundle.voiceManager.advanceStealFade (i, chunk))
                         {
                             const auto pending = bundle.voiceManager.getPendingNoteOn (i);
-                            startInstance (*plan, g, i, pending.pitch, pending.velocity, pending.noteId == internalTriggerNoteId);
+                            startInstance (*plan, g, i, pending.pitch, pending.velocity,
+                                           pending.noteId == internalTriggerNoteId || pending.noteId >= firstBirthNoteId);
                             bundle.voiceManager.completeSteal (i);
                         }
                     }
@@ -867,7 +932,13 @@ namespace bazalt
                             bundle.voiceManager.voiceFinished (i);
                     }
                 }
+                // Instances the plan no longer has (its count went down in an
+                // edit) are gone: free them, they will never be heard again.
+                for (int i = group.count; i < bundle.voiceManager.getNumVoices(); ++i)
+                    if (bundle.voiceManager.getStage (i) != VoiceStage::Idle)
+                        bundle.voiceManager.voiceFinished (i);
                 bundle.activeVoiceCountThisBlock = active;
+                group.alive = bundle.voiceManager.getActiveVoiceCount();
             }
 
             startSample += chunk;

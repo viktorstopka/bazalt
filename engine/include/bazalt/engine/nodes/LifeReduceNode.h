@@ -23,7 +23,13 @@ namespace bazalt::engine::nodes
     class LifeReduceNode : public Node
     {
     public:
-        static constexpr int maxInstances = 31; // one input per instance, within ExecutionPlan::maxPortsPerNode
+        /** Inputs one reduce takes: a stereo input is two channels, and a node
+            has at most ExecutionPlan::maxPortsPerNode (32). A larger group is
+            reduced as a tree (InstanceExpansion): leaves of `maxInputs`
+            instances each (`life.reduce.first` is a leaf's first instance),
+            summed by one `life.reduce.combine` node — which then divides in
+            Average mode. */
+        static constexpr int maxInputs = 16;
 
         void setRuntime (InstanceGroupRuntime* runtimeIn) noexcept { runtime = runtimeIn; }
         int getGroupIndex() const noexcept { return groupIndex; }
@@ -50,7 +56,11 @@ namespace bazalt::engine::nodes
 
         std::vector<ParameterDescriptor> getParameters() const override
         {
-            return { ParameterDescriptor { .id = "life.reduce.count", .minValue = 1.0f, .maxValue = (float) maxInstances, .defaultValue = 1.0f,
+            return { ParameterDescriptor { .id = "life.reduce.count", .minValue = 1.0f, .maxValue = (float) maxInputs, .defaultValue = 1.0f,
+                                           .isInteger = true, .isStructural = true },
+                     ParameterDescriptor { .id = "life.reduce.first", .minValue = 0.0f, .maxValue = 100000.0f, .defaultValue = 0.0f,
+                                           .isInteger = true, .isStructural = true },
+                     ParameterDescriptor { .id = "life.reduce.combine", .minValue = 0.0f, .maxValue = 1.0f, .defaultValue = 0.0f,
                                            .isInteger = true, .isStructural = true },
                      ParameterDescriptor { .id = "life.reduce.average", .minValue = 0.0f, .maxValue = 1.0f, .defaultValue = 0.0f,
                                            .isInteger = true, .isStructural = true },
@@ -63,7 +73,11 @@ namespace bazalt::engine::nodes
         void setParameter (const juce::String& id, float value) override
         {
             if (id == "life.reduce.count")
-                count = juce::jlimit (1, maxInstances, (int) std::lround (value));
+                count = juce::jlimit (1, maxInputs, (int) std::lround (value));
+            else if (id == "life.reduce.first")
+                first = juce::jmax (0, (int) std::lround (value));
+            else if (id == "life.reduce.combine")
+                combine = value > 0.5f;
             else if (id == "life.reduce.average")
                 average = value > 0.5f;
             else if (id == "life.reduce.group")
@@ -79,10 +93,33 @@ namespace bazalt::engine::nodes
             if (runtime == nullptr)
                 return;
 
-            const auto n = juce::jmin (count, (int) runtime->instances.size());
+            if (combine)
+            {
+                for (int i = 0; i < count; ++i)
+                    for (int s = 0; s < numSamples; ++s)
+                        out[s] += inputs[i][s];
+            }
+            else
+            {
+                sumInstances (inputs, out, numSamples);
+            }
+
+            if (average)
+                if (const auto audible = runtime->audibleCount(); audible > 1)
+                {
+                    const auto scale = 1.0f / (float) audible;
+                    for (int s = 0; s < numSamples; ++s)
+                        out[s] *= scale;
+                }
+        }
+
+    private:
+        void sumInstances (const float* const* inputs, float* out, int numSamples) noexcept
+        {
+            const auto n = juce::jmin (count, (int) runtime->instances.size() - first);
             for (int i = 0; i < n; ++i)
             {
-                auto& state = runtime->instances[(size_t) i];
+                auto& state = runtime->instances[(size_t) (first + i)];
                 if (! state.audible)
                     continue;
                 const auto* in = inputs[i];
@@ -108,19 +145,10 @@ namespace bazalt::engine::nodes
                     out[s] += in[s] * (state.gainStart + (state.gainEnd - state.gainStart) * t);
                 }
             }
-
-            if (average)
-                if (const auto audible = runtime->audibleCount(); audible > 1)
-                {
-                    const auto scale = 1.0f / (float) audible;
-                    for (int s = 0; s < numSamples; ++s)
-                        out[s] *= scale;
-                }
         }
 
-    private:
         InstanceGroupRuntime* runtime = nullptr;
-        int count = 1, groupIndex = 0;
-        bool average = false;
+        int count = 1, first = 0, groupIndex = 0;
+        bool average = false, combine = false;
     };
 }

@@ -52,10 +52,13 @@ namespace bazalt
         ordinary graph wiring through a real `Note`-typed port/buffer.
     */
     class BazaltAudioProcessor final : public juce::AudioProcessor,
-                                        private juce::Timer
+                                        private juce::Timer,
+                                        private bazalt::engine::InstanceBirthSink
     {
     public:
-        static constexpr int numVoices = 8;
+        /** Every allocator's pool is this big (its count parameter narrows
+            it); the plan holds only the instances the count asks for. */
+        static constexpr int maxInstances = bazalt::engine::maxInstancesPerGroup;
         static constexpr int numAuxBuses = 4;
 
         /** wiki/plans/DomainRedesign.md's own small, fixed ceiling — mirrors
@@ -64,9 +67,6 @@ namespace bazalt
             just to size an array).
         */
         static constexpr int maxOrigins = bazalt::engine::MultiplicityResolver::maxOrigins;
-        static constexpr int maxSumsPerOrigin = bazalt::engine::MultiplicityResolver::maxSumsPerOrigin;
-        static_assert (maxOrigins == bazalt::engine::ExecutionPlan::maxOrigins
-                       && maxSumsPerOrigin == bazalt::engine::ExecutionPlan::maxSumsPerOrigin);
 
         /** One allocator's runtime: the VoiceManager that decides which of
             its instances are alive (wiki/plans/InstanceAxis.md — the instances
@@ -278,14 +278,14 @@ namespace bazalt
         {
             const auto& bundle = originBundles[(size_t) bundleIndex];
             if (const auto populationSize = bundle.swarmPopulationSize.load (std::memory_order_relaxed); populationSize >= 0)
-                return juce::jmin (populationSize, numVoices);
+                return juce::jmin (populationSize, maxInstances);
             return bundle.voiceManager.getActiveVoiceCount();
         }
         int getOriginMaxVoices (int bundleIndex) const noexcept
         {
             const auto& bundle = originBundles[(size_t) bundleIndex];
             if (const auto populationSize = bundle.swarmPopulationSize.load (std::memory_order_relaxed); populationSize >= 0)
-                return juce::jmin (populationSize, numVoices);
+                return juce::jmin (populationSize, maxInstances);
             return bundle.voiceManager.getMaxActiveVoices();
         }
 
@@ -321,7 +321,24 @@ namespace bazalt
         */
         void applyPreviewSubscriptions (bazalt::engine::ExecutionPlan* plan);
 
+        /** Where a Population born from inside the patch asks for members
+            (GraphEditController hands it to every group of a new plan). */
+        bazalt::engine::InstanceBirthSink* getBirthSink() noexcept { return this; }
+
+        /** Population's When full, for this bundle (message thread, per recompile). */
+        void setOriginStealPolicy (int bundleIndex, bazalt::engine::VoiceManager::StealPolicy policy) noexcept
+        {
+            originBundles[(size_t) bundleIndex].voiceManager.setStealPolicy (policy);
+        }
+
     private:
+        // InstanceBirthSink: a birth inside the plan, mid-process, on the audio thread.
+        int born (bazalt::engine::InstanceGroupRuntime& group, int offset, float pitch, float velocity, float durationSeconds) noexcept override;
+        void release (bazalt::engine::InstanceGroupRuntime& group, int instance, int offset) noexcept override;
+        bazalt::engine::VoiceManager::NoteId nextBirthNoteId = firstBirthNoteId;
+        // MIDI note ids are (channel << 8) | note, below this.
+        static constexpr bazalt::engine::VoiceManager::NoteId firstBirthNoteId = 0x10000;
+
         static BusesProperties makeBusLayout();
 
         void handleMidiEvent (const juce::MidiMessage& message);

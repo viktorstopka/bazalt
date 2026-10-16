@@ -35,8 +35,7 @@ namespace bazalt::engine
 
         /** Every instance.sum reducing this origin, in graph order — empty
             when none does (yet), the 09-28-InstanceAllocator.1 "independent,
-            unbridged region" case. Several are allowed (up to
-            MultiplicityResolver::maxSumsPerOrigin): one voice can feed a main
+            unbridged region" case. Any number are allowed: one voice can feed a main
             chain AND a separate layer, each summed on its own. The first
             one's feeder is also voiceGraph's designated output.
         */
@@ -118,7 +117,7 @@ namespace bazalt::engine
         3. Every "life.merge" node's "in" port is REQUIRED to resolve
            Poly — resolving Scalar (including "nothing wired yet") past the
            freshly-placed carve-out is a compile error ("nothing to
-           reduce"). Up to `maxSumsPerOrigin` instance.sum nodes per origin
+           reduce"). Any number of Merges per origin
            — each reduces its own voice-side signal, so one voice can feed a
            main chain and a separate layer that are summed independently —
            and instance.sum nodes reducing DIFFERENT origins are legitimate
@@ -161,11 +160,8 @@ namespace bazalt::engine
             BazaltAudioProcessor::numAuxBuses already sets for "more than a
             handful of these would need real UI/perf design first."
         */
-        static constexpr int maxOrigins = 4;
+        static constexpr int maxOrigins = 16;
 
-        /** How many instance.sum nodes may reduce one origin. Each is one
-            more summed output per voice, with its own preallocated buffer. */
-        static constexpr int maxSumsPerOrigin = 4;
 
         static MultiplicityResult split (const NodeGraph& graph);
     };

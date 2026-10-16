@@ -1,5 +1,6 @@
 #include "bazalt/engine/graph/ExecutionPlan.h"
 #include "bazalt/engine/graph/InstanceExpansion.h"
+#include "bazalt/engine/nodes/LifePopulationNode.h"
 #include "bazalt/engine/nodes/LifeReduceNode.h"
 
 namespace bazalt::engine
@@ -291,6 +292,25 @@ namespace bazalt::engine
                         bufferInstance[(size_t) external.bufferIndex] = { region.group, region.instance };
                 }
             }
+        }
+
+        // Population: every member and the birth copy read their group's runtime.
+        for (size_t g = 0; g < instanceGroups.size(); ++g)
+        {
+            auto& runtime = *instanceGroups[g];
+            runtime.groupIndex = (int) g;
+            for (int i = 0; i < runtime.count; ++i)
+                if (auto* member = dynamic_cast<nodes::LifePopulationNode*> (runtime.originNodes[(size_t) i]))
+                {
+                    member->setRuntime (&runtime);
+                    member->setSlot (i);
+                }
+            if (const auto slot = nodeIdToSlot.find (birthNodeId (runtime.originId)); slot != nodeIdToSlot.end())
+                if (auto* birth = dynamic_cast<nodes::LifePopulationNode*> (nodes[(size_t) slot->second].get()))
+                {
+                    birth->setRuntime (&runtime);
+                    runtime.birthNode = birth;
+                }
         }
 
         // Each reduce sums one group: hand it that group's runtime.

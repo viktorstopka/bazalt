@@ -426,16 +426,18 @@ ctest --test-dir build -C Debug -R PluginTests --output-on-failure
   motivating bug) and capped the graph at exactly one allocator/one sum,
   full stop. The new model resolves Scalar-vs-Poly per PORT, per compile,
   tagging each `Poly` value with the producing allocator's own node id
-  (`originId`) — up to `MultiplicityResolver::maxOrigins` (4) independent
+  (`originId`) — up to `MultiplicityResolver::maxOrigins` (16 as of 2b.1) independent
   allocator/sum pairs now coexist in one graph, each a group of the one
   instanced plan (see the one-plan-per-patch note above), each either MIDI-dispatched (`io.noteIn`) or
   internally triggered, never both for the same origin. `instance.sum` was
   renamed from `instance.mix` in the same redesign (Batch 1b, C++ class
   name `InstanceMixNode` unchanged), then to `life.merge` (title Merge) in
-  stage 1's id sweep. Up to `maxSumsPerOrigin` (4)
-  Merge nodes may reduce the SAME origin as of 2026-10-05 (direct
-  request: a Plate layer summed on its own, added after the main chain's
-  effects): each becomes its own `life.reduce` step in the one plan.
+  stage 1's id sweep. Any number of Merge nodes may reduce the SAME origin
+  (2b.1, 2026-10-16; the limit was 4): each becomes its own `life.reduce` step in
+  the one plan. Each allocator runs as many instances as its own count asks for
+  (Max Instances / Population Size, cap 128 — `maxInstancesPerGroup`), not a fixed
+  8; a group over 16 reduces through a tree of reduces (`wiki/plans/LifeCycle.md`
+  2b.1).
 - `GraphEditController::recompileAndPublish()` does a full recompile (one
   plan, every instance expanded) on **every single command**, even ones
   that are conceptually one user gesture made of several calls (e.g. a

@@ -301,7 +301,7 @@ TEST_CASE ("Several instance.sum nodes may reduce the SAME origin, each from its
     CHECK (containsNode (result.globalGraph, "add"));
 }
 
-TEST_CASE ("More than maxSumsPerOrigin instance.sum nodes on one origin is rejected", "[engine][MultiplicityResolver]")
+TEST_CASE ("Any number of Merges may reduce one origin", "[engine][MultiplicityResolver]")
 {
     NodeGraph graph;
     graph.addNode ({ "alloc", "life.voice", {}, {}, {} });
@@ -310,7 +310,7 @@ TEST_CASE ("More than maxSumsPerOrigin instance.sum nodes on one origin is rejec
     graph.addNode ({ "oscToFreq", "math.pitchToFrequency", {}, {}, {} });
     graph.addConnection ({ "alloc", "pitch", "oscToFreq", "pitch" });
     graph.addConnection ({ "oscToFreq", "frequency", "osc", "source.oscillator.frequency" });
-    for (int i = 0; i <= MultiplicityResolver::maxSumsPerOrigin; ++i)
+    for (int i = 0; i < 20; ++i)
     {
         const auto id = "sum" + juce::String (i);
         graph.addNode ({ id, "life.merge", {}, {}, {} });
@@ -320,8 +320,9 @@ TEST_CASE ("More than maxSumsPerOrigin instance.sum nodes on one origin is rejec
     graph.setOutput ("masterout", "out");
 
     const auto result = MultiplicityResolver::split (graph);
-    CHECK_FALSE (result.success);
-    CHECK (result.errorMessage.contains ("Merges"));
+    REQUIRE (result.success);
+    REQUIRE (result.origins.size() == 1);
+    CHECK (result.origins[0].sums.size() == 20);
 }
 
 TEST_CASE ("life.merge's input must resolve Poly - Scalar (nothing to reduce) is rejected",

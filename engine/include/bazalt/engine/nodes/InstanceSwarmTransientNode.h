@@ -1,5 +1,6 @@
 #pragma once
 
+#include "bazalt/engine/graph/InstanceGroups.h"
 #include "bazalt/engine/graph/Node.h"
 #include "bazalt/engine/graph/ValueTypes.h"
 #include "bazalt/engine/nodes/InstanceOriginNode.h"
@@ -100,7 +101,7 @@ namespace bazalt::engine::nodes
         {
             return {
                 ParameterDescriptor { .id = "life.swarmTransient.maxInstances",
-                                       .minValue = 1.0f, .maxValue = 64.0f, .defaultValue = 8.0f,
+                                       .minValue = 1.0f, .maxValue = (float) maxInstancesPerGroup, .defaultValue = 8.0f,
                                        .displayName = "Max Instances", .isInteger = true, .isStructural = true },
                 ParameterDescriptor { .id = "life.swarmTransient.seed",
                                        .minValue = 0.0f, .maxValue = 999999.0f, .defaultValue = 1.0f,

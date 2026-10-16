@@ -1,4 +1,5 @@
 #include "bazalt/engine/graph/InstanceExpansion.h"
+#include "bazalt/engine/nodes/LifeReduceNode.h"
 #include <algorithm>
 #include <unordered_set>
 
@@ -97,15 +98,60 @@ namespace bazalt::engine
                         reduceGroupOf[c.toNodeId] = group;
 
         auto& out = result.graph;
-        const auto reduceNode = [generation, &layout] (const juce::String& id, int group, bool average, NodePosition position)
+        // A reduce of one group under `id`: one node when the group fits one
+        // reduce's inputs, else leaves of LifeReduceNode::maxInputs instances
+        // (`id@r0`, `id@r1`, …) summed by a combine node under `id`.
+        const auto reduceNode = [generation] (const juce::String& id, int group, NodePosition position)
         {
             NodeInstance reduce { id, "life.reduce", position, {}, {} };
-            reduce.parameters = { { "life.reduce.count", (float) layout.groups[(size_t) group].count },
-                                  { "life.reduce.group", (float) group },
-                                  { "life.reduce.average", average ? 1.0f : 0.0f },
+            reduce.parameters = { { "life.reduce.group", (float) group },
                                   { "life.reduce.generation", (float) (generation % 1000000000ull) } };
             return reduce;
         };
+        const auto leafId = [] (const juce::String& id, int leaf) { return id + "@r" + juce::String (leaf); };
+        constexpr int leafWidth = nodes::LifeReduceNode::maxInputs;
+        const auto addReduction = [&] (const juce::String& id, int group, bool average, NodePosition position)
+        {
+            const auto count = layout.groups[(size_t) group].count;
+            if (count <= leafWidth)
+            {
+                auto reduce = reduceNode (id, group, position);
+                reduce.parameters["life.reduce.count"] = (float) count;
+                reduce.parameters["life.reduce.average"] = average ? 1.0f : 0.0f;
+                out.addNode (reduce);
+                return;
+            }
+            const auto leaves = (count + leafWidth - 1) / leafWidth;
+            auto combine = reduceNode (id, group, position);
+            combine.parameters["life.reduce.count"] = (float) leaves;
+            combine.parameters["life.reduce.combine"] = 1.0f;
+            combine.parameters["life.reduce.average"] = average ? 1.0f : 0.0f;
+            out.addNode (combine);
+            for (int leaf = 0; leaf < leaves; ++leaf)
+            {
+                auto reduce = reduceNode (leafId (id, leaf), group, position);
+                reduce.parameters["life.reduce.count"] = (float) juce::jmin (leafWidth, count - leaf * leafWidth);
+                reduce.parameters["life.reduce.first"] = (float) (leaf * leafWidth);
+                out.addNode (reduce);
+                out.addConnection ({ leafId (id, leaf), "out", id, "in." + juce::String (leaf) });
+            }
+        };
+        // Where instance `i` enters the reduction under `id`.
+        const auto reductionInput = [&] (const juce::String& id, int group, int i) -> std::pair<juce::String, juce::String>
+        {
+            if (layout.groups[(size_t) group].count <= leafWidth)
+                return { id, "in." + juce::String (i) };
+            return { leafId (id, i / leafWidth), "in." + juce::String (i % leafWidth) };
+        };
+
+        // A Population born from inside the patch gets a birth copy: it alone
+        // hears the inputs, and starts members at the sample of each birth
+        // (LifePopulationNode). A hidden cable (births → afterBirths) runs it before them.
+        std::vector<bool> hasBirthCopy (layout.groups.size(), false);
+        for (size_t g = 0; g < layout.groups.size(); ++g)
+            if (const auto* origin = graph.findNode (layout.groups[g].originId);
+                origin != nullptr && origin->type == "life.population" && layout.groups[g].internallyTriggered)
+                hasBirthCopy[g] = true;
 
         for (const auto& node : graph.getNodes())
         {
@@ -117,12 +163,20 @@ namespace bazalt::engine
                     copy.id = instanceNodeId (node.id, i);
                     out.addNode (copy);
                 }
+                if (hasBirthCopy[(size_t) group] && node.id == layout.groups[(size_t) group].originId)
+                {
+                    auto birth = node;
+                    birth.id = birthNodeId (node.id);
+                    birth.parameters["life.population.birthGroup"] = (float) (group + 1);
+                    out.addNode (birth);
+                    for (int i = 0; i < layout.groups[(size_t) group].count; ++i)
+                        out.addConnection ({ birth.id, "births", instanceNodeId (node.id, i), "afterBirths" });
+                }
             }
             else if (const auto it = reduceGroupOf.find (node.id); it != reduceGroupOf.end())
             {
                 const auto mode = node.parameters.find ("life.merge.mode");
-                out.addNode (reduceNode (node.id, it->second,
-                                         mode != node.parameters.end() && mode->second >= 0.5f, node.position));
+                addReduction (node.id, it->second, mode != node.parameters.end() && mode->second >= 0.5f, node.position);
             }
             else
             {
@@ -150,6 +204,11 @@ namespace bazalt::engine
                 // An internal trigger reaches only instance 0's allocator; the
                 // processor relays each spawn to the instance it picks.
                 const auto& group = layout.groups[(size_t) toGroup];
+                if (hasBirthCopy[(size_t) toGroup] && c.toNodeId == group.originId)
+                {
+                    out.addConnection ({ c.fromNodeId, c.fromPortId, birthNodeId (c.toNodeId), c.toPortId });
+                    continue;
+                }
                 if (group.internallyTriggered && c.toNodeId == group.originId)
                 {
                     out.addConnection ({ c.fromNodeId, c.fromPortId, instanceNodeId (c.toNodeId, 0), c.toPortId });
@@ -168,7 +227,10 @@ namespace bazalt::engine
                     return result;
                 }
                 for (int i = 0; i < layout.groups[(size_t) fromGroup].count; ++i)
-                    out.addConnection ({ instanceNodeId (c.fromNodeId, i), c.fromPortId, c.toNodeId, "in." + juce::String (i) });
+                {
+                    const auto [toNode, toPort] = reductionInput (c.toNodeId, fromGroup, i);
+                    out.addConnection ({ instanceNodeId (c.fromNodeId, i), c.fromPortId, toNode, toPort });
+                }
             }
             else
             {
@@ -181,10 +243,12 @@ namespace bazalt::engine
         if (outputGroup >= 0)
         {
             const auto count = layout.groups[(size_t) outputGroup].count;
-            out.addNode (reduceNode (outputReduceNodeId(), outputGroup, false, {}));
+            addReduction (outputReduceNodeId(), outputGroup, false, {});
             for (int i = 0; i < count; ++i)
-                out.addConnection ({ instanceNodeId (graph.getOutputNodeId(), i), graph.getOutputPortId(), outputReduceNodeId(),
-                                     "in." + juce::String (i) });
+            {
+                const auto [toNode, toPort] = reductionInput (outputReduceNodeId(), outputGroup, i);
+                out.addConnection ({ instanceNodeId (graph.getOutputNodeId(), i), graph.getOutputPortId(), toNode, toPort });
+            }
             out.setOutput (outputReduceNodeId(), "out");
         }
         else

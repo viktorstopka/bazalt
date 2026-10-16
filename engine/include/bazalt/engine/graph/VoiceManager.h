@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <atomic>
 #include <cstdint>
+#include <limits>
 #include <vector>
 
 namespace bazalt::engine
@@ -88,6 +89,23 @@ namespace bazalt::engine
 
         int getMaxActiveVoices() const noexcept { return maxActiveVoices.load (std::memory_order_relaxed); }
 
+        /** What a birth does when every slot is busy (Population's When full). */
+        enum class StealPolicy { Oldest, Quietest, Ignore };
+        void setStealPolicy (StealPolicy policy) noexcept { stealPolicy.store ((int) policy, std::memory_order_relaxed); }
+
+        /** The loudest sample a voice made in the last render range — what
+            "steal the quietest" compares. Audio thread. */
+        void setLevel (int voiceIndex, float peak) noexcept { voices[(size_t) voiceIndex].level = peak; }
+
+        /** Moves a playing voice into its release (its gate fell on its own:
+            a Population member's Duration ran out). */
+        void releaseVoice (int voiceIndex) noexcept
+        {
+            auto& voice = voices[(size_t) voiceIndex];
+            if (voice.stage == VoiceStage::Active)
+                voice.stage = VoiceStage::Releasing;
+        }
+
         /** How many lanes are currently NOT Idle — the live half of the
             instance-count badge ("2/8": this value over getMaxActiveVoices()).
             Recomputed and published (recomputeActiveVoiceCount()) on the
@@ -104,9 +122,9 @@ namespace bazalt::engine
             plan yet; `Active` only begins once `completeSteal()` runs
             (PluginProcessor::renderVoiceRange, once the fade finishes).
         */
-        int noteOn (NoteId noteId) noexcept
+        int noteOn (NoteId noteId, int limit = std::numeric_limits<int>::max()) noexcept
         {
-            auto index = findIdleVoice();
+            auto index = findIdleVoice (limit);
             if (index != -1)
             {
                 auto& voice = voices[(size_t) index];
@@ -119,7 +137,9 @@ namespace bazalt::engine
                 return index;
             }
 
-            index = stealVoice();
+            if (stealPolicy.load (std::memory_order_relaxed) == (int) StealPolicy::Ignore)
+                return -1;
+            index = stealVoice (limit);
             auto& voice = voices[(size_t) index];
             voice.stage = VoiceStage::Stealing;
             voice.stealFadeSamplesRemaining = stealFadeSamples;
@@ -269,25 +289,46 @@ namespace bazalt::engine
 
             PendingNoteOn pendingNoteOn;
             int stealFadeSamplesRemaining = 0;
+            float level = 0.0f;
             float stealFadeGainAtStart = 1.0f;
         };
 
-        int findIdleVoice() const noexcept
+        // `limit`: the instances the plan running right now has — a plan swap
+        // and the ceiling it brings are not one atomic step, so the caller
+        // bounds every allocation by what it can actually play.
+        int ceilingFor (int limit) const noexcept
         {
-            const auto ceiling = std::min ((int) voices.size(), maxActiveVoices.load (std::memory_order_relaxed));
+            return std::max (1, std::min ({ (int) voices.size(), maxActiveVoices.load (std::memory_order_relaxed), limit }));
+        }
+
+        int findIdleVoice (int limit) const noexcept
+        {
+            const auto ceiling = ceilingFor (limit);
             for (int i = 0; i < ceiling; ++i)
                 if (voices[(size_t) i].stage == VoiceStage::Idle)
                     return i;
             return -1;
         }
 
-        int stealVoice() const noexcept
+        int stealVoice (int limit) const noexcept
         {
-            const auto ceiling = std::min ((int) voices.size(), maxActiveVoices.load (std::memory_order_relaxed));
+            const auto ceiling = ceilingFor (limit);
             int oldestReleasing = -1;
             uint64_t oldestReleasingAge = 0;
             int oldestOverall = -1;
             uint64_t oldestOverallAge = 0;
+
+            if (stealPolicy.load (std::memory_order_relaxed) == (int) StealPolicy::Quietest)
+            {
+                // A voice already being stolen is skipped: its fade is under way.
+                int quietest = -1;
+                for (int i = 0; i < ceiling; ++i)
+                    if (voices[(size_t) i].stage != VoiceStage::Stealing
+                        && (quietest == -1 || voices[(size_t) i].level < voices[(size_t) quietest].level))
+                        quietest = i;
+                if (quietest != -1)
+                    return quietest;
+            }
 
             for (int i = 0; i < ceiling; ++i)
             {
@@ -325,6 +366,7 @@ namespace bazalt::engine
         }
 
         std::vector<Voice> voices;
+        std::atomic<int> stealPolicy { (int) StealPolicy::Oldest };
         uint64_t nextAge = 0;
         // Written by the audio thread (noteOn), read by the message thread when
         // it attaches preview taps (ADR-0029) - atomic so that is not a data race.

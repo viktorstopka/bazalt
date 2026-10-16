@@ -198,6 +198,51 @@ TEST_CASE ("A stereo voice reduces into a stereo sum", "[engine][instanceAxis][s
     CHECK (left > 0.0f);
 }
 
+TEST_CASE ("A hundred instances reduce through a tree, in sum and in average", "[engine][instanceAxis][2b]")
+{
+    // One reduce takes 16 instances (32 channels for stereo); more go through
+    // leaves and a combine. Three instances playing one note sum to three
+    // times one instance alone, or average back to it.
+    const auto factory = buildDefaultNodeFactory();
+    for (const auto average : { false, true })
+    {
+        auto graph = voicePatch (false, true);
+        graph.findNode ("merge")->parameters["life.merge.mode"] = average ? 1.0f : 0.0f;
+        auto result = compileWithInstances (graph, layoutOf (graph, 100), factory, { sampleRate, block }, 1);
+        REQUIRE (result.success);
+        auto& plan = result.plan;
+        REQUIRE (plan.instanceGroups[0]->count == 100);
+        REQUIRE (plan.finalOutputBufferIndexRight >= 0);
+        for (const auto instance : { 3, 40, 99 })
+            playNote (plan, instance, 60.0f);
+
+        auto solo = compileWithInstances (voicePatch (false, true), layoutOf (voicePatch (false, true), 2), factory, { sampleRate, block }, 1);
+        REQUIRE (solo.success);
+        playNote (solo.plan, 0, 60.0f);
+
+        float loudest = 0.0f;
+        for (int b = 0; b < 20; ++b)
+        {
+            plan.process (block);
+            solo.plan.process (block);
+            for (const auto channel : { plan.finalOutputBufferIndex, plan.finalOutputBufferIndexRight })
+            {
+                const auto soloChannel = channel == plan.finalOutputBufferIndex ? solo.plan.finalOutputBufferIndex
+                                                                                 : solo.plan.finalOutputBufferIndexRight;
+                for (int i = 0; i < block; ++i)
+                {
+                    const auto expected = buffer (solo.plan, soloChannel)[i] * (average ? 1.0f : 3.0f);
+                    REQUIRE (buffer (plan, channel)[i] == Catch::Approx (expected).margin (1.0e-5));
+                    loudest = std::max (loudest, std::abs (buffer (plan, channel)[i]));
+                }
+            }
+        }
+        CHECK (loudest > 0.1f);
+        for (const auto instance : { 3, 40, 99 })
+            CHECK (plan.instanceGroups[0]->instances[(size_t) instance].peak > 0.1f); // each leaf measures its own
+    }
+}
+
 TEST_CASE ("The output itself can run per instance; a fading instance ramps out", "[engine][instanceAxis]")
 {
     // No Merge: the output is the voice's own signal, summed in front of it.

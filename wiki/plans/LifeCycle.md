@@ -78,18 +78,36 @@ the same — correlated populations).
 
 The order of work moved stage 3a/3b in between 2b and 2c (`wiki/ROADMAP.md`); 2b is next.
 
-**2b.1 — Counts and caps (engine).**
+**2b.1 — Counts and caps (engine). Built 2026-10-16.**
 - An allocator's instance count is its own setting (Population's **Size**; the legacy
-  nodes' Max Instances until they go), read at compile time — a structural change
-  recompiles. Cap 128 per allocator; the real bound is CPU and memory (every per-instance
-  node exists Size times — a 2 s delay inside a 128-voice Population is 128 delay lines).
-- VoiceManager is preallocated to the cap in `prepareToPlay` and limited by
-  `setMaxActiveVoices`, so nothing is resized under the audio thread.
-- Allocators per patch: 4 → 16 (bundles preallocated). The per-allocator Merge limit goes
-  (each Merge is already its own `life.reduce`); `life.reduce` takes up to 128 inputs.
-- The card stack shows the real count.
+  nodes' Max Instances / Population Size until they go), read at compile time off a
+  scratch node with the patch's parameters (`GraphEditController::publishPlan`) — the
+  plan holds exactly that many copies, no longer a fixed 8. Trigger is 1. Cap 128 per
+  allocator (`maxInstancesPerGroup`, `InstanceGroups.h`); the real bound is CPU and memory
+  (every per-instance node exists Size times — a 2 s delay inside a 128-voice Population
+  is 128 delay lines).
+- VoiceManager is preallocated to the cap in `prepareToPlay` and narrowed by
+  `setMaxActiveVoices`, so nothing is resized under the audio thread. Every allocation is
+  also bounded by the count of the plan running right now (`noteOn (id, limit)`): a plan
+  swap and its new ceiling are not one atomic step. Instances past a smaller new count
+  are freed.
+- Allocators per patch: 4 → 16. The per-allocator Merge limit is gone (each Merge is its
+  own reduce). A reduce takes 16 instances (32 channels in stereo, the per-node port
+  limit); a larger group reduces through a tree — leaves (`life.reduce.first`) summed by a
+  combine (`life.reduce.combine`), which divides in Average mode.
+- The dead per-voice-era fields on `ExecutionPlan` (`externalInputNodeIds`,
+  `sumOutputs`, its own `maxOrigins`) are gone.
 
-**2b.2 — Population (`life.population`).**
+**2b.2 — Population (`life.population`). Built 2026-10-16** (`LifePopulationNode.h`,
+`tests/PopulationTests.cpp`). As built: births from inside the patch go through a **birth copy**
+(`pop@birth`, added by the instance expansion) that hears the inputs and, at the exact sample of a
+birth, asks the driver for a slot (`InstanceBirthSink`, implemented by the processor on its
+VoiceManager); the member starts at that sample in the same block (a hidden `births → afterBirths`
+cable orders the birth copy first). This replaces "instance 0 listens and the processor relays one
+block late" for Population. MIDI still pokes each member's own note-in copy, as Voice did. Born
+**at a rate** was left out of the node: an Events (or Clock) node wired into Born is the rate, with
+Regularity and Clustering for free. "Until silent" is Duration near 0. The plan below is the
+proposal it was built from.
 - **Born:** on a note (Note input) / on an event (Event input) / at a rate (Rate, Hz, with
   Regularity — the Events node's renewal process built in) / always (all alive from the
   start).

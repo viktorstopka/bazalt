@@ -800,6 +800,23 @@ How loud a signal is. **In:** `in` — `Audio` (Stereo; mono broadcasts, both ch
 Full domain model (configurations, instance context, lifetime, events-across-boundary)
 lives in `wiki/NODES.System.md` §5. Node specs only, here:
 
+#### `life.population` — Population ✅ *(new, wiki/plans/LifeCycle.md 2b.2, 2026-10-16 — replaces Voice, Trigger and both Swarms in 2b.4)*
+
+The one allocator: everything downstream runs once per member, up to **Size** (1–128) at a time.
+**In:** `notes` (Note — MIDI through `io.noteIn`, or any Note stream), `born` (Event — each one is a
+birth; a rate is an `random.events` or `time.clock` wired in), `release` (Event — ends every member
+still held), `pitch` / `velocity` / `duration` (read at the moment of an event birth). **Out:** `gate`,
+`pitch`, `velocity`, `index` (its slot), `order` (the how-manyeth birth), `age`, `alive` (members alive
+now), `random1` / `random2` / `position` (fixed for the member's life, from Seed and order), `start` /
+`stop`. **Settings:** Size; **Born** (on input / Always — all Size alive from the start); **Lives**
+(while held / for Duration / forever); **When full** (steal oldest / steal quietest / ignore); Seed.
+**Behaviour:** an event or internal note births a member at its exact sample, whatever the block size —
+the instance expansion adds a birth copy (`pop@birth`) that alone hears the inputs and asks the
+processor for a slot mid-plan (`InstanceBirthSink`); a hidden cable runs it before the members. After
+its gate falls a member keeps sounding until silent (200 ms under -80 dB), then its slot is free.
+A rate input of its own was planned and left out on purpose: Events already is the rate, with
+regularity and clustering on top.
+
 #### `life.voice` — Voice ✅ *(renamed from `instance.allocator`, 09-28-InstanceAllocator.3; renamed again from `instance.voice`, 09-29-AddMenu.1, to make room for `life.swarmPopulation`/`swarmTransient`/`trigger` as siblings under one Add-menu category)*
 Opens an instanced region. Was "one node, several configurations" (a `configuration`
 enum for Voice/Swarm-population/Swarm-transient/Trigger); three of those four options

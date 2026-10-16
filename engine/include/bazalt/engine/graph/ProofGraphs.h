@@ -25,6 +25,7 @@
 #include "bazalt/engine/nodes/GateLengthNode.h"
 #include "bazalt/engine/nodes/DownmixNode.h"
 #include "bazalt/engine/nodes/InstanceVoiceNode.h"
+#include "bazalt/engine/nodes/LifePopulationNode.h"
 #include "bazalt/engine/nodes/InstanceSwarmPopulationNode.h"
 #include "bazalt/engine/nodes/InstanceSwarmTransientNode.h"
 #include "bazalt/engine/nodes/InstanceTriggerNode.h"
@@ -146,6 +147,7 @@ namespace bazalt::engine
         // note held... using 2 clocks... too complicated").
         factory.registerType ("time.gateLength", [] { return std::make_unique<nodes::GateLengthNode>(); });
         factory.registerType ("channels.downmix", [] { return std::make_unique<nodes::DownmixNode>(); });
+        factory.registerType ("life.population", [] { return std::make_unique<nodes::LifePopulationNode>(); }); // wiki/plans/LifeCycle.md 2b.2
         factory.registerType ("life.voice", [] { return std::make_unique<nodes::InstanceVoiceNode>(); }); // 09-28-InstanceAllocator.3 — renamed from "instance.allocator"; 09-29-AddMenu.1 — renamed again from "instance.voice"
         factory.registerType ("life.swarmPopulation", [] { return std::make_unique<nodes::InstanceSwarmPopulationNode>(); }); // Domain Extensions batch
         factory.registerType ("life.swarmTransient", [] { return std::make_unique<nodes::InstanceSwarmTransientNode>(); }); // Domain Extensions batch

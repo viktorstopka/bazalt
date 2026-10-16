@@ -75,6 +75,9 @@ namespace bazalt::engine
         return id;
     }
 
+    /** `pop` → `pop@birth`: a Population's birth copy (LifePopulationNode). */
+    inline juce::String birthNodeId (const juce::String& originId) { return originId + "@birth"; }
+
     /** The id of the reduce the expansion puts in front of a per-instance output. */
     inline const char* outputReduceNodeId() noexcept { return "__output.reduce"; }
 

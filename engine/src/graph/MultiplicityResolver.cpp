@@ -26,6 +26,7 @@ namespace bazalt::engine
             string, same reason instanceSumTypeId above is a string too.
         */
         constexpr const char* instanceOriginTypeIds[] = {
+            "life.population",
             "life.voice",
             "life.swarmPopulation",
             "life.swarmTransient",
@@ -140,8 +141,8 @@ namespace bazalt::engine
 
         // Step 3: every instance.sum's "in" port must resolve Poly. Also
         // collects, per origin, which instance.sum nodes reduce it — several
-        // may (one voice feeding a main chain and a separate layer), up to
-        // maxSumsPerOrigin; each gets its own summed voice output.
+        // may (one voice feeding a main chain and a separate layer), each its
+        // own reduce.
         std::unordered_map<juce::String, std::vector<MultiplicityOrigin::Sum>> sumsForOrigin;
         std::unordered_map<juce::String, juce::String> originForSum; // instance.sum node id -> the origin it reduces
 
@@ -179,13 +180,6 @@ namespace bazalt::engine
             originForSum[sumId] = originId;
 
             auto& sums = sumsForOrigin[originId];
-            if ((int) sums.size() >= maxSumsPerOrigin)
-            {
-                result.errorMessage = "Only up to " + juce::String (maxSumsPerOrigin) + " Merges can reduce one allocator ('"
-                                       + originId + "') — found another: '" + sumId + "'";
-                return result;
-            }
-
             sums.push_back ({ sumId, feeding->fromNodeId, feeding->fromPortId });
         }
 
