@@ -1029,6 +1029,14 @@ A decal. Drop or paste an image onto the canvas (or pick Image in the Add menu f
 Routes whatever's plugged into it straight to the monitored output, so you can
 audition one point in the graph in isolation without rewiring anything. **In:** `in` — `Audio`. **Behavior:** while wired, what feeds it replaces Master Out (`GraphEditController::recompileAndPublish` compiles with the output redirected; the edited graph keeps its own). **Gestures (`wiki/ROADMAP.md` stage 0):** Ctrl+Alt+click an Audio output to listen to it — any other Listen is removed — or, on an output already being listened to, to stop; double-click a Listen to remove it; the listened node is drawn as listening. **Never saved:** patch files, plugin state and the dev export leave it out (`GraphEditController::getGraphForSaving`); undo snapshots keep it. **Taps:** `in`.
 
+#### `view.spectrogram` — Spectrogram ✅ *(new, wiki/plans/Sampling.md 3a.5, 2026-10-16)*
+
+A scrolling time-frequency picture: time runs to the left (about 6 s across), frequency
+up on the same log axis as Spectrum and the EQ, level as colour. Hover reads frequency,
+note, level and how long ago. **Settings:** FFT Size (as Spectrum's), Range (the quietest
+level shown, dB), Freeze (stops the scrolling). Built from the Spectrum's own analysis
+frames, kept as a history by the UI — it costs nothing a Spectrum doesn't.
+
 #### `view.spectrum` — Spectrum
 A live FFT display of a signal's frequency content — the standard "watch the
 spectrum" view, for seeing what a filter, distortion, or synthesis stage is

@@ -111,6 +111,62 @@ namespace bazalt::engine::nodes
         float averaging = 0.0f;
     };
 
+    /** "view.spectrogram": a scrolling Spectrogram (wiki/plans/Sampling.md
+        §2.6, 3a.5) — the Spectrum's own analysis, kept as a history: time
+        runs to the left, frequency up on the shared log axis
+        (logSpectrum.ts), level as colour. The UI builds the waterfall from
+        successive spectrum frames, so it costs the analysis thread nothing
+        a Spectrum doesn't. `fftSize` as Spectrum's; `range` is the quietest
+        level shown (dB); `freeze` stops the scrolling to read a moment. */
+    class ViewSpectrogramNode : public Node
+    {
+    public:
+        int getNumInputPorts() const noexcept override { return 1; }
+        int getNumOutputPorts() const noexcept override { return 0; }
+
+        juce::String getTitle() const override { return "Spectrogram"; }
+        juce::String getCategory() const override { return "View"; }
+        NodeLayoutVariant getLayoutVariant() const override { return NodeLayoutVariant::Horizontal; }
+
+        std::vector<PortDescriptor> getInputPorts() const override
+        {
+            return { perChannel (PortDescriptor { .id = "in", .type = SignalType::Signal, .label = "In", .quantity = Quantity::Audio }) };
+        }
+
+        std::vector<ParameterDescriptor> getParameters() const override
+        {
+            return {
+                ParameterDescriptor { .id = "view.spectrogram.fftSize", .minValue = 0.0f, .maxValue = 4.0f, .defaultValue = 2.0f,
+                                       .displayName = "FFT Size", .isInteger = true, .kind = ValueKind::Enum,
+                                       .enumOptions = { { "512", "512" }, { "1024", "1024" }, { "2048", "2048" },
+                                                         { "4096", "4096" }, { "8192", "8192" } },
+                                       .isStructural = true },
+                ParameterDescriptor { .id = "view.spectrogram.range", .minValue = -140.0f, .maxValue = -30.0f, .defaultValue = -90.0f,
+                                       .unit = "dB", .displayName = "Range" },
+                ParameterDescriptor { .id = "view.spectrogram.freeze", .minValue = 0.0f, .maxValue = 1.0f, .defaultValue = 0.0f,
+                                       .displayName = "Freeze", .isInteger = true, .kind = ValueKind::Enum,
+                                       .enumOptions = { { "off", "Off" }, { "on", "On" } } },
+            };
+        }
+
+        void setParameter (const juce::String& parameterId, float value) override
+        {
+            if (parameterId == "view.spectrogram.fftSize")
+                fftSizeIndex = std::clamp ((int) std::lround (value), 0, 4);
+            // Range and Freeze are how the UI draws the history; nothing to do here.
+        }
+
+        std::vector<PreviewDescriptor> getPreviews() const override
+        {
+            return { PreviewDescriptor { .kind = PreviewKind::Spectrogram, .portId = "in", .fftSize = 512 << fftSizeIndex } };
+        }
+
+        void processSample (const float*, float*) noexcept override {}
+
+    private:
+        int fftSizeIndex = 2;
+    };
+
     /** "view.meter": a level Meter, for Audio or any other plain signal (same
         input rules as view.scope). `mode` is `Peak` (a fast-attack peak line
         over an RMS bar), `RMS` (one reading: the line rides the bar) or `True

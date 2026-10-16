@@ -27,6 +27,7 @@ import { tokens } from '../theme/tokens'
 import { getCamera } from '../canvas/interactionStore'
 import type { NodeCardState } from './NodeCard'
 import { PhaseLockedPreview } from './PhaseLockedPreview'
+import { SpectrogramPreview } from './SpectrogramPreview'
 import { nextPlayheadMode, playheadModeFromProperty } from './playheadMode'
 
 interface NodePreviewProps {
@@ -71,6 +72,7 @@ export function NodePreview({ nodeId, preview, state }: NodePreviewProps) {
       />
     )
   }
+  if (preview.kind === 'spectrogram') return <SpectrogramPreview nodeId={nodeId} preview={preview} state={state} />
   return <TimeDomainPreview nodeId={nodeId} preview={preview} />
 }
 

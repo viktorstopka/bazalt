@@ -3,6 +3,7 @@
 #include "bazalt/engine/graph/MultiplicityResolver.h"
 #include "bazalt/engine/graph/NodeGraph.h"
 #include "SampleLibrary.h"
+#include "bazalt/engine/nodes/RecordNode.h"
 #include <functional>
 #include <unordered_map>
 #include <juce_core/juce_core.h>
@@ -255,6 +256,10 @@ namespace bazalt
         /** Seconds a Record node holds right now (its body's read-out); -1 for
             no such node. */
         double recordedSeconds (const juce::String& nodeId) const;
+
+        /** A Record node's body: its waveform, write head and fill (RecordNode::View);
+            empty peaks for no such node. */
+        bazalt::engine::nodes::RecordNode::View recordView (const juce::String& nodeId) const;
 
         static constexpr const char* sampleAssetPrefix = "sample:";
 

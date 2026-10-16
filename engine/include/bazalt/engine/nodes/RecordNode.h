@@ -2,6 +2,7 @@
 
 #include "bazalt/engine/graph/Node.h"
 #include "bazalt/engine/graph/SampleData.h"
+#include <array>
 #include <atomic>
 #include <cmath>
 
@@ -34,6 +35,7 @@ namespace bazalt::engine::nodes
     {
     public:
         enum class Mode { Ring, Once, Loop };
+        static constexpr int overviewBuckets = 160;
         static constexpr float maxSeconds = 60.0f;
         static constexpr int maxFrames = 1 << 23; // DataBuffer::encodeWindow stays exact in a float
 
@@ -248,6 +250,34 @@ namespace bazalt::engine::nodes
 
         double getSampleRate() const noexcept { return sampleRate; }
 
+        /** Message thread (the body): the buffer's waveform as min/max pairs in
+            buffer order, where the write head is (0–1 of the buffer) and how
+            much of it is recorded (0–1). Kept by the writer as it goes, so
+            reading it never touches the samples being written. */
+        struct View
+        {
+            std::vector<float> peaks;
+            float head = 0.0f, filled = 0.0f;
+            bool wrapped = false;
+        };
+        View getView() const
+        {
+            View view;
+            view.peaks.resize (overview.size());
+            for (size_t i = 0; i < overview.size(); ++i)
+                view.peaks[i] = overview[i].load (std::memory_order_relaxed);
+            if (allocated != nullptr && allocated->live != nullptr && allocated->frames() > 0)
+            {
+                const auto encoded = allocated->live->lastWindow.load (std::memory_order_acquire);
+                const auto window = allocated->windowFor (encoded);
+                const auto frames = (float) allocated->frames();
+                view.wrapped = window.firstReadable > 0;
+                view.filled = (float) window.length / frames;
+                view.head = view.wrapped ? (float) window.origin / frames : view.filled;
+            }
+            return view;
+        }
+
         /** Message thread (the node's body): seconds recorded so far. */
         float getRecordedSeconds() const noexcept
         {
@@ -260,20 +290,42 @@ namespace bazalt::engine::nodes
         static constexpr int inLeft = 0, inRight = 1, recordIn = 2, clearIn = 3, feedbackIn = 4;
         static constexpr int positionOut = 1, recordingOut = 2;
 
-        void put (float* data, int frame, float left, float right, float keep) const noexcept
+        void put (float* data, int frame, float left, float right, float keep) noexcept
         {
             auto* at = data + (size_t) frame * (size_t) (stereo ? 2 : 1);
+            float lo, hi;
             if (stereo)
             {
                 at[0] = at[0] * keep + left;
                 at[1] = at[1] * keep + right;
+                lo = juce::jmin (at[0], at[1]);
+                hi = juce::jmax (at[0], at[1]);
             }
             else
-                at[0] = at[0] * keep + 0.5f * (left + right);
+                lo = hi = at[0] = at[0] * keep + 0.5f * (left + right);
+
+            // The body's waveform: a bucket starts over when the writer enters it.
+            const auto bucket = (int) ((int64_t) frame * overviewBuckets / juce::jmax (1, capacity));
+            auto& low = overview[(size_t) bucket * 2];
+            auto& high = overview[(size_t) bucket * 2 + 1];
+            if (bucket != writingBucket)
+            {
+                writingBucket = bucket;
+                low.store (lo, std::memory_order_relaxed);
+                high.store (hi, std::memory_order_relaxed);
+            }
+            else
+            {
+                low.store (juce::jmin (lo, low.load (std::memory_order_relaxed)), std::memory_order_relaxed);
+                high.store (juce::jmax (hi, high.load (std::memory_order_relaxed)), std::memory_order_relaxed);
+            }
         }
 
         void clearRecording() noexcept
         {
+            for (auto& v : overview)
+                v.store (0.0f, std::memory_order_relaxed);
+            writingBucket = -1;
             clearPending = false;
             filled = writeHead = loopLength = 0;
             wrapped = false;
@@ -316,6 +368,8 @@ namespace bazalt::engine::nodes
         float storedFeedback = 1.0f;
 
         std::atomic<bool> pauseRequested { false }, paused { false };
+        std::array<std::atomic<float>, (size_t) overviewBuckets * 2> overview {};
+        int writingBucket = -1;
 
         // Audio thread.
         int capacity = 0, filled = 0, writeHead = 0, loopLength = 0;

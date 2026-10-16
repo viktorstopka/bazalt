@@ -507,10 +507,22 @@ namespace bazalt
             completion (juce::var (obj));
         });
 
-        // How many seconds a Record node holds (its body polls this); -1: none.
+        // A Record node's body (polled): { seconds (-1: no such node), peaks
+        // (min/max pairs in buffer order), head, filled (0-1), wrapped }.
         options = options.withNativeFunction ("recordInfo", [&processor] (Args args, Completion completion)
         {
-            completion (processor.getGraphEditController().recordedSeconds (argString (args, 0)));
+            auto& controller = processor.getGraphEditController();
+            const auto view = controller.recordView (argString (args, 0));
+            auto* obj = new juce::DynamicObject();
+            obj->setProperty ("seconds", controller.recordedSeconds (argString (args, 0)));
+            juce::Array<juce::var> peaks;
+            for (const auto v : view.peaks)
+                peaks.add (v);
+            obj->setProperty ("peaks", peaks);
+            obj->setProperty ("head", view.head);
+            obj->setProperty ("filled", view.filled);
+            obj->setProperty ("wrapped", view.wrapped);
+            completion (juce::var (obj));
         });
 
         // "Export with samples…": a save dialog, then the patch with every

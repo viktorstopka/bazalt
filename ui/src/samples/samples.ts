@@ -140,7 +140,19 @@ export function freezeRecord(nodeId: string): Promise<FreezeResult> {
   return call<FreezeResult>('recordFreeze', { success: false, errorMessage: 'Not running in Bazalt' }, nodeId)
 }
 
-/** Seconds a Record node holds right now; -1 when there is no such node. */
-export function recordedSeconds(nodeId: string): Promise<number> {
-  return call<number>('recordInfo', -1, nodeId)
+export interface RecordInfo {
+  /** Seconds it holds; -1 when there is no such node. */
+  seconds: number
+  /** The buffer's waveform: min/max pairs, in buffer order. */
+  peaks: number[]
+  /** Where the write head is, and how much is recorded (0-1 of the buffer). */
+  head: number
+  filled: number
+  /** A full ring: the oldest moment is at the head. */
+  wrapped: boolean
+}
+
+/** A Record node as its body shows it (polled). */
+export function recordInfo(nodeId: string): Promise<RecordInfo> {
+  return call<RecordInfo>('recordInfo', { seconds: -1, peaks: [], head: 0, filled: 0, wrapped: false }, nodeId)
 }

@@ -199,3 +199,21 @@ TEST_CASE ("Loop: the first take sets the length, the next passes overdub", "[en
     CHECK (out[3600] == Catch::Approx (0.75f));
     CHECK (out[4700] == Catch::Approx (0.75f)); // looping
 }
+
+TEST_CASE ("Record keeps a waveform of what it holds for its body", "[engine][record][3a]")
+{
+    nodes::RecordNode record;
+    record.prepare ({ rate, 256 });
+    record.setParameter ("data.record.length", 1.0f);
+    record.setParameter ("data.record.channels", 0.0f);
+    nodes::SamplerNode sampler;
+    // A quarter of a second of +0.5, then nothing recorded.
+    run (record, sampler, 12000, 256, [] (int t) { return Moment { .in = 0.5f, .record = t < 12000 ? 1.0f : 0.0f }; });
+    const auto view = record.getView();
+    REQUIRE (view.peaks.size() == (size_t) nodes::RecordNode::overviewBuckets * 2);
+    CHECK (view.filled == Catch::Approx (0.25f));
+    CHECK (view.head == Catch::Approx (0.25f));
+    CHECK_FALSE (view.wrapped);
+    CHECK (view.peaks[1] == Catch::Approx (0.5f));                            // first bucket's max
+    CHECK (view.peaks[(size_t) nodes::RecordNode::overviewBuckets] == 0.0f);  // the middle: nothing yet
+}

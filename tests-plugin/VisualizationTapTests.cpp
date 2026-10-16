@@ -588,3 +588,26 @@ TEST_CASE ("A viewer placed with saved parameters starts with them, and a previe
     REQUIRE (voiceProcessor.subscribeVisualizationTap ("osc", "out", bazalt::engine::PreviewKind::PhaseLocked));
     CHECK_FALSE (settingsOf (voiceProcessor, tapFor (voiceProcessor, "osc", "out")).phaseLockedFold);
 }
+
+TEST_CASE ("A Spectrogram taps its input for spectrum frames only", "[plugin][telemetry][view][3a]")
+{
+    BazaltAudioProcessor processor;
+    processor.prepareToPlay (44100.0, 512);
+    REQUIRE (processor.getGraphEditController().setGraph (graphWithViewers ({ { "gram", "view.spectrogram" } })).success);
+    wire (processor, "gram");
+    REQUIRE (processor.subscribeVisualizationTap ("gram", "in", bazalt::engine::PreviewKind::Spectrogram));
+
+    // Before anything else asks for the tap (tapFor() would widen it to every frame type).
+    auto& hub = processor.getTelemetryHub();
+    auto spectrumOnly = 0;
+    for (size_t slot = 0; slot < bazalt::engine::TelemetryHub::maxTaps; ++slot)
+        if (hub.getTapBySlot (slot) != nullptr && hub.isFrameTypeNeeded (slot, bazalt::engine::TelemetryFrameType::Spectrum)
+            && ! hub.isFrameTypeNeeded (slot, bazalt::engine::TelemetryFrameType::Oscilloscope))
+            ++spectrumOnly;
+    CHECK (spectrumOnly == 1);
+
+    auto* tap = tapFor (processor, "gram", "in");
+    REQUIRE (tap != nullptr);
+    runBlocks (processor, 2, 0.25f);
+    CHECK (tap->getTotalPushed() == 2 * 512);
+}

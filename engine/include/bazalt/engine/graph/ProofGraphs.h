@@ -128,6 +128,7 @@ namespace bazalt::engine
         factory.registerType ("math.round", [] { return std::make_unique<nodes::RoundNode>(); });
         factory.registerType ("view.listen", [] { return std::make_unique<nodes::ListenNode>(); });
         factory.registerType ("view.spectrum", [] { return std::make_unique<nodes::ViewSpectrumNode>(); });
+        factory.registerType ("view.spectrogram", [] { return std::make_unique<nodes::ViewSpectrogramNode>(); }); // wiki/plans/Sampling.md 3a.5
         factory.registerType ("view.meter", [] { return std::make_unique<nodes::ViewMeterNode>(); });
         factory.registerType ("view.cycle", [] { return std::make_unique<nodes::ViewCycleNode>(); }); // phase-locked viewer, replaces view.scope/view.glance
         factory.registerType ("view.ripple", [] { return std::make_unique<nodes::ViewRippleNode>(); });

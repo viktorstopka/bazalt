@@ -1,6 +1,6 @@
 # Sampling — audio as a material, not just a sound
 
-**Status:** In progress. 3a.1–3a.4 built 2026-10-16 (see §10); the rest proposed, 2026-10-16. Stage 3 of `wiki/ROADMAP.md` (3a, then 3b), planned with
+**Status:** In progress. 3a.1–3a.5 built 2026-10-16 (see §10); the rest proposed, 2026-10-16. Stage 3 of `wiki/ROADMAP.md` (3a, then 3b), planned with
 the user after 2b landed. No code exists yet. `Wavesets.md` is part of this stage and
 builds on the live buffer defined here. `BakedPhysics.md`'s event track turns into a
 special case of the sample defined here (§4.5).
@@ -526,3 +526,22 @@ bodies all play through it.
 details: `waveset.capture`'s output is a live sample with waveset marks
 (`Data(wavesets)`), `waveset.play` interleaves whole wavesets live, and the Interleave
 preset is in the Add menu.
+
+**3a.5 (2026-10-16).**
+- `view.spectrogram` (`ViewNodes.h`) declares `PreviewKind::Spectrogram`, which the
+  processor feeds with **Spectrum frames** (`frameTypesNeededFor`): the waterfall is a
+  history of the frames the Spectrum view already gets, kept by the UI
+  (`ui/src/nodes/SpectrogramPreview.tsx`: 240 columns pushed every 25 ms whatever the
+  display rate, 128 rows on `logSpectrum.ts`'s axis, a palette from the node's fill
+  through the spectrum colour to white). Same cursor read-out as Spectrum, plus how long
+  ago. Range and Freeze are display settings.
+- **A live buffer's write head is visible:** the Record node's body draws its buffer and
+  the write head moving (`RecordBody.tsx`). The waveform is min/max per 1/160 of the
+  buffer, kept by the writer as it writes (`RecordNode::overview`, relaxed atomics), so the
+  UI never reads samples that are being written; `recordInfo` returns it with the head and
+  fill.
+- Not yet: a waveform preview on *any* sample cable (Sample and Record bodies show
+  theirs; a Sampler's input doesn't).
+- Tests: the spectrogram tap asks for spectrum frames only
+  (`tests-plugin/VisualizationTapTests.cpp`); the Record view's fill, head and peaks
+  (`tests/RecordTests.cpp`).

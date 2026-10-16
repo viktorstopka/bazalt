@@ -1234,6 +1234,12 @@ namespace bazalt
         return record != nullptr ? (double) record->getRecordedSeconds() : -1.0;
     }
 
+    bazalt::engine::nodes::RecordNode::View GraphEditController::recordView (const juce::String& nodeId) const
+    {
+        const auto* record = findRecordNode (processor.getGlobalPlanSwapper().peekCurrentPlan(), nodeId);
+        return record != nullptr ? record->getView() : bazalt::engine::nodes::RecordNode::View {};
+    }
+
     GraphEditController::FreezeResult GraphEditController::freezeRecord (const juce::String& nodeId)
     {
         FreezeResult result;

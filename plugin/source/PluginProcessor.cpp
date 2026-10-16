@@ -310,6 +310,7 @@ namespace bazalt
             {
                 case PreviewKind::Waveform:       return { true, false, false, false, false, false };
                 case PreviewKind::Spectrum:       return { false, true, false, false, false, false };
+                case PreviewKind::Spectrogram:    return { false, true, false, false, false, false }; // a history of spectrum frames, kept by the UI
                 case PreviewKind::Meter:          return { false, false, true, false, false, false };
                 case PreviewKind::EventImpulse:   return { false, false, false, true, false, false };
                 case PreviewKind::RollingHistory: return { false, false, false, false, true, false };
