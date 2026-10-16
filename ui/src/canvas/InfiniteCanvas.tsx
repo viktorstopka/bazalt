@@ -621,7 +621,7 @@ export const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, InfiniteCanvasPro
           if (bestKey) {
             const sourceEndpoint = getEndpoint(g.fromNodeId, g.fromPortId, 'output')
             const targetEndpoint = getEndpoint(bestNodeId, bestPortId, 'input')
-            const valid = !!sourceEndpoint && !!targetEndpoint && canConnect(sourceEndpoint, targetEndpoint, getGraphSnapshot().multiplicity)
+            const valid = !!sourceEndpoint && !!targetEndpoint && canConnect(sourceEndpoint, targetEndpoint)
             const occupied = findWireAtInput(bestNodeId, bestPortId)
             g.hoverNodeId = bestNodeId
             g.hoverPortId = bestPortId

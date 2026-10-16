@@ -286,3 +286,67 @@ TEST_CASE ("A file arrives from the WebView as standard base64", "[plugin][sampl
     INFO (imported.errorMessage);
     CHECK (imported.success);
 }
+
+TEST_CASE ("Granular keys: each key plays 10 grains from random places in a sample", "[plugin][sample][3a]")
+{
+    TempDir temp;
+    bazalt::engine::SampleStore::instance().clearForTesting();
+    BazaltAudioProcessor processor;
+    processor.prepareToPlay (48000.0, 512);
+    auto& c = processor.getGraphEditController();
+    c.setSampleLibraryForTesting (SampleLibrary (temp.dir));
+    const auto imported = c.getSampleLibrary().importFile ("sine.wav", sineWav());
+    REQUIRE (imported.success);
+
+    juce::AudioBuffer<float> buffer (2, 512);
+    // Each command publishes a plan; a block takes it, as the audio thread
+    // does between edits in the editor (a queue never read fills up).
+    auto step = [&] (GraphEditController::CommandResult r)
+    {
+        INFO (r.errorMessage);
+        REQUIRE (r.success);
+        juce::MidiBuffer none;
+        processor.processBlock (buffer, none);
+    };
+    // Built one cable at a time, as in the editor — the voice's values reach
+    // the inner (Unison) members, which nests it inside the voice.
+    step (c.addNode ("io.noteIn", "notes", 0, 0));
+    step (c.addNode ("life.population", "voice", 0, 0));
+    step (c.connect ("notes", "notes", "voice", "notes"));
+    step (c.addNode ("life.population", "grains", 0, 0));
+    step (c.setParameterValue ("grains", "life.population.size", 10.0f));
+    step (c.setParameterValue ("grains", "life.population.born", 1.0f));
+    step (c.addNode ("data.sample", "sample", 0, 0));
+    step (c.setContent ("sample", juce::JSON::parse (R"({ "sample": ")" + imported.source->id + R"(", "name": "sine.wav", "root": 69 })")));
+    step (c.addNode ("source.sampler", "sampler", 0, 0));
+    step (c.connectWithAutoAdapt ("sample", "sample", "sampler", "sample"));
+    step (c.connectWithAutoAdapt ("voice", "pitch", "sampler", "pitch"));
+    step (c.addNode ("math.map", "spread", 0, 0));
+    step (c.setParameterValue ("spread", "math.map.inMin", -1.0f));
+    step (c.setParameterValue ("spread", "math.map.inMax", 1.0f));
+    step (c.setParameterValue ("spread", "math.map.outMin", 0.0f));
+    step (c.setParameterValue ("spread", "math.map.outMax", 0.8f));
+    step (c.connectWithAutoAdapt ("grains", "random1", "spread", "in"));
+    step (c.connectWithAutoAdapt ("spread", "out", "sampler", "source.sampler.position"));
+    step (c.addNode ("life.merge", "sumGrains", 0, 0));
+    step (c.connectWithAutoAdapt ("sampler", "out", "sumGrains", "in"));
+    step (c.addNode ("life.merge", "sumVoices", 0, 0));
+    step (c.connectWithAutoAdapt ("sumGrains", "out", "sumVoices", "in"));
+    step (c.connectWithAutoAdapt ("sumVoices", "out", "masterOut", "in"));
+
+    float peak = 0.0f;
+    for (int b = 0; b < 8; ++b)
+    {
+        buffer.clear();
+        juce::MidiBuffer midi;
+        if (b == 0)
+            midi.addEvent (juce::MidiMessage::noteOn (1, 69, (juce::uint8) 100), 0);
+        processor.processBlock (buffer, midi);
+        peak = std::max (peak, buffer.getMagnitude (0, 0, 512));
+    }
+    // Ten grains of a 0.5-peak sine from different places add up to more than one would.
+    CHECK (peak > 0.6f);
+    auto* plan = processor.getGlobalPlanSwapper().peekCurrentPlan();
+    REQUIRE (plan != nullptr);
+    CHECK (plan->getNodeById ("sampler") != nullptr);
+}
