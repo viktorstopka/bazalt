@@ -822,6 +822,14 @@ Random 1 into the voice's pitch), lives inside it — every outer member gets it
 members, which end with it. A Merge of the inner members inside the outer chain sums each
 outer member's own. Up to 128 members in all (Size × the outer count).
 
+#### `data.sample` — Sample ✅ *(new, wiki/plans/Sampling.md 3a.1, 2026-10-16)*
+
+One sound from the sample library, with a non-destructive region as its content (start, end,
+loop, fades, gain, reverse, normalise, slices). Drop an audio file on the canvas to make one.
+**Out:** `sample` — `Data(sample)` (channels with their meaning, loop/slice markers);
+`length` (s). A sample missing from the library publishes silence and the node offers
+"Find…" to relink it. Players (Sampler, Convolver, Wavesets) arrive in 3a.2 and later.
+
 #### `life.split` — Split ✅ *(new, wiki/plans/LifeCycle.md 2b.3, 2026-10-16)*
 
 Sorts a Population's members into up to four branches; each member is in exactly one, and

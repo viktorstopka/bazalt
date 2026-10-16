@@ -3,6 +3,7 @@
 #include <array>
 #include <atomic>
 #include <cstdint>
+#include <limits>
 #include <memory>
 #include <vector>
 
@@ -65,6 +66,23 @@ namespace bazalt::engine
             Public for the same reason `ExecutionPlan::generation` is.
         */
         uint64_t generation = 0;
+
+        /** A sample's extras (wiki/plans/Sampling.md §1): what each channel
+            means (a `Quantity` ordinal — a recorded pitch stays a pitch), loop
+            and slice points in frames, and the detected root pitch (NaN when
+            unknown). Set by the producer before publishing, never after. */
+        struct SampleMeta
+        {
+            std::vector<uint8_t> channelQuantities;
+            int loopStart = -1, loopEnd = -1; // frames; -1: no loop
+            std::vector<int> slices;          // frames, ascending
+            float rootPitch = std::numeric_limits<float>::quiet_NaN();
+        };
+        SampleMeta sampleMeta;
+
+        /** Frames × channels for a Sample (stride is the channel count). */
+        int channels() const noexcept { return stride_; }
+        int frames() const noexcept { return length(); }
 
         DataTag tag() const noexcept { return tag_; }
         int stride() const noexcept { return stride_; }

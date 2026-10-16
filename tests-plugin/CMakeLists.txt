@@ -41,6 +41,7 @@ target_sources(PluginTests
         NodeDescriptorJsonTests.cpp
         PatchStateTests.cpp
         PatchSwitchTests.cpp
+        SampleLibraryTests.cpp
         StressGraphTests.cpp
         VisualizationTapTests.cpp
         VoiceRenderTests.cpp
@@ -64,6 +65,7 @@ target_compile_definitions(PluginTests
         BAZALT_UI_DEV_SERVER_URL="http://localhost:5173"
         # The factory patches the UI ships — every one must load and compile.
         BAZALT_FACTORY_PATCH_DIR="${CMAKE_SOURCE_DIR}/ui/src/patches/factory"
+        JUCE_USE_MP3AUDIOFORMAT=1
 )
 
 target_link_libraries(PluginTests

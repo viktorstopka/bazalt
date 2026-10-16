@@ -1,6 +1,6 @@
 # Sampling — audio as a material, not just a sound
 
-**Status:** Proposed, 2026-10-16. Stage 3 of `wiki/ROADMAP.md` (3a, then 3b), planned with
+**Status:** In progress. 3a.1 built 2026-10-16 (see §10); the rest proposed, 2026-10-16. Stage 3 of `wiki/ROADMAP.md` (3a, then 3b), planned with
 the user after 2b landed. No code exists yet. `Wavesets.md` is part of this stage and
 builds on the live buffer defined here. `BakedPhysics.md`'s event track turns into a
 special case of the sample defined here (§4.5).
@@ -441,3 +441,30 @@ bodies all play through it.
 - Open: should Capture and Bake also exist as nodes (for automation by the patch itself,
   e.g. a footswitch that bakes), or only as editor actions? *Leaning:* Record is the node;
   Bake stays an editor action until a real use asks otherwise.
+
+## 10. As built
+
+**3a.1 (2026-10-16).**
+- `Data(sample)`: `DataBuffer` with stride = channel count, plus `sampleMeta` — per-channel
+  quantity ordinals, loop and slice points in frames, root pitch (NaN until 3a.2 detects
+  it).
+- `SampleSource` / `SampleStore` (`SampleData.h`): decoded samples, by id, process-wide and
+  shared by all plugin instances. The id is an FNV-1a 64 hash of the file's bytes.
+- `SampleRegion`: the node's content — start/end/loop/gain/reverse/normalise/fades/slices,
+  in seconds. `buildSampleBuffer` turns source + region into the published buffer.
+- `data.sample` (`DataSampleNode.h`): outputs `sample` (Data) and `length` (Time).
+  A missing sample publishes one silent frame and reports `isMissing()`.
+- `SampleLibrary` (plugin): decodes WAV/AIFF/FLAC/OGG/MP3 (up to 8 channels and 20 minutes)
+  and stores 24-bit FLAC in `%APPDATA%\Bazalt\Samples\<id>.flac`. `setGraph` loads every
+  referenced sample before compiling.
+- **Export with samples** (patch menu) embeds FLAC as `sample:<id>` assets. Loading such a
+  patch imports them into the library and strips them, so DAW state and ordinary saves
+  keep references only. Ordinary saves drop them anyway (`pruneUnreferencedAssets`).
+- UI (`ui/src/samples/`):
+  - dropping audio files on the canvas imports them and places Sample nodes;
+  - the node body shows the waveform with its region, the name and length;
+  - an empty node shows "Load sample…"; a missing sample shows "Missing: name" and "Find…",
+    which relinks and keeps the region.
+- Not yet: dropping a file onto a port (comes with the Sampler, 3a.2); editing the region
+  (the Sample factory, 3a.2); many-channel samples in the library (FLAC stops at 8 — bakes,
+  3b).

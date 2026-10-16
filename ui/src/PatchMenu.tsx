@@ -9,6 +9,7 @@
 // `parsePatchFromJson` expects, loaded via graphStore.ts's `loadPatch`.
 import { useEffect, useRef, useState } from 'react'
 import { deleteUserPatch, listUserPatches, saveUserPatch, userPatchExists, type UserPatchEntry } from './graph/patchLibrary'
+import { exportPatchWithSamples } from './samples/samples'
 import './PatchMenu.css'
 
 export interface PatchOption {
@@ -212,6 +213,20 @@ export function PatchMenu({
             }}
           >
             Save as…
+          </button>
+          <button
+            type="button"
+            className="patch-menu-item patch-menu-action"
+            title="One file with every sample the patch uses, to share or move to another computer"
+            onClick={() => {
+              setOpen(false)
+              void exportPatchWithSamples(current.name === 'Empty' ? 'Patch' : current.name).then((result) => {
+                if (result.success) flash('Exported with samples')
+                else if (result.errorMessage) flash(result.errorMessage)
+              })
+            }}
+          >
+            Export with samples…
           </button>
         </div>
       )}

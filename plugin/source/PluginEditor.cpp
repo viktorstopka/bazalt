@@ -256,6 +256,27 @@ namespace bazalt
         {
             return index < args.size() ? args[index] : juce::var();
         }
+
+        /** A loaded sample's facts for the UI (wiki/plans/Sampling.md 3a.1). */
+        juce::var sampleInfoToVar (const bazalt::engine::SampleSource* source)
+        {
+            auto* obj = new juce::DynamicObject();
+            obj->setProperty ("found", source != nullptr);
+            if (source != nullptr)
+            {
+                obj->setProperty ("id", source->id);
+                obj->setProperty ("name", source->name);
+                obj->setProperty ("channels", source->channels);
+                obj->setProperty ("frames", source->frames);
+                obj->setProperty ("sampleRate", source->sampleRate);
+                obj->setProperty ("seconds", source->seconds());
+            }
+            return juce::var (obj);
+        }
+
+        // One save dialog at a time ("Export with samples…"); kept alive here
+        // while it is open.
+        std::unique_ptr<juce::FileChooser> exportChooser;
     }
 
     juce::WebBrowserComponent::Options BazaltAudioProcessorEditor::withGraphCommands (
@@ -386,6 +407,101 @@ namespace bazalt
             const auto result = controller.addImage (argString (args, 0), argFloat (args, 1), argFloat (args, 2), argString (args, 3),
                                                      argString (args, 4), argFloat (args, 5), argFloat (args, 6));
             completion (commandResultToVar (result));
+        });
+
+        // ---- Samples (wiki/plans/Sampling.md 3a.1) ----------------------
+        // A dropped audio file: decoded, stored in the library, loaded. Args:
+        // file name, base64 bytes. Resolves to the sample's facts plus
+        // success / errorMessage.
+        options = options.withNativeFunction ("sampleImport", [&processor] (Args args, Completion completion)
+        {
+            juce::MemoryBlock bytes;
+            if (! bytes.fromBase64Encoding (argString (args, 1)))
+            {
+                auto* obj = new juce::DynamicObject();
+                obj->setProperty ("success", false);
+                obj->setProperty ("errorMessage", "Couldn't read that file");
+                completion (juce::var (obj));
+                return;
+            }
+            const auto result = processor.getGraphEditController().getSampleLibrary().importFile (argString (args, 0), bytes);
+            auto info = sampleInfoToVar (result.source.get());
+            info.getDynamicObject()->setProperty ("success", result.success);
+            info.getDynamicObject()->setProperty ("errorMessage", result.errorMessage);
+            completion (info);
+        });
+
+        // A sample's facts by id, loading it from the library first;
+        // found: false when the library doesn't have it (missing).
+        options = options.withNativeFunction ("sampleInfo", [&processor] (Args args, Completion completion)
+        {
+            const auto id = argString (args, 0);
+            processor.getGraphEditController().getSampleLibrary().ensureLoaded (id);
+            completion (sampleInfoToVar (bazalt::engine::SampleStore::instance().find (id).get()));
+        });
+
+        // A waveform overview for a node's body: `buckets` (min, max) pairs
+        // over the whole sample, all channels together. Empty when missing.
+        options = options.withNativeFunction ("sampleOverview", [] (Args args, Completion completion)
+        {
+            const auto source = bazalt::engine::SampleStore::instance().find (argString (args, 0));
+            const auto buckets = juce::jlimit (1, 4096, (int) argFloat (args, 1));
+            juce::Array<juce::var> values;
+            if (source != nullptr && source->frames > 0)
+                for (int b = 0; b < buckets; ++b)
+                {
+                    const auto from = (int) ((juce::int64) b * source->frames / buckets);
+                    const auto to = juce::jmax (from + 1, (int) ((juce::int64) (b + 1) * source->frames / buckets));
+                    float lo = 0.0f, hi = 0.0f;
+                    for (int f = from; f < to && f < source->frames; ++f)
+                        for (int c = 0; c < source->channels; ++c)
+                        {
+                            const auto v = source->at (f, c);
+                            lo = juce::jmin (lo, v);
+                            hi = juce::jmax (hi, v);
+                        }
+                    values.add (lo);
+                    values.add (hi);
+                }
+            completion (values);
+        });
+
+        // A sample relinked or imported after its nodes were compiled.
+        options = options.withNativeFunction ("sampleRefresh", [&processor] (Args args, Completion completion)
+        {
+            processor.getGraphEditController().refreshSamples (argString (args, 0));
+            completion (true);
+        });
+
+        // "Export with samples…": a save dialog, then the patch with every
+        // sample it uses embedded. Resolves to { success, errorMessage, path }.
+        options = options.withNativeFunction ("patchExportWithSamples", [&processor] (Args args, Completion completion)
+        {
+            const auto name = juce::File::createLegalFileName (argString (args, 0).trim().isEmpty() ? juce::String ("Patch") : argString (args, 0).trim());
+            exportChooser = std::make_unique<juce::FileChooser> (
+                "Export patch with its samples", juce::File::getSpecialLocation (juce::File::userDocumentsDirectory).getChildFile (name + ".bazalt"),
+                "*.bazalt");
+            exportChooser->launchAsync (juce::FileBrowserComponent::saveMode | juce::FileBrowserComponent::canSelectFiles
+                                            | juce::FileBrowserComponent::warnAboutOverwriting,
+                                        [&processor, completion] (const juce::FileChooser& chooser)
+                                        {
+                                            auto* obj = new juce::DynamicObject();
+                                            const auto file = chooser.getResult();
+                                            if (file == juce::File())
+                                            {
+                                                obj->setProperty ("success", false);
+                                                obj->setProperty ("errorMessage", "");
+                                            }
+                                            else
+                                            {
+                                                const auto target = file.hasFileExtension ("bazalt") ? file : file.withFileExtension ("bazalt");
+                                                const auto result = processor.getGraphEditController().exportPatchWithSamples (target);
+                                                obj->setProperty ("success", result.success);
+                                                obj->setProperty ("errorMessage", result.errorMessage);
+                                                obj->setProperty ("path", target.getFullPathName());
+                                            }
+                                            completion (juce::var (obj));
+                                        });
         });
 
         options = options.withNativeFunction ("graphSetProperty", [&processor] (Args args, Completion completion)

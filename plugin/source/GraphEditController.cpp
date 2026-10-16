@@ -891,6 +891,7 @@ namespace bazalt
 
     GraphEditController::CommandResult GraphEditController::setGraph (bazalt::engine::NodeGraph newGraph)
     {
+        loadSamplesFor (newGraph);
         const auto previousGraph = graph;
         graph = std::move (newGraph);
 
@@ -1161,6 +1162,80 @@ namespace bazalt
                     stored->parameters["util.macro.default"] = static_cast<juce::AudioProcessorParameter&> (processor.getMacroParameter (slot)).getValue();
         }
         return saved;
+    }
+
+    void GraphEditController::loadSamplesFor (bazalt::engine::NodeGraph& patch) const
+    {
+        // Embedded samples (a patch exported with its samples): into the library.
+        std::vector<juce::String> embedded;
+        for (const auto& [assetId, asset] : patch.getAssets())
+            if (assetId.startsWith (sampleAssetPrefix))
+            {
+                juce::MemoryBlock bytes;
+                if (bytes.fromBase64Encoding (asset.data))
+                    sampleLibrary.importAs (assetId.fromFirstOccurrenceOf (sampleAssetPrefix, false, false), {}, bytes);
+                embedded.push_back (assetId);
+            }
+        if (! embedded.empty())
+        {
+            auto stripped = bazalt::engine::NodeGraph {};
+            for (const auto& node : patch.getNodes())
+                stripped.addNode (node);
+            for (const auto& c : patch.getConnections())
+                stripped.addConnection (c);
+            stripped.setOutput (patch.getOutputNodeId(), patch.getOutputPortId());
+            for (const auto& [assetId, asset] : patch.getAssets())
+                if (! assetId.startsWith (sampleAssetPrefix))
+                    stripped.setAsset (assetId, asset);
+            patch = std::move (stripped);
+        }
+
+        // Every sample a Sample node names: loaded from the library (a missing
+        // one stays missing — the node publishes silence and says so).
+        for (const auto& node : patch.getNodes())
+            if (node.type == "data.sample")
+                sampleLibrary.ensureLoaded (node.content.getProperty ("sample", "").toString(),
+                                            node.content.getProperty ("name", "").toString());
+    }
+
+    void GraphEditController::refreshSamples (const juce::String& sampleId)
+    {
+        auto* plan = processor.getGlobalPlanSwapper().peekCurrentPlan();
+        if (plan == nullptr)
+            return;
+        for (const auto& node : graph.getNodes())
+            if (node.type == "data.sample" && node.content.getProperty ("sample", "").toString() == sampleId)
+            {
+                if (const auto it = plan->copySlotsByBaseId.find (node.id); it != plan->copySlotsByBaseId.end())
+                    for (const auto slot : it->second)
+                        plan->nodes[(size_t) slot]->setContent (node.content);
+                else if (auto* single = plan->getNodeById (node.id))
+                    single->setContent (node.content);
+            }
+    }
+
+    GraphEditController::CommandResult GraphEditController::exportPatchWithSamples (const juce::File& file) const
+    {
+        auto doc = bazalt::engine::PatchDocument::fromNodeGraph (getGraphForSaving());
+        for (const auto& node : doc.nodes)
+        {
+            if (node.type != "data.sample")
+                continue;
+            const auto id = node.content.getProperty ("sample", "").toString();
+            if (id.isEmpty() || doc.assets.count (sampleAssetPrefix + id) > 0)
+                continue;
+            const auto bytes = sampleLibrary.storedBytes (id);
+            if (bytes.isEmpty())
+                return { false, "The sample '" + node.content.getProperty ("name", id).toString() + "' is missing — find it first" };
+            doc.assets[sampleAssetPrefix + id] = { "audio/flac", bytes.toBase64Encoding() };
+        }
+
+        const auto parentDir = file.getParentDirectory();
+        if (! parentDir.exists() && ! parentDir.createDirectory())
+            return { false, "Could not create " + parentDir.getFullPathName() };
+        if (! file.replaceWithText (bazalt::engine::serializePatchToJson (doc, true)))
+            return { false, "Could not write " + file.getFullPathName() };
+        return { true, {} };
     }
 
     GraphEditController::CommandResult GraphEditController::exportSnapshotToFile (const juce::File& file) const

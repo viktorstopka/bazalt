@@ -24,6 +24,7 @@ import { CountBody } from './CountBody'
 import { TuneBody } from './TuneBody'
 import { ScopeBody } from './ScopeBody'
 import { CurveThumbnail } from '../factory/CurveThumbnail'
+import { SampleBody } from '../samples/SampleBody'
 import { CURVE_FACTORY_TYPES, curveFromContent } from '../factory/curveModel'
 import { WavetableThumbnail } from '../factory/WavetableThumbnail'
 import { EqThumbnail } from '../factory/EqThumbnail'
@@ -742,6 +743,7 @@ function StandardBody({ descriptor, state, instanceId }: { descriptor: NodeDescr
       {WAVETABLE_FACTORY_TYPES.has(descriptor.typeId) && (
         <WavetableThumbnail doc={wavetableFromContent(state.content)} nodeId={instanceId} />
       )}
+      {descriptor.typeId === 'data.sample' && <SampleBody nodeId={instanceId} content={state.content} />}
       {EQ_FACTORY_TYPES.has(descriptor.typeId) && (
         <EqThumbnail doc={eqFromContent(state.content)} nodeId={instanceId} overridden={connected.has('curve')} />
       )}

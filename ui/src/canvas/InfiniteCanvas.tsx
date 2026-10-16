@@ -10,8 +10,10 @@ import { buildAnchorMap, measureNodeLocalPortOffsets, portKey, type PortAnchor }
 import { portUiStyleForEndpoint } from '../graph/portUiKind'
 import { canConnect, type ConnectionEndpoint } from '../graph/canConnect'
 import { importImage } from '../graph/imageImport'
+import { importSampleFile, isAudioFile } from '../samples/samples'
 import {
   addImageAt,
+  addSampleAt,
   addMapFromMainOutput,
   addNode,
   addSumOfNodes,
@@ -1051,6 +1053,19 @@ export const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, InfiniteCanvasPro
       requestFrame()
     }
 
+    /** wiki/plans/Sampling.md 3a.1: audio files become Sample nodes, cascading. */
+    const importSamplesAt = async (files: readonly File[], canvasX: number, canvasY: number): Promise<void> => {
+      const world = canvasToWorld(canvasX, canvasY)
+      let offset = 0
+      for (const file of files) {
+        const result = await importSampleFile(file)
+        if (!result.success || !result.id) reportError(`Couldn't add the sample: ${result.errorMessage}`)
+        else await addSampleAt(Math.round(world.x + offset), Math.round(world.y + offset), result.id, file.name)
+        offset += 40
+      }
+      requestFrame()
+    }
+
     const pickImageAt = (canvasX: number, canvasY: number): void => {
       const input = document.createElement('input')
       input.type = 'file'
@@ -1075,11 +1090,14 @@ export const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, InfiniteCanvasPro
     }
 
     const onDrop = (e: DragEvent): void => {
-      const files = [...(e.dataTransfer?.files ?? [])].filter((f) => f.type.startsWith('image/'))
-      if (files.length === 0) return
+      const all = [...(e.dataTransfer?.files ?? [])]
+      const images = all.filter((f) => f.type.startsWith('image/'))
+      const sounds = all.filter((f) => isAudioFile(f))
+      if (images.length === 0 && sounds.length === 0) return
       e.preventDefault()
       const rect = canvas.getBoundingClientRect()
-      void importImagesAt(files, e.clientX - rect.left, e.clientY - rect.top)
+      if (images.length > 0) void importImagesAt(images, e.clientX - rect.left, e.clientY - rect.top)
+      if (sounds.length > 0) void importSamplesAt(sounds, e.clientX - rect.left, e.clientY - rect.top)
     }
 
     const onPaste = (e: ClipboardEvent): void => {

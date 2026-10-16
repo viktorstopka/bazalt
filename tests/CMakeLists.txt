@@ -76,6 +76,7 @@ add_executable(EngineTests
     QuantityAlgebraTests.cpp
     DelayTests.cpp
     PopulationTests.cpp
+    SampleDataTests.cpp
     CurvePlayerNodeTests.cpp
     VoiceManagerTests.cpp
 )

@@ -1169,6 +1169,16 @@ export async function addImageAt(x: number, y: number, mimeType: string, base64:
   return error
 }
 
+/** wiki/plans/Sampling.md 3a.1: a Sample node at (x, y) playing the library
+    sample `sampleId` (already imported), in one undo step. */
+export async function addSampleAt(x: number, y: number, sampleId: string, name: string): Promise<void> {
+  const id = makeId('node')
+  await withHistory(async () => {
+    if (!(await fireCommand(() => graphAddNode('data.sample', id, x, y)))) return
+    if (await fireCommand(() => graphSetContent(id, { sample: sampleId, name }))) selection = new Set([id])
+  })
+}
+
 /** Shows a message in the top bar's error slot (e.g. an image that couldn't
     be read) without any command having run. */
 export function reportError(message: string): void {

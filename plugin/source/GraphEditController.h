@@ -2,6 +2,7 @@
 
 #include "bazalt/engine/graph/MultiplicityResolver.h"
 #include "bazalt/engine/graph/NodeGraph.h"
+#include "SampleLibrary.h"
 #include <functional>
 #include <unordered_map>
 #include <juce_core/juce_core.h>
@@ -221,6 +222,23 @@ namespace bazalt
         */
         CommandResult exportSnapshotToFile (const juce::File& file) const;
 
+        /** wiki/plans/Sampling.md §2.2: the patch as one shareable file — the
+            saved graph plus every sample its Sample nodes use, embedded as
+            FLAC (assets "sample:<id>"). Loading it (setGraph) adds them to the
+            library and strips them from the graph again, so ordinary saves
+            and the host's state stay small. */
+        CommandResult exportPatchWithSamples (const juce::File& file) const;
+
+        /** The sample library (SampleLibrary.h). Tests point it elsewhere. */
+        const SampleLibrary& getSampleLibrary() const noexcept { return sampleLibrary; }
+        void setSampleLibraryForTesting (SampleLibrary library) { sampleLibrary = std::move (library); }
+
+        /** A sample imported or relinked after its Sample nodes were compiled:
+            republish every Sample node that names `sampleId`. */
+        void refreshSamples (const juce::String& sampleId);
+
+        static constexpr const char* sampleAssetPrefix = "sample:";
+
         /** Which region ("voice"/"global"/"mono") each node
             id landed in as of the LAST successful recompile — a debugging
             aid (the UI's DomainDot, 09-28-InstanceAllocator arc), computed
@@ -271,6 +289,12 @@ namespace bazalt
         const std::unordered_map<juce::String, std::vector<juce::String>>& getStereoOutputs() const noexcept { return stereoOutputs; }
 
     private:
+        /** Before a patch compiles: embedded samples go into the library (and
+            out of the graph), and every sample a Sample node names is loaded. */
+        void loadSamplesFor (bazalt::engine::NodeGraph& patch) const;
+
+        SampleLibrary sampleLibrary;
+
         CommandResult recompileAndPublish();
         CommandResult publishPlan (const bazalt::engine::NodeGraph& compiled,
                                    const bazalt::engine::MultiplicityResult& split,

@@ -77,6 +77,8 @@ target_compile_definitions(BazaltPlugin
         # we can default "mute input to avoid feedback loop" OFF instead of
         # JUCE's hardcoded-on default — see that file's own comment.
         JUCE_USE_CUSTOM_PLUGIN_STANDALONE_APP=1
+        # wiki/plans/Sampling.md 3a.1: dropped samples may be MP3 (decoding only).
+        JUCE_USE_MP3AUDIOFORMAT=1
 )
 
 target_link_libraries(BazaltPlugin
