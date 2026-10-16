@@ -42,6 +42,7 @@ target_sources(PluginTests
         PatchStateTests.cpp
         PatchSwitchTests.cpp
         SampleLibraryTests.cpp
+        WavesetPluginTests.cpp
         StressGraphTests.cpp
         VisualizationTapTests.cpp
         VoiceRenderTests.cpp

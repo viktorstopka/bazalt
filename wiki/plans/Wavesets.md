@@ -1,7 +1,8 @@
 # Wavesets — sound cut at its zero crossings
 
-**Status:** Proposed, 2026-10-16. Agreed with the user in conversation (they want the Live
-Interleave first); scheduled as part of stage 3a (`wiki/ROADMAP.md`). No code exists yet.
+**Status:** W1 built 2026-10-16 (see §7); W2–W3 proposed. Agreed with the user in
+conversation (they want the Live Interleave first); scheduled as part of stage 3a
+(`wiki/ROADMAP.md`, `wiki/plans/Sampling.md` 3a.4).
 
 ---
 
@@ -126,3 +127,29 @@ Output:      |a1 ...|b4|a3 ....|b7|...
   boundaries drawn over the waveform?
 - Polyphony: a guitar chord has no single clean zero-crossing rhythm — that *is* the
   sound; no attempt to "fix" it.
+
+## 7. As built
+
+**W1 (2026-10-16).**
+- `waveset.capture` (`WavesetNodes.h`) is built on the Sampling stage's live-buffer contract
+  (`DataBuffer::Live`, `wiki/plans/Sampling.md` 3a.3): its `wavesets` output is a live
+  sample (one second of the input, a ring) tagged `Data(wavesets)`, plus a ring of 4096
+  waveset starts in absolute frames (`Live::marks`) and the frame count (`Live::written`).
+  At sample s of a block of n a reader's "now" is `written − n + s`, so a mark found later
+  in the block is still in the future for it — block-size invariant without a per-sample
+  companion. A Sampler accepts `Data(wavesets)` too (it is a live sample).
+- Min length, Group and Direction as designed; a waveset is cut at 0.25 s at most.
+- `waveset.play`: a growable group of 2–8 `Data(wavesets)` inputs (A, B, …), **Count**
+  (wavesets per input per turn, 1–16, wireable) and **Polarity match**. Live mode only:
+  a turn starts on the source's newest complete waveset; within a turn the next ones
+  follow in order once complete (else the newest repeats). Outputs `out`, `switch`,
+  `source`.
+- The **Interleave** preset (Add menu, `ui/src/graph/presets.ts`): two Wavesets into one
+  Play.
+- Not yet: a different count per input (the pattern 3:1, 1:2:1 — wants a pattern editor,
+  probably the node's content), stereo, Stretch and Imprint (W2), the step options (W3).
+- Tests: `tests/WavesetTests.cpp` (a cycle per crossing, Group; a sine and a saw interleave
+  as alternating whole cycles of 240 and 150 samples with every join next to zero; Count 3;
+  identical output at block sizes 64/97/480/512); `tests-plugin/WavesetPluginTests.cpp`
+  (the patch compiles through the controller and keeps playing when a third source is
+  wired in).

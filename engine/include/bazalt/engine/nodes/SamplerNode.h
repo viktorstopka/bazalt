@@ -61,7 +61,7 @@ namespace bazalt::engine::nodes
         std::vector<PortDescriptor> getInputPorts() const override
         {
             return {
-                PortDescriptor { .id = "sample", .type = SignalType::Data, .label = "Sample", .dataTags = { DataTag::Sample } },
+                PortDescriptor { .id = "sample", .type = SignalType::Data, .label = "Sample", .dataTags = { DataTag::Sample, DataTag::Wavesets } },
                 PortDescriptor { .id = "start", .type = SignalType::Event, .label = "Start" },
                 PortDescriptor { .id = "stop", .type = SignalType::Event, .label = "Stop" },
                 PortDescriptor { .id = "source.sampler.position", .type = SignalType::Signal, .label = "Position", .minValue = 0.0f,

@@ -850,6 +850,22 @@ meaning: a captured pitch is a Pitch sample.
 A Sampler on a Ring plays it as a moving window: Position 1 is the newest moment, 0 the
 oldest; at Rate 1 it is a steady delay, at Rate 0 a frozen distance into the past.
 
+#### `waveset.capture` — Wavesets ✅ *(new, wiki/plans/Wavesets.md W1, 2026-10-16)*
+
+Cuts a sound at its zero crossings into wavesets (one positive and one negative half).
+**In:** `in` (audio). **Out:** `wavesets` (a live `Data(wavesets)`: the last second plus
+where each waveset starts — a Sampler can play it too), `boundary` (Event per waveset),
+`length` (s), `peak`, `count`. **Settings:** Min length (ms; shorter ones merge into the
+next), Group (N count as one), Direction (up / down). A waveset is cut at 0.25 s at most.
+
+#### `waveset.play` — Waveset Play ✅ *(new, wiki/plans/Wavesets.md W1, 2026-10-16)*
+
+Plays whole wavesets from its inputs (A, B, … up to 8) in turn: Count of A, Count of B, …
+Every join is at a zero crossing. Live: a turn starts on the source's newest complete
+waveset, so each source loses what the others play instead of slowing down (latency at most
+one waveset). **Settings:** Polarity match. **Out:** `out`, `switch` (Event), `source`.
+Add menu → **Interleave** places two Wavesets into a Play: CDP's Distort: Interleave, live.
+
 #### `source.sampler` — Sampler ✅ *(new, wiki/plans/Sampling.md 3a.2, 2026-10-16)*
 
 Plays a `Data(sample)`. **In:** `sample`; `start`/`stop` (Events); Position (0–1, where

@@ -29,7 +29,8 @@ namespace bazalt::engine
         ModalSet,
         Sample,
         ImpulseResponse,
-        EqCurve
+        EqCurve,
+        Wavesets // a live sample cut at its zero crossings (waveset.capture, wiki/plans/Wavesets.md)
     };
 
     /** An immutable block of values (SIGNAL_TYPES.md §2). Built once,
@@ -106,6 +107,16 @@ namespace bazalt::engine
             /** Message thread (the node's body, Freeze): the window as of the
                 last block. */
             std::atomic<float> lastWindow { 0.0f };
+
+            /** A waveset capture's extras — audio thread only, written by the
+                one writer before any reader runs in the block. `written`: frames
+                written in all (frame t is at physical t mod frames()).
+                `marks`: a ring of waveset starts (absolute frames, ascending);
+                `markCount` of them in all. At sample s of a block of n, the
+                newest written frame is written - n + s. */
+            int64_t written = 0;
+            std::vector<int64_t> marks;
+            int64_t markCount = 0;
         };
         std::unique_ptr<Live> live;
 

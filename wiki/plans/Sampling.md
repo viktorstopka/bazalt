@@ -1,6 +1,6 @@
 # Sampling — audio as a material, not just a sound
 
-**Status:** In progress. 3a.1–3a.3 built 2026-10-16 (see §10); the rest proposed, 2026-10-16. Stage 3 of `wiki/ROADMAP.md` (3a, then 3b), planned with
+**Status:** In progress. 3a.1–3a.4 built 2026-10-16 (see §10); the rest proposed, 2026-10-16. Stage 3 of `wiki/ROADMAP.md` (3a, then 3b), planned with
 the user after 2b landed. No code exists yet. `Wavesets.md` is part of this stage and
 builds on the live buffer defined here. `BakedPhysics.md`'s event track turns into a
 special case of the sample defined here (§4.5).
@@ -521,3 +521,8 @@ bodies all play through it.
 - Not yet (`wiki/TODO.md`): the Sampler's output following a sample's quantity, so a
   captured pitch plays into a pitch port without a Map; band-limited reading of live
   buffers; Capture's A/B switch.
+
+**3a.4 (2026-10-16).** Wavesets W1 on the live buffer — `wiki/plans/Wavesets.md` §7 has the
+details: `waveset.capture`'s output is a live sample with waveset marks
+(`Data(wavesets)`), `waveset.play` interleaves whole wavesets live, and the Interleave
+preset is in the Add menu.

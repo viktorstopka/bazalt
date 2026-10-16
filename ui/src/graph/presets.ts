@@ -1,7 +1,8 @@
 // wiki/plans/LifeCycle.md 2b.4: the allocators that used to be node types
 // (Voice, Trigger, Swarm) are settings of one Population now. The Add menu
 // offers them as presets: choosing one places a ready-set Population (and,
-// for a grain cloud, the Events that drives it) as a fragment ghost.
+// for a grain cloud, the Events that drives it) as a fragment ghost. Other
+// ready-made groups (Interleave, wiki/plans/Wavesets.md) ride the same path.
 import type { NodeDescriptor } from './descriptorTypes'
 import type { NodeFragment } from './graphStore'
 
@@ -10,6 +11,8 @@ interface Preset {
   title: string
   /** What the preset is for. */
   blurb: string
+  /** The node type whose Add-menu row (category, icon, ports) the preset borrows. */
+  baseType?: string
   build: () => NodeFragment
 }
 
@@ -78,15 +81,37 @@ export const PRESETS: readonly Preset[] = [
       originY: 0,
     }),
   },
+  {
+    // wiki/plans/Wavesets.md W1: CDP's Distort: Interleave, live.
+    id: 'interleave',
+    title: 'Interleave',
+    blurb: 'Two sounds cut at their zero crossings, played one whole waveset each in turn.',
+    baseType: 'waveset.play',
+    build: () => ({
+      nodes: [
+        { id: 'a', type: 'waveset.capture', position: { x: -260, y: -80 }, parameters: {}, properties: { title: 'Wavesets A' } },
+        { id: 'b', type: 'waveset.capture', position: { x: -260, y: 80 }, parameters: {}, properties: { title: 'Wavesets B' } },
+        { id: 'play', type: 'waveset.play', position: { x: 0, y: 0 }, parameters: {}, properties: { title: 'Interleave' } },
+      ],
+      connections: [
+        { fromNodeId: 'a', fromPortId: 'wavesets', toNodeId: 'play', toPortId: 'in.0' },
+        { fromNodeId: 'b', fromPortId: 'wavesets', toNodeId: 'play', toPortId: 'in.1' },
+      ],
+      assets: {},
+      originX: 0,
+      originY: 0,
+    }),
+  },
 ]
 
 const PREFIX = 'preset:'
 
 /** The Add menu's rows for the presets: Population's own descriptor under each preset's name. */
 export function presetDescriptors(descriptors: readonly NodeDescriptor[]): NodeDescriptor[] {
-  const base = descriptors.find((d) => d.typeId === 'life.population')
-  if (!base) return []
-  return PRESETS.map((p) => ({ ...base, typeId: PREFIX + p.id, title: p.title }))
+  return PRESETS.flatMap((p) => {
+    const base = descriptors.find((d) => d.typeId === (p.baseType ?? 'life.population'))
+    return base ? [{ ...base, typeId: PREFIX + p.id, title: p.title }] : []
+  })
 }
 
 /** The fragment a chosen Add-menu row stands for, or undefined for an ordinary node type. */
