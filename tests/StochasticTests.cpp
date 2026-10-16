@@ -201,7 +201,9 @@ TEST_CASE ("Lorenz visits both lobes at Rho 28 and settles at Rho 10", "[engine]
     CHECK (stddev (std::vector<float> (settled.end() - 48000, settled.end())) < 0.01);
 }
 
-TEST_CASE ("Rössler doubles its period as c rises", "[engine][chaos]")
+// ASCII name on purpose: CTest on Windows hands a non-ASCII name back to
+// Catch2 garbled, nothing matches, and the test counts as failed.
+TEST_CASE ("Rossler doubles its period as c rises", "[engine][chaos]")
 {
     // Distinct heights of the x maxima: one value on a clean cycle, two after
     // the first doubling, many in chaos.
