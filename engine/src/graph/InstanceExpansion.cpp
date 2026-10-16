@@ -235,17 +235,12 @@ namespace bazalt::engine
             }
             else if (fromGroup < 0 && toGroup >= 0)
             {
-                // An internal trigger reaches only instance 0's allocator; the
-                // processor relays each spawn to the instance it picks.
+                // Births from inside the patch reach only the birth copy, which
+                // starts members at their sample (LifePopulationNode).
                 const auto& group = layout.groups[(size_t) toGroup];
                 if (hasBirthCopy[(size_t) toGroup] && c.toNodeId == group.originId)
                 {
                     out.addConnection ({ c.fromNodeId, c.fromPortId, birthNodeId (c.toNodeId), c.toPortId });
-                    continue;
-                }
-                if (group.internallyTriggered && c.toNodeId == group.originId)
-                {
-                    out.addConnection ({ c.fromNodeId, c.fromPortId, instanceNodeId (c.toNodeId, 0), c.toPortId });
                     continue;
                 }
                 // Runs once, heard by every instance.

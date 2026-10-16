@@ -5,10 +5,9 @@
 
 namespace bazalt::engine
 {
-    /** One instance-allocating node's own Poly-resolved region (any of
-        "life.voice"/"swarmPopulation"/"swarmTransient"/
-        "trigger" — Domain Extensions batch; see MultiplicityResolver.cpp's
-        own `isInstanceOriginType`) — every node MultiplicityResolver::
+    /** One Population's own Poly-resolved region ("life.population", the
+        only allocator since wiki/plans/LifeCycle.md 2b.4; see
+        MultiplicityResolver.cpp's own `isInstanceOriginType`) — every node MultiplicityResolver::
         split() classified as Poly(originId == this node's own id),
         duplicated in on the origin's own upstream trigger chain (see
         MultiplicityResolver.cpp's own comment on why), plus the allocator

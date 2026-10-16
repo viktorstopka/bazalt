@@ -255,7 +255,7 @@ namespace bazalt
             return portMultiplicity;
         }
 
-        /** Every "life.voice" node id -> the origin bundle
+        /** Every "life.population" node id -> the origin bundle
             slot it currently occupies on the processor, as of the last
             successful recompile — the instance-count badge's own LIVE
             activeCount/maxCount are deliberately NOT cached here (they

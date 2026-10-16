@@ -26,11 +26,7 @@ namespace bazalt::engine
             string, same reason instanceSumTypeId above is a string too.
         */
         constexpr const char* instanceOriginTypeIds[] = {
-            "life.population",
-            "life.voice",
-            "life.swarmPopulation",
-            "life.swarmTransient",
-            "life.trigger",
+            "life.population", // wiki/plans/LifeCycle.md 2b.4: the one allocator
         };
 
         bool isInstanceOriginType (const juce::String& type) noexcept

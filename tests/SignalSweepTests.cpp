@@ -224,6 +224,7 @@ TEST_CASE ("A v13 patch's ids move to their categories, parameters and ports wit
     REQUIRE (parsed.success);
     const auto& doc = parsed.document;
     CHECK (doc.schemaVersion == PatchDocument::currentSchemaVersion);
+    // (life.voice is gone since 2b.4 — no migration, by request; the old migration still names it)
     CHECK (findNode (doc, "alloc")->type == "life.voice");
     CHECK (findNode (doc, "sum")->type == "life.merge");
     CHECK (findNode (doc, "map")->type == "math.map");
@@ -238,7 +239,7 @@ TEST_CASE ("A v15 patch's oscillators, LFO, ADSR and table load as the curve nod
 {
     const auto json = R"({ "schemaVersion": 15,
         "nodes": [
-            { "id": "alloc", "type": "life.voice", "position": { "x": 0, "y": 0 }, "parameters": {}, "properties": {} },
+            { "id": "alloc", "type": "life.population", "position": { "x": 0, "y": 0 }, "parameters": {}, "properties": {} },
             { "id": "osc", "type": "osc.analog", "position": { "x": 300, "y": 0 },
               "parameters": { "osc.analog.shape": 2, "osc.analog.pulseWidth": 0.3, "osc.analog.fine": 50 }, "properties": {} },
             { "id": "sine", "type": "osc.sine", "parameters": { "osc.sine.frequency": 220 }, "properties": {} },

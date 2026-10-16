@@ -21,7 +21,7 @@
 #include <memory>
 #include <vector>
 
-namespace bazalt::engine::nodes { class IoNoteInNode; class InstanceOriginNode; }
+namespace bazalt::engine::nodes { class IoNoteInNode; }
 
 namespace bazalt
 {
@@ -32,10 +32,10 @@ namespace bazalt
         (§4.4) — getStateInformation/setStateInformation are thin wrappers
         around PatchSerializer.
 
-        wiki/plans/DomainRedesign.md Batch 2: up to `maxOrigins` simultaneous
-        "life.voice" origins, each with its own independent
-        VoiceManager and 8 PlanSwappers (`OriginBundle`) — the runtime shape
-        is still N independent physical ExecutionPlans per origin (§10.1's
+        Up to `maxOrigins` simultaneous Populations ("life.population"), each
+        with its own VoiceManager (`OriginBundle`); the whole patch is one
+        plan (wiki/plans/InstanceAxis.md). Historical (DomainRedesign.md
+        Batch 2): this used to be N physical ExecutionPlans per origin (§10.1's
         own key decision: a compile-time reclassification rewrite, not an
         ExecutionPlan-internals one), just no longer assumed singular.
 
@@ -82,22 +82,6 @@ namespace bazalt
             bool active = false;
 
             int activeVoiceCountThisBlock = 0; // instances alive after the last range
-
-            /** Domain Extensions batch: -1 (default) means "an ordinary,
-                demand-driven origin — VoiceManager's own Idle/Active/
-                Releasing/Stealing stage machine decides what renders, same
-                as always." >= 0 means "an instance.allocate.swarmPopulation
-                origin — ignore VoiceManager's stage entirely for this
-                bundle; slots [0, this value) always render, unconditionally,
-                every block, with no noteOn()/noteOff() ever called at all
-                (swarm-population has no spawn/release concept — 'fixed
-                count, always live')." Written once per recompile, message
-                thread (GraphEditController, mirroring setOriginMaxVoices's
-                own exact pattern); read every block, audio thread
-                (renderRange) — atomic for that reason, same as
-                every other cross-thread origin-bundle flag here.
-            */
-            std::atomic<int> swarmPopulationSize { -1 };
         };
 
         BazaltAudioProcessor();
@@ -237,56 +221,22 @@ namespace bazalt
         */
         void commitOriginBundleAssignments (const std::array<juce::String, maxOrigins>& originIdBySlot) noexcept;
 
-        /** wiki/plans/DomainRedesign.md Batch 4: enforces
-            "life.voice.maxInstances" for real (VoiceManager::
-            setMaxActiveVoices) — called once per recompile, after this
-            bundle's own voice-slot-0 plan is compiled, with whatever that
-            plan's real origin node reports via `InstanceOriginNode::
-            getMaxInstances()` (Domain Extensions batch — generalized past
-            `InstanceVoiceNode` specifically once Swarm-transient/Trigger
-            needed the same capture).
-        */
+        /** A Population's Size, enforced (VoiceManager::setMaxActiveVoices) —
+            called once per recompile. */
         void setOriginMaxVoices (int bundleIndex, int maxVoices) noexcept
         {
             originBundles[(size_t) bundleIndex].voiceManager.setMaxActiveVoices (maxVoices);
         }
 
-        /** Domain Extensions batch: called once per recompile for EVERY
-            origin bundle slot, right alongside setOriginMaxVoices — pass
-            -1 for an ordinary (Voice/event-driven) origin, or the real
-            populationSize for a swarmPopulation one. See OriginBundle::
-            swarmPopulationSize's own doc comment for what this actually
-            changes in renderRange.
-        */
-        void setSwarmPopulationSize (int bundleIndex, int populationSize) noexcept
-        {
-            originBundles[(size_t) bundleIndex].swarmPopulationSize.store (populationSize, std::memory_order_relaxed);
-        }
-
-        /** The instance-count badge's own two numbers for this origin
-            bundle — message-thread safe (both are atomics on VoiceManager).
-        */
-        /** Domain Extensions batch: a swarmPopulation origin never calls
-            VoiceManager::noteOn() at all (see renderRange), so its activeVoiceCount/maxActiveVoices would read a
-            stale 0 forever — wrong for the UI's instance-count badge, which
-            should show a healthy swarm as fully populated (e.g. "8/8"), not
-            "0/anything". Reports populationSize for both halves instead
-            whenever this bundle is one — active == max == populationSize,
-            by definition, for an "always live" origin.
-        */
+        /** The instance-count badge's two numbers for this origin bundle —
+            message-thread safe (both are atomics on VoiceManager). */
         int getOriginActiveVoiceCount (int bundleIndex) const noexcept
         {
-            const auto& bundle = originBundles[(size_t) bundleIndex];
-            if (const auto populationSize = bundle.swarmPopulationSize.load (std::memory_order_relaxed); populationSize >= 0)
-                return juce::jmin (populationSize, maxInstances);
-            return bundle.voiceManager.getActiveVoiceCount();
+            return originBundles[(size_t) bundleIndex].voiceManager.getActiveVoiceCount();
         }
         int getOriginMaxVoices (int bundleIndex) const noexcept
         {
-            const auto& bundle = originBundles[(size_t) bundleIndex];
-            if (const auto populationSize = bundle.swarmPopulationSize.load (std::memory_order_relaxed); populationSize >= 0)
-                return juce::jmin (populationSize, maxInstances);
-            return bundle.voiceManager.getMaxActiveVoices();
+            return originBundles[(size_t) bundleIndex].voiceManager.getMaxActiveVoices();
         }
 
         /** M20: subscribes a visualization tap for a real node's output

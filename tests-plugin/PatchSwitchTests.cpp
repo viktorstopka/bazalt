@@ -48,7 +48,7 @@ namespace
       "nodes": [
         { "id": "masterOut", "type": "io.output", "position": { "x": 0, "y": 0 }, "parameters": {}, "properties": {} },
         { "id": "node14", "type": "io.noteIn", "position": { "x": 0, "y": 0 }, "parameters": {}, "properties": {} },
-        { "id": "node15", "type": "life.voice", "position": { "x": 0, "y": 0 }, "parameters": {}, "properties": {} },
+        { "id": "node15", "type": "life.population", "position": { "x": 0, "y": 0 }, "parameters": {}, "properties": {} },
         { "id": "node16", "type": "math.pitchToFrequency", "position": { "x": 0, "y": 0 }, "parameters": {}, "properties": {} },
         { "id": "node17", "type": "source.sine", "position": { "x": 0, "y": 0 }, "parameters": {}, "properties": {} },
         { "id": "node18", "type": "source.envelope", "position": { "x": 0, "y": 0 }, "parameters": {}, "properties": {} },
@@ -56,7 +56,7 @@ namespace
         { "id": "node20", "type": "life.merge", "position": { "x": 0, "y": 0 }, "parameters": {}, "properties": {} }
       ],
       "connections": [
-        { "fromNodeId": "node14", "fromPortId": "notes", "toNodeId": "node15", "toPortId": "spawn" },
+        { "fromNodeId": "node14", "fromPortId": "notes", "toNodeId": "node15", "toPortId": "notes" },
         { "fromNodeId": "node15", "fromPortId": "pitch", "toNodeId": "node16", "toPortId": "pitch" },
         { "fromNodeId": "node16", "fromPortId": "frequency", "toNodeId": "node17", "toPortId": "source.sine.frequency" },
         { "fromNodeId": "node15", "fromPortId": "gate", "toNodeId": "node18", "toPortId": "gate" },
@@ -176,8 +176,8 @@ TEST_CASE ("Patches built and torn down command by command leave nothing behind"
 
     // 1. A voice patch, built one command at a time, and played.
     step (c.addNode ("io.noteIn", "n1", 0, 0));
-    step (c.addNode ("life.voice", "n2", 0, 0));
-    step (c.connect ("n1", "notes", "n2", "spawn"));
+    step (c.addNode ("life.population", "n2", 0, 0));
+    step (c.connect ("n1", "notes", "n2", "notes"));
     step (c.addNode ("source.triangle", "n3", 0, 0));
     step (c.setParameterValue ("n3", "source.triangle.frequency", 3000.0f));
     step (c.addNode ("source.envelope", "n4", 0, 0));
@@ -202,8 +202,8 @@ TEST_CASE ("Patches built and torn down command by command leave nothing behind"
 
     // 4. A new Voice patch with a 220 Hz-ish sine, built command by command.
     step (c.addNode ("io.noteIn", "n7", 0, 0));
-    step (c.addNode ("life.voice", "n8", 0, 0));
-    step (c.connect ("n7", "notes", "n8", "spawn"));
+    step (c.addNode ("life.population", "n8", 0, 0));
+    step (c.connect ("n7", "notes", "n8", "notes"));
     step (c.addNode ("math.pitchToFrequency", "n9", 0, 0));
     step (c.connect ("n8", "pitch", "n9", "pitch"));
     step (c.addNode ("source.sine", "n10", 0, 0));
@@ -245,8 +245,8 @@ TEST_CASE ("Edits while the global plan is not being played still reach it", "[p
     // global plan is compiled (it holds the Macro) but never played.
     REQUIRE (load (processor, emptyPatch));
     step (c.addNode ("io.noteIn", "v1", 0, 0));
-    step (c.addNode ("life.voice", "v2", 0, 0));
-    step (c.connect ("v1", "notes", "v2", "spawn"));
+    step (c.addNode ("life.population", "v2", 0, 0));
+    step (c.connect ("v1", "notes", "v2", "notes"));
     step (c.addNode ("source.sine", "v3", 0, 0));
     step (c.connect ("v3", "out", "masterOut", "in"));
     step (c.addNode ("source.envelope", "v4", 0, 0));

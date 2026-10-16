@@ -52,11 +52,11 @@ TEST_CASE ("09-28-InstanceAllocator.1 (part 3): a voice domain not reaching the 
     // movement").
     NodeGraph graph;
     graph.addNode ({ "noteIn", "io.noteIn", { 40.0f, 40.0f }, {}, {} });
-    graph.addNode ({ "allocator", "life.voice", { 340.0f, 40.0f }, {}, {} });
+    graph.addNode ({ "allocator", "life.population", { 340.0f, 40.0f }, {}, {} });
     graph.addNode ({ "audioIn", "io.audioIn", { 40.0f, 400.0f }, {}, {} });
     graph.addNode ({ "masterOut", "io.output", { 340.0f, 400.0f }, {}, {} });
 
-    graph.addConnection ({ "noteIn", "notes", "allocator", "spawn" });
+    graph.addConnection ({ "noteIn", "notes", "allocator", "notes" });
     graph.addConnection ({ "audioIn", "channel.0", "masterOut", "in" });
     graph.setOutput ("masterOut", "out");
 

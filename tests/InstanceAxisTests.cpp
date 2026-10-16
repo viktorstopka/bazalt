@@ -23,13 +23,13 @@ namespace
     {
         NodeGraph graph;
         graph.addNode ({ "noteIn", "io.noteIn", {}, {}, {} });
-        graph.addNode ({ "voice", "life.voice", {}, {}, {} });
+        graph.addNode ({ "voice", "life.population", {}, {}, {} });
         graph.addNode ({ "p2f", "math.pitchToFrequency", {}, {}, {} });
         graph.addNode ({ "osc", "source.sine", {}, {}, {} });
         graph.addNode ({ "amp", "math.multiply", {}, { { "in.1", 0.5f } }, {} });
         graph.addNode ({ "merge", "life.merge", {}, {}, {} });
         graph.addNode ({ "out", "io.output", {}, {}, {} });
-        graph.addConnection ({ "noteIn", "notes", "voice", "spawn" });
+        graph.addConnection ({ "noteIn", "notes", "voice", "notes" });
         graph.addConnection ({ "voice", "pitch", "p2f", "pitch" });
         graph.addConnection ({ "p2f", "frequency", "osc", "source.sine.frequency" });
         graph.addConnection ({ "voice", "gate", "osc", "source.sine.amplitude" });
@@ -271,10 +271,10 @@ TEST_CASE ("The output itself can run per instance; a fading instance ramps out"
     CHECK (state.peak > 0.1f);  // measured before the gain
 }
 
-TEST_CASE ("A swarm population and a merge of it compile as one instanced plan", "[engine][instanceAxis]")
+TEST_CASE ("A Population born Always and a merge of it compile as one instanced plan", "[engine][instanceAxis]")
 {
     NodeGraph graph;
-    graph.addNode ({ "swarm", "life.swarmPopulation", {}, {}, {} });
+    graph.addNode ({ "swarm", "life.population", {}, { { "life.population.born", 1.0f } }, {} });
     graph.addNode ({ "osc", "source.sine", {}, { { "source.sine.frequency", 220.0f } }, {} });
     graph.addNode ({ "merge", "life.merge", {}, {}, {} });
     graph.addConnection ({ "swarm", "gate", "osc", "source.sine.amplitude" });
@@ -295,17 +295,17 @@ TEST_CASE ("'@' in a node id is refused: it is reserved for instances", "[engine
     CHECK_FALSE (compileWithInstances (graph, layoutOf (graph, 2), factory, { sampleRate, block }, 1).success);
 }
 
-TEST_CASE ("An internal trigger chain runs once and only instance 0's allocator hears it", "[engine][instanceAxis]")
+TEST_CASE ("An internal trigger chain runs once and only the birth copy hears it", "[engine][instanceAxis]")
 {
     // A clock that spawns the swarm, and a toggle the same clock flips (which
     // runs once, outside the voices): legal now that the chain isn't copied.
     NodeGraph graph;
     graph.addNode ({ "clock", "time.clock", {}, {}, {} });
-    graph.addNode ({ "swarm", "life.swarmTransient", {}, {}, {} });
+    graph.addNode ({ "swarm", "life.population", {}, { { "life.population.lives", 1.0f } }, {} });
     graph.addNode ({ "side", "logic.toggle", {}, {}, {} });
     graph.addNode ({ "osc", "source.sine", {}, {}, {} });
     graph.addNode ({ "merge", "life.merge", {}, {}, {} });
-    graph.addConnection ({ "clock", "tick", "swarm", "spawn" });
+    graph.addConnection ({ "clock", "tick", "swarm", "born" });
     graph.addConnection ({ "clock", "tick", "side", "trigger" });
     graph.addConnection ({ "swarm", "gate", "osc", "source.sine.amplitude" });
     graph.addConnection ({ "osc", "out", "merge", "in" });
@@ -321,10 +321,10 @@ TEST_CASE ("An internal trigger chain runs once and only instance 0's allocator 
     REQUIRE (expanded.success);
     int spawnFeeds = 0;
     for (const auto& c : expanded.graph.getConnections())
-        if (c.fromNodeId == "clock" && c.toPortId == "spawn")
+        if (c.fromNodeId == "clock" && c.toPortId == "born")
         {
             ++spawnFeeds;
-            CHECK (c.toNodeId == "swarm@0");
+            CHECK (c.toNodeId == "swarm@birth");
         }
     CHECK (spawnFeeds == 1);
 

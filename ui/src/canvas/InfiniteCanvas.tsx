@@ -1,5 +1,5 @@
 import { isFactoryOpen } from '../factory/factoryStore'
-import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState, useSyncExternalStore } from 'react'
+import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import type { ReactNode } from 'react'
 import { tokens } from '../theme/tokens'
 import { createNodeEditorRenderer, tessellateCable, type CableSpec, type NodeEditorRenderer, type Point } from './webgl/nodeEditorRenderer'
@@ -42,6 +42,7 @@ import {
   undo,
 } from '../graph/graphStore'
 import { useGraphSnapshot } from '../graph/useGraphSnapshot'
+import { presetDescriptors, presetFragment } from '../graph/presets'
 import {
   armFragmentGhost,
   armGhost,
@@ -223,6 +224,8 @@ export const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, InfiniteCanvasPro
   const ghost = useSyncExternalStore(subscribeGhost, getGhost)
 
   const snapshot = useGraphSnapshot()
+  // Population's presets (Voice, Trigger, Swarm, Grain Cloud) sit next to the node types.
+  const addMenuDescriptors = useMemo(() => [...snapshot.descriptors, ...presetDescriptors(snapshot.descriptors)], [snapshot.descriptors])
 
   useEffect(() => {
     snapSettingsRef.current = snapSettings
@@ -1612,10 +1615,12 @@ export const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, InfiniteCanvasPro
           <AddMenu
             x={addMenu.x}
             y={addMenu.y}
-            descriptors={snapshot.descriptors}
+            descriptors={addMenuDescriptors}
             onChoose={(typeId) => {
               setAddMenu(null)
-              armGhost(typeId)
+              const preset = presetFragment(typeId)
+              if (preset) armFragmentGhost(preset)
+              else armGhost(typeId)
               requestFrameRef.current()
             }}
             onClose={() => setAddMenu(null)}

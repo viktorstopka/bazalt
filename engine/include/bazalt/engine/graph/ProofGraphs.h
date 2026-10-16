@@ -24,12 +24,8 @@
 #include "bazalt/engine/nodes/PitchFrequencyNodes.h"
 #include "bazalt/engine/nodes/GateLengthNode.h"
 #include "bazalt/engine/nodes/DownmixNode.h"
-#include "bazalt/engine/nodes/InstanceVoiceNode.h"
 #include "bazalt/engine/nodes/LifePopulationNode.h"
 #include "bazalt/engine/nodes/LifeSplitNode.h"
-#include "bazalt/engine/nodes/InstanceSwarmPopulationNode.h"
-#include "bazalt/engine/nodes/InstanceSwarmTransientNode.h"
-#include "bazalt/engine/nodes/InstanceTriggerNode.h"
 #include "bazalt/engine/nodes/InstanceMixNode.h"
 #include "bazalt/engine/nodes/IoNoteInNode.h"
 #include "bazalt/engine/nodes/SubtractNode.h"
@@ -150,10 +146,6 @@ namespace bazalt::engine
         factory.registerType ("channels.downmix", [] { return std::make_unique<nodes::DownmixNode>(); });
         factory.registerType ("life.split", [] { return std::make_unique<nodes::LifeSplitNode>(); }); // wiki/plans/LifeCycle.md 2b.3
         factory.registerType ("life.population", [] { return std::make_unique<nodes::LifePopulationNode>(); }); // wiki/plans/LifeCycle.md 2b.2
-        factory.registerType ("life.voice", [] { return std::make_unique<nodes::InstanceVoiceNode>(); }); // 09-28-InstanceAllocator.3 — renamed from "instance.allocator"; 09-29-AddMenu.1 — renamed again from "instance.voice"
-        factory.registerType ("life.swarmPopulation", [] { return std::make_unique<nodes::InstanceSwarmPopulationNode>(); }); // Domain Extensions batch
-        factory.registerType ("life.swarmTransient", [] { return std::make_unique<nodes::InstanceSwarmTransientNode>(); }); // Domain Extensions batch
-        factory.registerType ("life.trigger", [] { return std::make_unique<nodes::InstanceTriggerNode>(); }); // Domain Extensions batch
         factory.registerType ("life.reduce", [] { return std::make_unique<nodes::LifeReduceNode>(); }); // internal: Merge on the instance axis (InstanceExpansion.h)
         factory.registerType ("life.merge", [] { return std::make_unique<nodes::InstanceMixNode>(); }); // DomainRedesign.md Batch 1b — renamed from "instance.mix" (C++ class name unchanged)
         factory.registerType ("io.noteIn", [] { return std::make_unique<nodes::IoNoteInNode>(); });
@@ -346,7 +338,7 @@ namespace bazalt::engine
         NodeGraph graph;
 
         graph.addNode ({ "noteIn", "io.noteIn", { 40.0f, 260.0f }, {}, {} });
-        graph.addNode ({ "allocator", "life.voice", { 340.0f, 260.0f }, {}, {} });
+        graph.addNode ({ "allocator", "life.population", { 340.0f, 260.0f }, {}, {} });
 
         graph.addNode ({ "pitch1", "math.pitchToFrequency", { 640.0f, 40.0f }, {}, {} });
         graph.addNode (withContent ({ "osc1", "source.oscillator", { 940.0f, 40.0f }, {}, {} }, CurveDocument::saw()));
@@ -380,7 +372,7 @@ namespace bazalt::engine
         graph.addNode ({ "pan", "space.pan", { 2340.0f, 250.0f }, {}, {} });
         graph.addNode ({ "masterOut", "io.output", { 2540.0f, 250.0f }, {}, {} });
 
-        graph.addConnection ({ "noteIn", "notes", "allocator", "spawn" });
+        graph.addConnection ({ "noteIn", "notes", "allocator", "notes" });
 
         graph.addConnection ({ "allocator", "pitch", "pitch1", "pitch" });
         graph.addConnection ({ "pitch1", "frequency", "osc1", "source.oscillator.frequency" });
@@ -460,7 +452,7 @@ namespace bazalt::engine
         // right: noteIn/allocator feed osc (pitch) and env (gate) below/
         // beside them; osc -> svf -> amp; env -> amp.
         graph.addNode ({ "noteIn", "io.noteIn", { 40.0f, 40.0f }, {}, {} });
-        graph.addNode ({ "allocator", "life.voice", { 340.0f, 40.0f }, {}, {} });
+        graph.addNode ({ "allocator", "life.population", { 340.0f, 40.0f }, {}, {} });
         // juce::ADSR's own defaults — what env.adsr played here before 1b.
         graph.addNode (withContent ({ "env", "source.envelope", { 640.0f, 40.0f }, {}, {} }, CurveDocument::adsr (0.1f, 0.1f, 1.0f, 0.1f, 0.0f)));
         graph.addNode ({ "pitchToFreq", "math.pitchToFrequency", { 190.0f, 420.0f }, {}, {} });
@@ -468,7 +460,7 @@ namespace bazalt::engine
         graph.addNode ({ "svf", "filter.svf", { 640.0f, 420.0f }, { { "filter.svf.cutoff", 3000.0f }, { "filter.svf.resonance", 0.9f } }, {} });
         graph.addNode ({ "amp", "math.multiply", { 940.0f, 230.0f }, {}, {} });
 
-        graph.addConnection ({ "noteIn", "notes", "allocator", "spawn" });
+        graph.addConnection ({ "noteIn", "notes", "allocator", "notes" });
         graph.addConnection ({ "allocator", "pitch", "pitchToFreq", "pitch" });
         graph.addConnection ({ "pitchToFreq", "frequency", "osc", "source.oscillator.frequency" });
         graph.addConnection ({ "allocator", "gate", "env", "gate" });

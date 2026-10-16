@@ -96,7 +96,7 @@ export interface NodeCardState {
       comment: every ordinary node's ports resolve uniformly.
   */
   portMultiplicity?: ReadonlyMap<string, PortMultiplicityInfo>
-  /** Live activeCount/maxCount for an "life.voice" node, read
+  /** Live activeCount/maxCount for an "life.population" node, read
       fresh off the processor on every graph resync — renders as
       InstanceCountBadge's "3/8" corner readout. Undefined for every other
       node type, and for the M9 gallery.
@@ -600,7 +600,7 @@ function ParameterRow({
 /** wiki/plans/DomainRedesign.md Batch 4: DomainDot's real replacement — a
     small structural corner badge, not a title-bar element (see
     NodeCard.css's own comment for why it's positioned off .node-card
-    itself instead). Renders only for an "life.voice" node —
+    itself instead). Renders only for an "life.population" node —
     every other node's `state.instanceCountBadge` is undefined, same as
     DomainDot used to render nothing for its own `undefined` domain.
 */

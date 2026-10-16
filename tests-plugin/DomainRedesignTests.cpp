@@ -8,7 +8,7 @@
 #include "bazalt/engine/graph/ProofGraphs.h"
 #include "PluginProcessor.h"
 #include "bazalt/engine/graph/NodeGraph.h"
-#include "bazalt/engine/nodes/InstanceVoiceNode.h"
+#include "bazalt/engine/nodes/LifePopulationNode.h"
 #include <cmath>
 
 using namespace bazalt;
@@ -36,13 +36,13 @@ namespace
         graph.addNode ({ idPrefix + "clock", "time.clock", {}, { { "time.clock.rate", rateHz } }, {} });
         graph.addNode ({ idPrefix + "gateLen", "time.gateLength", {}, { { "length", 0.5f } }, {} });
         graph.addNode ({ idPrefix + "assemble", "note.assemble", {}, { { "pitch", pitch } }, {} });
-        graph.addNode ({ idPrefix + "alloc", "life.voice", {}, {}, {} });
+        graph.addNode ({ idPrefix + "alloc", "life.population", {}, {}, {} });
         graph.addNode (bazalt::engine::withContent ({ idPrefix + "osc", "source.oscillator", {}, {}, {} }, bazalt::engine::CurveDocument::saw()));
         graph.addNode ({ idPrefix + "sum", "life.merge", {}, {}, {} }); // instance.sum, DomainRedesign.md Batch 1b's rename
 
         graph.addConnection ({ idPrefix + "clock", "tick", idPrefix + "gateLen", "trigger" });
         graph.addConnection ({ idPrefix + "gateLen", "gate", idPrefix + "assemble", "gate" });
-        graph.addConnection ({ idPrefix + "assemble", "notes", idPrefix + "alloc", "spawn" });
+        graph.addConnection ({ idPrefix + "assemble", "notes", idPrefix + "alloc", "notes" });
         graph.addNode ({ (idPrefix + "osc") + "ToFreq", "math.pitchToFrequency", {}, {}, {} });
         graph.addConnection ({ idPrefix + "alloc", "pitch", (idPrefix + "osc") + "ToFreq", "pitch" });
         graph.addConnection ({ (idPrefix + "osc") + "ToFreq", "frequency", idPrefix + "osc", "source.oscillator.frequency" });
@@ -156,10 +156,10 @@ TEST_CASE ("getNodeDomains() labels nodes correctly across two simultaneous orig
            "[plugin][DomainRedesign][GraphEditController]")
 {
     NodeGraph graph;
-    graph.addNode ({ "allocA", "life.voice", {}, {}, {} });
+    graph.addNode ({ "allocA", "life.population", {}, {}, {} });
     graph.addNode (bazalt::engine::withContent ({ "oscA", "source.oscillator", {}, {}, {} }, bazalt::engine::CurveDocument::saw()));
     graph.addNode ({ "sumA", "life.merge", {}, {}, {} });
-    graph.addNode ({ "allocB", "life.voice", {}, {}, {} });
+    graph.addNode ({ "allocB", "life.population", {}, {}, {} });
     graph.addNode (bazalt::engine::withContent ({ "oscB", "source.oscillator", {}, {}, {} }, bazalt::engine::CurveDocument::saw()));
     graph.addNode ({ "sumB", "life.merge", {}, {}, {} });
     graph.addNode ({ "mixdown", "math.add", {}, {}, {} });
@@ -199,7 +199,7 @@ TEST_CASE ("An origin that disappears from the graph deactivates its bundle; a n
            "[plugin][DomainRedesign][GraphEditController]")
 {
     NodeGraph graph;
-    graph.addNode ({ "alloc", "life.voice", {}, {}, {} });
+    graph.addNode ({ "alloc", "life.population", {}, {}, {} });
     graph.addNode (bazalt::engine::withContent ({ "osc", "source.oscillator", {}, {}, {} }, bazalt::engine::CurveDocument::saw()));
     graph.addNode ({ "masterout", "io.output", {}, {}, {} });
     graph.addNode ({ "oscToFreq", "math.pitchToFrequency", {}, {}, {} });
@@ -241,7 +241,7 @@ TEST_CASE ("getPortMultiplicity() reports poly for a voice-region node's ports (
            "[plugin][DomainRedesign][GraphEditController]")
 {
     NodeGraph graph;
-    graph.addNode ({ "alloc", "life.voice", {}, {}, {} });
+    graph.addNode ({ "alloc", "life.population", {}, {}, {} });
     graph.addNode (bazalt::engine::withContent ({ "osc", "source.oscillator", {}, {}, {} }, bazalt::engine::CurveDocument::saw()));
     graph.addNode ({ "sum", "life.merge", {}, {}, {} });
     graph.addNode ({ "masterout", "io.output", {}, {}, {} });
@@ -299,10 +299,10 @@ TEST_CASE ("A recompile enforces instance.allocate.voice.maxInstances for real, 
 {
     NodeGraph graph;
     graph.addNode ({ "noteIn", "io.noteIn", {}, {}, {} });
-    graph.addNode ({ "alloc", "life.voice", {}, { { "life.voice.maxInstances", 2.0f } }, {} });
+    graph.addNode ({ "alloc", "life.population", {}, { { "life.population.size", 2.0f } }, {} });
     graph.addNode (bazalt::engine::withContent ({ "osc", "source.oscillator", {}, {}, {} }, bazalt::engine::CurveDocument::saw()));
     graph.addNode ({ "masterout", "io.output", {}, {}, {} });
-    graph.addConnection ({ "noteIn", "notes", "alloc", "spawn" });
+    graph.addConnection ({ "noteIn", "notes", "alloc", "notes" });
     graph.addNode ({ "oscToFreq", "math.pitchToFrequency", {}, {}, {} });
     graph.addConnection ({ "alloc", "pitch", "oscToFreq", "pitch" });
     graph.addConnection ({ "oscToFreq", "frequency", "osc", "source.oscillator.frequency" });
@@ -334,7 +334,7 @@ TEST_CASE ("Disconnecting a Note source from instance.allocate.voice.spawn WHILE
     // Real, found-live bug: io.noteIn -> note.quantize -> alloc.spawn, held
     // note, then disconnect note.quantize's output from spawn (exactly the
     // user's own reported repro - "when I disconnect scale quantize from
-    // Voice it sometimes gets stuck on gate being 1"). InstanceVoiceNode's
+    // Voice it sometimes gets stuck on gate being 1"). LifePopulationNode's
     // own gate/pitch/velocity state only ever changes on a Note-block
     // start/stop edge (consumeNoteBlock -> noteOn()/noteOff()) - once
     // nothing feeds "spawn" at all, consumeNoteBlock() is never called
@@ -349,12 +349,12 @@ TEST_CASE ("Disconnecting a Note source from instance.allocate.voice.spawn WHILE
     graph.addNode ({ "noteIn", "io.noteIn", {}, {}, {} });
     graph.addNode ({ "scale", "data.scale", {}, {}, {} });
     graph.addNode ({ "quantize", "note.quantize", {}, {}, {} });
-    graph.addNode ({ "alloc", "life.voice", {}, {}, {} });
+    graph.addNode ({ "alloc", "life.population", {}, {}, {} });
     graph.addNode (bazalt::engine::withContent ({ "osc", "source.oscillator", {}, {}, {} }, bazalt::engine::CurveDocument::saw()));
     graph.addNode ({ "masterout", "io.output", {}, {}, {} });
     graph.addConnection ({ "noteIn", "notes", "quantize", "notes" });
     graph.addConnection ({ "scale", "data", "quantize", "scale" });
-    graph.addConnection ({ "quantize", "notesOut", "alloc", "spawn" });
+    graph.addConnection ({ "quantize", "notesOut", "alloc", "notes" });
     graph.addNode ({ "oscToFreq", "math.pitchToFrequency", {}, {}, {} });
     graph.addConnection ({ "alloc", "pitch", "oscToFreq", "pitch" });
     graph.addConnection ({ "oscToFreq", "frequency", "osc", "source.oscillator.frequency" });
@@ -370,21 +370,23 @@ TEST_CASE ("Disconnecting a Note source from instance.allocate.voice.spawn WHILE
     noteOn.addEvent (juce::MidiMessage::noteOn (1, 60, (juce::uint8) 100), 0);
     processor.processBlock (buffer, noteOn);
 
-    auto* voiceNode = dynamic_cast<bazalt::engine::nodes::InstanceVoiceNode*> (
+    auto* voiceNode = dynamic_cast<bazalt::engine::nodes::LifePopulationNode*> (
         processor.peekFirstVoicePlanForTesting (0)->getNodeById ("alloc"));
     REQUIRE (voiceNode != nullptr);
     REQUIRE (voiceNode->getGate()); // held, exactly as expected before the disconnect
 
-    const auto disconnectResult = processor.getGraphEditController().disconnect ("quantize", "notesOut", "alloc", "spawn");
+    const auto disconnectResult = processor.getGraphEditController().disconnect ("quantize", "notesOut", "alloc", "notes");
     INFO (disconnectResult.errorMessage);
     REQUIRE (disconnectResult.success);
 
     // The recompile may or may not have reused the exact same C++ object
     // (irrelevant to this test either way - re-fetch whatever is live now,
     // same as the real UI/audio path would see it).
-    voiceNode = dynamic_cast<bazalt::engine::nodes::InstanceVoiceNode*> (
+    voiceNode = dynamic_cast<bazalt::engine::nodes::LifePopulationNode*> (
         processor.peekFirstVoicePlanForTesting (0)->getNodeById ("alloc"));
     REQUIRE (voiceNode != nullptr);
+    juce::MidiBuffer none;
+    processor.processBlock (buffer, none); // released at the next block boundary (CLAUDE.md rule 5)
     CHECK_FALSE (voiceNode->getGate()); // the actual fix - not stuck at 1 forever
 
     // A real note-off arriving after the disconnect must not crash or
@@ -403,11 +405,11 @@ TEST_CASE ("The first note on each instance draws its own random1/random2", "[pl
     // instance 0 and the first on instance 1 drew identical numbers.
     NodeGraph graph;
     graph.addNode ({ "noteIn", "io.noteIn", {}, {}, {} });
-    graph.addNode ({ "alloc", "life.voice", {}, {}, {} });
+    graph.addNode ({ "alloc", "life.population", {}, {}, {} });
     graph.addNode ({ "osc", "source.sine", {}, {}, {} });
     graph.addNode ({ "sum", "life.merge", {}, {}, {} });
     graph.addNode ({ "out", "io.output", {}, {}, {} });
-    graph.addConnection ({ "noteIn", "notes", "alloc", "spawn" });
+    graph.addConnection ({ "noteIn", "notes", "alloc", "notes" });
     graph.addConnection ({ "alloc", "gate", "osc", "source.sine.amplitude" });
     graph.addConnection ({ "osc", "out", "sum", "in" });
     graph.addConnection ({ "sum", "out", "out", "in" });
@@ -426,7 +428,7 @@ TEST_CASE ("The first note on each instance draws its own random1/random2", "[pl
     REQUIRE (plan != nullptr);
     std::vector<float> drawn;
     for (int i = 0; i < BazaltAudioProcessor::maxInstances; ++i)
-        if (auto* voice = dynamic_cast<bazalt::engine::nodes::InstanceVoiceNode*> (plan->getNodeById ("alloc@" + juce::String (i))))
+        if (auto* voice = dynamic_cast<bazalt::engine::nodes::LifePopulationNode*> (plan->getNodeById ("alloc@" + juce::String (i))))
             if (voice->getGate())
                 drawn.push_back (voice->getRandom1());
     REQUIRE (drawn.size() == 2);
@@ -438,12 +440,12 @@ TEST_CASE ("A Voice runs as many instances as its Max Instances asks for, then s
 {
     NodeGraph graph;
     graph.addNode ({ "noteIn", "io.noteIn", {}, {}, {} });
-    graph.addNode ({ "alloc", "life.voice", {}, { { "life.voice.maxInstances", 40.0f } }, {} });
+    graph.addNode ({ "alloc", "life.population", {}, { { "life.population.size", 40.0f } }, {} });
     graph.addNode ({ "p2f", "math.pitchToFrequency", {}, {}, {} });
     graph.addNode ({ "osc", "source.sine", {}, {}, {} });
     graph.addNode ({ "sum", "life.merge", {}, {}, {} });
     graph.addNode ({ "masterout", "io.output", {}, {}, {} });
-    graph.addConnection ({ "noteIn", "notes", "alloc", "spawn" });
+    graph.addConnection ({ "noteIn", "notes", "alloc", "notes" });
     graph.addConnection ({ "alloc", "pitch", "p2f", "pitch" });
     graph.addConnection ({ "p2f", "frequency", "osc", "source.sine.frequency" });
     graph.addConnection ({ "alloc", "gate", "osc", "source.sine.amplitude" });
@@ -467,7 +469,7 @@ TEST_CASE ("A Voice runs as many instances as its Max Instances asks for, then s
     CHECK (processor.getOriginActiveVoiceCount (0) == 30); // no stealing: all 30 hold
 
     // Fewer instances: the voices past the new count are freed, not left hanging.
-    graph.findNode ("alloc")->parameters["life.voice.maxInstances"] = 4.0f;
+    graph.findNode ("alloc")->parameters["life.population.size"] = 4.0f;
     REQUIRE (controller.setGraph (graph).success);
     for (int block = 0; block < 4; ++block)
         processor.processBlock (buffer, midi);

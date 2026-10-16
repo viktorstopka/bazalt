@@ -358,6 +358,11 @@ changed is only how nodes get sorted into a voice-bucket vs. the global-bucket g
 local, per-node fixed-point pass, generalized from exactly one origin to up to
 `maxOrigins`. `ExecutionPlan`'s buffer/scheduling internals were never touched.
 
+> **2026-10-16 (wiki/plans/LifeCycle.md 2b.4):** the region-opening node is
+> `life.population` now — Voice, Trigger and both Swarms are its presets (Add
+> menu), and `life.split` sorts its members into branches. The sections below
+> describe the four separate allocators that preceded it.
+
 ### `life.voice` — the region-opening node (renamed from `instance.allocator`, 09-28-InstanceAllocator.3; renamed again from `instance.voice`, 09-29-AddMenu.1)
 
 Originally designed as "one node, several configurations" (Voice allocation and

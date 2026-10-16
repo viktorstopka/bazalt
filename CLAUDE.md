@@ -323,7 +323,7 @@ ctest --test-dir build -C Debug -R PluginTests --output-on-failure
   node has type `"io.noteIn"`, whatever its id), the same fix
   `instance.mix`'s own `externalInputNodeId` already had. A note-in placed
   under any id (e.g. the editor's own auto-generated `"node7"`) works
-  correctly. A graph with no `life.voice` (`MultiplicityResolver`'s
+  correctly. A graph with no `life.population` (`MultiplicityResolver`'s
   own `MultiplicityResult::monoOnly` field, replacing `DomainSplitter::monoOnly` as of
   `wiki/plans/DomainRedesign.md`) is one plan run every block, so audio effects work
   but it plays no notes. **Never call `ExecutionPlan::getNodeById ("literal")` on the audio
@@ -414,6 +414,12 @@ ctest --test-dir build -C Debug -R PluginTests --output-on-failure
   ADR-0007) was the first native function the UI ever called and is still
   the only read-only one (fetched once by both the canvas and the component
   gallery, each independently).
+- **2b (2026-10-16, `wiki/plans/LifeCycle.md`): `life.population` is the one
+  allocator** (Voice / Trigger / Swarm are its Add-menu presets, `ui/src/graph/presets.ts`;
+  the old types are gone, no migration — by request). Births from inside the patch go
+  through a birth copy (`pop@birth`) and start members at their exact sample;
+  `life.split` gates branch steps per member. The notes below that say `life.voice`
+  describe the allocator before 2b.
 - `life.merge`/`life.voice` (were `instance.sum`/`instance.allocate.voice`
   until schema v14)/`MultiplicityResolver`
   (`wiki/NODES.System.md` §5, `wiki/plans/DomainRedesign.md`) are real and

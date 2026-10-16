@@ -138,7 +138,13 @@ run only for its instances: the plan tags those steps with the branch, and an in
 run flag is set per branch (no CPU for instances that aren't in it). Merge after the
 branches sums them back.
 
-**2b.4 — Removal.** Voice, Trigger, Swarm (Transient) and Swarm (Population) go; each
+**2b.4 — Removal. Built 2026-10-16.** Voice, Trigger, Swarm (Transient) and Swarm
+(Population) are gone, along with `InstanceOriginNode` and the processor's "instance 0
+listens, relay a block late" path; the Add menu offers Voice, Trigger, Swarm (Transient),
+Swarm (Population) and Grain Cloud (Events → Population) as presets
+(`ui/src/graph/presets.ts`). Texas Windchimes and the user's AppData patches were rebuilt
+on Population. A held member nothing can release any more (its note source unwired) is
+released at the new plan's first block. The proposal: Voice, Trigger, Swarm (Transient) and Swarm (Population) go; each
 becomes an Add-menu preset of Population (no migrations — user's instruction; factory
 patches and the user's AppData patches rebuilt). Docs. After 2b, "never rename ids"
 (CLAUDE.md rule 3) is proposed for re-enabling — saved patches are now a real workflow.

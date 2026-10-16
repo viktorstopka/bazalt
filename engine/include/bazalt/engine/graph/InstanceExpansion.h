@@ -17,8 +17,9 @@ namespace bazalt::engine
         - A node **downstream of an allocator** (its poly part) runs per
           instance. Its trigger chain runs per instance only when it holds an
           io.noteIn (MIDI pokes each instance's note-in); an internal trigger
-          chain (a clock, a macro, Events) runs once and feeds instance 0's
-          copy of the allocator, which the processor relays from.
+          chain (a clock, a macro, Events) runs once and feeds the
+          Population's birth copy (`pop@birth`), which starts members at the
+          sample of each birth.
         - **Every other node runs once** and feeds every instance the same
           signal — a shared LFO is one LFO, in phase everywhere (the old
           engine copied it into each voice, where the copies drifted apart).
@@ -37,10 +38,9 @@ namespace bazalt::engine
         {
             juce::String originId;
             int count = 8;
-            /** No io.noteIn: the allocator is spawned from inside the patch (a
-                clock, a macro, Events). Its trigger chain runs once and only
-                instance 0's copy hears it; the processor relays each spawn to
-                the instance its VoiceManager picks. */
+            /** No io.noteIn: members are born from inside the patch (a clock, a
+                macro, Events, or Always). Its trigger chain runs once and feeds
+                the birth copy. */
             bool internallyTriggered = false;
         };
 

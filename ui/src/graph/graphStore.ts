@@ -281,7 +281,7 @@ export interface GraphSnapshot {
       alongside every nodes/wires resync (ensureInitialized, withHistory,
       undo, redo); absent for a node the engine hasn't compiled yet, or
       entirely outside the real WebView. `badge` is present only for
-      "life.voice" nodes.
+      "life.population" nodes.
   */
   multiplicity: ReadonlyMap<string, NodeMultiplicity>
   canUndo: boolean

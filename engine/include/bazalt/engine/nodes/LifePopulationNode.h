@@ -3,7 +3,6 @@
 #include "bazalt/engine/graph/InstanceGroups.h"
 #include "bazalt/engine/graph/Node.h"
 #include "bazalt/engine/graph/ValueTypes.h"
-#include "bazalt/engine/nodes/InstanceOriginNode.h"
 #include "bazalt/engine/nodes/InstanceSeeding.h"
 #include <array>
 #include <cmath>
@@ -37,7 +36,7 @@ namespace bazalt::engine::nodes
         that sample (spawnAt). A hidden cable from the birth copy (`births`) to
         every member (`afterBirths`) makes the birth copy run first in each block. With MIDI,
         each member hears its own copy of the note-in, exactly like a voice. */
-    class LifePopulationNode : public Node, public InstanceOriginNode
+    class LifePopulationNode : public Node
     {
     public:
         enum Input { notesIn, bornIn, releaseIn, pitchIn, velocityIn, durationIn, afterBirthsIn, numInputs };
@@ -158,15 +157,12 @@ namespace bazalt::engine::nodes
         int getBirthGroup() const noexcept { return birthGroup; }
         void setRuntime (InstanceGroupRuntime* runtimeIn) noexcept { runtime = runtimeIn; }
 
-        // InstanceOriginNode: the driver starts a member (after a steal's fade,
-        // or a MIDI note) and ends it.
-        int getMaxInstances() const noexcept override { return size; }
-        bool getGate() const noexcept override { return gate; }
-        float getPitch() const noexcept override { return pitch; }
-        float getVelocity() const noexcept override { return velocity; }
-        int consumeSpawnEventsThisBlock() noexcept override { return 0; } // births go through the birth copy, never this relay
-        void spawnInstance (float pitchIn, float velocityIn) noexcept override { spawnAt (0, pitchIn, velocityIn, nextDuration, nextOrder); }
-        void releaseInstance() noexcept override { releaseAt (0); }
+        // The driver starts a member (after a steal's fade, or a MIDI note) and ends it.
+        bool getGate() const noexcept { return gate; }
+        float getPitch() const noexcept { return pitch; }
+        float getVelocity() const noexcept { return velocity; }
+        void spawnInstance (float pitchIn, float velocityIn) noexcept { spawnAt (0, pitchIn, velocityIn, nextDuration, nextOrder); }
+        void releaseInstance() noexcept { releaseAt (0); }
         void releaseAt (int offset) noexcept { pendingRelease = juce::jmax (0, offset); }
 
         /** Starts this member at `offset` samples into the coming block.
@@ -355,7 +351,6 @@ namespace bazalt::engine::nodes
         void setSlot (int slotIn) noexcept
         {
             slot = slotIn;
-            setSpawnSlot (slotIn);
         }
 
     private:

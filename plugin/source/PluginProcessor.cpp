@@ -5,7 +5,6 @@
 #include "bazalt/engine/graph/GraphCompiler.h"
 #include "bazalt/engine/patch/PatchSerializer.h"
 #include "bazalt/engine/nodes/InstanceMixNode.h"
-#include "bazalt/engine/nodes/InstanceOriginNode.h"
 #include "bazalt/engine/nodes/IoNoteInNode.h"
 #include <algorithm>
 #include <array>
@@ -16,13 +15,6 @@ namespace bazalt
     namespace
     {
 
-        // DomainRedesign.md Batch 2's MIDI-independence mechanism: a
-        // sentinel NoteId for a voice triggered by an origin's own internal
-        // graph wiring (clock -> seq -> note.assemble -> spawn) rather than
-        // real host MIDI. Real MIDI NoteIds are (channel << 8) | noteNumber,
-        // channel 1-16 and note 0-127, so the largest real value is
-        // (16 << 8) | 127 = 4223 — nowhere near this.
-        constexpr bazalt::engine::VoiceManager::NoteId internalTriggerNoteId = 0xFFFFFFFFu;
     }
 
     BazaltAudioProcessor::BusesProperties BazaltAudioProcessor::makeBusLayout()
@@ -667,8 +659,8 @@ namespace bazalt
         auto& runtime = *plan.instanceGroups[(size_t) group];
         if (viaAllocator)
         {
-            if (auto* allocator = dynamic_cast<bazalt::engine::nodes::InstanceOriginNode*> (runtime.originNodes[(size_t) instance]))
-                allocator->spawnInstance (pitch, velocity);
+            if (auto* member = dynamic_cast<bazalt::engine::nodes::LifePopulationNode*> (runtime.originNodes[(size_t) instance]))
+                member->spawnInstance (pitch, velocity);
         }
         else if (auto* noteIn = dynamic_cast<bazalt::engine::nodes::IoNoteInNode*> (runtime.noteInNodes[(size_t) instance]))
         {
@@ -800,7 +792,7 @@ namespace bazalt
                 if (group->bundleSlot < 0)
                     continue;
                 auto& bundle = originBundles[(size_t) group->bundleSlot];
-                if (! bundle.active || bundle.swarmPopulationSize.load (std::memory_order_relaxed) >= 0)
+                if (! bundle.active)
                     continue;
                 for (int i = 0; i < group->count; ++i)
                     if (bundle.voiceManager.getStage (i) == VoiceStage::Stealing)
@@ -818,55 +810,12 @@ namespace bazalt
                 if (! bundle.active)
                     continue;
 
-                // A swarm population: its first N instances always live.
-                if (const auto population = bundle.swarmPopulationSize.load (std::memory_order_relaxed); population >= 0)
-                {
-                    for (int i = 0; i < juce::jmin (population, group.count); ++i)
-                        group.instances[(size_t) i].run = group.instances[(size_t) i].audible = true;
-                    continue;
-                }
-
-                // An internally triggered origin (no note-in): its own trigger
-                // chain runs in instance 0, which tells us when to spawn or
-                // release; the spawn moves to the instance the VoiceManager
-                // picks.
-                const auto internallyTriggered = group.noteInNodes.empty() || group.noteInNodes[0] == nullptr;
-                if (internallyTriggered && group.birthNode == nullptr)
-                    if (auto* allocator = dynamic_cast<bazalt::engine::nodes::InstanceOriginNode*> (group.originNodes[0]))
-                        if (allocator->consumeSpawnEventsThisBlock() > 0)
-                        {
-                            if (allocator->getGate())
-                            {
-                                const auto pitch = allocator->getPitch();
-                                const auto velocity = allocator->getVelocity();
-                                const auto instance = bundle.voiceManager.noteOn (internalTriggerNoteId, group.count);
-                                group.previewInstance.store (instance, std::memory_order_relaxed);
-                                if (bundle.voiceManager.getStage (instance) == VoiceStage::Stealing)
-                                    bundle.voiceManager.setPendingNoteOn (instance, { internalTriggerNoteId, pitch, velocity });
-                                else if (instance != 0)
-                                    startInstance (*plan, g, instance, pitch, velocity, true);
-                            }
-                            else
-                            {
-                                const auto instance = bundle.voiceManager.noteOff (internalTriggerNoteId);
-                                if (instance > 0)
-                                    if (auto* other = dynamic_cast<bazalt::engine::nodes::InstanceOriginNode*> (group.originNodes[(size_t) instance]))
-                                        other->releaseInstance();
-                            }
-                        }
-
                 for (int i = 0; i < group.count; ++i)
                 {
                     auto& state = group.instances[(size_t) i];
                     const auto stage = bundle.voiceManager.getStage (i);
                     if (stage == VoiceStage::Idle)
-                    {
-                        // Instance 0 of an old-style internal trigger always runs,
-                        // so a trigger it hears is noticed. A Population's birth
-                        // copy hears for its members instead.
-                        state.run = i == 0 && group.birthNode == nullptr;
-                        continue;
-                    }
+                        continue; // a free slot does no work (births come through the birth copy)
                     state.run = state.audible = true;
                     if (stage == VoiceStage::Stealing)
                     {
@@ -898,7 +847,7 @@ namespace bazalt
                 if (group.bundleSlot < 0)
                     continue;
                 auto& bundle = originBundles[(size_t) group.bundleSlot];
-                if (! bundle.active || bundle.swarmPopulationSize.load (std::memory_order_relaxed) >= 0)
+                if (! bundle.active)
                     continue;
 
                 int active = 0;
@@ -921,7 +870,7 @@ namespace bazalt
                         {
                             const auto pending = bundle.voiceManager.getPendingNoteOn (i);
                             startInstance (*plan, g, i, pending.pitch, pending.velocity,
-                                           pending.noteId == internalTriggerNoteId || pending.noteId >= firstBirthNoteId);
+                                           pending.noteId >= firstBirthNoteId);
                             bundle.voiceManager.completeSteal (i);
                         }
                     }

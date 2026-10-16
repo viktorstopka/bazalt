@@ -316,11 +316,13 @@ edit. Every later `data.*`/`osc.wavetable`/`sampler.*` node rides on this for fr
 
 | Node | Status | Necessity | Batch | Notes |
 |---|---|---|---|---|
-| `life.voice` | Implemented | | | |
+| `life.population` | Implemented | | 2b.2 | The one allocator (LifeCycle.md 2b). |
+| `life.split` | Implemented | | 2b.3 | Branches by Ranges / Modulo / Rank. |
+| `life.voice` | Removed (2b.4) | | | A Population preset now. |
 | `life.merge` | Implemented | | | renamed from `instance.mix`, `wiki/plans/DomainRedesign.md` Batch 1b |
-| `life.swarmPopulation` | Implemented | **A1** | Domain Extensions | Fixed count, always live — simplest of the three (no spawn logic). Done 2026-10-01. |
-| `life.swarmTransient` | Implemented | **A2** | Domain Extensions | Event-triggered spawn, closest to Voice's own shape. Done 2026-10-01. |
-| `life.trigger` | Implemented | **A2** | Domain Extensions | Event-triggered, one instance at a time. Done 2026-10-01. |
+| `life.swarmPopulation` | Removed (2b.4) — Population preset | **A1** | Domain Extensions | Fixed count, always live — simplest of the three (no spawn logic). Done 2026-10-01. |
+| `life.swarmTransient` | Removed (2b.4) — Population preset | **A2** | Domain Extensions | Event-triggered spawn, closest to Voice's own shape. Done 2026-10-01. |
+| `life.trigger` | Removed (2b.4) — Population preset | **A2** | Domain Extensions | Event-triggered, one instance at a time. Done 2026-10-01. |
 
 ### `util.*` — 4/4 Implemented
 

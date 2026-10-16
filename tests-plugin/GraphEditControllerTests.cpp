@@ -1068,7 +1068,7 @@ TEST_CASE ("Two instance.sum nodes reducing one origin each carry that origin's 
     {
         bazalt::engine::NodeGraph graph;
         graph.addNode ({ "noteIn", "io.noteIn", {}, {}, {} });
-        graph.addNode ({ "alloc", "life.voice", {}, {}, {} });
+        graph.addNode ({ "alloc", "life.population", {}, {}, {} });
         graph.addNode (bazalt::engine::withContent ({ "osc", "source.oscillator", {}, {}, {} }, bazalt::engine::CurveDocument::saw()));
         graph.addNode ({ "sumMain", "life.merge", {}, {}, {} });
         graph.addNode ({ "sumLayer", "life.merge", {}, {}, {} });
@@ -1077,7 +1077,7 @@ TEST_CASE ("Two instance.sum nodes reducing one origin each carry that origin's 
         graph.addNode ({ "add", "math.add", {}, {}, {} });
         graph.addNode ({ "masterOut", "io.output", {}, {}, {} });
 
-        graph.addConnection ({ "noteIn", "notes", "alloc", "spawn" });
+        graph.addConnection ({ "noteIn", "notes", "alloc", "notes" });
         graph.addNode ({ "oscToFreq", "math.pitchToFrequency", {}, {}, {} });
         graph.addConnection ({ "alloc", "pitch", "oscToFreq", "pitch" });
         graph.addConnection ({ "oscToFreq", "frequency", "osc", "source.oscillator.frequency" });

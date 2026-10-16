@@ -679,7 +679,7 @@
     },
     {
       "id": "node172",
-      "type": "life.voice",
+      "type": "life.population",
       "position": {
         "x": 1089.544921875,
         "y": 132.3865966796875
@@ -1478,7 +1478,7 @@
       "fromNodeId": "node173",
       "fromPortId": "notes",
       "toNodeId": "node172",
-      "toPortId": "spawn"
+      "toPortId": "notes"
     },
     {
       "fromNodeId": "node172",

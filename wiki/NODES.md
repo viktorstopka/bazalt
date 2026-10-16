@@ -63,7 +63,7 @@ are telemetry outputs for live visualization, not ports.
 | `adapt.*` | map (absorbed remap, 2026-10-04), normalise, threshold, sampleHold, **audioToControl** (AudioControlBridge), **controlToAudio** (ControlToAudioBridge), **boolToControl**, **pitchToFrequency**, **frequencyToPitch**, **gateLength** (all new, direct-feedback sweep) | ✅ all 10 |
 | `data.*` | load, table, scale, material, analyseModes, lookup, **record**, **eqToCurve** (Correction 2) | ✅ table, scale, material, lookup — 📋 load, analyseModes, record, eqToCurve |
 | `analysis.*` | onset, pitch, level, centroid | 📋 all 4 |
-| `instance.*` | allocate.voice, allocate.swarmPopulation, allocate.swarmTransient, allocate.trigger, sum | ✅ all five — Domain Extensions batch done 2026-10-01 |
+| `life.*` | population, split, merge (voice / trigger / swarmTransient / swarmPopulation removed in 2b.4 — Population presets) | ✅ |
 | `util.*` | constant, macro, reroute | ✅ all 3 (`macro` real as of `wiki/plans/UtilMacro.md` — ADR-0030 amends ADR-0015, doesn't reverse it) |
 | `view.*` | listen, spectrum, meter, ripple, count, scope.control, scope.modulation, gate, cycle | ✅ all 9 (scope, glance removed) |
 | `factory.*` | eq, curve, wave, sample, notes, material (Correction 2) | 📋 all 6 |
@@ -828,7 +828,7 @@ Examples: keyboard zones (Ranges on pitch), velocity layers (Ranges on velocity)
 (Modulo on Order), lead + pad (Rank on pitch: the top note gets branch 0). A Merge after each
 branch, or one Merge after the branches join, sums them back.
 
-#### `life.voice` — Voice ✅ *(renamed from `instance.allocator`, 09-28-InstanceAllocator.3; renamed again from `instance.voice`, 09-29-AddMenu.1, to make room for `life.swarmPopulation`/`swarmTransient`/`trigger` as siblings under one Add-menu category)*
+#### `life.voice` — Voice ❌ **Removed 2026-10-16 (LifeCycle.md 2b.4): a preset of `life.population` now** — kept below as the historical record *(renamed from `instance.allocator`, 09-28-InstanceAllocator.3; renamed again from `instance.voice`, 09-29-AddMenu.1, to make room for `life.swarmPopulation`/`swarmTransient`/`trigger` as siblings under one Add-menu category)*
 Opens an instanced region. Was "one node, several configurations" (a `configuration`
 enum for Voice/Swarm-population/Swarm-transient/Trigger); three of those four options
 never did anything, and the four don't even share a port shape (Voice needs a `Note`
@@ -844,7 +844,7 @@ Swarm/Trigger runtime machinery exists — not empty shells bolted onto this one
 `09-28-InstanceAllocator.2` — each spawn draws from a fresh generator seeded by
 `(seed, instanceIndex)`, not a wall-clock-seeded persistent one).
 
-#### `life.swarmPopulation` — Swarm (Population) ✅ *(new, Domain Extensions batch, 2026-10-01)*
+#### `life.swarmPopulation` — Swarm (Population) ❌ **Removed 2026-10-16 (LifeCycle.md 2b.4): a preset of `life.population` now** — kept below as the historical record *(new, Domain Extensions batch, 2026-10-01)*
 Opens an instanced region with a fixed, always-live count — no spawn/release
 mechanism at all (unlike Voice, nothing ever calls `noteOn`/`noteOff` for
 this origin; `populationSize` of its physical slots simply report `gate =
@@ -860,7 +860,7 @@ demand-driven ceiling to distinguish from the live count, this many are
 `09-28-InstanceAllocator.2` built for Voice, reused verbatim via the shared
 `combineInstanceSeed` helper).
 
-#### `life.swarmTransient` — Swarm (Transient) ✅ *(new, Domain Extensions batch, 2026-10-01)*
+#### `life.swarmTransient` — Swarm (Transient) ❌ **Removed 2026-10-16 (LifeCycle.md 2b.4): a preset of `life.population` now** — kept below as the historical record *(new, Domain Extensions batch, 2026-10-01)*
 Opens an instanced region whose spawn source is a plain `Event` (`spawn`), not
 a `Note` — no pitch/velocity concept (the shared `InstanceOriginNode`
 interface's `spawnInstance()` accepts but ignores them). Each firing restarts
@@ -883,7 +883,7 @@ only represent one lifecycle), so rapid overlapping spawns beyond that
 degrade gracefully to ordinary voice-stealing rather than a true leak — not
 a correctness issue for the realistic case (spawning slower than `duration`).
 
-#### `life.trigger` — Trigger ✅ *(new, Domain Extensions batch, 2026-10-01)*
+#### `life.trigger` — Trigger ❌ **Removed 2026-10-16 (LifeCycle.md 2b.4): a preset of `life.population` now** — kept below as the historical record *(new, Domain Extensions batch, 2026-10-01)*
 Opens an instanced region with exactly one instance at a time — no
 `maxInstances` parameter at all (implicitly 1, matching Voice's own
 precedent of only exposing parameters that actually do something). Spawn

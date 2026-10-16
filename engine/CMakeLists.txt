@@ -63,7 +63,6 @@ target_sources(engine
             include/bazalt/engine/nodes/OutputNode.h
             include/bazalt/engine/nodes/ThresholdNode.h
             include/bazalt/engine/nodes/DownmixNode.h
-            include/bazalt/engine/nodes/InstanceVoiceNode.h
             include/bazalt/engine/nodes/InstanceMixNode.h
             include/bazalt/engine/nodes/IoNoteInNode.h
             include/bazalt/engine/patch/PatchDocument.h

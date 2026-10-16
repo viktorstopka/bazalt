@@ -132,7 +132,7 @@ TEST_CASE ("09-28-InstanceAllocator.1: an unrelated, unconnected instance.alloca
     NodeGraph graph;
     graph.addNode ({ "sine", "source.oscillator", {}, { { "source.oscillator.frequency", 220.0f } }, {} });
     graph.addNode ({ "out", "io.output", {}, {}, {} });
-    graph.addNode ({ "alloc", "life.voice", {}, {}, {} }); // deliberately unconnected
+    graph.addNode ({ "alloc", "life.population", {}, {}, {} }); // deliberately unconnected
     graph.addConnection ({ "sine", "out", "out", "in" });
     graph.setOutput ("out", "out");
 
@@ -179,12 +179,12 @@ TEST_CASE ("09-28-InstanceAllocator.1b: MIDI reaches io.noteIn regardless of its
 
     NodeGraph graph;
     graph.addNode ({ "node3", "io.noteIn", {}, {}, {} }); // NOT "noteIn"
-    graph.addNode ({ "alloc", "life.voice", {}, {}, {} });
+    graph.addNode ({ "alloc", "life.population", {}, {}, {} });
     graph.addNode (bazalt::engine::withContent ({ "osc", "source.oscillator", {}, {}, {} }, bazalt::engine::CurveDocument::saw()));
     graph.addNode (bazalt::engine::withContent ({ "env", "source.envelope", {}, {}, {} }, bazalt::engine::CurveDocument::adsr (0.0f, 0.1f, 1.0f, 0.1f, 0.0f)));
     graph.addNode ({ "vca", "math.multiply", {}, {}, {} });
     graph.addNode ({ "out", "io.output", {}, {}, {} });
-    graph.addConnection ({ "node3", "notes", "alloc", "spawn" });
+    graph.addConnection ({ "node3", "notes", "alloc", "notes" });
     graph.addNode ({ "oscToFreq", "math.pitchToFrequency", {}, {}, {} });
     graph.addConnection ({ "alloc", "pitch", "oscToFreq", "pitch" });
     graph.addConnection ({ "oscToFreq", "frequency", "osc", "source.oscillator.frequency" });
@@ -230,12 +230,12 @@ TEST_CASE ("A genuinely stereo graph (space.pan into io.output's stereo pair) se
     // covered by the next test.
     NodeGraph graph;
     graph.addNode ({ "noteIn", "io.noteIn", {}, {}, {} });
-    graph.addNode ({ "allocator", "life.voice", {}, {}, {} });
+    graph.addNode ({ "allocator", "life.population", {}, {}, {} });
     graph.addNode (bazalt::engine::withContent ({ "osc", "source.oscillator", {}, {}, {} }, bazalt::engine::CurveDocument::saw()));
     graph.addNode ({ "voiceMix", "life.merge", {}, {}, {} });
     graph.addNode ({ "pan", "space.pan", {}, { { "space.pan.pan", -1.0f } }, {} }); // hard left
     graph.addNode ({ "out", "io.output", {}, {}, {} });
-    graph.addConnection ({ "noteIn", "notes", "allocator", "spawn" });
+    graph.addConnection ({ "noteIn", "notes", "allocator", "notes" });
     graph.addNode ({ "oscToFreq", "math.pitchToFrequency", {}, {}, {} });
     graph.addConnection ({ "allocator", "pitch", "oscToFreq", "pitch" });
     graph.addConnection ({ "oscToFreq", "frequency", "osc", "source.oscillator.frequency" });
@@ -287,11 +287,11 @@ TEST_CASE ("A mono source into io.output's stereo 'in' broadcasts to both host c
     // can't exercise this mechanism either way.
     NodeGraph graph;
     graph.addNode ({ "noteIn", "io.noteIn", {}, {}, {} });
-    graph.addNode ({ "allocator", "life.voice", {}, {}, {} });
+    graph.addNode ({ "allocator", "life.population", {}, {}, {} });
     graph.addNode (bazalt::engine::withContent ({ "osc", "source.oscillator", {}, {}, {} }, bazalt::engine::CurveDocument::saw()));
     graph.addNode ({ "voiceMix", "life.merge", {}, {}, {} });
     graph.addNode ({ "out", "io.output", {}, {}, {} });
-    graph.addConnection ({ "noteIn", "notes", "allocator", "spawn" });
+    graph.addConnection ({ "noteIn", "notes", "allocator", "notes" });
     graph.addNode ({ "oscToFreq", "math.pitchToFrequency", {}, {}, {} });
     graph.addConnection ({ "allocator", "pitch", "oscToFreq", "pitch" });
     graph.addConnection ({ "oscToFreq", "frequency", "osc", "source.oscillator.frequency" });
@@ -359,14 +359,14 @@ TEST_CASE ("An audioIn feeding the global domain (after an instance.sum) passes 
     // no voice active - changes).
     NodeGraph graph;
     graph.addNode ({ "noteIn", "io.noteIn", {}, {}, {} });
-    graph.addNode ({ "alloc", "life.voice", {}, {}, {} });
+    graph.addNode ({ "alloc", "life.population", {}, {}, {} });
     graph.addNode (bazalt::engine::withContent ({ "osc", "source.oscillator", {}, {}, {} }, bazalt::engine::CurveDocument::saw()));
     graph.addNode ({ "svf", "filter.svf", {}, {}, {} });
     graph.addNode ({ "instancemix", "life.merge", {}, {}, {} });
     graph.addNode ({ "sum", "math.add", {}, {}, {} });
     graph.addNode ({ "audioin", "io.audioIn", {}, {}, {} });
     graph.addNode ({ "masterout", "io.output", {}, {}, {} });
-    graph.addConnection ({ "noteIn", "notes", "alloc", "spawn" });
+    graph.addConnection ({ "noteIn", "notes", "alloc", "notes" });
     graph.addNode ({ "oscToFreq", "math.pitchToFrequency", {}, {}, {} });
     graph.addConnection ({ "alloc", "pitch", "oscToFreq", "pitch" });
     graph.addConnection ({ "oscToFreq", "frequency", "osc", "source.oscillator.frequency" });
@@ -610,14 +610,14 @@ TEST_CASE ("The host-input path never allocates on the audio thread",
         // sibling test above.
         NodeGraph graph;
         graph.addNode ({ "noteIn", "io.noteIn", {}, {}, {} });
-        graph.addNode ({ "alloc", "life.voice", {}, {}, {} });
+        graph.addNode ({ "alloc", "life.population", {}, {}, {} });
         graph.addNode (bazalt::engine::withContent ({ "osc", "source.oscillator", {}, {}, {} }, bazalt::engine::CurveDocument::saw()));
         graph.addNode ({ "svf", "filter.svf", {}, {}, {} });
         graph.addNode ({ "instancemix", "life.merge", {}, {}, {} });
         graph.addNode ({ "sum", "math.add", {}, {}, {} });
         graph.addNode ({ "audioin", "io.audioIn", {}, {}, {} });
         graph.addNode ({ "masterout", "io.output", {}, {}, {} });
-        graph.addConnection ({ "noteIn", "notes", "alloc", "spawn" });
+        graph.addConnection ({ "noteIn", "notes", "alloc", "notes" });
         graph.addNode ({ "oscToFreq", "math.pitchToFrequency", {}, {}, {} });
         graph.addConnection ({ "alloc", "pitch", "oscToFreq", "pitch" });
         graph.addConnection ({ "oscToFreq", "frequency", "osc", "source.oscillator.frequency" });
@@ -754,13 +754,13 @@ TEST_CASE ("A plucked note on the input plays a Voice at that pitch", "[plugin][
     NodeGraph graph;
     graph.addNode ({ "in", "io.audioIn", {}, {}, {} });
     graph.addNode ({ "notes", "analysis.notes", {}, {}, {} });
-    graph.addNode ({ "voice", "life.voice", {}, {}, {} });
+    graph.addNode ({ "voice", "life.population", {}, {}, {} });
     graph.addNode ({ "p2f", "math.pitchToFrequency", {}, {}, {} });
     graph.addNode ({ "sine", "source.sine", {}, {}, {} });
     graph.addNode ({ "merge", "life.merge", {}, {}, {} });
     graph.addNode ({ "out", "io.output", {}, {}, {} });
     graph.addConnection ({ "in", "channel.0", "notes", "in" });
-    graph.addConnection ({ "notes", "notes", "voice", "spawn" });
+    graph.addConnection ({ "notes", "notes", "voice", "notes" });
     graph.addConnection ({ "voice", "pitch", "p2f", "pitch" });
     graph.addConnection ({ "p2f", "frequency", "sine", "source.sine.frequency" });
     graph.addConnection ({ "voice", "gate", "sine", "source.sine.amplitude" });

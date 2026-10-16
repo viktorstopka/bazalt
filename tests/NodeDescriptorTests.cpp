@@ -1,4 +1,5 @@
 #include <catch2/catch_test_macros.hpp>
+#include <set>
 #include "bazalt/engine/graph/ProofGraphs.h"
 #include "bazalt/engine/graph/NodeFactory.h"
 
@@ -10,7 +11,7 @@ TEST_CASE ("NodeFactory::describeAll() returns a descriptor for every registered
     auto factory = buildDefaultNodeFactory();
     const auto descriptors = factory.describeAll();
 
-    REQUIRE (descriptors.size() == 128); // + life.population, life.split (2b.2, 2b.3) // + life.reduce (internal, instance axis) + random.wander/brownian/fractal/events, chaos.lorenz/rossler/duffing/logistic (stochastic batch) + filter.eq, data.eqCurve (1d) + analysis.pitch/onset/notes/phase (GuitarInput) + data.wavetable (1c) + source.sine/saw/square/triangle (back by request) // - osc.analog/sine/saw/square/triangle, lfo.shape, env.adsr, data.table (curve nodes, 1b) // + data.curve, source.oscillator, source.envelope (1b) // - mix.crossfade, logic.select, view.scope.control/modulation, view.gate + math.blend, logic.switch, view.scope // - mix.gain, math.clamp, env.follower (merged into Multiply/Clip/Level) // - To Mod/To Audio/From Bool/Normalise/Unipolar to Bipolar/Bipolar to Unipolar (wiki/plans/DataAndWavetable.md §2) // + deco.header/comment/box/image (wiki/plans/Decorations.md) // + view.tune (design/Visualization/Tune.png) // + 11 Sound Palette nodes (wiki/plans/SoundPalette.md) + space.diffuser, space.reverb (wiki/plans/Reverb.md). 93 as of util.bipolarToUnipolar (see git history for the full running tally before this) + view.ripple (design/Visualization/Ripple.png) + view.count (design/Visualization/Count.png) + view.scope.control (design/Visualization/Scope1.png) + view.scope.modulation (ScopeMod.png) + view.gate (Gate.png) - adapt.remap (became adapt.map, replacing the old Map — design/Map.png) + osc.saw, osc.square, osc.triangle - view.scope - view.glance + view.cycle - logic.boolean + logic.and/or/xor/eventGroup/edge/latch
+    REQUIRE (descriptors.size() == 124); // + life.population, life.split (2b.2, 2b.3) - life.voice/trigger/swarmTransient/swarmPopulation (2b.4) // + life.reduce (internal, instance axis) + random.wander/brownian/fractal/events, chaos.lorenz/rossler/duffing/logistic (stochastic batch) + filter.eq, data.eqCurve (1d) + analysis.pitch/onset/notes/phase (GuitarInput) + data.wavetable (1c) + source.sine/saw/square/triangle (back by request) // - osc.analog/sine/saw/square/triangle, lfo.shape, env.adsr, data.table (curve nodes, 1b) // + data.curve, source.oscillator, source.envelope (1b) // - mix.crossfade, logic.select, view.scope.control/modulation, view.gate + math.blend, logic.switch, view.scope // - mix.gain, math.clamp, env.follower (merged into Multiply/Clip/Level) // - To Mod/To Audio/From Bool/Normalise/Unipolar to Bipolar/Bipolar to Unipolar (wiki/plans/DataAndWavetable.md §2) // + deco.header/comment/box/image (wiki/plans/Decorations.md) // + view.tune (design/Visualization/Tune.png) // + 11 Sound Palette nodes (wiki/plans/SoundPalette.md) + space.diffuser, space.reverb (wiki/plans/Reverb.md). 93 as of util.bipolarToUnipolar (see git history for the full running tally before this) + view.ripple (design/Visualization/Ripple.png) + view.count (design/Visualization/Count.png) + view.scope.control (design/Visualization/Scope1.png) + view.scope.modulation (ScopeMod.png) + view.gate (Gate.png) - adapt.remap (became adapt.map, replacing the old Map — design/Map.png) + osc.saw, osc.square, osc.triangle - view.scope - view.glance + view.cycle - logic.boolean + logic.and/or/xor/eventGroup/edge/latch
 
     auto findByTypeId = [&] (const juce::String& typeId) -> const NodeDescriptor*
     {
@@ -134,27 +135,20 @@ TEST_CASE ("09-28-InstanceAllocator.3: instance.allocate.voice (renamed from ins
     CHECK (findByTypeId ("instance.allocator") == nullptr);
     CHECK (findByTypeId ("instance.voice") == nullptr); // 09-29-AddMenu.1's own rename
 
-    const auto* voice = findByTypeId ("life.voice");
-    REQUIRE (voice != nullptr);
-    CHECK (voice->title == "Voice");
-    // "Domain/Allocate", not flat "Domain" - 09-29-AddMenu.1 nests Voice (and
-    // its future Swarm/Trigger siblings) under an Add-menu flyout, one level
-    // deeper than instance.sum, which deliberately stays flat "Domain".
-    CHECK (voice->category == "Life-cycle");
+    // wiki/plans/LifeCycle.md 2b.4: Voice, Trigger and both Swarms are
+    // settings of one Population now (Add-menu presets).
+    for (const auto* gone : { "life.voice", "life.trigger", "life.swarmTransient", "life.swarmPopulation" })
+        CHECK (findByTypeId (gone) == nullptr);
 
-    bool sawConfiguration = false;
-    bool sawMaxInstances = false;
-    bool sawSeed = false;
-    for (const auto& p : voice->parameters)
-    {
-        if (p.id.containsIgnoreCase ("configuration")) sawConfiguration = true;
-        if (p.id == "life.voice.maxInstances") sawMaxInstances = true;
-        if (p.id == "life.voice.seed") sawSeed = true;
-    }
-    CHECK_FALSE (sawConfiguration);
-    CHECK (sawMaxInstances);
-    CHECK (sawSeed); // 09-28-InstanceAllocator.2: real patch-level determinism
-    REQUIRE (voice->parameters.size() == 2); // maxInstances + seed
+    const auto* population = findByTypeId ("life.population");
+    REQUIRE (population != nullptr);
+    CHECK (population->title == "Population");
+    CHECK (population->category == "Life-cycle");
+    std::set<juce::String> ids;
+    for (const auto& p : population->parameters)
+        ids.insert (p.id);
+    CHECK (ids == std::set<juce::String> { "life.population.size", "life.population.born", "life.population.lives",
+                                           "life.population.whenFull", "life.population.seed" });
 }
 
 TEST_CASE ("A node with no title override falls back to its type id in the descriptor",
