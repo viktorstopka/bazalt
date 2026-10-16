@@ -6,6 +6,7 @@
 // Every drag streams live and commits once on release.
 import { useRef, useState } from 'react'
 import { CurveEditor } from './CurveEditor'
+import { FromSamplePanel } from './FromSamplePanel'
 import { HarmonicsEditor } from './HarmonicsEditor'
 import {
   type Keyframe,
@@ -74,6 +75,7 @@ function KeyframeThumb({ keyframe }: { keyframe: Keyframe }) {
 export function WavetableEditor({ doc, snap, onLive, onCommit }: Props) {
   const [selected, setSelected] = useState(0)
   const [frame, setFrame] = useState(0)
+  const [fromSample, setFromSample] = useState(false)
   const [dragDoc, setDragDoc] = useState<WavetableDoc | null>(null)
   const stripRef = useRef<HTMLDivElement | null>(null)
 
@@ -177,8 +179,12 @@ export function WavetableEditor({ doc, snap, onLive, onCommit }: Props) {
               Step
             </button>
           </div>
+          <button className="factory-button" onClick={() => setFromSample((v) => !v)} title="Make the table from a recorded sound">
+            From sample…
+          </button>
         </div>
       </div>
+      {fromSample && <FromSamplePanel onResult={(next) => onCommit(next)} onClose={() => setFromSample(false)} />}
 
       <div className="wavetable-strip-row">
         <div ref={stripRef} className="wavetable-strip" onPointerDown={(e) => {

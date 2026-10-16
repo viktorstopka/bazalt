@@ -714,6 +714,13 @@ gets; the Frame signal travels beside the table on the same cable (the Data
 publisher's companion), so modulating Frame sweeps the timbre sample-accurately.
 Keyframe tables are cached by content, so voice copies and live edits of one keyframe
 rebuild only what changed. Default: a sine morphing into a saw.
+**From a sample** *(3a.6)*: the Factory window's "From sample…" makes the table from a
+sound — Cycles (real cycles of a pitched sound, turned to one phase), Harmonics (their
+spectra, no phases), Texture (an unpitched sound's colour), Cycle file (single-cycle or
+2048-per-frame wavetable files); 4–256 frames along the sound, so Frame replays its change
+at any pitch. **Capture** *(3a.6)*: `source` (a sample, typically a live Record) and
+`capture` (Event) — each capture turns the last quarter second of the source into a
+four-frame table (playing state, not saved).
 
 #### `data.eqCurve` — EQ Curve ✅ *(stage 1, 1d)*
 One set of EQ bands, drawn in the Factory window, that any number of `filter.eq` nodes

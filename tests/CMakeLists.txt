@@ -80,6 +80,7 @@ add_executable(EngineTests
     SamplerTests.cpp
     RecordTests.cpp
     WavesetTests.cpp
+    WavetableExtractionTests.cpp
     CurvePlayerNodeTests.cpp
     VoiceManagerTests.cpp
 )

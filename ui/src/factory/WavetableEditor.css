@@ -165,3 +165,34 @@
   display: flex;
   min-height: 0;
 }
+
+/* wiki/plans/Sampling.md 3a.6: "From sample…" */
+.wavetable-from-sample {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 6px 0;
+  padding: 8px;
+  border: 1px solid var(--color-nodeBorder);
+  border-radius: var(--radius-sm);
+  font-size: 11px;
+  color: var(--color-textSecondary);
+}
+.wavetable-from-sample-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.wavetable-from-sample-row > span:first-child {
+  width: 48px;
+}
+.wavetable-from-sample-row select {
+  min-width: 160px;
+  background: var(--color-nodeFill);
+  color: var(--color-textPrimary);
+  border: 1px solid var(--color-nodeBorder);
+  border-radius: var(--radius-sm);
+}
+.wavetable-from-sample-status {
+  color: var(--color-textPrimary);
+}

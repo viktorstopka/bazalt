@@ -3,6 +3,7 @@
 #include "NodeDescriptorJson.h"
 #include "bazalt/engine/patch/PatchSerializer.h"
 #include "bazalt/engine/graph/SampleAnalysis.h"
+#include "bazalt/engine/graph/WavetableExtraction.h"
 #include "bazalt/engine/telemetry/TelemetryFrame.h"
 #include <optional>
 
@@ -489,6 +490,43 @@ namespace bazalt
         {
             processor.getGraphEditController().refreshSamples (argString (args, 0));
             completion (true);
+        });
+
+        // wiki/plans/Sampling.md 3a.6: the Wavetable factory's "From sample...":
+        // (sampleId, method "auto"|"cycles"|"harmonics"|"texture"|"cycleFile",
+        // frames, start s, end s) -> { success, errorMessage, content, method,
+        // pitch }. The UI commits `content` to its wavetable node.
+        options = options.withNativeFunction ("wavetableFromSample", [] (Args args, Completion completion)
+        {
+            namespace wx = bazalt::engine::wavetableExtraction;
+            auto* obj = new juce::DynamicObject();
+            const auto source = bazalt::engine::SampleStore::instance().find (argString (args, 0));
+            if (source == nullptr)
+            {
+                obj->setProperty ("success", false);
+                obj->setProperty ("errorMessage", "That sample isn't loaded");
+                completion (juce::var (obj));
+                return;
+            }
+            const auto name = argString (args, 1);
+            wx::Options opts;
+            opts.method = name == "cycles" ? wx::Method::Cycles
+                        : name == "harmonics" ? wx::Method::Harmonics
+                        : name == "texture" ? wx::Method::Texture
+                        : name == "cycleFile" ? wx::Method::CycleFile
+                                              : wx::suggestMethod (*source);
+            opts.frames = juce::jlimit (1, 256, (int) argFloat (args, 2));
+            opts.start = juce::jmax (0.0, (double) argFloat (args, 3));
+            opts.end = juce::jmax (0.0, (double) argFloat (args, 4));
+            const auto result = wx::fromSample (*source, opts);
+            static const char* names[] = { "cycles", "harmonics", "texture", "cycleFile" };
+            obj->setProperty ("success", result.success);
+            obj->setProperty ("errorMessage", result.errorMessage);
+            obj->setProperty ("method", names[(int) opts.method]);
+            obj->setProperty ("pitch", std::isfinite (result.pitch) ? juce::var (result.pitch) : juce::var());
+            if (result.success)
+                obj->setProperty ("content", result.document.toVar());
+            completion (juce::var (obj));
         });
 
         // wiki/plans/Sampling.md 3a.3: Freeze a Record node's recording into

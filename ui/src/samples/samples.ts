@@ -156,3 +156,19 @@ export interface RecordInfo {
 export function recordInfo(nodeId: string): Promise<RecordInfo> {
   return call<RecordInfo>('recordInfo', { seconds: -1, peaks: [], head: 0, filled: 0, wrapped: false }, nodeId)
 }
+
+export type WavetableMethod = 'auto' | 'cycles' | 'harmonics' | 'texture' | 'cycleFile'
+
+export interface WavetableFromSampleResult {
+  success: boolean
+  errorMessage: string
+  content?: unknown
+  method?: Exclude<WavetableMethod, 'auto'>
+  /** The sound's note (MIDI), when it has one. */
+  pitch?: number | null
+}
+
+/** wiki/plans/Sampling.md 3a.6: a sample (or part of it, seconds) as a wavetable. */
+export function wavetableFromSample(sampleId: string, method: WavetableMethod, frames: number, start = 0, end = 0): Promise<WavetableFromSampleResult> {
+  return call<WavetableFromSampleResult>('wavetableFromSample', { success: false, errorMessage: 'Not running in Bazalt' }, sampleId, method, frames, start, end)
+}

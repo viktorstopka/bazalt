@@ -1,6 +1,6 @@
 # Sampling — audio as a material, not just a sound
 
-**Status:** In progress. 3a.1–3a.5 built 2026-10-16 (see §10); the rest proposed, 2026-10-16. Stage 3 of `wiki/ROADMAP.md` (3a, then 3b), planned with
+**Status:** 3a built 2026-10-16 (3a.1–3a.6, see §10); 3b proposed; the rest proposed, 2026-10-16. Stage 3 of `wiki/ROADMAP.md` (3a, then 3b), planned with
 the user after 2b landed. No code exists yet. `Wavesets.md` is part of this stage and
 builds on the live buffer defined here. `BakedPhysics.md`'s event track turns into a
 special case of the sample defined here (§4.5).
@@ -545,3 +545,38 @@ preset is in the Add menu.
 - Tests: the spectrogram tap asks for spectrum frames only
   (`tests-plugin/VisualizationTapTests.cpp`); the Record view's fill, head and peaks
   (`tests/RecordTests.cpp`).
+
+**3a.6 (2026-10-16).**
+- `WavetableExtraction.h` (engine, so the live capture and the factory share it): Cycles,
+  Harmonics, Texture and Cycle file, as in §3.1–3.2. Every result is a table of
+  **harmonics** keyframes (amplitude + phase per harmonic, up to 256), not curve
+  keyframes: one cycle measured exactly is its harmonics, and they stay editable in the
+  harmonics painter. Cycles: the PitchTracker's median pitch, a cut at the upward zero
+  crossing nearest each frame's moment (to the sample's fraction), cubic resampling to
+  2048, an FFT, every frame turned to the first one's fundamental phase. Each frame
+  normalised to a peak of 1 (no harmonic above 1). "Auto" picks Cycle file / Cycles /
+  Texture (`suggestMethod`).
+- Factory: **From sample…** in the Wavetable editor (`FromSamplePanel.tsx`) — a Sample node
+  already in the patch (with its region) or a file, the method, 4–256 frames; one undo step.
+  Native `wavetableFromSample`.
+- **Live capture** on `data.wavetable` (§3.3): `source` + `capture` inputs. The audio
+  thread copies the last 0.25 s of the source (preallocated) and raises a flag; the message
+  thread builds a four-frame Cycles table (Texture without a pitch) and publishes it. The
+  thread is the new `Node::serviceOnMessageThread()` hook, which `PluginProcessor`'s 50 ms
+  timer calls for every node of the live plan. A captured table is playing state, not
+  saved.
+- Not yet: the A/B preview against the original (it needs a preview player in the
+  engine).
+- Tests: `tests/WavetableExtractionTests.cpp` (a sine turning into a saw gives frames whose
+  harmonics follow the change, one phase, normalised; Harmonics drops phases; Texture on
+  noise; a 4-frame 2048-sample file and a 600-sample single cycle; a live capture from a
+  Record under the allocation trap).
+
+**Stage 3a done means** (§8): a dropped WAV is a node with its waveform and travels with
+"Export with samples"; a Sampler under a Population plays it at the keys' pitches, by slice,
+looped, without aliasing; a Record holds the guitar live and a Sampler reads it with no
+allocation; Capture this on a pitch cable gives a Pitch sample; Interleave plays two sources
+as whole wavesets; the Spectrogram reads like the Spectrum; a recorded sound becomes a
+wavetable whose Frame replays it. Two criteria are only partly met and tracked in
+`wiki/TODO.md`: a captured Pitch sample still needs a Map out of the Sampler, and the
+Wavetable "From sample…" has no A/B preview.

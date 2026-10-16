@@ -169,6 +169,15 @@ namespace bazalt::engine
         */
         virtual DataPublisher* getDataPublisher() noexcept { return nullptr; }
 
+        /** Called about twenty times a second on the message thread for every
+            node of the live plan (PluginProcessor's timer): the place for work
+            the audio thread asked for but must never do itself — e.g.
+            data.wavetable's live Capture, which turns a snapshot the audio
+            thread took into a new table (wiki/plans/Sampling.md §3.3). The
+            request travels by an atomic flag the node owns; keep this quick
+            when there's nothing to do. */
+        virtual void serviceOnMessageThread() {}
+
         /** The other half of the pair above: called once per compile
             (message thread) on a node with a `Data`-typed INPUT port,
             handing it the resolved producer's `DataPublisher*` — `nullptr`

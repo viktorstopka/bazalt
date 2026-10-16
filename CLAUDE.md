@@ -421,11 +421,19 @@ ctest --test-dir build -C Debug -R PluginTests --output-on-failure
   `life.split` gates branch steps per member; a Population inside another one's
   members (unison, grains per voice) gets a slice of members per outer member
   (2b.5). The notes below that say `life.voice` describe the allocator before 2b.
-- **Samples (stage 3, `wiki/plans/Sampling.md`, 3a.1 built 2026-10-16).** Audio files
+- **Samples (stage 3, `wiki/plans/Sampling.md`, 3a built 2026-10-16).** Audio files
   are decoded by the plugin's `SampleLibrary` (engine has no file formats — rule 4), stored
   as FLAC by content hash in `%APPDATA%\Bazalt\Samples\`, and handed to the engine's
   process-wide `SampleStore`; `data.sample` names a sample by id and publishes its region as
   `Data(sample)`. Patches and DAW state carry references; "Export with samples" embeds them.
+  **Data is immutable except a live sample** (`DataBuffer::Live`, 3a.3): `data.record` and
+  `waveset.capture` allocate once off the audio thread and write in place; readers run after
+  them in the block, and where the recording is rides on the cable per sample (the
+  publisher's companion) — read it per sample, never once per block, or the result depends
+  on the block size. The message thread never reads a live buffer's samples while it is
+  written (Freeze pauses the writes; the Record body reads min/max the writer keeps).
+  `Node::serviceOnMessageThread()` (called from `PluginProcessor`'s 50 ms timer) is where a
+  node does work its audio thread asked for (data.wavetable's Capture).
 - `life.merge`/`life.voice` (were `instance.sum`/`instance.allocate.voice`
   until schema v14)/`MultiplicityResolver`
   (`wiki/NODES.System.md` §5, `wiki/plans/DomainRedesign.md`) are real and

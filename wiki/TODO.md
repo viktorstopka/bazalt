@@ -39,6 +39,12 @@ one gets its own `wiki/plans/` file.
   be built as it is written.
 - **Capture's A/B switch** (live vs. captured, §4.5) and a stop button on the cable
   itself. Today the Record node's body has "Stop & keep".
+- **"From sample…" A/B preview** (§3.1): hearing the table beside the original before
+  committing needs a small preview player in the engine (sound is never made in the UI).
+- **A pattern per input for Waveset Play** (3:1, 1:2:1 — `wiki/plans/Wavesets.md`):
+  today one Count applies to every input.
+- **Waveform previews on any sample cable** (§2.6): the Sample and Record bodies show
+  theirs, a Sampler's input doesn't.
 
 ## Planned inside stage 2
 

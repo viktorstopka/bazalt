@@ -1303,7 +1303,7 @@ namespace bazalt
                 continue;
             const auto bytes = sampleLibrary.storedBytes (id);
             if (bytes.isEmpty())
-                return { false, "The sample '" + node.content.getProperty ("name", id).toString() + "' is missing — find it first" };
+                return { false, "The sample '" + node.content.getProperty ("name", id).toString() + "' is missing - find it first" };
             doc.assets[sampleAssetPrefix + id] = { "audio/flac", bytes.toBase64Encoding() };
         }
 

@@ -68,6 +68,10 @@ namespace bazalt
     void BazaltAudioProcessor::timerCallback()
     {
         globalPlanSwapper.reclaim();
+        if (auto* plan = globalPlanSwapper.peekCurrentPlan())
+            for (const auto& node : plan->nodes)
+                if (node != nullptr)
+                    node->serviceOnMessageThread();
 
         // TEMPORARY diagnostic — see the member declarations' own comment.
         const auto current = processBlockCallCount.load (std::memory_order_relaxed);
