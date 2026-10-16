@@ -48,6 +48,10 @@ export const tokens = {
     accent: '#5b8def',
     scopeTrace: '#e8798a',
     spectrumTrace: '#e8798a',
+    // view.spectrogram's colour map, quiet to loud (SpectrogramBody.tsx):
+    // silence is the node's own black, then night blue through blue, teal, green, yellow and orange to red and a
+    // near-white top, so levels read apart at a glance.
+    spectrogramMap: ['#0f0f0f', '#0f1430', '#1c2f86', '#1f78d1', '#17b8b0', '#5cd65c', '#e6e03a', '#ff9a2e', '#ff4f4f', '#fff3e6'],
     meterPeak: '#e8798a',
     meterRms: '#5b8def',
     sliderFill: '#5b8def',

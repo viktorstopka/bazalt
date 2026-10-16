@@ -1038,10 +1038,13 @@ audition one point in the graph in isolation without rewiring anything. **In:** 
 
 #### `view.spectrogram` — Spectrogram ✅ *(new, wiki/plans/Sampling.md 3a.5, 2026-10-16)*
 
-A scrolling time-frequency picture: time runs to the left (about 6 s across), frequency
-up on the same log axis as Spectrum and the EQ, level as colour. Hover reads frequency,
-note, level and how long ago. **Settings:** FFT Size (as Spectrum's), Range (the quietest
-level shown, dB), Freeze (stops the scrolling). Built from the Spectrum's own analysis
+A scrolling time-frequency picture in Scope's panel (no title, ports on its sides; a
+pass-through `in` → `out`, so it drops into any chain): time runs to the left (6 s across),
+frequency up on the same log axis as Spectrum and the EQ (100 / 1k / 10k marked), level as
+colour — black silence through blue, teal, green, yellow and orange to red and white
+(`tokens.color.spectrogramMap`). Hover reads frequency, note, level and how long ago. Below
+the panel: the span, **Range** (the quietest level shown, dB, editable) and **Freeze**
+(stops the scrolling). FFT Size is a setting as on Spectrum. Built from the Spectrum's own analysis
 frames, kept as a history by the UI — it costs nothing a Spectrum doesn't.
 
 #### `view.spectrum` — Spectrum

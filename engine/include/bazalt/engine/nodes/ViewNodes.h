@@ -122,7 +122,7 @@ namespace bazalt::engine::nodes
     {
     public:
         int getNumInputPorts() const noexcept override { return 1; }
-        int getNumOutputPorts() const noexcept override { return 0; }
+        int getNumOutputPorts() const noexcept override { return 1; }
 
         juce::String getTitle() const override { return "Spectrogram"; }
         juce::String getCategory() const override { return "View"; }
@@ -131,6 +131,13 @@ namespace bazalt::engine::nodes
         std::vector<PortDescriptor> getInputPorts() const override
         {
             return { perChannel (PortDescriptor { .id = "in", .type = SignalType::Signal, .label = "In", .quantity = Quantity::Audio }) };
+        }
+
+        /** A pass-through, like Scope: drop it anywhere in a chain to look. */
+        std::vector<PortDescriptor> getOutputPorts() const override
+        {
+            return { perChannel (PortDescriptor { .id = "out", .type = SignalType::Signal, .label = "Out", .isPrimaryOutput = true,
+                                                  .quantity = Quantity::Audio }) };
         }
 
         std::vector<ParameterDescriptor> getParameters() const override
@@ -158,10 +165,10 @@ namespace bazalt::engine::nodes
 
         std::vector<PreviewDescriptor> getPreviews() const override
         {
-            return { PreviewDescriptor { .kind = PreviewKind::Spectrogram, .portId = "in", .fftSize = 512 << fftSizeIndex } };
+            return { PreviewDescriptor { .kind = PreviewKind::Spectrogram, .portId = "out", .fftSize = 512 << fftSizeIndex } };
         }
 
-        void processSample (const float*, float*) noexcept override {}
+        void processSample (const float* inputs, float* outputs) noexcept override { outputs[0] = inputs[0]; }
 
     private:
         int fftSizeIndex = 2;

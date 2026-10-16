@@ -1,0 +1,54 @@
+/* view.spectrogram: Scope's panel (.scope-history-card, ScopeHistoryBody.css)
+   with a waterfall inside. The bitmap is the history itself (300 x 256) shown
+   at the panel's size — the canvas zoom scales it like any DOM content. */
+.spectrogram-card {
+  overflow: visible;
+}
+
+.spectrogram-bitmap {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+  border-radius: inherit;
+  image-rendering: auto;
+}
+
+.spectrogram-grid-label {
+  font-family: var(--font-secondary);
+  font-size: 7px;
+}
+
+.spectrogram-readout {
+  font-family: var(--font-secondary);
+  font-size: 7px;
+}
+
+.spectrogram-footer {
+  right: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+}
+
+.spectrogram-footer > :first-child {
+  margin-right: auto;
+}
+
+.spectrogram-freeze {
+  background: none;
+  border: none;
+  padding: 0;
+  font: inherit;
+  color: var(--color-textSecondary);
+  cursor: pointer;
+}
+
+.spectrogram-freeze:hover {
+  color: var(--color-textPrimary);
+}
+
+.spectrogram-freeze.active {
+  color: var(--color-portBoolean);
+}

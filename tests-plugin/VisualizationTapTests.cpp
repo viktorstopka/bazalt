@@ -595,7 +595,7 @@ TEST_CASE ("A Spectrogram taps its input for spectrum frames only", "[plugin][te
     processor.prepareToPlay (44100.0, 512);
     REQUIRE (processor.getGraphEditController().setGraph (graphWithViewers ({ { "gram", "view.spectrogram" } })).success);
     wire (processor, "gram");
-    REQUIRE (processor.subscribeVisualizationTap ("gram", "in", bazalt::engine::PreviewKind::Spectrogram));
+    REQUIRE (processor.subscribeVisualizationTap ("gram", "out", bazalt::engine::PreviewKind::Spectrogram));
 
     // Before anything else asks for the tap (tapFor() would widen it to every frame type).
     auto& hub = processor.getTelemetryHub();
@@ -606,7 +606,7 @@ TEST_CASE ("A Spectrogram taps its input for spectrum frames only", "[plugin][te
             ++spectrumOnly;
     CHECK (spectrumOnly == 1);
 
-    auto* tap = tapFor (processor, "gram", "in");
+    auto* tap = tapFor (processor, "gram", "out");
     REQUIRE (tap != nullptr);
     runBlocks (processor, 2, 0.25f);
     CHECK (tap->getTotalPushed() == 2 * 512);

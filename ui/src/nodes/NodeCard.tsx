@@ -23,6 +23,7 @@ import { RippleBody } from './RippleBody'
 import { CountBody } from './CountBody'
 import { TuneBody } from './TuneBody'
 import { ScopeBody } from './ScopeBody'
+import { SpectrogramBody } from './SpectrogramBody'
 import { CurveThumbnail } from '../factory/CurveThumbnail'
 import { SampleBody } from '../samples/SampleBody'
 import { RecordBody } from '../samples/RecordBody'
@@ -1043,6 +1044,8 @@ export function NodeCard({ descriptor: declaredDescriptor, state = {}, instanceI
   if (descriptor.typeId === 'view.scope') return <ScopeBody descriptor={descriptor} state={state} instanceId={instanceId} />
   // The placeable phase-locked viewer (replaces view.scope/view.glance).
   if (descriptor.typeId === 'view.cycle') return <CycleBody descriptor={descriptor} state={state} instanceId={instanceId} />
+  // view.spectrogram: Scope's panel with a waterfall inside (SpectrogramBody.tsx).
+  if (descriptor.typeId === 'view.spectrogram') return <SpectrogramBody descriptor={descriptor} state={state} instanceId={instanceId} />
   if (descriptor.layoutVariant === 'decoration') return <DecorationBody descriptor={descriptor} />
   if (descriptor.layoutVariant === 'singleton') return <SingletonBody descriptor={descriptor} state={state} instanceId={instanceId} />
   if (descriptor.layoutVariant === 'glance') return <GlanceBody descriptor={descriptor} state={state} instanceId={instanceId} />

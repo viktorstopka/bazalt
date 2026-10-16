@@ -31,7 +31,7 @@ export function frameTypeForPreviewKind(kind: PreviewKind): TelemetryFrameType |
     case 'waveform':
       return TelemetryFrameType.Oscilloscope
     case 'spectrum':
-    case 'spectrogram': // a history of spectrum frames, kept by SpectrogramPreview.tsx
+    case 'spectrogram': // a history of spectrum frames, kept by SpectrogramBody.tsx
       return TelemetryFrameType.Spectrum
     case 'meter':
       return TelemetryFrameType.Meter
