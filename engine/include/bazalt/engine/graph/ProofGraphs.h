@@ -28,6 +28,7 @@
 #include "bazalt/engine/nodes/LifeSplitNode.h"
 #include "bazalt/engine/nodes/DataSampleNode.h"
 #include "bazalt/engine/nodes/SamplerNode.h"
+#include "bazalt/engine/nodes/RecordNode.h"
 #include "bazalt/engine/nodes/InstanceMixNode.h"
 #include "bazalt/engine/nodes/IoNoteInNode.h"
 #include "bazalt/engine/nodes/SubtractNode.h"
@@ -234,7 +235,8 @@ namespace bazalt::engine
         factory.registerType ("source.oscillator", [] { return std::make_unique<nodes::CurveOscillatorNode>(); }); // one curve player, two entries (DataAndWavetable.md D5/D6)
         factory.registerType ("source.envelope", [] { return std::make_unique<nodes::CurveEnvelopeNode>(); });
         factory.registerType ("data.curve", [] { return std::make_unique<nodes::DataCurveNode>(); }); // the curve factory (wiki/plans/DataAndWavetable.md 1b)
-        factory.registerType ("source.sampler", [] { return std::make_unique<nodes::SamplerNode>(); }); // wiki/plans/Sampling.md 3a.2
+        factory.registerType ("source.sampler", [] { return std::make_unique<nodes::SamplerNode>(); });
+        factory.registerType ("data.record", [] { return std::make_unique<nodes::RecordNode>(); }); // wiki/plans/Sampling.md 3a.3
         factory.registerType ("data.sample", [] { return std::make_unique<nodes::DataSampleNode>(); }); // wiki/plans/Sampling.md 3a.1
         factory.registerType ("data.wavetable", [] { return std::make_unique<nodes::DataWavetableNode>(); }); // keyframed wavetable (1c)
         factory.registerType ("data.eqCurve", [] { return std::make_unique<nodes::DataEqCurveNode>(); }); // EQ bands (1d)

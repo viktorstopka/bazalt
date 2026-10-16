@@ -6,6 +6,7 @@ import { createNodeEditorRenderer, tessellateCable, type CableSpec, type NodeEdi
 import { hexToRgb, type Camera } from './webgl/webglUtils'
 import { GraphSurface } from '../graph/GraphSurface'
 import { AddMenu } from '../graph/AddMenu'
+import { PortContextMenu } from '../graph/PortContextMenu'
 import { buildAnchorMap, measureNodeLocalPortOffsets, portKey, type PortAnchor } from '../graph/portAnchors'
 import { portUiStyleForEndpoint } from '../graph/portUiKind'
 import { canConnect, type ConnectionEndpoint } from '../graph/canConnect'
@@ -14,6 +15,7 @@ import { importSampleFile, isAudioFile } from '../samples/samples'
 import {
   addImageAt,
   addSampleAt,
+  captureFromPort,
   dropSampleOnNode,
   getSnapshot,
   addMapFromMainOutput,
@@ -225,6 +227,7 @@ export const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, InfiniteCanvasPro
 
   const [overlayEl, setOverlayEl] = useState<HTMLDivElement | null>(null)
   const [addMenu, setAddMenu] = useState<{ x: number; y: number } | null>(null)
+  const [portMenu, setPortMenu] = useState<{ x: number; y: number; nodeId: string; portId: string } | null>(null)
   const ghost = useSyncExternalStore(subscribeGhost, getGhost)
 
   const snapshot = useGraphSnapshot()
@@ -1174,7 +1177,13 @@ export const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, InfiniteCanvasPro
         // nodes/ports are themselves descendants of world, so it used to
         // wrongly treat a right-click on a node as a background click and
         // open the Add menu right on top of the node's own context menu.
-        if (closestPortAnchor(e.target) || closestNodeId(e.target) || !isCanvasOrWorldTarget(e.target)) {
+        const rightPort = closestPortAnchor(e.target)
+        if (rightPort?.direction === 'output') {
+          rightClickStart = null
+          setPortMenu({ x: e.clientX, y: e.clientY, nodeId: rightPort.nodeId, portId: rightPort.portId })
+          return
+        }
+        if (rightPort || closestNodeId(e.target) || !isCanvasOrWorldTarget(e.target)) {
           rightClickStart = null
           return
         }
@@ -1661,6 +1670,17 @@ export const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, InfiniteCanvasPro
               requestFrameRef.current()
             }}
             onClose={() => setAddMenu(null)}
+          />
+        )}
+        {portMenu && (
+          <PortContextMenu
+            x={portMenu.x}
+            y={portMenu.y}
+            onCapture={() => {
+              setPortMenu(null)
+              void captureFromPort(portMenu.nodeId, portMenu.portId).then(() => requestFrameRef.current())
+            }}
+            onClose={() => setPortMenu(null)}
           />
         )}
       </div>

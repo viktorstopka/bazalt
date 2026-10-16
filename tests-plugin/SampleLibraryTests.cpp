@@ -205,3 +205,63 @@ TEST_CASE ("A Sampler in a Voice plays its sample at the keys' pitches", "[plugi
     CHECK (magnitude (880.0) > 0.1);
     CHECK (magnitude (440.0) < 0.01);
 }
+
+TEST_CASE ("Freezing a Record of a pitch cable gives a Pitch sample in the library", "[plugin][sample][3a]")
+{
+    TempDir temp;
+    bazalt::engine::SampleStore::instance().clearForTesting();
+    BazaltAudioProcessor processor;
+    processor.prepareToPlay (48000.0, 512);
+    auto& c = processor.getGraphEditController();
+    c.setSampleLibraryForTesting (SampleLibrary (temp.dir));
+
+    bazalt::engine::NodeGraph g;
+    bazalt::engine::NodeInstance pitch { "pitch", "math.frequencyToPitch", {}, {}, {} };
+    pitch.parameters["frequency"] = 440.0f;
+    g.addNode (pitch);
+    bazalt::engine::NodeInstance record { "rec", "data.record", {}, {}, {} };
+    record.parameters["data.record.length"] = 0.5f;
+    record.parameters["data.record.channels"] = 0.0f;
+    g.addNode (record);
+    g.addNode ({ "masterOut", "io.output", {}, {}, {} });
+    g.addConnection ({ "pitch", "pitch", "rec", "in" });
+    g.addConnection ({ "rec", "position", "masterOut", "in" });
+    g.setOutput ("masterOut", "out");
+    const auto loaded = c.setGraph (g);
+    INFO (loaded.errorMessage);
+    REQUIRE (loaded.success);
+
+    CHECK (c.freezeRecord ("rec").errorMessage == "Nothing recorded yet");
+
+    juce::AudioBuffer<float> buffer (2, 512);
+    for (int b = 0; b < 20; ++b) // ~0.21 s
+    {
+        juce::MidiBuffer midi;
+        processor.processBlock (buffer, midi);
+    }
+    CHECK (c.recordedSeconds ("rec") == Catch::Approx (20.0 * 512.0 / 48000.0));
+
+    const auto frozen = c.freezeRecord ("rec");
+    INFO (frozen.errorMessage);
+    REQUIRE (frozen.success);
+    CHECK (frozen.quantity == (int) bazalt::engine::Quantity::Pitch);
+    CHECK (frozen.seconds == Catch::Approx (20.0 * 512.0 / 48000.0));
+    const auto source = bazalt::engine::SampleStore::instance().find (frozen.sampleId);
+    REQUIRE (source != nullptr);
+    CHECK (source->channels == 1);
+    CHECK (source->at (100, 0) == Catch::Approx (69.0f).margin (1.0e-3));
+    CHECK (c.getSampleLibrary().fileFor (frozen.sampleId).existsAsFile());
+
+    // Recording goes on after a Freeze.
+    juce::MidiBuffer midi;
+    processor.processBlock (buffer, midi);
+    CHECK (c.recordedSeconds ("rec") == Catch::Approx (21.0 * 512.0 / 48000.0));
+
+    // The Sample node a Freeze makes keeps the meaning.
+    bazalt::engine::SampleRegion region;
+    region.sampleId = frozen.sampleId;
+    region.quantity = frozen.quantity;
+    const auto published = bazalt::engine::buildSampleBuffer (source.get(), bazalt::engine::SampleRegion::fromVar (region.toVar()),
+                                                             (uint8_t) bazalt::engine::Quantity::Audio);
+    CHECK (published->sampleMeta.channelQuantities.at (0) == (uint8_t) bazalt::engine::Quantity::Pitch);
+}

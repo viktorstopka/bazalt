@@ -1,5 +1,6 @@
 #pragma once
 
+#include <algorithm>
 #include <array>
 #include <atomic>
 #include <cstdint>
@@ -82,6 +83,63 @@ namespace bazalt::engine
             std::vector<std::vector<float>> mipLevels;
         };
         SampleMeta sampleMeta;
+
+        /** The one exception to "Data is immutable" (wiki/plans/Sampling.md
+            §2.5): a **live** sample, written while it is read — the Record
+            node's buffer. Allocated once (message thread, before it is
+            published) at its full size and never resized; ONE writer (the
+            Record node, on the audio thread) and any number of readers on that
+            same audio thread, which the compiler's Data edge always runs after
+            the writer in a block. Nothing is copied, locked or allocated per
+            block.
+
+            Where the recording is, sample by sample, rides on the cable as the
+            publisher's companion (DataPublisher::setCompanion), encoded by
+            `encodeWindow`: a reader decodes it with `windowFor` for every
+            sample it reads, so what it hears never depends on the block size.
+            Reads may land anywhere in the window; the `guard` frames at its
+            oldest end may already hold this block's newer writes (the writer
+            ran first), so a reader stays out of them. */
+        struct Live
+        {
+            int guard = 0; // frames at the oldest end of a wrapped window a reader avoids
+            /** Message thread (the node's body, Freeze): the window as of the
+                last block. */
+            std::atomic<float> lastWindow { 0.0f };
+        };
+        std::unique_ptr<Live> live;
+
+        /** The readable part of a live sample: logical frame f (0 = oldest) is
+            physical frame (origin + f) mod frames(). */
+        struct Window
+        {
+            int origin = 0;
+            int length = 0;
+            int firstReadable = 0; // the guard, when the window has wrapped
+        };
+
+        /** Not wrapped (filling up, a one-shot, a closed loop): `filled`
+            frames from 0. Wrapped (a full ring): the whole buffer, oldest at
+            the write head. Exact in a float up to 2^23 frames (wrapped values run from
+            capacity + 1 to 2 × capacity), which the
+            Record node's length cap keeps to. */
+        static float encodeWindow (int filled, int writeHead, int capacity, bool wrapped) noexcept
+        {
+            return wrapped ? (float) (capacity + 1 + writeHead) : (float) filled;
+        }
+
+        Window windowFor (float encoded) const noexcept
+        {
+            const auto capacity = frames();
+            const auto v = encoded > 0.0f ? (int) encoded : 0;
+            if (v <= capacity || live == nullptr)
+                return { 0, std::min (v, capacity), 0 };
+            return { std::min (v - capacity - 1, capacity - 1), capacity, live->guard };
+        }
+
+        /** The writer's (Record's) access to a live sample's frames. Null for
+            every other buffer — they stay immutable. */
+        float* liveData() const noexcept { return live != nullptr ? const_cast<float*> (values_.data()) : nullptr; }
 
         /** Frames × channels for a Sample (stride is the channel count). */
         int channels() const noexcept { return stride_; }

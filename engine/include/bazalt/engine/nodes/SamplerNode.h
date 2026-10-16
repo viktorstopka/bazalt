@@ -48,6 +48,7 @@ namespace bazalt::engine::nodes
             head = 0.0;
             direction = 1.0;
             sliceEnd = -1.0;
+            lastOrigin = -1;
             gateWasHigh = false;
         }
 
@@ -142,13 +143,35 @@ namespace bazalt::engine::nodes
                 const auto gateHigh = std::isnan (gate) || gate > 0.5f;
                 auto end = false;
 
-                if (buffer == nullptr || buffer->frames() < 1)
+                // A live recording (data.record): where it is, this sample. A
+                // wrapped ring's window moves with the writer, so a head that
+                // keeps its place in the sound moves back through the window.
+                auto window = DataBuffer::Window { 0, buffer != nullptr ? buffer->frames() : 0, 0 };
+                if (buffer != nullptr && buffer->live != nullptr)
+                {
+                    window = buffer->windowFor (source->readCompanion (s, 0.0f));
+                    if (window.firstReadable > 0 && lastOrigin >= 0)
+                    {
+                        auto moved = window.origin - lastOrigin;
+                        if (moved < 0)
+                            moved += buffer->frames();
+                        head -= (double) moved;
+                    }
+                    lastOrigin = window.firstReadable > 0 ? window.origin : -1;
+                }
+
+                if (buffer == nullptr || window.length < 1)
                 {
                     write (outputs, s, 0.0f, 0.0f, false, 0.0f, false);
                     continue;
                 }
 
-                const auto frames = (double) buffer->frames();
+                const auto frames = (double) window.length;
+                // Where a head may start: all of a sample; a live one keeps
+                // clear of the oldest frames the writer may already have
+                // replaced and of the newest the interpolation would overrun.
+                const auto first = (double) window.firstReadable;
+                const auto last = buffer->live != nullptr ? juce::jmax (first, frames - 1.0 - (double) sincTaps / 2) : frames - 1.0;
                 const auto& meta = buffer->sampleMeta;
                 const auto position = readOr (in (positionIn, s), storedPosition);
                 const auto rate = (double) readOr (in (rateIn, s), storedRate);
@@ -174,9 +197,9 @@ namespace bazalt::engine::nodes
                     else
                     {
                         // Backwards from Position, or from the end when Position is 0.
-                        head = juce::jlimit (0.0, frames - 1.0, (double) position * frames);
+                        head = juce::jlimit (first, last, first + (double) position * (frames - first));
                         if (step < 0.0 && position <= 0.0f)
-                            head = frames - 1.0;
+                            head = last;
                     }
                 }
                 if (stop)
@@ -185,17 +208,17 @@ namespace bazalt::engine::nodes
                 // Rate 0: scrubbing — the head is wherever Position says.
                 const auto scrubbing = std::abs (speed) < 1.0e-6;
                 if (scrubbing)
-                    head = juce::jlimit (0.0, frames - 1.0, (double) position * frames);
+                    head = juce::jlimit (first, last, first + (double) position * (frames - first));
 
                 float left = 0.0f, right = 0.0f;
                 if (playing)
                 {
-                    read (*buffer, head, std::abs (step), in (channelIn, s), left, right);
+                    read (*buffer, window, head, std::abs (step), in (channelIn, s), left, right);
                     if (! scrubbing)
-                        end = advance (meta, frames, step, gateHigh);
+                        end = advance (meta, first, frames, step, gateHigh);
                 }
                 gateWasHigh = gateHigh;
-                write (outputs, s, left, right, playing, (float) (head / frames), end);
+                write (outputs, s, left, right, playing, (float) juce::jlimit (0.0, 1.0, (head - first) / juce::jmax (1.0, frames - first)), end);
             }
         }
 
@@ -212,10 +235,10 @@ namespace bazalt::engine::nodes
         }
 
         /** Moves the head one output sample; true at the moment it ends. */
-        bool advance (const DataBuffer::SampleMeta& meta, double frames, double step, bool gateHigh) noexcept
+        bool advance (const DataBuffer::SampleMeta& meta, double first, double frames, double step, bool gateHigh) noexcept
         {
             const auto hasLoop = meta.loopStart >= 0 && meta.loopEnd > meta.loopStart;
-            const auto loopStart = hasLoop ? (double) meta.loopStart : 0.0;
+            const auto loopStart = hasLoop ? (double) meta.loopStart : first;
             const auto loopEnd = hasLoop ? (double) meta.loopEnd : frames;
             const auto looping = loop == Loop::Forward || loop == Loop::PingPong || (loop == Loop::WhileHeld && gateHigh);
 
@@ -247,7 +270,7 @@ namespace bazalt::engine::nodes
                 return false;
             }
 
-            if (head >= frames || head < 0.0)
+            if (head >= frames || head < first)
                 return stopHere();
             return false;
         }
@@ -260,7 +283,8 @@ namespace bazalt::engine::nodes
 
         /** Two output channels at `position`, read from the band-limited copy
             that suits `speed`, with the chosen interpolation. */
-        void read (const DataBuffer& buffer, double position, double speed, float channelSelect, float& left, float& right) const noexcept
+        void read (const DataBuffer& buffer, const DataBuffer::Window& window, double position, double speed, float channelSelect,
+                   float& left, float& right) const noexcept
         {
             const auto& meta = buffer.sampleMeta;
             auto level = 0;
@@ -269,10 +293,12 @@ namespace bazalt::engine::nodes
             const auto scale = (double) (1 << level);
             const auto* data = level == 0 ? buffer.rawData() : meta.mipLevels[(size_t) level - 1].data();
             const auto channels = buffer.channels();
-            const auto frames = level == 0 ? buffer.frames() : (int) (meta.mipLevels[(size_t) level - 1].size() / (size_t) channels);
+            const auto frames = level == 0 ? window.length : (int) (meta.mipLevels[(size_t) level - 1].size() / (size_t) channels);
+            const auto origin = level == 0 ? window.origin : 0;
+            const auto physical = level == 0 ? buffer.frames() : frames;
             const auto at = position / scale;
 
-            const auto sampleAt = [&] (int channel) noexcept { return interpolate (data, frames, channels, channel, at); };
+            const auto sampleAt = [&] (int channel) noexcept { return interpolate (data, frames, origin, physical, channels, channel, at); };
 
             if (! std::isnan (channelSelect))
             {
@@ -287,11 +313,22 @@ namespace bazalt::engine::nodes
             right = channels > 1 ? sampleAt (1) : left;
         }
 
-        float interpolate (const float* data, int frames, int channels, int channel, double position) const noexcept
+        /** Logical frame f of a `frames`-long window is physical frame
+            (origin + f) mod `physical` — a live ring's oldest frame is at its
+            write head. A plain sample: origin 0. */
+        float interpolate (const float* data, int frames, int origin, int physical, int channels, int channel, double position) const noexcept
         {
             const auto i = (int) std::floor (position);
             const auto t = (float) (position - (double) i);
-            const auto at = [&] (int frame) noexcept { return frame >= 0 && frame < frames ? data[(size_t) frame * (size_t) channels + (size_t) channel] : 0.0f; };
+            const auto at = [&] (int frame) noexcept
+            {
+                if (frame < 0 || frame >= frames)
+                    return 0.0f;
+                auto p = frame + origin;
+                if (p >= physical)
+                    p -= physical;
+                return data[(size_t) p * (size_t) channels + (size_t) channel];
+            };
 
             switch (interpolation)
             {
@@ -362,5 +399,6 @@ namespace bazalt::engine::nodes
 
         bool playing = true, pendingStart = true, gateWasHigh = false;
         double head = 0.0, direction = 1.0, sliceEnd = -1.0;
+        int lastOrigin = -1; // a wrapped live window's origin last sample; -1: none
     };
 }

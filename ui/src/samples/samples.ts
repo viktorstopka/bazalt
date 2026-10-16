@@ -124,3 +124,23 @@ export interface SampleAnalysis {
 export function analyseSample(id: string, sensitivityDb: number): Promise<SampleAnalysis> {
   return call<SampleAnalysis>('sampleAnalyse', {}, id, sensitivityDb)
 }
+
+export interface FreezeResult {
+  success: boolean
+  errorMessage: string
+  id?: string
+  name?: string
+  seconds?: number
+  /** What the recorded cable meant — a Quantity ordinal (engine order). */
+  quantity?: number
+}
+
+/** wiki/plans/Sampling.md 3a.3: a Record node's recording, into the library. */
+export function freezeRecord(nodeId: string): Promise<FreezeResult> {
+  return call<FreezeResult>('recordFreeze', { success: false, errorMessage: 'Not running in Bazalt' }, nodeId)
+}
+
+/** Seconds a Record node holds right now; -1 when there is no such node. */
+export function recordedSeconds(nodeId: string): Promise<number> {
+  return call<number>('recordInfo', -1, nodeId)
+}

@@ -1,4 +1,5 @@
 #include "GraphEditController.h"
+#include "bazalt/engine/nodes/RecordNode.h"
 #include "bazalt/engine/nodes/LifePopulationNode.h"
 #include <optional>
 #include "PluginProcessor.h"
@@ -1212,6 +1213,76 @@ namespace bazalt
                 else if (auto* single = plan->getNodeById (node.id))
                     single->setContent (node.content);
             }
+    }
+
+    namespace
+    {
+        bazalt::engine::nodes::RecordNode* findRecordNode (bazalt::engine::ExecutionPlan* plan, const juce::String& nodeId)
+        {
+            if (plan == nullptr)
+                return nullptr;
+            // Under a Population a Record has a copy per member: freeze the first.
+            if (const auto it = plan->copySlotsByBaseId.find (nodeId); it != plan->copySlotsByBaseId.end() && ! it->second.empty())
+                return dynamic_cast<bazalt::engine::nodes::RecordNode*> (plan->nodes[(size_t) it->second.front()].get());
+            return dynamic_cast<bazalt::engine::nodes::RecordNode*> (plan->getNodeById (nodeId));
+        }
+    }
+
+    double GraphEditController::recordedSeconds (const juce::String& nodeId) const
+    {
+        const auto* record = findRecordNode (processor.getGlobalPlanSwapper().peekCurrentPlan(), nodeId);
+        return record != nullptr ? (double) record->getRecordedSeconds() : -1.0;
+    }
+
+    GraphEditController::FreezeResult GraphEditController::freezeRecord (const juce::String& nodeId)
+    {
+        FreezeResult result;
+        const auto* instance = graph.findNode (nodeId);
+        auto* record = findRecordNode (processor.getGlobalPlanSwapper().peekCurrentPlan(), nodeId);
+        if (instance == nullptr || instance->type != "data.record" || record == nullptr)
+        {
+            result.errorMessage = "No Record node '" + nodeId + "'";
+            return result;
+        }
+
+        // Pause the writes, so the copy isn't torn. When no audio runs the
+        // pause is never acknowledged — and nothing writes either.
+        record->setPaused (true);
+        for (int waited = 0; waited < 250 && ! record->isPaused(); waited += 2)
+            juce::Thread::sleep (2);
+        int frames = 0, channels = 1;
+        auto recording = record->copyRecording (frames, channels);
+        record->setPaused (false);
+        if (frames < 1)
+        {
+            result.errorMessage = "Nothing recorded yet";
+            return result;
+        }
+
+        // What the recorded cable meant.
+        result.quantity = (int) bazalt::engine::Quantity::Audio;
+        for (const auto& c : graph.getConnections())
+            if (c.toNodeId == nodeId && c.toPortId == "in")
+                if (const auto* from = graph.findNode (c.fromNodeId))
+                {
+                    std::vector<bazalt::engine::PortDescriptor> storage;
+                    if (const auto* port = findOutputPort (processor.getNodeFactory(), *from, c.fromPortId, storage))
+                        result.quantity = (int) port->quantity;
+                }
+
+        const auto title = instance->properties.count ("title") > 0 ? instance->properties.at ("title").toString() : juce::String ("Recording");
+        const auto name = title + " " + juce::Time::getCurrentTime().formatted ("%H.%M.%S");
+        const auto added = sampleLibrary.addRecording (name, channels, record->getSampleRate(), std::move (recording));
+        if (! added.success)
+        {
+            result.errorMessage = added.errorMessage;
+            return result;
+        }
+        result.success = true;
+        result.sampleId = added.source->id;
+        result.name = name;
+        result.seconds = added.source->seconds();
+        return result;
     }
 
     GraphEditController::CommandResult GraphEditController::exportPatchWithSamples (const juce::File& file) const

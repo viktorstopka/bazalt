@@ -1,6 +1,6 @@
 # Sampling — audio as a material, not just a sound
 
-**Status:** In progress. 3a.1 and 3a.2 built 2026-10-16 (see §10); the rest proposed, 2026-10-16. Stage 3 of `wiki/ROADMAP.md` (3a, then 3b), planned with
+**Status:** In progress. 3a.1–3a.3 built 2026-10-16 (see §10); the rest proposed, 2026-10-16. Stage 3 of `wiki/ROADMAP.md` (3a, then 3b), planned with
 the user after 2b landed. No code exists yet. `Wavesets.md` is part of this stage and
 builds on the live buffer defined here. `BakedPhysics.md`'s event track turns into a
 special case of the sample defined here (§4.5).
@@ -484,3 +484,40 @@ bodies all play through it.
 - Tests: `tests/SamplerTests.cpp` (rate, pitch/slices/loop, scrub, anti-aliasing,
   block-size invariance), the analysis case in `tests/SampleDataTests.cpp`, and a Sampler
   in a Voice played from MIDI in `tests-plugin/SampleLibraryTests.cpp`.
+
+**3a.3 (2026-10-16).**
+- **The live-buffer contract** (`DataBuffer::Live`, `Data.h`): the one exception to
+  "Data is immutable". The Record node allocates its buffer at full size on the message
+  thread (prepare, or a structural Length/Channels change, which builds a fresh node) and
+  publishes it once; on the audio thread it writes in place (`liveData()`). Readers run
+  after it in the block (the Data edge). Nothing is copied, locked or allocated per
+  block — the tests run every block under the allocation trap.
+- **Where the recording is rides on the cable**, sample by sample, as the publisher's
+  companion: `encodeWindow` packs "filled from 0" or "wrapped, oldest at the write head"
+  into one float (exact up to 2^23 frames, which caps Length at 60 s). A reader decodes it
+  per sample (`windowFor`), so what it hears doesn't depend on the block size — tested at
+  32/480/512 and at odd sizes. The oldest `guard` frames (one block + the interpolation's
+  reach) of a wrapped ring are off limits: the writer may already have replaced them this
+  block.
+- **The Sampler on a live buffer** keeps its head in the window's own frames and moves it
+  back by however far the window moved, so Rate 1 is a steady delay and Rate 0 a fixed
+  distance into the past. Position maps onto the readable part.
+- `data.record` (`RecordNode.h`): Ring / Once / Loop with overdub Feedback, Clear,
+  Mono/Stereo.
+- **Freeze** (`GraphEditController::freezeRecord`, native `recordFreeze`): asks the audio
+  thread to pause the writes (acknowledged at the next block; skipped after 250 ms when no
+  audio runs), copies the window oldest-first, resumes, and adds it to the library as
+  24-bit FLAC (`SampleLibrary::addRecording`, id = a hash of the samples). The recorded
+  cable's quantity is read from the graph and stored in the Sample node's content
+  (`SampleRegion::quantity`), so the published sample's channels keep their meaning.
+- **Capture this:** right-click an output port → Capture (`PortContextMenu.tsx`,
+  `captureFromPort`): a 30 s Once Record beside the node, mono unless the port is stereo.
+  Its body's **Stop & keep** turns the take into a Sample node in the Record's place,
+  with the Record's cables (`freezeRecordNode`).
+- Tests: `tests/RecordTests.cpp` (ring as a steady delay at three block sizes, block-size
+  invariance of starts/scrubs/half speed, Once and Clear, Loop overdub);
+  `tests-plugin/SampleLibraryTests.cpp` (freezing a pitch cable gives a Pitch sample,
+  recording continues after a Freeze).
+- Not yet (`wiki/TODO.md`): the Sampler's output following a sample's quantity, so a
+  captured pitch plays into a pitch port without a Map; band-limited reading of live
+  buffers; Capture's A/B switch.

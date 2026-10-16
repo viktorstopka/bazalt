@@ -105,6 +105,7 @@ namespace bazalt::engine
         double fadeIn = 0.0, fadeOut = 0.0;
         std::vector<double> slices; // seconds from the region's start
         float rootPitch = std::numeric_limits<float>::quiet_NaN(); // the sample's own note (detected or set)
+        int quantity = -1; // what the channels mean (a Quantity ordinal — a captured pitch is a Pitch); -1: audio
 
         static SampleRegion fromVar (const juce::var& content)
         {
@@ -130,6 +131,8 @@ namespace bazalt::engine
             r.fadeOut = juce::jmax (0.0, num ("fadeOut", 0.0));
             if (const auto root = content.getProperty ("root", {}); root.isDouble() || root.isInt())
                 r.rootPitch = (float) (double) root;
+            if (const auto q = content.getProperty ("quantity", {}); q.isInt() || q.isDouble() || q.isInt64())
+                r.quantity = (int) q;
             if (const auto* slices = content.getProperty ("slices", {}).getArray())
                 for (const auto& s : *slices)
                     r.slices.push_back ((double) s);
@@ -157,6 +160,8 @@ namespace bazalt::engine
             o->setProperty ("slices", s);
             if (std::isfinite (rootPitch))
                 o->setProperty ("root", rootPitch);
+            if (quantity >= 0)
+                o->setProperty ("quantity", quantity);
             return juce::var (o);
         }
     };
@@ -212,7 +217,8 @@ namespace bazalt::engine
 
     /** The region of `source` as a published Data(sample) buffer: trimmed,
         reversed, faded, gained, normalised; loop and slices as frame markers
-        relative to the region. Every channel is Audio. An empty source (a
+        relative to the region. Every channel is `audioQuantity`, or the
+        region's own quantity when it has one (a capture). An empty source (a
         missing sample) gives one silent frame, so a reader never divides by
         zero. Message / worker thread. */
     inline std::unique_ptr<DataBuffer> buildSampleBuffer (const SampleSource* source, const SampleRegion& region,
@@ -263,7 +269,7 @@ namespace bazalt::engine
         }
 
         auto buffer = std::make_unique<DataBuffer> (DataTag::Sample, std::move (values), channels, sr);
-        buffer->sampleMeta.channelQuantities.assign ((size_t) channels, audioQuantity);
+        buffer->sampleMeta.channelQuantities.assign ((size_t) channels, region.quantity >= 0 ? (uint8_t) region.quantity : audioQuantity);
         if (region.loop)
         {
             const auto loopStart = juce::jlimit (0, frames - 1, (int) std::lround (region.loopStart * sr));

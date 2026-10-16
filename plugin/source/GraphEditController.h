@@ -237,6 +237,25 @@ namespace bazalt
             republish every Sample node that names `sampleId`. */
         void refreshSamples (const juce::String& sampleId);
 
+        /** wiki/plans/Sampling.md §2.5 Freeze: the Record node `nodeId`'s
+            recording as it stands, into the sample library. The writes pause
+            while it is copied (a block or two), then go on. `quantity` is what
+            the recorded cable meant (a Quantity ordinal), so a captured pitch
+            stays a Pitch. Nothing is added to the graph — the UI places the
+            Sample node. */
+        struct FreezeResult
+        {
+            bool success = false;
+            juce::String errorMessage, sampleId, name;
+            double seconds = 0.0;
+            int quantity = -1;
+        };
+        FreezeResult freezeRecord (const juce::String& nodeId);
+
+        /** Seconds a Record node holds right now (its body's read-out); -1 for
+            no such node. */
+        double recordedSeconds (const juce::String& nodeId) const;
+
         static constexpr const char* sampleAssetPrefix = "sample:";
 
         /** Which region ("voice"/"global"/"mono") each node

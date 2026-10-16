@@ -832,6 +832,24 @@ loop, fades, gain, reverse, normalise, slices). Drop an audio file on the canvas
 Loop/slice markers on the waveform, Gain, Fades, Reverse, Normalise, Root note (Detect), and
 "Slice at transients". Drop a new file on the node to replace its sample.
 
+#### `data.record` — Record ✅ *(new, wiki/plans/Sampling.md 3a.3, 2026-10-16)*
+
+Holds what is happening as a **live** `Data(sample)` that a Sampler plays while it is
+still being written. **In:** `in` (any signal; mono fills both sides), `record` (records
+while high; unwired: always), `clear` (Event), Feedback (Loop: how much of the loop each
+overdub keeps, default 1). **Settings:** Length (0.1–60 s), Channels (Mono / Stereo),
+Mode — Ring (always the last Length seconds), Once (one take from the start; stops when
+full; Clear and Record again for a new take), Loop (the first take sets the loop length
+when Record goes low, then every pass with Record high overdubs). **Out:** `sample`
+(live), `position` (the write head; the loop's playhead in Loop), `recording`. The body
+shows how much it holds and **Freeze** (a Sample node beside it, recording goes on) or,
+in Once, **Stop & keep** (the take replaces the Record, keeping its cables). Right-click
+any output port → **Capture** makes a 30 s Once Record of it. A captured cable keeps its
+meaning: a captured pitch is a Pitch sample.
+
+A Sampler on a Ring plays it as a moving window: Position 1 is the newest moment, 0 the
+oldest; at Rate 1 it is a steady delay, at Rate 0 a frozen distance into the past.
+
 #### `source.sampler` — Sampler ✅ *(new, wiki/plans/Sampling.md 3a.2, 2026-10-16)*
 
 Plays a `Data(sample)`. **In:** `sample`; `start`/`stop` (Events); Position (0–1, where

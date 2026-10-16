@@ -491,6 +491,28 @@ namespace bazalt
             completion (true);
         });
 
+        // wiki/plans/Sampling.md 3a.3: Freeze a Record node's recording into
+        // the library. Resolves to { success, errorMessage, id, name, seconds,
+        // quantity }; the UI places the Sample node.
+        options = options.withNativeFunction ("recordFreeze", [&processor] (Args args, Completion completion)
+        {
+            const auto frozen = processor.getGraphEditController().freezeRecord (argString (args, 0));
+            auto* obj = new juce::DynamicObject();
+            obj->setProperty ("success", frozen.success);
+            obj->setProperty ("errorMessage", frozen.errorMessage);
+            obj->setProperty ("id", frozen.sampleId);
+            obj->setProperty ("name", frozen.name);
+            obj->setProperty ("seconds", frozen.seconds);
+            obj->setProperty ("quantity", frozen.quantity);
+            completion (juce::var (obj));
+        });
+
+        // How many seconds a Record node holds (its body polls this); -1: none.
+        options = options.withNativeFunction ("recordInfo", [&processor] (Args args, Completion completion)
+        {
+            completion (processor.getGraphEditController().recordedSeconds (argString (args, 0)));
+        });
+
         // "Export with samples…": a save dialog, then the patch with every
         // sample it uses embedded. Resolves to { success, errorMessage, path }.
         options = options.withNativeFunction ("patchExportWithSamples", [&processor] (Args args, Completion completion)

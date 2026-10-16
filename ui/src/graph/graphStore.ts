@@ -60,6 +60,7 @@ import type { NodeDescriptor, PortDescriptor, Quantity, ValueKind } from './desc
 import { fetchNodeDescriptors } from './fetchNodeDescriptors'
 import { canConnectPorts, findPort, type ConnectionEndpoint } from './canConnect'
 import { quantityUnit } from '../format/valueFormat'
+import { freezeRecord } from '../samples/samples'
 import { classifyPortUiKind, type PortUiKind } from './portUiKind'
 import {
   graphAddNode,
@@ -1204,6 +1205,58 @@ export async function dropSampleOnNode(nodeId: string, portId: string | undefine
     await fireCommand(() => graphConnectWithAutoAdapt(id, 'sample', nodeId, input.id))
   })
   return true
+}
+
+/** wiki/plans/Sampling.md 3a.3, "Capture this": a Record node taking one take
+    of an output port — 30 s at most, mono unless the port is stereo — beside
+    its node. Its body's "Stop & keep" turns the take into a Sample node. */
+export async function captureFromPort(nodeId: string, portId: string): Promise<void> {
+  const node = nodes.get(nodeId)
+  if (!node) return
+  const port = getDescriptor(node.typeId)?.outputs.find((p) => p.id === portId)
+  if (!port || port.type !== 'signal') return
+  const id = makeId('node')
+  await withHistory(async () => {
+    if (!(await fireCommand(() => graphAddNode('data.record', id, node.x + 260, node.y + 140)))) return
+    await fireCommand(() => graphSetParameterValue(id, 'data.record.mode', 1))
+    await fireCommand(() => graphSetParameterValue(id, 'data.record.length', 30))
+    await fireCommand(() => graphSetParameterValue(id, 'data.record.channels', port.channels === 'stereo' ? 1 : 0))
+    await fireCommand(() => graphSetProperty(id, 'title', `Capture: ${port.label || port.id}`))
+    if (await fireCommand(() => graphConnectWithAutoAdapt(nodeId, portId, id, 'in'))) selection = new Set([id])
+  })
+}
+
+/** Quantity::Audio's ordinal in the engine (PortDescriptor.h) — a capture of
+    an audio cable needs no quantity of its own. */
+const QUANTITY_AUDIO = 10
+
+/** Freeze (wiki/plans/Sampling.md §2.5): a Record node's recording becomes a
+    Sample node. `replace`: the Sample takes the Record's place and its
+    cables (a captured take kept); otherwise it appears beside it and the
+    Record goes on recording. */
+export async function freezeRecordNode(nodeId: string, replace: boolean): Promise<void> {
+  const node = nodes.get(nodeId)
+  if (!node) return
+  const frozen = await freezeRecord(nodeId)
+  if (!frozen.success || !frozen.id) {
+    reportError(`Couldn't freeze: ${frozen.errorMessage}`)
+    return
+  }
+  const sampleId = frozen.id
+  const content: Record<string, unknown> = { sample: sampleId, name: frozen.name ?? 'Recording' }
+  if (typeof frozen.quantity === 'number' && frozen.quantity !== QUANTITY_AUDIO) content.quantity = frozen.quantity
+  const outgoing = [...wires.values()].filter((w) => w.fromNodeId === nodeId && w.fromPortId === 'sample')
+  const id = makeId('node')
+  await withHistory(async () => {
+    const x = replace ? node.x : node.x + 240
+    if (!(await fireCommand(() => graphAddNode('data.sample', id, x, node.y)))) return
+    if (!(await fireCommand(() => graphSetContent(id, content)))) return
+    if (replace) {
+      await fireCommand(() => graphDeleteNode(nodeId))
+      for (const w of outgoing) await fireCommand(() => graphConnectWithAutoAdapt(id, 'sample', w.toNodeId, w.toPortId))
+    }
+    selection = new Set([id])
+  })
 }
 
 /** Shows a message in the top bar's error slot (e.g. an image that couldn't

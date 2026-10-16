@@ -61,3 +61,10 @@
 .sample-body-edit:hover {
   color: var(--color-textPrimary);
 }
+.sample-body-record {
+  min-width: 140px;
+}
+.sample-body-record .sample-body-button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}

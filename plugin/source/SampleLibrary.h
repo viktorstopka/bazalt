@@ -66,6 +66,31 @@ namespace bazalt
             return result;
         }
 
+        /** A recording (Freeze, Capture this): stored under the hash of its
+            samples and loaded, like a dropped file. Interleaved frames. */
+        ImportResult addRecording (const juce::String& name, int channels, double sampleRate, std::vector<float> interleaved) const
+        {
+            ImportResult result;
+            if (channels < 1 || channels > maxChannels || interleaved.size() < (size_t) channels || sampleRate <= 0.0)
+            {
+                result.errorMessage = "Nothing recorded yet";
+                return result;
+            }
+            auto source = std::make_shared<bazalt::engine::SampleSource>();
+            source->id = bazalt::engine::sampleIdForBytes (interleaved.data(), interleaved.size() * sizeof (float));
+            source->name = name;
+            source->channels = channels;
+            source->frames = (int) (interleaved.size() / (size_t) channels);
+            source->sampleRate = sampleRate;
+            source->data = std::move (interleaved);
+            if (! fileFor (source->id).existsAsFile() && ! store (*source, result.errorMessage))
+                return result;
+            bazalt::engine::SampleStore::instance().add (source);
+            result.source = std::move (source);
+            result.success = true;
+            return result;
+        }
+
         /** True once `id` is in the SampleStore, loading it from the library
             if it isn't yet. False: the library doesn't have it (missing). */
         bool ensureLoaded (const juce::String& id, const juce::String& name = {}) const

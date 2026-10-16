@@ -27,6 +27,19 @@ one gets its own `wiki/plans/` file.
 - **Modal Bank is always stereo.** A mono chain after it needs a Downmix. A mono/stereo
   choice on the node, or a Pan that takes stereo, would remove it.
 
+## Inside stage 3 (`wiki/plans/Sampling.md`)
+
+- **The Sampler's output keeps the sample's meaning.** A captured pitch is a Pitch
+  sample (3a.3), but the Sampler's `out` is always Audio, so a recorded pitch played back
+  into a pitch port still needs a Map. The output's quantity has to follow the connected
+  sample's `channelQuantities` without making the Sampler polymorphic (a polymorphic node
+  is rebuilt on every edit, which would restart every playing sampler).
+- **Live recordings have no band-limited copies.** A Sampler reading a Record faster
+  than 1.5x aliases; a plain sample doesn't. Mip levels for a live buffer would have to
+  be built as it is written.
+- **Capture's A/B switch** (live vs. captured, §4.5) and a stop button on the cable
+  itself. Today the Record node's body has "Stop & keep".
+
 ## Planned inside stage 2
 
 - **Gesture: several curves on one timeline** — see `wiki/plans/LifeCycle.md`, batch 2e.
