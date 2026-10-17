@@ -23,6 +23,12 @@ juce_add_plugin(BazaltPlugin
     VERSION                    0.1.0
     COMPANY_NAME                "Bazalt"
     PRODUCT_NAME                "Bazalt"
+    # The columnar-joint icon (assets/icon/, the user's design, 2026-10-17):
+    # JUCE builds the Windows .ico and the macOS .icns from these PNGs.
+    # bazalt-icon.svg is the source; the PNGs and bazalt.ico (for the
+    # installer's file association, wiki/plans/Release.md R0.1c) are renders.
+    ICON_BIG                    "${CMAKE_SOURCE_DIR}/assets/icon/bazalt-icon-1024.png"
+    ICON_SMALL                  "${CMAKE_SOURCE_DIR}/assets/icon/bazalt-icon-256.png"
     PLUGIN_MANUFACTURER_CODE    Bzlt
     PLUGIN_CODE                 Bzl1
     FORMATS                     VST3 Standalone

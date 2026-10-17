@@ -74,7 +74,7 @@ R10 (Mac) runs alongside R3–R9 on its own track; R0.6 is listed where it happe
 - Numbers written as the shortest decimal that reads back the same float (R0.3).
 - A hidden "Save as readable JSON" stays for debugging.
 
-### R0.1c Icon (the user designs it, 2026-10-17)
+### R0.1c Icon (the user designs it, 2026-10-17) — **app icon done 2026-10-17**
 - Motif: basalt's hexagonal columns (columnar jointing). App icon, a `.bazalt` patch-file
   icon (one hexagon), optionally a Bazalt FX variant.
 - From the user's 1024 px master (SVG if available): a Windows `.ico` (16–256 px) and a
@@ -84,6 +84,10 @@ R10 (Mac) runs alongside R3–R9 on its own track; R0.6 is listed where it happe
   Standalone opens a file it is given, in the running window if one is open); macOS
   declares the document type in `Info.plist`. Dropping a `.bazalt` on the plugin window
   loads it.
+- As built: `assets/icon/bazalt-icon.svg` (the user's single column) rendered by Chromium
+  to PNGs (1024 → `ICON_BIG`, 256 → `ICON_SMALL`; JUCE makes the .ico/.icns) and to
+  `bazalt.ico` (16–256 px) for the installer. Still to come: the patch-file icon, the FX
+  variant, and (design) more contrast for dark backgrounds and 16 px.
 
 ### R0.2 Renames (all ids, titles, docs)
 | Today | New | Notes |
