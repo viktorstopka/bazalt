@@ -60,6 +60,15 @@ namespace bazalt::engine
             return length;
         }
 
+        /** Message thread, when a slot is handed to a new subscriber: forget
+            the last frame, so the new one never sees the previous one's
+            (wiki/plans/Release.md R0.4). A publish racing this just wins. */
+        void clear() noexcept
+        {
+            for (auto& length : slotLengths)
+                length.store (0, std::memory_order_relaxed);
+        }
+
     private:
         std::array<std::vector<std::byte>, numSlots> slots;
         std::array<std::atomic<size_t>, numSlots> slotLengths {};

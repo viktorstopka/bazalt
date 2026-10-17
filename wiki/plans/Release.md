@@ -144,6 +144,30 @@ Test: `PatchSerializerTests` "A typed value saves as typed".
 | Delete all gives a red warning instead of quietly leaving Master Out; voice nodes can't be deleted after complex voice setups | see R3.1 | R3.1 |
 | Importing a sample / making a wavetable freezes the UI | work on the message thread; the file travels as base64 | R9 |
 
+**Done 2026-10-17:**
+- **Rössler:** every non-ASCII C++ string literal is gone or goes through
+  `CharPointer_UTF8` (titles, the Brownian unit, and em dashes in error messages,
+  which were mangled the same way). Test: every node's title, labels and units are
+  clean (`NodeDescriptorTests`).
+- **Random 1:** the cause was the seed mix, not the port. `combineInstanceSeed` changed
+  only the low bits between neighbouring members, and `juce::Random`'s first draw barely
+  depends on those, so Random 1 (the first draw) was nearly equal for every member;
+  Random 2 (the second) was fine. Material's per-mode jitter had the same flaw. Now
+  SplitMix64. Test: Random 1, Random 2 and Position each spread across 64 members
+  (fails on the old mix).
+- **Card width:** the Cycle view's SVG brought its default 300 px width into the card's
+  shrink-to-fit size; it is now absolutely placed and adds nothing.
+- **Stale viewers:** a reused telemetry slot kept the previous node's last frames and the
+  Cycle view's folded wave. A new subscriber now clears both (`TelemetryHub` slot
+  generation, `AnalysisThread::resetSlot`), and the UI drops a tap's stored frames when a
+  fresh subscription starts. Test: `TelemetryHubTests`.
+- **Scope time window:** the auto window ran on every mount and overwrote the saved or
+  typed value. It is now written only while the window is unset or still holds the
+  value the viewer picked itself.
+- **Capture menu:** right-clicking an output port no longer also opens the node menu.
+- Spectrogram time window stays with R6; delete-all and voice deletion with R3.1; import
+  lag with R9.
+
 ### R0.5 Tests for the seam between the UI and the plugin
 The bugs found in the last sessions (dead sample import, the editor refusing valid cables,
 a stale plan after many commands) were all in the seam between the WebView and C++, which

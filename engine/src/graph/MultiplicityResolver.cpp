@@ -143,7 +143,7 @@ namespace bazalt::engine
                                 if (isAncestor (node.id, it->second))
                                 {
                                     result.errorMessage = "Population '" + node.id + "' is fed by its own members' Population '"
-                                                          + it->second + "' — a loop of Populations";
+                                                          + it->second + "' - a loop of Populations";
                                     return result;
                                 }
                                 parentOf[node.id] = it->second;
@@ -192,7 +192,7 @@ namespace bazalt::engine
                         if (inner.isEmpty())
                         {
                             result.errorMessage = "Node '" + node.id + "' is fed by two different Populations ('" + foundOrigin + "', '"
-                                                   + it->second + "') that don't live inside one another — Merge one of them first";
+                                                   + it->second + "') that don't live inside one another - Merge one of them first";
                             return result;
                         }
                         changed = changed || nestedNow;
@@ -243,7 +243,7 @@ namespace bazalt::engine
             const auto originIt = resolvedOrigin.find (feeding->fromNodeId);
             if (originIt == resolvedOrigin.end())
             {
-                result.errorMessage = "Merge '" + sumId + "'s input must be a Poly signal — nothing to reduce";
+                result.errorMessage = "Merge '" + sumId + "'s input must be a Poly signal - nothing to reduce";
                 return result;
             }
 

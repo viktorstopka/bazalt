@@ -10,7 +10,13 @@
   margin: var(--space-xs) var(--space-sm) var(--space-sm);
 }
 
+/* Absolute, so the SVG adds nothing to the card's own size: an in-flow SVG
+   brings its default 300px width, and a shrink-to-fit card then grows as far
+   as the room to its right allows - dragging a Sine to the left widened it
+   (wiki/plans/Release.md R0.4). The card's width comes from its other rows. */
 .phase-locked-preview-svg {
+  position: absolute;
+  inset: 0;
   display: block;
   width: 100%;
   height: 100%;

@@ -316,3 +316,37 @@ TEST_CASE ("Too many nested members is an error, not a silent cap", "[engine][po
     const auto layout = computeInstanceLayout (split, [] (const juce::String& id) { return id == "uni" ? 16 : 16; });
     CHECK (layout.errorMessage.contains ("256"));
 }
+
+#include "bazalt/engine/nodes/InstanceSeeding.h"
+
+TEST_CASE ("Population: Random 1, Random 2 and Position each spread across members", "[engine][population][R0.4]")
+{
+    // wiki/plans/Release.md R0.4 "Random 1 doesn't work": each member draws
+    // its three values from juce::Random seeded by (Seed, order). The old seed
+    // mix moved only the low bits between neighbouring orders and JUCE's first
+    // draw barely depends on them: Random 1 was nearly the same for everyone.
+    for (const int seed : { 0, 1, 7, 12345 })
+    {
+        std::array<std::vector<float>, 3> draws;
+        for (int order = 0; order < 64; ++order)
+        {
+            auto random = juce::Random (nodes::combineInstanceSeed (seed, order));
+            for (auto& d : draws)
+                d.push_back (random.nextFloat() * 2.0f - 1.0f);
+        }
+        for (const auto& d : draws)
+        {
+            const auto [lo, hi] = std::minmax_element (d.begin(), d.end());
+            CHECK (*hi - *lo > 1.6f);
+            double mean = 0.0, neighbour = 0.0;
+            for (size_t i = 0; i < d.size(); ++i)
+            {
+                mean += d[i];
+                if (i > 0)
+                    neighbour += std::abs (d[i] - d[i - 1]);
+            }
+            CHECK (std::abs (mean / (double) d.size()) < 0.3);
+            CHECK (neighbour / (double) (d.size() - 1) > 0.4); // uniform: ~0.67
+        }
+    }
+}

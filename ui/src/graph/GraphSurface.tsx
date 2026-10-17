@@ -226,6 +226,10 @@ function NodeWrapper({ node, descriptor, selected, selection, connectedPortIds, 
         if (ghostActive) return
         e.preventDefault()
         e.stopPropagation()
+        // An output port has its own menu (Capture this, PortContextMenu via
+        // InfiniteCanvas): one menu at a time, never the node's on top of
+        // it (wiki/plans/Release.md R0.4).
+        if ((e.target as HTMLElement).closest('[data-port-anchor][data-direction="output"]')) return
         // Right-clicking a node NOT already in the current multi-selection
         // replaces the selection with just that node (most editors'
         // convention); right-clicking one that IS part of it leaves the

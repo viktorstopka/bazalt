@@ -196,3 +196,44 @@ TEST_CASE ("09-29-AddMenu.3: no registered node's category is fragmented by the 
         }
     }
 }
+
+TEST_CASE ("Every node's title, labels and units are clean text (no mangled UTF-8)", "[engine][NodeFactory][R0.4]")
+{
+    // wiki/plans/Release.md R0.4: "Rössler" showed as "RÃ¶ssler" because a
+    // non-ASCII char* literal reached juce::String as if it were Latin-1.
+    auto factory = buildDefaultNodeFactory();
+    // UTF-8 read as Latin-1: a lead byte (U+00C2..U+00F4) followed by a
+    // continuation byte (U+0080..U+00BF), or a replacement character.
+    const auto mangled = [] (const juce::String& text)
+    {
+        juce::juce_wchar previous = 0;
+        for (auto ch : text)
+        {
+            if (ch == 0xfffd || (previous >= 0xc2 && previous <= 0xf4 && ch >= 0x80 && ch <= 0xbf))
+                return true;
+            previous = ch;
+        }
+        return false;
+    };
+    for (const auto& d : factory.describeAll())
+    {
+        INFO (d.typeId);
+        CHECK_FALSE (mangled (d.title));
+        CHECK_FALSE (mangled (d.category));
+        for (const auto* ports : { &d.inputs, &d.outputs })
+            for (const auto& p : *ports)
+            {
+                CHECK_FALSE (mangled (p.label));
+                CHECK_FALSE (mangled (p.unit));
+            }
+        for (const auto& p : d.parameters)
+        {
+            CHECK_FALSE (mangled (p.displayName));
+            CHECK_FALSE (mangled (p.unit));
+            for (const auto& option : p.enumOptions)
+                CHECK_FALSE (mangled (option.label));
+        }
+        if (d.typeId == "chaos.rossler")
+            CHECK (d.title == juce::String (juce::CharPointer_UTF8 ("R\xc3\xb6ssler")));
+    }
+}

@@ -114,9 +114,32 @@ namespace bazalt::engine
         }
     }
 
+    void AnalysisThread::resetSlot (size_t slotIndex) noexcept
+    {
+        const auto nan = std::numeric_limits<float>::quiet_NaN();
+        std::fill_n (phaseBins.begin() + (std::ptrdiff_t) (slotIndex * (size_t) phaseLockedPoints), phaseLockedPoints, nan);
+        phaseLastScannedTotalBySlot[slotIndex] = 0;
+        eventWasHighBySlot[slotIndex] = false;
+        eventLastScannedTotalBySlot[slotIndex] = 0;
+        std::fill_n (historyColumnLo.begin() + (std::ptrdiff_t) (slotIndex * (size_t) maxHistoryColumns), maxHistoryColumns, nan);
+        std::fill_n (historyColumnHi.begin() + (std::ptrdiff_t) (slotIndex * (size_t) maxHistoryColumns), maxHistoryColumns, nan);
+        historyHeadBySlot[slotIndex] = 0;
+        historyElapsedInColumnBySlot[slotIndex] = 0.0;
+        historyConfiguredWindowBySlot[slotIndex] = 0.0f;
+        historyLastScannedTotalBySlot[slotIndex] = 0;
+        spectrumAverageOrder[slotIndex] = 0;
+        meterBallisticsBySlot[slotIndex] = MeterBallistics {};
+    }
+
     void AnalysisThread::processTap (size_t slotIndex, double elapsedSeconds)
     {
         auto* tap = hub.getTapBySlot (slotIndex);
+
+        if (const auto generation = hub.getSlotGeneration (slotIndex); generation != generationBySlot[slotIndex])
+        {
+            generationBySlot[slotIndex] = generation;
+            resetSlot (slotIndex);
+        }
 
         if (hub.isSlotSynthetic (slotIndex))
         {

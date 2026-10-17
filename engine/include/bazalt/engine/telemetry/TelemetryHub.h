@@ -163,6 +163,13 @@ namespace bazalt::engine
             slot->name = name;
             slot->lastUsedSequence = ++sequenceCounter;
             slot->tap->prepare (slot->tap->getCapacity()); // reset ring contents for the new subscriber
+            // ...and its last frames and the analysis state built from the
+            // old subscriber's signal: a viewer spawned onto a reused slot
+            // used to show the previous node's wave (Release.md R0.4).
+            for (auto& frames : slot->frameBuffers)
+                if (frames != nullptr)
+                    frames->clear();
+            slot->generation.fetch_add (1, std::memory_order_release);
             slot->frameTypesMask.store (frameTypesToMask (needed), std::memory_order_relaxed);
             storeSettings (*slot, TapSettings {}); // a new subscriber starts from the defaults
             // "demo."-prefixed taps have no real pusher (M8's UI-only
@@ -245,6 +252,13 @@ namespace bazalt::engine
             return slots[slotIndex].active.load (std::memory_order_acquire);
         }
 
+        /** Changes each time the slot gets a new subscriber — the analysis
+            thread resets its per-slot state when it sees a new value. */
+        uint32_t getSlotGeneration (size_t slotIndex) const noexcept
+        {
+            return slots[slotIndex].generation.load (std::memory_order_acquire);
+        }
+
         bool isSlotSynthetic (size_t slotIndex) const noexcept
         {
             return slots[slotIndex].synthetic.load (std::memory_order_relaxed);
@@ -303,6 +317,7 @@ namespace bazalt::engine
             juce::String name; // message-thread-owned only
             std::atomic<bool> active { false };
             std::atomic<bool> synthetic { false }; // see subscribeTap()'s "demo." note
+            std::atomic<uint32_t> generation { 0 }; // getSlotGeneration()
             std::atomic<uint32_t> frameTypesMask { 0b111111 }; // M20 — see isFrameTypeNeeded()'s own comment; defaults to all 6
 
             // ADR-0029 - see TapSettings. Individually atomic; a snapshot is

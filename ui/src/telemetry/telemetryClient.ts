@@ -82,13 +82,18 @@ const activePolls = new Map<string, { tap: TapName; frameType: TelemetryFrameTyp
     the only thing needed.
 */
 export function pollTap(tap: TapName, frameType: TelemetryFrameType): void {
-  activePolls.set(tapKey(tap, frameType), { tap, frameType })
+  const key = tapKey(tap, frameType)
+  // A fresh subscription starts empty: the frames kept from an earlier one
+  // under this name may be another node's (a deleted node's id, reused), and
+  // a viewer spawned onto them showed an old wave (wiki/plans/Release.md R0.4).
+  if (!activePolls.has(key)) store.delete(key)
+  activePolls.set(key, { tap, frameType })
 }
 
 /** Stops polling one (tap, frameType) pair — idempotent. Leaves whatever
     frame was last received in the store (a late reader still gets the last
-    real value, not a sudden gap) until that tap starts polling again, at
-    which point it naturally gets overwritten by fresh data.
+    real value, not a sudden gap) until that tap starts polling again, which
+    clears it (pollTap).
 */
 export function stopPollingTap(tap: TapName, frameType: TelemetryFrameType): void {
   activePolls.delete(tapKey(tap, frameType))

@@ -133,3 +133,27 @@ TEST_CASE ("A reused (evicted-and-resubscribed) slot's Tap pointer is reset, not
     const auto numRead = tapB->readLatest (&afterReuse, 1);
     CHECK (numRead == 0); // freshly (re)prepared — nothing pushed yet, not "a"'s old 0.5
 }
+
+TEST_CASE ("A reused slot starts without the previous subscriber's frames", "[engine][telemetry][TelemetryHub][R0.4]")
+{
+    // wiki/plans/Release.md R0.4: a viewer spawned onto a reused slot showed
+    // the previous node's last wave.
+    TelemetryHub hub;
+    hub.prepare (64, 4096);
+    hub.subscribeTap ("node:old:out");
+    auto* frames = hub.getFrameBuffer ("node:old:out", TelemetryFrameType::PhaseLocked);
+    REQUIRE (frames != nullptr);
+    const std::array<std::byte, 16> frame {};
+    frames->publish (frame.data(), frame.size());
+    std::array<std::byte, 64> read {};
+    REQUIRE (frames->readLatest (read.data(), read.size()) == frame.size());
+    const auto generation = [&] { for (size_t i = 0; i < TelemetryHub::maxTaps; ++i) if (hub.isSlotActive (i)) return hub.getSlotGeneration (i); return 0u; };
+    const auto before = generation();
+
+    hub.unsubscribeTap ("node:old:out");
+    hub.subscribeTap ("node:new:out");
+    auto* reused = hub.getFrameBuffer ("node:new:out", TelemetryFrameType::PhaseLocked);
+    REQUIRE (reused == frames); // the same slot, handed on
+    CHECK (reused->readLatest (read.data(), read.size()) == 0);
+    CHECK (generation() != before); // the analysis thread forgets the old signal too
+}

@@ -88,10 +88,10 @@ function dataTagAccepted(produced: string, required: string): boolean {
 /** Mirrors CanConnect.cpp's canConnect(from, to) exactly. */
 export function canConnectPorts(from: PortDescriptor, to: PortDescriptor): CanConnectResult {
   if (from.type === 'data' || to.type === 'data') {
-    if (from.type !== 'data' || to.type !== 'data') return reject('Data never converts implicitly (SIGNAL_TYPES.md §5)')
+    if (from.type !== 'data' || to.type !== 'data') return reject('Data never converts implicitly')
     const producedTag = from.dataTags[0] ?? 'unknown'
     if (to.dataTags.some((tag) => dataTagAccepted(producedTag, tag))) return ok()
-    return reject("Data tag mismatch — this port doesn't accept what's produced here")
+    return reject("Data tag mismatch - this port doesn't accept what's produced here")
   }
 
   if (isValueType(from.type) && isValueType(to.type)) return connectValues(from, to)

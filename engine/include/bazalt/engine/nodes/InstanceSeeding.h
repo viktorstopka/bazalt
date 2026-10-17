@@ -4,8 +4,7 @@
 
 namespace bazalt::engine::nodes
 {
-    /** Boost's classic 64-bit hash_combine — not cryptographic, just a
-        cheap, well-known, deterministic mix so nearby seeds/ordinals don't
+    /** A cheap, well-known, deterministic mix (SplitMix64), not cryptographic, so nearby seeds/ordinals don't
         produce visibly-correlated streams. Same (seed, ordinal) pair always
         produces the same int64, on any platform, any run — that determinism
         is the entire point.
@@ -23,8 +22,17 @@ namespace bazalt::engine::nodes
     */
     inline int64_t combineInstanceSeed (int seed, int ordinal) noexcept
     {
-        uint64_t h = (uint64_t) (uint32_t) seed;
-        h ^= (uint64_t) (uint32_t) ordinal + 0x9e3779b97f4a7c15ULL + (h << 6) + (h >> 2);
+        // SplitMix64's finaliser over (seed, ordinal): every input bit
+        // changes about half the output bits. The old Boost hash_combine
+        // only changed the low bits between neighbouring ordinals, and
+        // juce::Random's FIRST draw barely depends on those — so every
+        // member's Random 1 came out nearly equal (wiki/plans/Release.md R0.4),
+        // and Material's per-mode jitter nearly equal across modes.
+        uint64_t h = ((uint64_t) (uint32_t) seed << 32) ^ (uint64_t) (uint32_t) ordinal;
+        h += 0x9e3779b97f4a7c15ULL;
+        h = (h ^ (h >> 30)) * 0xbf58476d1ce4e5b9ULL;
+        h = (h ^ (h >> 27)) * 0x94d049bb133111ebULL;
+        h ^= h >> 31;
         return (int64_t) h;
     }
 }

@@ -129,6 +129,10 @@ namespace bazalt::engine
         std::array<int, TelemetryHub::maxTaps> spectrumAverageOrder {};
 
         std::array<MeterBallistics, TelemetryHub::maxTaps> meterBallisticsBySlot;
+        // The hub's slot generation each slot's state was built for; a new
+        // one means a new subscriber, so resetSlot() forgets the old signal.
+        std::array<uint32_t, TelemetryHub::maxTaps> generationBySlot {};
+        void resetSlot (size_t slotIndex) noexcept;
         std::array<double, TelemetryHub::maxTaps> syntheticPhase {}; // per-slot phase for "demo." taps
 
         // Per-slot rising-edge memory for publishEventImpulse() — the same

@@ -166,7 +166,7 @@ namespace bazalt::engine::nodes
         RosslerNode() : ChaosFlowNode ("chaos.rossler.seed", { 1.0, 0.0, 0.0 }) {}
 
         int getNumInputPorts() const noexcept override { return 2; }
-        juce::String getTitle() const override { return "Rössler"; }
+        juce::String getTitle() const override { return juce::String (juce::CharPointer_UTF8 ("R\xc3\xb6ssler")); }
         std::vector<PortDescriptor> getInputPorts() const override
         {
             return { chaos::hz ("chaos.rossler.frequency", "Frequency", 0.01f, 5000.0f, 1.0f), chaos::plain ("chaos.rossler.c", "c", 2.0f, 9.0f, 5.7f) };

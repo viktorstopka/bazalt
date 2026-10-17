@@ -1155,7 +1155,7 @@ namespace bazalt::engine
                     if (nc.fromSlot == slot || nc.toSlot == slot)
                     {
                         result.errorMessage = "Node '" + graphNodes[(size_t) slot].id
-                                               + "' has a Note-typed connection but is inside a feedback cycle — "
+                                               + "' has a Note-typed connection but is inside a feedback cycle - "
                                                + "Note ports inside a per-sample region aren't supported yet";
                         return result;
                     }

@@ -182,14 +182,14 @@ namespace bazalt::engine
         if (from.type == SignalType::Data || to.type == SignalType::Data)
         {
             if (from.type != SignalType::Data || to.type != SignalType::Data)
-                return reject ("Data never converts implicitly (SIGNAL_TYPES.md §5)");
+                return reject ("Data never converts implicitly");
 
             const auto producedTag = from.dataTags.empty() ? DataTag::Unknown : from.dataTags.front();
             for (const auto accepted : to.dataTags)
                 if (dataTagAccepted (producedTag, accepted))
                     return ok();
 
-            return reject ("Data tag mismatch — this port doesn't accept what's produced here");
+            return reject ("Data tag mismatch - this port doesn't accept what's produced here");
         }
 
         if (isValueType (from.type) && isValueType (to.type))

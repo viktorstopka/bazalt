@@ -259,6 +259,11 @@ export function ScopeHistoryBody({
   const observationStartMsRef = useRef<number | null>(null)
   const rangeFrozenRef = useRef(false)
   const windowCommittedRef = useRef(false)
+  // The window this viewer chose by itself, if any. The user's own value
+  // always wins (wiki/plans/Release.md R0.4): the auto window is only
+  // written while the parameter is unset or still holds the auto value -
+  // it used to run on every mount and overwrite a saved or typed window.
+  const autoWindowRef = useRef<number | null>(null)
 
   // The render loop below is only re-subscribed (registerPreviewRenderer)
   // when visibility/instanceId/outputPort/sourceKey change — re-running it
@@ -373,7 +378,11 @@ export function ScopeHistoryBody({
                 period === null
                   ? Math.min(autoMax, UNKNOWN_PERIOD_WINDOW_SECONDS) // no cycle observed: slow or still — a readable middle, not the maximum
                   : Math.min(autoMax, Math.max(latest.minTimeWindowSeconds, period * CYCLES_TO_SHOW))
-              latest.state.onParameterCommit?.(latest.timeWindowParameterId, defaultWindow)
+              const stored = latest.state.parameterValues?.[latest.timeWindowParameterId]
+              if (stored === undefined || stored === autoWindowRef.current) {
+                autoWindowRef.current = defaultWindow
+                latest.state.onParameterCommit?.(latest.timeWindowParameterId, defaultWindow)
+              }
             }
           }
         }

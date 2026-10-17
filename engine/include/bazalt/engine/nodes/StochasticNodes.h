@@ -183,7 +183,7 @@ namespace bazalt::engine::nodes
 
         std::vector<PortDescriptor> getInputPorts() const override
         {
-            return { PortDescriptor { .id = "random.brownian.speed", .type = SignalType::Signal, .label = "Speed", .unit = "/√s",
+            return { PortDescriptor { .id = "random.brownian.speed", .type = SignalType::Signal, .label = "Speed", .unit = juce::String (juce::CharPointer_UTF8 ("/\xe2\x88\x9as")),
                                       .minValue = 0.001f, .maxValue = 100.0f, .defaultValue = 0.3f, .isLogScale = true,
                                       .hasFallbackWhenUnconnected = true, .curve = Curve::Logarithmic },
                      PortDescriptor { .id = "reset", .type = SignalType::Event, .label = "Reset" } };

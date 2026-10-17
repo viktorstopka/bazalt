@@ -46,7 +46,7 @@ namespace bazalt::engine
             group.count = group.membersPerParent * (group.parent >= 0 ? layout.groups[(size_t) group.parent].count : 1);
             if (group.count > maxInstancesPerGroup && layout.errorMessage.isEmpty())
                 layout.errorMessage = "Population '" + group.originId + "' would run " + juce::String (group.count)
-                                      + " members (its Size times the Populations it lives inside) — at most "
+                                      + " members (its Size times the Populations it lives inside) - at most "
                                       + juce::String (maxInstancesPerGroup);
         }
 
@@ -105,7 +105,7 @@ namespace bazalt::engine
                                                 { const auto* n = origin.voiceGraph.findNode (id); return n != nullptr && n->type == "io.noteIn"; });
             if (hearsMidi && layout.groups[(size_t) group].parent >= 0 && layout.errorMessage.isEmpty())
                 layout.errorMessage = "Population '" + origin.originId + "' lives inside another one, so its members are born "
-                                      "from inside that one's members — not from a Note In";
+                                      "from inside that one's members - not from a Note In";
             if (hearsMidi)
                 perInstance.insert (chain.begin(), chain.end());
             else
@@ -402,12 +402,12 @@ namespace bazalt::engine
             else if (fromGroup >= 0 && toGroup < 0)
             {
                 result.errorMessage = "'" + c.toNodeId + "' runs once but is fed per instance from '" + c.fromNodeId
-                                      + "' — put a Merge between them";
+                                      + "' - put a Merge between them";
                 return result;
             }
             else if (fromGroup >= 0)
             {
-                result.errorMessage = "'" + c.toNodeId + "' is fed by two different Populations — put a Merge between them";
+                result.errorMessage = "'" + c.toNodeId + "' is fed by two different Populations - put a Merge between them";
                 return result;
             }
             else
