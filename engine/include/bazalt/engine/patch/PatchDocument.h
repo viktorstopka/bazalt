@@ -45,18 +45,100 @@ namespace bazalt::engine
         stable ids), macro mapping table + current values, view state, meta.
         Plugin state IS this document — getStateInformation/
         setStateInformation serialize/deserialize it directly, no separate
-        format. See PatchSerializer.h for JSON (de)serialization.
+        format. See PatchSerializer.h for JSON (de)serialization and the
+        migration dispatcher.
 
-        **Compatibility (wiki/plans/Release.md):** every patch made before
-        2026-10-17 was thrown away and the format restarted at version 1, with
-        no migrations. Until the ID freeze (Release.md R0.6) a patch in another
-        version simply doesn't load; from the freeze on, each change to this
-        shape bumps the version and adds a migration in PatchSerializer.cpp.
-        `git log` holds the old v1-v16 history and its migrations.
+        Schema v2 (M7): `outputPortIndex` (int) became `outputPortId`
+        (string, matching Connection's port-ID addressing, NodeGraph.h) and
+        `view` was added. `PatchSerializer`'s v1→v2 migration resolves old
+        index-based connections/output ports to IDs using each node type's
+        *current* registered port order — the only source of truth
+        available for old data; a patch saved before a node's ports were
+        reordered is a real (accepted) migration risk, not silently solved.
+
+        Schema v3 (M21): math.add, math.multiply and mix.sum became growable
+        port groups (PortGroups.h), so their `a`/`b` inputs are now
+        `in.0`/`in.1`. `PatchSerializer`'s v2→v3 migration renames those two
+        port IDs on every connection into a node of those types — the
+        CLAUDE.md rule-3 way of changing a shipped port ID (never a bare
+        rename): an old patch keeps loading and wiring exactly as before.
+
+        Schema v4 (wiki/NODES_Gaps.md's `redundant-composable-param`
+        finding): `mix.sum` lost its baked-in `level.N` companion port —
+        it duplicated what a `mix.gain` node placed in front of an input
+        already does. `PatchSerializer`'s v3→v4 migration doesn't just
+        rename a port id this time (there's nothing to rename to — the port
+        is gone); a `level.N` that was ever touched (a non-default stored
+        value, or a real connection feeding it) becomes a real, visible
+        `mix.gain` node spliced between that input's original source and
+        `mix.sum` itself, so the old patch keeps sounding the same. A
+        `level.N` left at its default (1.0, unconnected) needs nothing — a
+        plain `in.N` connection already behaves identically.
     */
     struct PatchDocument
     {
-        static constexpr int currentSchemaVersion = 1;
+        // Schema v5 (real stereo cable redesign, wiki/NODES.System.md §9):
+        // space.pan/space.width/io.output/mix.downmix/stereo.split/
+        // stereo.combine collapsed their left/right port pairs into real
+        // Channels::Stereo ports. No migration was written for this bump -
+        // CLAUDE.md rule 3 ("port ids never renamed once shipped") is
+        // suspended for now on the user's own explicit instruction (see
+        // that rule's own note): nothing real depends on the pre-v5 shape
+        // yet, no distributed patches, nothing saved that anyone relies on.
+        // The version number still bumps for hygiene - a marker in case a
+        // stray old file ever surfaces - but a v4 (or earlier) patch that
+        // actually reaches this version today has no dispatch-table entry
+        // and will fail to load rather than silently misinterpreting old
+        // port ids as new ones. If a real migration is ever needed later
+        // (once rule 3's suspension ends), PatchSerializer.cpp's
+        // migrateV3ToV4 is the template: walk nodes/connections as
+        // juce::var, insert a bridge node (stereo.combine/stereo.split) for
+        // a genuinely asymmetric old pair, retarget a matching pair
+        // straight onto the new single port.
+        //
+        // Schema v6 (wiki/plans/DomainRedesign.md Batch 1b): "instance.mix"
+        // renamed to "life.merge" (its own parameter ids too:
+        // "instance.mix.mode" etc. -> "life.merge.mode"). Same rule-3-
+        // suspended, hygiene-only bump as v5's — see migrateV5ToV6 in
+        // PatchSerializer.cpp.
+        //
+        // Schema v7 (wiki/plans/UtilMacro.md, archive_docs/decisions/
+        // 0030-util-macro-is-a-real-wireable-node.md): `macroMappings`
+        // dropped from this struct entirely. A real `util.macro` node now
+        // claims its own host slot via an ordinary structural parameter
+        // ("util.macro.slot", on the node itself) and is wired into the
+        // graph like any other node — `GraphEditController::
+        // recompileAndPublish()` derives the runtime `MacroMapping` table
+        // fresh, every compile, from whichever util.macro nodes exist and
+        // what slot each claims. There is nothing left for this field to
+        // persist: it was never node-derived before this, so a v6 (or
+        // earlier) patch's own macroMappings content is silently dropped
+        // on migration — see migrateV6ToV7 in PatchSerializer.cpp.
+        // `macroValues` stays: each of the 32 AudioParameterFloats' own
+        // current automated value is real, independent state, unrelated
+        // to which nodes claim which slot.
+        //
+        // Schema v11 (wiki/plans/Decorations.md): util.reroute became
+        // deco.reroute (same ports), and patches carry `assets` — the
+        // content-addressed files deco.image nodes show.
+        //
+        // Schema v12 (wiki/plans/DataAndWavetable.md §2): To Mod / To Audio /
+        // From Bool / Normalise and the two polarity converters are gone —
+        // spliced out, or rewritten as math.multiply / adapt.map.
+        //
+        // Schema v13 (same plan, 1a.3): duplicated nodes merged — Gain into
+        // Multiply, Clamp into Clip (low/high), Envelope Follower into Level,
+        // Crossfade and Select into Blend, the three history scopes into Scope.
+        //
+        // Schema v14 (same plan, §3): type ids follow the category —
+        // life.voice / life.merge, time.delay, math.map, channels.downmix, …
+        //
+        // Schema v15 (same plan, 1b): a node may carry `content`, a factory's
+        // editable document (NodeInstance::content).
+        //
+        // Schema v16 (same plan, D5/D6): osc.*, lfo.shape, env.adsr and
+        // data.table become source.oscillator / source.envelope / data.curve.
+        static constexpr int currentSchemaVersion = 16;
 
         int schemaVersion = currentSchemaVersion;
         std::vector<NodeInstance> nodes;
