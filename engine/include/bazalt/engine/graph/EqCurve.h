@@ -1,5 +1,6 @@
 #pragma once
 
+#include "bazalt/engine/patch/ExactFloat.h"
 #include "bazalt/engine/Biquad.h"
 #include "bazalt/engine/SvfCore.h"
 #include "bazalt/engine/graph/Data.h"
@@ -196,13 +197,13 @@ namespace bazalt::engine
             {
                 auto* b = new juce::DynamicObject();
                 b->setProperty ("type", typeName (band.type));
-                b->setProperty ("frequency", band.frequency);
+                b->setProperty ("frequency", exactFloatVar (band.frequency));
                 if (band.hasGain())
-                    b->setProperty ("gain", band.gainDb);
+                    b->setProperty ("gain", exactFloatVar (band.gainDb));
                 if (band.type == EqBandType::LowShelf || band.type == EqBandType::HighShelf)
-                    b->setProperty ("slope", band.slope);
+                    b->setProperty ("slope", exactFloatVar (band.slope));
                 else
-                    b->setProperty ("q", band.q);
+                    b->setProperty ("q", exactFloatVar (band.q));
                 if (band.type == EqBandType::LowCut || band.type == EqBandType::HighCut)
                     b->setProperty ("order", band.order);
                 if (! band.enabled)

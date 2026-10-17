@@ -1,5 +1,6 @@
 #pragma once
 
+#include "bazalt/engine/patch/ExactFloat.h"
 #include "bazalt/engine/graph/Data.h"
 #include <juce_audio_basics/juce_audio_basics.h>
 #include <juce_core/juce_core.h>
@@ -149,7 +150,7 @@ namespace bazalt::engine
             o->setProperty ("loop", loop);
             o->setProperty ("loopStart", loopStart);
             o->setProperty ("loopEnd", loopEnd);
-            o->setProperty ("gain", gainDb);
+            o->setProperty ("gain", exactFloatVar (gainDb));
             o->setProperty ("reverse", reverse);
             o->setProperty ("normalise", normalise);
             o->setProperty ("fadeIn", fadeIn);
@@ -159,7 +160,7 @@ namespace bazalt::engine
                 s.add (v);
             o->setProperty ("slices", s);
             if (std::isfinite (rootPitch))
-                o->setProperty ("root", rootPitch);
+                o->setProperty ("root", exactFloatVar (rootPitch));
             if (quantity >= 0)
                 o->setProperty ("quantity", quantity);
             return juce::var (o);

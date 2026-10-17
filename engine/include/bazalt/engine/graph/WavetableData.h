@@ -1,5 +1,6 @@
 #pragma once
 
+#include "bazalt/engine/patch/ExactFloat.h"
 #include "bazalt/engine/graph/CurveData.h"
 #include <list>
 #include <mutex>
@@ -68,7 +69,7 @@ namespace bazalt::engine
         juce::var toVar() const
         {
             auto* object = new juce::DynamicObject();
-            object->setProperty ("position", position);
+            object->setProperty ("position", exactFloatVar (position));
             object->setProperty ("kind", kind == Kind::Curve ? "curve" : "harmonics");
             if (kind == Kind::Curve)
                 object->setProperty ("curve", curve.toVar());
@@ -76,9 +77,9 @@ namespace bazalt::engine
             {
                 juce::Array<juce::var> a, p;
                 for (const auto v : amplitudes)
-                    a.add (v);
+                    a.add (exactFloatVar (v));
                 for (const auto v : phases)
-                    p.add (v);
+                    p.add (exactFloatVar (v));
                 object->setProperty ("amplitudes", a);
                 object->setProperty ("phases", p);
             }

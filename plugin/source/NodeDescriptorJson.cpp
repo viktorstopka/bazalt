@@ -1,4 +1,5 @@
 #include "NodeDescriptorJson.h"
+#include "bazalt/engine/patch/ExactFloat.h"
 #include "bazalt/engine/graph/Unwrap.h"
 
 namespace bazalt
@@ -206,7 +207,7 @@ namespace bazalt
             obj->setProperty ("unit", port.unit);
             obj->setProperty ("minValue", optionalFloatToVar (port.minValue));
             obj->setProperty ("maxValue", optionalFloatToVar (port.maxValue));
-            obj->setProperty ("defaultValue", port.defaultValue);
+            obj->setProperty ("defaultValue", bazalt::engine::exactFloatVar (port.defaultValue));
             obj->setProperty ("isInteger", port.isInteger);
             obj->setProperty ("isLogScale", port.isLogScale);
             obj->setProperty ("hasFallbackWhenUnconnected", port.hasFallbackWhenUnconnected);
@@ -229,9 +230,9 @@ namespace bazalt
         {
             auto* obj = new juce::DynamicObject();
             obj->setProperty ("id", parameter.id);
-            obj->setProperty ("minValue", parameter.minValue);
-            obj->setProperty ("maxValue", parameter.maxValue);
-            obj->setProperty ("defaultValue", parameter.defaultValue);
+            obj->setProperty ("minValue", bazalt::engine::exactFloatVar (parameter.minValue));
+            obj->setProperty ("maxValue", bazalt::engine::exactFloatVar (parameter.maxValue));
+            obj->setProperty ("defaultValue", bazalt::engine::exactFloatVar (parameter.defaultValue));
             obj->setProperty ("skew", parameter.skew);
             obj->setProperty ("unit", parameter.unit);
             obj->setProperty ("displayName", parameter.displayName);

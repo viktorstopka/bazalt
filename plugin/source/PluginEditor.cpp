@@ -1,6 +1,7 @@
 #include "PluginEditor.h"
 #include "UserPatchLibrary.h"
 #include "NodeDescriptorJson.h"
+#include "bazalt/engine/patch/ExactFloat.h"
 #include "bazalt/engine/patch/PatchSerializer.h"
 #include "bazalt/engine/graph/SampleAnalysis.h"
 #include "bazalt/engine/graph/WavetableExtraction.h"
@@ -730,7 +731,7 @@ namespace bazalt
             auto* obj = new juce::DynamicObject();
             for (const auto& [nodeId, domain] : controller.getNodeDomains())
                 obj->setProperty (nodeId, domain);
-            completion (juce::JSON::toString (juce::var (obj), true));
+            completion (bazalt::engine::toJson (juce::var (obj)));
         });
 
         // wiki/plans/DomainRedesign.md Batch 4: DomainDot's real
@@ -789,7 +790,7 @@ namespace bazalt
             root->setProperty ("ports", juce::var (portsObj));
             root->setProperty ("badges", juce::var (badgesObj));
             root->setProperty ("stereo", juce::var (stereoObj));
-            completion (juce::JSON::toString (juce::var (root), true));
+            completion (bazalt::engine::toJson (juce::var (root)));
         });
 
         // M9 (NODE_EDITOR.md §3): every registered node type's descriptor,

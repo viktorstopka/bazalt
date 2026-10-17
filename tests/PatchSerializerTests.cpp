@@ -132,3 +132,28 @@ TEST_CASE ("Patch parsing rejects a schema version newer than this build support
     CHECK_FALSE (result.success);
     CHECK (result.errorMessage.contains ("999"));
 }
+
+#include "bazalt/engine/patch/ExactFloat.h"
+
+TEST_CASE ("A typed value saves as typed and reads back as the same float", "[engine][patch][R0.3]")
+{
+    // wiki/plans/Release.md R0.3: 0.3f widened to double is 0.300000011920929;
+    // the patch must say 0.3, and reading it must give back exactly 0.3f.
+    for (const auto typed : { 0.3f, 0.1f, 0.7f, 1.05f, 440.0f, 261.63f, 0.001f, 12345.678f, -0.25f, 1.0e-7f })
+    {
+        juce::Array<juce::var> one { exactFloatVar (typed) };
+        CHECK ((float) (double) juce::JSON::parse (toJson (juce::var (one)))[0] == typed);
+        CHECK ((float) shortestDecimal (typed) == typed);
+    }
+    CHECK (toJson (exactFloatVar (0.3f)) == "0.3");
+    CHECK (toJson (exactFloatVar (261.63f)) == "261.63");
+
+    PatchDocument doc = PatchDocument::fromNodeGraph (buildVoiceProofGraph());
+    doc.nodes.front().parameters["test.value"] = 0.3f;
+    const auto json = serializePatchToJson (doc);
+    CHECK ((json.contains ("\"test.value\": 0.3") || json.contains ("\"test.value\":0.3")));
+    CHECK_FALSE (json.contains ("0.30000001"));
+    const auto back = parsePatchFromJson (json);
+    REQUIRE (back.success);
+    CHECK (back.document.nodes.front().parameters.at ("test.value") == 0.3f);
+}

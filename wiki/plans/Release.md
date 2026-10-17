@@ -124,6 +124,13 @@ Population → Foreach is left to R1, where the node itself is redesigned.
   (its `decimals`), so a drag never stores more digits than it shows.
 - Test: every value typed into a slider reads back as the same text after save/load.
 
+**Done 2026-10-17:** `ExactFloat.h` — `exactFloatVar` writes each float as the shortest
+decimal that reads back to the same float, `toJson` writes JSON with as few decimals as
+needed (JUCE's default is 15: 261.63 became 261.629999999999995). Used for parameters,
+macro values, positions, view, descriptors, and curve/EQ/sample/wavetable content. A drag
+commits snapped to the slider's shown decimals; a typed value is stored as typed.
+Test: `PatchSerializerTests` "A typed value saves as typed".
+
 ### R0.4 Known bugs (from the user's testing)
 | Bug | Likely cause | Fix |
 |---|---|---|

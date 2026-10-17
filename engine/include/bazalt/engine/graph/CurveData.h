@@ -1,5 +1,6 @@
 #pragma once
 
+#include "bazalt/engine/patch/ExactFloat.h"
 #include "bazalt/engine/graph/Data.h"
 #include <juce_core/juce_core.h>
 #include <juce_dsp/juce_dsp.h>
@@ -166,15 +167,15 @@ namespace bazalt::engine
             root->setProperty ("version", 1);
             root->setProperty ("timeBase", timeBase == TimeBase::Time ? "time" : "cycle");
             if (timeBase == TimeBase::Time)
-                root->setProperty ("length", lengthSeconds);
+                root->setProperty ("length", exactFloatVar (lengthSeconds));
             juce::Array<juce::var> array;
             for (const auto& point : points)
             {
                 auto* p = new juce::DynamicObject();
-                p->setProperty ("x", point.x);
-                p->setProperty ("y", point.y);
+                p->setProperty ("x", exactFloatVar (point.x));
+                p->setProperty ("y", exactFloatVar (point.y));
                 if (point.tension != 0.0f)
-                    p->setProperty ("tension", point.tension);
+                    p->setProperty ("tension", exactFloatVar (point.tension));
                 if (point.shape != CurvePoint::Shape::Curve)
                     p->setProperty ("shape", point.shape == CurvePoint::Shape::Smooth ? "smooth" : "hold");
                 if (point.marker != 0)
@@ -185,8 +186,8 @@ namespace bazalt::engine
             if (loopStart >= 0.0f && loopEnd > loopStart)
             {
                 auto* loop = new juce::DynamicObject();
-                loop->setProperty ("start", loopStart);
-                loop->setProperty ("end", loopEnd);
+                loop->setProperty ("start", exactFloatVar (loopStart));
+                loop->setProperty ("end", exactFloatVar (loopEnd));
                 root->setProperty ("loop", juce::var (loop));
             }
             return juce::var (root);

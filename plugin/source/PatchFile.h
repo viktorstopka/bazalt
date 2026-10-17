@@ -1,6 +1,7 @@
 #pragma once
 
 #include "SampleLibrary.h"
+#include "bazalt/engine/patch/ExactFloat.h"
 #include <juce_core/juce_core.h>
 
 namespace bazalt
@@ -83,7 +84,7 @@ namespace bazalt
             }
 
             auto json = std::make_unique<juce::MemoryBlock>();
-            const auto text = juce::JSON::toString (root, false);
+            const auto text = bazalt::engine::toJson (root, false);
             json->append (text.toRawUTF8(), text.getNumBytesAsUTF8());
             zip.addEntry (new juce::MemoryInputStream (*json, false), 6, documentEntry, juce::Time::getCurrentTime());
 
@@ -159,7 +160,7 @@ namespace bazalt
                 }
                 root.getDynamicObject()->setProperty ("assets", juce::var (restored));
             }
-            patchJson = juce::JSON::toString (root, false);
+            patchJson = bazalt::engine::toJson (root, false);
             return true;
         }
 

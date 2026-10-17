@@ -1,4 +1,5 @@
 #include "bazalt/engine/graph/GraphCompiler.h"
+#include "bazalt/engine/patch/ExactFloat.h"
 #include "bazalt/engine/graph/CanConnect.h"
 #include "bazalt/engine/graph/PortGroups.h"
 #include <algorithm>
@@ -417,7 +418,7 @@ namespace bazalt::engine
             // changed — republishing its buffer keeps the running node, so a
             // content edit never resets its state. One that cannot take it
             // (Node::setContent() returned false) is built fresh instead.
-            const auto contentJson = instance.content.isVoid() ? juce::String() : juce::JSON::toString (instance.content, true);
+            const auto contentJson = instance.content.isVoid() ? juce::String() : toJson (instance.content);
             if (reused)
             {
                 const auto previous = previousPlan->nodeIdToAppliedContent.find (instance.id);

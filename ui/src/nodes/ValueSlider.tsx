@@ -148,6 +148,12 @@ function formatValue(value: number, decimals: number): string {
 // field to nudge a value must never silently snap it to the 2-decimal
 // display string first (an integer is already exact, so it still goes
 // through formatValue for a clean "5" rather than "5.000000000001").
+function snapToDecimals(value: number, decimals: number): number {
+  const snapped = Number(value.toFixed(decimals))
+  // A value too small to show at this precision (a 0.004 on a 2-decimal
+  // slider) keeps its own value rather than snapping to 0.
+  return snapped === 0 && value !== 0 ? Number(value.toPrecision(3)) : snapped
+}
 function formatForEditing(value: number, isInteger: boolean, decimals: number): string {
   return isInteger ? formatValue(value, decimals) : String(value)
 }
@@ -297,7 +303,10 @@ export function ValueSlider({ label, value, min, max, hardMin, hardMax, defaultV
       dragRef.current = null
       updateLiveValue(null)
       if (wasDrag && finalLive !== null) {
-        commit(finalLive)
+        // A drag stores what the slider shows (wiki/plans/Release.md R0.3):
+        // the released value snaps to the displayed decimals, so a dragged
+        // 0.30 is stored as 0.3, never 0.30127. Typed values stay as typed.
+        commit(snapToDecimals(finalLive, decimals))
       } else if (!wasDrag) {
         // A clean click, no drag: enter edit mode immediately (see the
         // header comment on why this used to wait, and why waiting was the

@@ -1,5 +1,6 @@
 #include "bazalt/engine/patch/PatchSerializer.h"
 #include "bazalt/engine/graph/CurveData.h"
+#include "bazalt/engine/patch/ExactFloat.h"
 #include <cmath>
 #include <functional>
 #include <unordered_map>
@@ -15,7 +16,7 @@ namespace bazalt::engine
         {
             auto* obj = new juce::DynamicObject();
             for (const auto& [key, value] : parameters)
-                obj->setProperty (juce::Identifier (key), value);
+                obj->setProperty (juce::Identifier (key), exactFloatVar (value));
             return juce::var (obj);
         }
 
@@ -48,8 +49,8 @@ namespace bazalt::engine
         juce::var positionToVar (const NodePosition& position)
         {
             auto* obj = new juce::DynamicObject();
-            obj->setProperty ("x", position.x);
-            obj->setProperty ("y", position.y);
+            obj->setProperty ("x", exactFloatVar (position.x));
+            obj->setProperty ("y", exactFloatVar (position.y));
             return juce::var (obj);
         }
 
@@ -109,9 +110,9 @@ namespace bazalt::engine
         juce::var viewToVar (const PatchViewState& view)
         {
             auto* obj = new juce::DynamicObject();
-            obj->setProperty ("panX", view.panX);
-            obj->setProperty ("panY", view.panY);
-            obj->setProperty ("zoom", view.zoom);
+            obj->setProperty ("panX", exactFloatVar (view.panX));
+            obj->setProperty ("panY", exactFloatVar (view.panY));
+            obj->setProperty ("zoom", exactFloatVar (view.zoom));
             return juce::var (obj);
         }
 
@@ -200,7 +201,7 @@ namespace bazalt::engine
 
         juce::Array<juce::var> macroValuesArray;
         for (auto v : doc.macroValues)
-            macroValuesArray.add (v);
+            macroValuesArray.add (exactFloatVar (v));
         obj->setProperty ("macroValues", juce::var (macroValuesArray));
 
         obj->setProperty ("view", viewToVar (doc.view));
@@ -216,7 +217,7 @@ namespace bazalt::engine
         }
         obj->setProperty ("assets", juce::var (assets));
 
-        return juce::JSON::toString (juce::var (obj), ! prettyPrint);
+        return toJson (juce::var (obj), ! prettyPrint);
     }
 
     PatchParseResult parsePatchFromJson (const juce::String& json)
