@@ -1,4 +1,5 @@
 #include "GraphEditController.h"
+#include "PatchFile.h"
 #include "bazalt/engine/nodes/RecordNode.h"
 #include "bazalt/engine/nodes/LifePopulationNode.h"
 #include <optional>
@@ -1310,8 +1311,10 @@ namespace bazalt
         const auto parentDir = file.getParentDirectory();
         if (! parentDir.exists() && ! parentDir.createDirectory())
             return { false, "Could not create " + parentDir.getFullPathName() };
-        if (! file.replaceWithText (bazalt::engine::serializePatchToJson (doc, true)))
-            return { false, "Could not write " + file.getFullPathName() };
+        // One file: the samples go in as FLAC entries, not base64 (PatchFile.h).
+        juce::String error;
+        if (! PatchFile::writeFile (file, bazalt::engine::serializePatchToJson (doc, false), error))
+            return { false, error };
         return { true, {} };
     }
 

@@ -9,11 +9,10 @@ name: Package Windows build
 # The commit is made with GITHUB_TOKEN, which never triggers another workflow
 # run, so this cannot loop. Pushes that change only the zip are ignored too.
 
+# Runs only when started by hand (Actions -> "Package Windows build" -> Run
+# workflow), the user's instruction, 2026-10-17: builds happen when asked for,
+# not on every push.
 on:
-  push:
-    branches-ignore: [main, master]
-    # Docs and screenshots don't change the build.
-    paths-ignore: ['Bazalt-Standalone-Windows.zip', '**.md', 'wiki/**']
   workflow_dispatch:
 
 concurrency:

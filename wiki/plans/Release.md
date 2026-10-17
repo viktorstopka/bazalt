@@ -64,7 +64,7 @@ R10 (Mac) runs alongside R3–R9 on its own track; R0.6 is listed where it happe
   `ui/src/patches/factory/` (empty for now). Patches saved in AppData before today no
   longer open.
 
-### R0.1b One file: the `.bazalt` container
+### R0.1b One file: the `.bazalt` container — **done 2026-10-17**
 - A `.bazalt` file is a zip (one file you can send — never a folder): `patch.json` (the
   graph, readable) plus `assets/` — samples as FLAC, images as PNG/JPEG, large tables
   (wavetables from samples, recordings) as raw float32 — stored as they are and referenced
@@ -73,6 +73,14 @@ R10 (Mac) runs alongside R3–R9 on its own track; R0.6 is listed where it happe
 - DAW state: the same JSON, gzip-compressed, samples by reference (as today).
 - Numbers written as the shortest decimal that reads back the same float (R0.3).
 - A hidden "Save as readable JSON" stays for debugging.
+- As built: `plugin/source/PatchFile.h` writes and reads the container (`patch.json`
+  deflated, assets stored raw under `assets/<id>.<ext>`); inside the app a patch is still
+  the JSON with base64 assets, so the UI, undo and PatchSerializer are unchanged. The
+  patch library and "Export with samples" write it; `read` also takes plain JSON (factory
+  patches in the repo stay plain JSON, loaded by the UI as text). The DAW state is
+  gzip-compressed JSON (plain JSON still read). Tests: `tests-plugin/PatchFileTests.cpp`.
+- **Not yet:** large node content (a wavetable made from a sample) as raw float32 assets —
+  it is still JSON inside `patch.json`; done with the factory rework (R5.3).
 
 ### R0.1c Icon (the user designs it, 2026-10-17) — **app icon done 2026-10-17**
 - Motif: basalt's hexagonal columns (columnar jointing). App icon, a `.bazalt` patch-file

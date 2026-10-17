@@ -1,12 +1,13 @@
 #pragma once
 
+#include "PatchFile.h"
 #include "bazalt/engine/patch/PatchSerializer.h"
 #include <juce_core/juce_core.h>
 
 namespace bazalt
 {
-    /** The user's own saved patches — one `.bazalt` file (ordinary PatchDocument
-        JSON) per patch, in the per-user application-data folder:
+    /** The user's own saved patches — one `.bazalt` file (the container,
+        PatchFile.h) per patch, in the per-user application-data folder:
           Windows  %APPDATA%\Bazalt\Patches
           macOS    ~/Library/Bazalt/Patches
           Linux    ~/.config/Bazalt/Patches
@@ -50,7 +51,9 @@ namespace bazalt
                 Entry entry;
                 entry.fileName = file.getFileName();
                 entry.modifiedAtMs = file.getLastModificationTime().toMilliseconds();
-                const auto parsed = bazalt::engine::parsePatchFromJson (file.loadFileAsString());
+                juce::String json, error;
+                const auto parsed = PatchFile::readFile (file, json, error) ? bazalt::engine::parsePatchFromJson (json)
+                                                                           : bazalt::engine::PatchParseResult {};
                 entry.name = parsed.success && parsed.document.meta.name.isNotEmpty() ? parsed.document.meta.name
                                                                                       : file.getFileNameWithoutExtension();
                 entries.add (entry);
@@ -94,24 +97,23 @@ namespace bazalt
             document.meta.name = trimmed;
             document.meta.modifiedAtMs = now;
             document.meta.createdAtMs = now;
-            if (file.existsAsFile())
-                if (const auto previous = bazalt::engine::parsePatchFromJson (file.loadFileAsString()); previous.success && previous.document.meta.createdAtMs > 0)
+            if (juce::String previousJson, ignored; file.existsAsFile() && PatchFile::readFile (file, previousJson, ignored))
+                if (const auto previous = bazalt::engine::parsePatchFromJson (previousJson); previous.success && previous.document.meta.createdAtMs > 0)
                     document.meta.createdAtMs = previous.document.meta.createdAtMs;
 
-            if (! file.replaceWithText (bazalt::engine::serializePatchToJson (document, true)))
-            {
-                error = "Could not write " + file.getFullPathName();
+            if (! PatchFile::writeFile (file, bazalt::engine::serializePatchToJson (document, false), error))
                 return {};
-            }
             return file.getFileName();
         }
 
-        /** The patch's JSON, or an empty string if there is no such file.
-            Only names inside the library directory are accepted. */
+        /** The patch's JSON (assets back as base64), or an empty string if
+            there is no such file or it isn't a patch. Only names inside the
+            library directory are accepted. */
         juce::String load (const juce::String& fileName) const
         {
             const auto file = resolve (fileName);
-            return file.existsAsFile() ? file.loadFileAsString() : juce::String();
+            juce::String json, error;
+            return file.existsAsFile() && PatchFile::readFile (file, json, error) ? json : juce::String();
         }
 
         bool remove (const juce::String& fileName) const

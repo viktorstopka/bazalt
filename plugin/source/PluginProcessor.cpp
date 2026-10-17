@@ -1073,17 +1073,29 @@ namespace bazalt
         return auxPeakLevels[(size_t) auxIndex].load (std::memory_order_relaxed);
     }
 
+    // The DAW state is the patch JSON, gzip-compressed (wiki/plans/Release.md
+    // R0.1b): samples stay references to the library, so a project file stays
+    // small. Plain JSON is still read, in case a host hands that back.
     void BazaltAudioProcessor::getStateInformation (juce::MemoryBlock& destData)
     {
         const auto json = getStateAsJson();
-        const auto* utf8 = json.toRawUTF8();
-        destData.append (utf8, strlen (utf8));
+        juce::MemoryOutputStream out (destData, true);
+        juce::GZIPCompressorOutputStream gzip (out, 6, juce::GZIPCompressorOutputStream::windowBitsGZIP);
+        gzip.write (json.toRawUTF8(), json.getNumBytesAsUTF8());
+        gzip.flush();
     }
 
     void BazaltAudioProcessor::setStateInformation (const void* data, int sizeInBytes)
     {
-        const auto json = juce::String::fromUTF8 (static_cast<const char*> (data), sizeInBytes);
-        loadStateFromJson (json);
+        const auto* bytes = static_cast<const unsigned char*> (data);
+        if (sizeInBytes >= 2 && bytes[0] == 0x1f && bytes[1] == 0x8b)
+        {
+            juce::MemoryInputStream in (data, (size_t) sizeInBytes, false);
+            juce::GZIPDecompressorInputStream gzip (&in, false, juce::GZIPDecompressorInputStream::gzipFormat);
+            loadStateFromJson (gzip.readEntireStreamAsString());
+            return;
+        }
+        loadStateFromJson (juce::String::fromUTF8 (static_cast<const char*> (data), sizeInBytes));
     }
 }
 

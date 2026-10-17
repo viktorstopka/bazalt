@@ -4,6 +4,7 @@
 #include <catch2/catch_approx.hpp>
 #include "PluginProcessor.h"
 #include "SampleLibrary.h"
+#include "PatchFile.h"
 #include "bazalt/engine/nodes/DataSampleNode.h"
 #include "bazalt/engine/patch/PatchSerializer.h"
 
@@ -125,7 +126,9 @@ TEST_CASE ("Export with samples embeds them; opening it with an empty library br
         CHECK (bazalt::engine::PatchDocument::fromNodeGraph (controller.getGraphForSaving()).assets.empty());
     }
 
-    const auto parsed = bazalt::engine::parsePatchFromJson (exported.loadFileAsString());
+    juce::String exportedJson, readError;
+    REQUIRE (PatchFile::readFile (exported, exportedJson, readError));
+    const auto parsed = bazalt::engine::parsePatchFromJson (exportedJson);
     REQUIRE (parsed.success);
     CHECK (parsed.document.assets.count (juce::String (GraphEditController::sampleAssetPrefix) + id) == 1);
 
