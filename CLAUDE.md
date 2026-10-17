@@ -9,7 +9,8 @@ tracking: `wiki/NODES_Gaps.md`. Agreed-but-deferred work: `wiki/TODO.md`. Curren
 MVP/To be implemented, necessity+difficulty, build batches, build-next order):
 `wiki/NODES.Status.md`. Current milestone plan: `wiki/MILESTONES.md`
 (a `0.x`-numbered arc, separate from the `archive_docs/MILESTONES.md` M-arc
-below). The user's roadmap from 2026-10-08 on (stages 0–5) is `wiki/ROADMAP.md`;
+below). The path to a paid 1.0 (closed beta, Mac, Bazalt FX, licensing, in a
+concrete order) is `wiki/plans/Release.md` (2026-10-17). The user's roadmap from 2026-10-08 on (stages 0–5) is `wiki/ROADMAP.md`;
 stage 1 is planned in `wiki/plans/DataAndWavetable.md`, stage 2's engine half in
 `wiki/plans/InstanceAxis.md`. Not-yet-decided new capabilities get designed in `wiki/plans/` (one
 file per proposal, e.g. `wiki/plans/AudioControlBridge.md`) before any code
@@ -106,6 +107,13 @@ folder was renamed `archive_docs/` and is historical reference only.
    test fixtures and this session's own throwaway graphs. The moment that's
    true, this note should be deleted and the rule goes back to being
    unconditional.
+
+   **2026-10-17 (the user's instruction): compatibility with every existing
+   patch is dropped** — all patches, factory patches included, are thrown
+   away, nothing is migrated, and old migrations go. The rule comes back in
+   full at the **ID freeze** in `wiki/plans/Release.md` (R0.6, right before
+   the first beta tester), from which point every saved-shape change needs a
+   migration again.
 
 4. **`engine/` never depends on `juce_audio_processors`, `juce_gui_basics`,
    or anything plugin/UI-shaped** — only `juce_core`, `juce_audio_basics`,

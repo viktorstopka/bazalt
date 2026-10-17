@@ -3,6 +3,8 @@
 The user's own roadmap (2026-10-08), recorded verbatim below. The plans that turn each
 stage into buildable batches live in `wiki/plans/`:
 
+**Release (2026-10-17):** the path from here to a paid 1.0 — classes, polish, Mac, Bazalt FX, beta, licensing — is `plans/Release.md`; it reorders the remaining stage work around the release.
+
 | Stage | Plan |
 |---|---|
 | 0. User experience polish | small, built directly (no plan file) |
