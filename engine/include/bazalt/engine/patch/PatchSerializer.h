@@ -13,10 +13,9 @@ namespace bazalt::engine
         juce::String errorMessage;
     };
 
-    /** Parses and runs the vN -> vN+1 migration chain up to
-        PatchDocument::currentSchemaVersion (ARCHITECTURE.md §4.4). Fails
-        rather than guessing if the file is newer than this build supports,
-        or older than any registered migration can reach.
+    /** Parses a patch of PatchDocument::currentSchemaVersion. Any other
+        version fails with a plain message — no migrations until the ID freeze
+        (wiki/plans/Release.md R0.6).
     */
     PatchParseResult parsePatchFromJson (const juce::String& json);
 }

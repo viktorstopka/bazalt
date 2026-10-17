@@ -52,12 +52,17 @@ R10 (Mac) runs alongside R3–R9 on its own track; R0.6 is listed where it happe
 
 ## R0 — Reset and foundations
 
-### R0.1 Delete every patch
+### R0.1 Delete every patch — **done 2026-10-17**
 - Remove `ui/src/patches/factory/*.bazalt` and the plugin test that loads each one; the
   patch menu keeps Empty only. Remove the scratch "Life –" patches from the docs. Old
   migrations (`PatchSerializer.cpp`'s `migrateV*`) are deleted; `currentSchemaVersion` is
   reset to 1 for the new format (the loader rejects anything else with a plain message).
 - CLAUDE.md says compatibility is dropped until R0.6.
+- As built: the three factory patches, all 15 migrations (v1→v16) and their 14 tests are
+  gone; the format is version 1 and any other version fails with "This patch was made by a
+  different version of Bazalt". The factory-patch test stays and checks whatever lands in
+  `ui/src/patches/factory/` (empty for now). Patches saved in AppData before today no
+  longer open.
 
 ### R0.1b One file: the `.bazalt` container
 - A `.bazalt` file is a zip (one file you can send — never a folder): `patch.json` (the

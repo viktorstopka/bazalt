@@ -42,15 +42,6 @@ TEST_CASE ("deco.reroute passes its signal through", "[engine][decorations]")
     CHECK (result.plan.blockBuffers[(size_t) result.plan.finalOutputBufferIndex].getBlock().getChannelPointer (0)[10] != 0.0f);
 }
 
-TEST_CASE ("A v10 patch's util.reroute loads as deco.reroute", "[engine][decorations][PatchSerializer]")
-{
-    const auto json = R"({ "schemaVersion": 10, "nodes": [ { "id": "r", "type": "util.reroute", "parameters": {}, "properties": {} } ],
-                           "connections": [], "outputNodeId": "r", "outputPortId": "out" })";
-    const auto parsed = parsePatchFromJson (json);
-    REQUIRE (parsed.success);
-    CHECK (parsed.document.nodes[0].type == "deco.reroute");
-}
-
 TEST_CASE ("Patch assets round-trip, are stored once, and unused ones are dropped", "[engine][decorations][PatchSerializer]")
 {
     NodeGraph graph;

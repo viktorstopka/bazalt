@@ -201,7 +201,8 @@ ctest --test-dir build -C Debug -R PluginTests --output-on-failure
   node (`GraphSurface.tsx`), never as a cable colour. Removed/merged nodes migrate
   in schema v12-v13 (To Mod/To Audio/From Bool/Normalise/polarity converters,
   Gain->Multiply, Clamp->Clip, Follower->Level, Crossfade/Select->Blend, the three
-  history scopes->Scope); schema v14 moves type ids into their categories
+  history scopes->Scope — **all migrations were deleted on 2026-10-17 and the format
+  restarted at version 1, Release.md R0.1**); schema v14 moved type ids into their categories
   (`life.voice`, `life.merge`, `time.delay`, `math.map`, `channels.downmix`, ...,
   table in `PatchSerializer.cpp`'s `migrateV13ToV14`). Older code comments still
   say Audio/Control and the old ids in places — the engine is the truth.

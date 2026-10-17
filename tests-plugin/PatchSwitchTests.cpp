@@ -15,7 +15,7 @@ namespace
     // A trigger-button patch: macro -> Gate Length -> Envelope -> Triangle
     // amplitude -> Master Out. Mono (no Voice), silent until the button.
     const char* buttonPatch = R"json({
-      "schemaVersion": 16,
+      "schemaVersion": 1,
       "nodes": [
         { "id": "masterOut", "type": "io.output", "position": { "x": 0, "y": 0 }, "parameters": {}, "properties": {} },
         { "id": "node10", "type": "util.macro", "position": { "x": 0, "y": 0 },
@@ -35,7 +35,7 @@ namespace
     })json";
 
     const char* emptyPatch = R"json({
-      "schemaVersion": 16,
+      "schemaVersion": 1,
       "nodes": [ { "id": "masterOut", "type": "io.output", "position": { "x": 640, "y": 360 }, "parameters": {}, "properties": {} } ],
       "connections": [], "outputNodeId": "masterOut", "outputPortId": "out"
     })json";
@@ -44,7 +44,7 @@ namespace
     // Sine x Envelope -> Merge -> Master Out. Ids continue the editor's
     // counter, the way a new patch built after the first one would.
     const char* voicePatch = R"json({
-      "schemaVersion": 16,
+      "schemaVersion": 1,
       "nodes": [
         { "id": "masterOut", "type": "io.output", "position": { "x": 0, "y": 0 }, "parameters": {}, "properties": {} },
         { "id": "node14", "type": "io.noteIn", "position": { "x": 0, "y": 0 }, "parameters": {}, "properties": {} },
@@ -272,10 +272,11 @@ TEST_CASE ("Edits while the global plan is not being played still reach it", "[p
 
 TEST_CASE ("Every shipped factory patch loads and compiles", "[plugin][PatchSwitch][factory]")
 {
+    // Empty until the factory content is made on the frozen nodes (wiki/plans/Release.md
+    // R11); every patch that lands here must load, compile and play finite audio.
     const auto dir = juce::File (BAZALT_FACTORY_PATCH_DIR);
     REQUIRE (dir.isDirectory());
     const auto files = dir.findChildFiles (juce::File::findFiles, false, "*.bazalt");
-    REQUIRE (files.size() >= 3);
 
     BazaltAudioProcessor processor;
     processor.prepareToPlay (48000.0, 512);

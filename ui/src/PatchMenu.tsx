@@ -19,7 +19,7 @@ export interface PatchOption {
 
 function emptyPatchJson(): string {
   return JSON.stringify({
-    schemaVersion: 16,
+    schemaVersion: 1, // PatchDocument::currentSchemaVersion (PatchDocument.h)
     nodes: [{ id: 'masterOut', type: 'io.output', position: { x: 640, y: 360 }, parameters: {}, properties: {} }],
     connections: [],
     outputNodeId: 'masterOut',
