@@ -246,8 +246,7 @@ wheel support, the selected item marked. The engine's enum options feed it uncha
   negligible next to any synth voice. Pressing the button pauses the writes, copies the
   ring (the Record node's Freeze path already does exactly this) and drops a Sample node
   with the last N seconds, trimmed of leading silence. Length 10 s / 30 s / 60 s.
-  A setting turns it off; the plugin build defaults it on in the Standalone and off in
-  DAWs (a DAW records anyway — open question).
+  **Off by default everywhere** (the user's decision, 2026-10-17); a setting turns it on.
 
 ### R3.6 Snippets replace presets
 - Population presets leave the Add menu (Voice, Trigger, Swarm, Unison, Grain Cloud,
@@ -560,7 +559,6 @@ of the Play view and of a patch being built, and the first patch-sharing channel
 
 ## Open questions
 
-- Retro-capture in DAWs: on or off by default?
 - Spawn and Foreach as two nodes, or Foreach with a source setting? (R1 plan decides.)
 - Does Markov earn a standalone node, or only the class-prop source?
 - Mac at launch, or Windows first with Mac within weeks? (The user: Mac is required —
