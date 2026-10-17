@@ -176,6 +176,18 @@ already installed) talking to the real native functions through a test build of 
 plugin layer, with scripted gestures: drop a file, wire a cable, type a value, save and
 reload. Every R-step adds its own scenarios. CI runs it on every push.
 
+**Built 2026-10-17:** `tests-seam/`. `SeamHost` is the plugin layer with no DAW and no
+WebView: it takes the editor's own `makeWebViewOptions` (every native function, event
+listener and the resource provider), serves `ui/dist` over local HTTP with a small bridge
+script in place of JUCE's WebView glue (page → C++ in order, C++ → page by long poll, one
+session per page load), and plays audio blocks in real time. `run.mjs` starts a fresh host
+per scenario (with an empty sample library) and drives the page with Playwright. The first
+scenarios (`scenarios.mjs`): boot, a cable drawn in the UI plays, a typed value is stored
+and shown exactly, reload shows the same patch, a burst of 41 commands leaves the newest
+plan playing, a Population feeds another Population, a WAV dropped on the canvas becomes a
+Sample node. CI runs it on pull requests and main (`ci.yml`). Gap: the macro sliders'
+C++ → page updates need a real WebBrowserComponent and aren't covered.
+
 ### R0.6 ID freeze (happens after R9, before R11)
 Re-enable CLAUDE.md rule 3 in full, write the migration framework back (one function per
 version step), and add a test that a patch saved by the beta build still opens.

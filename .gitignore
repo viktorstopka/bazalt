@@ -23,6 +23,7 @@ JuceLibraryCode/
 
 # Node / Vite
 ui/node_modules/
+tests-seam/node_modules/
 ui/dist/
 ui/.vite/
 npm-debug.log*

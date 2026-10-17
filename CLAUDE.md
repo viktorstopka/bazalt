@@ -170,6 +170,13 @@ pluginval --strictness-level 10 --validate ./build/plugin/BazaltPlugin_artefacts
 # Plugin-level tests (PluginProcessor behavior: buses, MIDI-to-audio, patch
 # state, macro automation) — direct calls, no DAW needed
 ctest --test-dir build -C Debug -R PluginTests --output-on-failure
+
+# Seam tests (wiki/plans/Release.md R0.5): the built UI (ui/dist) in headless
+# Chromium against the real plugin layer — SeamHost serves the page and
+# answers its native calls; scenarios in tests-seam/scenarios.mjs. Add one
+# whenever a bug turns up between the UI and C++.
+cmake --build build --config Debug --target SeamHost
+cd tests-seam && npm install && node run.mjs
 ```
 
 ## Naming / structure conventions

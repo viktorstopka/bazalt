@@ -59,6 +59,15 @@ jobs:
           npm ci
           npm run build
 
+      # wiki/plans/Release.md R0.5: the production UI in headless Chromium
+      # against the real plugin layer (tests-seam/SeamHost.cpp).
+      - name: Seam tests (UI against the plugin)
+        working-directory: tests-seam
+        run: |
+          npm install
+          npx playwright install chromium
+          node run.mjs
+
       - name: Download pluginval
         shell: pwsh
         run: |

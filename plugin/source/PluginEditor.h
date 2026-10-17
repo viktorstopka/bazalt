@@ -26,10 +26,16 @@ namespace bazalt
 
         void resized() override;
 
-    private:
+        /** Everything the WebView gets: the native functions, event listeners,
+            initialisation data and resource provider. Public so the seam test
+            host (tests-seam/, wiki/plans/Release.md R0.5) can serve the real UI
+            against exactly these, with no WebView. */
         static juce::WebBrowserComponent::Options makeWebViewOptions (
             BazaltAudioProcessor& processor,
             std::vector<std::unique_ptr<juce::WebSliderRelay>>& macroRelays);
+        static std::vector<std::unique_ptr<juce::WebSliderRelay>> makeMacroRelays();
+
+    private:
 
         // M7 command bridge (NODE_EDITOR.md §6): registers addNode/
         // deleteNode/connect/disconnect/setParameterValue as native
@@ -50,7 +56,6 @@ namespace bazalt
         // std::vector<WebSliderRelay> can't be declared+resized in the
         // constructor body the way a POD vector could) rather than 32
         // hand-written named members.
-        static std::vector<std::unique_ptr<juce::WebSliderRelay>> makeMacroRelays();
         static std::vector<std::unique_ptr<juce::WebSliderParameterAttachment>> makeMacroAttachments (
             BazaltAudioProcessor& processor, std::vector<std::unique_ptr<juce::WebSliderRelay>>& relays);
 
