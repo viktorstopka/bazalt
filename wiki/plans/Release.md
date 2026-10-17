@@ -59,6 +59,27 @@ R10 (Mac) runs alongside R3–R9 on its own track; R0.6 is listed where it happe
   reset to 1 for the new format (the loader rejects anything else with a plain message).
 - CLAUDE.md says compatibility is dropped until R0.6.
 
+### R0.1b One file: the `.bazalt` container
+- A `.bazalt` file is a zip (one file you can send — never a folder): `patch.json` (the
+  graph, readable) plus `assets/` — samples as FLAC, images as PNG/JPEG, large tables
+  (wavetables from samples, recordings) as raw float32 — stored as they are and referenced
+  by id from the JSON. Always this container, even with no assets. Assets stored without
+  recompression (they are compressed already); only `patch.json` is deflated.
+- DAW state: the same JSON, gzip-compressed, samples by reference (as today).
+- Numbers written as the shortest decimal that reads back the same float (R0.3).
+- A hidden "Save as readable JSON" stays for debugging.
+
+### R0.1c Icon (the user designs it, 2026-10-17)
+- Motif: basalt's hexagonal columns (columnar jointing). App icon, a `.bazalt` patch-file
+  icon (one hexagon), optionally a Bazalt FX variant.
+- From the user's 1024 px master (SVG if available): a Windows `.ico` (16–256 px) and a
+  macOS `.icns`; set as the app/plugin icon in `plugin/CMakeLists.txt` (`ICON_BIG` /
+  `ICON_SMALL`). File association and double-click-to-open come with the installers
+  (R10/R13): Windows registers `.bazalt` with the icon and "open with Bazalt.exe" (the
+  Standalone opens a file it is given, in the running window if one is open); macOS
+  declares the document type in `Info.plist`. Dropping a `.bazalt` on the plugin window
+  loads it.
+
 ### R0.2 Renames (all ids, titles, docs)
 | Today | New | Notes |
 |---|---|---|
