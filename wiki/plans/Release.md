@@ -18,9 +18,9 @@ into a design gets one in `wiki/plans/` before code.
   **Map** is the curve-based one), Crush → **Bitcrush**, Population → **Foreach**.
 - **Mac is required** for release.
 - **Not doing:** hosting VST3 plugins inside Bazalt; Match EQ (skipped for now).
-- **"From Pro-Q" EQ import is the user's item, still open** (R4.6): Claude's concern is
-  that Pro-Q's preset format is proprietary (reverse-engineering, a legal grey zone) — the
-  user decides.
+- **"From Pro-Q" EQ import is dropped** (the user, 2026-10-17; R4.6).
+- **The Granulator patch waits for R1** (the user, 2026-10-17): rebuilt once Classes make
+  it Note In → Foreach → Spawn (Grain) → Foreach → Sampler.
 - The effects build is **Bazalt FX** (the name Erosion is dropped).
 
 ---
@@ -397,7 +397,7 @@ wired):
   octaves, gate length) — a natural fit once notes are entities (R1).
 - Showcase patches (R11) show the other way: sequences from math, curves and oscillators.
 
-### R4.6 "From Pro-Q" EQ (the user's item — decision pending)
+### R4.6 "From Pro-Q" EQ — dropped (the user, 2026-10-17)
 Load a FabFilter Pro-Q preset as a `data.eqCurve`. Risk: the preset format is
 proprietary and undocumented — importing it means reverse-engineering, and FabFilter's
 terms may forbid it. A safer alternative: import from the text a user copies out of
