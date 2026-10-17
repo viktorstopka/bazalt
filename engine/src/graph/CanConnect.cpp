@@ -85,7 +85,7 @@ namespace bazalt::engine
 
         AdapterStep mapStep()
         {
-            AdapterStep step { "math.map", "in" };
+            AdapterStep step { "math.remap", "in" };
             step.seedFromSourceRange = true;      // input range: the source's own bounds, else its polarity
             step.seedFromDestinationRange = true; // output range: the destination's
             return step;
@@ -102,10 +102,10 @@ namespace bazalt::engine
                 return std::nullopt;
 
             if (isNormalisedQuantity (from) && isRealQuantity (to))
-                return needsAdapter (mapStep(), "A modulation or audio value into a real-quantity port needs a Map");
+                return needsAdapter (mapStep(), "A modulation or audio value into a real-quantity port needs a Remap");
 
             if (isRealQuantity (from) && isNormalisedQuantity (to))
-                return needsAdapter (mapStep(), "A real-quantity value into a modulation or audio port needs a Map");
+                return needsAdapter (mapStep(), "A real-quantity value into a modulation or audio port needs a Remap");
 
             // Pitch <-> Frequency specifically: NOT the generic linear remap
             // below. The two are exponentially related (each semitone is
@@ -132,7 +132,7 @@ namespace bazalt::engine
 
             // Two different real quantities (e.g. Frequency and Time) — not
             // in SIGNAL_TYPES.md §5's original ten-pair table, but both
-            // sides are still real numeric ranges, so insert `math.map`
+            // sides are still real numeric ranges, so insert `math.remap`
             // (NODE_CATALOG.md's own node — this is its MVP linear form,
             // curve support grows it later rather than replacing it),
             // seeded from BOTH ends at once: inMin/inMax from the source's
@@ -145,7 +145,7 @@ namespace bazalt::engine
             // rejecting this pair outright was an unfinished case, not a
             // deliberate design choice — Pitch<->Frequency specifically no
             // longer falls through to here, see above.
-            return needsAdapter (mapStep(), "Different real quantities — rescaled via Map");
+            return needsAdapter (mapStep(), "Different real quantities - rescaled via Remap");
         }
 
         CanConnectResult connectValues (const PortDescriptor& from, const PortDescriptor& to)
@@ -169,7 +169,7 @@ namespace bazalt::engine
             {
                 // Downmix hands on an audio-range signal, so what follows is
                 // always a Map (never Pitch <-> Frequency).
-                if (rescale->adapterChain.size() != 1 || rescale->adapterChain.front().typeId != "math.map")
+                if (rescale->adapterChain.size() != 1 || rescale->adapterChain.front().typeId != "math.remap")
                     return reject ("Stereo into this port needs a Downmix first");
                 result.adapterChain.push_back (mapStep());
             }

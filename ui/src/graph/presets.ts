@@ -2,7 +2,7 @@
 // (Voice, Trigger, Swarm) are settings of one Population now. The Add menu
 // offers them as presets: choosing one places a ready-set Population (and,
 // for a grain cloud, the Events that drives it) as a fragment ghost. Other
-// ready-made groups (Interleave, wiki/plans/Wavesets.md) ride the same path.
+// ready-made groups (Weave, wiki/plans/Wavesets.md) ride the same path.
 import type { NodeDescriptor } from './descriptorTypes'
 import type { NodeFragment } from './graphStore'
 
@@ -82,20 +82,20 @@ export const PRESETS: readonly Preset[] = [
     }),
   },
   {
-    // wiki/plans/Wavesets.md W1: CDP's Distort: Interleave, live.
-    id: 'interleave',
-    title: 'Interleave',
+    // wiki/plans/Wavesets.md W1: two sounds woven cycle by cycle, live.
+    id: 'weave',
+    title: 'Weave',
     blurb: 'Two sounds cut at their zero crossings, played one whole waveset each in turn.',
-    baseType: 'waveset.play',
+    baseType: 'cycle.weave',
     build: () => ({
       nodes: [
-        { id: 'a', type: 'waveset.capture', position: { x: -260, y: -80 }, parameters: {}, properties: { title: 'Wavesets A' } },
-        { id: 'b', type: 'waveset.capture', position: { x: -260, y: 80 }, parameters: {}, properties: { title: 'Wavesets B' } },
-        { id: 'play', type: 'waveset.play', position: { x: 0, y: 0 }, parameters: {}, properties: { title: 'Interleave' } },
+        { id: 'a', type: 'cycle.cuts', position: { x: -260, y: -80 }, parameters: {}, properties: { title: 'Cycle Cuts A' } },
+        { id: 'b', type: 'cycle.cuts', position: { x: -260, y: 80 }, parameters: {}, properties: { title: 'Cycle Cuts B' } },
+        { id: 'play', type: 'cycle.weave', position: { x: 0, y: 0 }, parameters: {}, properties: { title: 'Weave' } },
       ],
       connections: [
-        { fromNodeId: 'a', fromPortId: 'wavesets', toNodeId: 'play', toPortId: 'in.0' },
-        { fromNodeId: 'b', fromPortId: 'wavesets', toNodeId: 'play', toPortId: 'in.1' },
+        { fromNodeId: 'a', fromPortId: 'cuts', toNodeId: 'play', toPortId: 'in.0' },
+        { fromNodeId: 'b', fromPortId: 'cuts', toNodeId: 'play', toPortId: 'in.1' },
       ],
       assets: {},
       originX: 0,

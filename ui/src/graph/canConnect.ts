@@ -65,11 +65,11 @@ function expectedMeaningOf(port: PortDescriptor): Quantity {
 function rescaleFor(from: Quantity, to: Quantity): string | null {
   if (from === to || from === 'dimensionless' || to === 'dimensionless') return null
   if (isNormalisedQuantity(from) && isNormalisedQuantity(to)) return null
-  if (isNormalisedQuantity(from) && isRealQuantity(to)) return 'A modulation or audio value into a real-quantity port needs a Map'
-  if (isRealQuantity(from) && isNormalisedQuantity(to)) return 'A real-quantity value into a modulation or audio port needs a Map'
+  if (isNormalisedQuantity(from) && isRealQuantity(to)) return 'A modulation or audio value into a real-quantity port needs a Remap'
+  if (isRealQuantity(from) && isNormalisedQuantity(to)) return 'A real-quantity value into a modulation or audio port needs a Remap'
   if (from === 'pitch' && to === 'frequency') return 'Pitch into a Frequency-typed port needs an exact conversion, not a linear remap'
   if (from === 'frequency' && to === 'pitch') return 'Frequency into a Pitch-typed port needs an exact conversion, not a linear remap'
-  return 'Different real quantities — rescaled via Map'
+  return 'Different real quantities - rescaled via Remap'
 }
 
 function connectValues(from: PortDescriptor, to: PortDescriptor): CanConnectResult {

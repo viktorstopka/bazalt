@@ -1,5 +1,8 @@
 # Wavesets — sound cut at its zero crossings
 
+**Names (2026-10-17, Release.md R0.2):** the nodes are now **Cycle Cuts** (`cycle.cuts`)
+and **Weave** (`cycle.weave`); this file keeps CDP's word, waveset, for the idea.
+
 **Status:** W1 built 2026-10-16 (see §7); W2–W3 proposed. Agreed with the user in
 conversation (they want the Live Interleave first); scheduled as part of stage 3a
 (`wiki/ROADMAP.md`, `wiki/plans/Sampling.md` 3a.4).

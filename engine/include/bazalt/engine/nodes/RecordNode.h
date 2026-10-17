@@ -10,7 +10,7 @@ namespace bazalt::engine::nodes
 {
     /** Stable type id: "data.record" — Record (wiki/plans/Sampling.md §2.5, 3a.3).
         The live half of samples: holds what is happening as a **live**
-        `Data(sample)` that a Sampler (or, later, Wavesets / the Convolver) plays
+        `Data(sample)` that a Sampler (or, later, Cycle Cuts / the Convolver) plays
         while it is still being written — the last seconds of a guitar, a loop
         being overdubbed, a modulation's movement.
 

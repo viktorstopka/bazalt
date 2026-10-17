@@ -110,6 +110,10 @@ R10 (Mac) runs alongside R3–R9 on its own track; R0.6 is listed where it happe
 
 Every rename also updates NODES.md, the Add-menu categories and the tests.
 
+**Done 2026-10-17:** `cycle.cuts` (output `cuts`, `Data(cycle-cuts)`), `cycle.weave`,
+`math.remap`, `shape.bitcrush`; category Cycles; the Add-menu preset is now **Weave**.
+Population → Foreach is left to R1, where the node itself is redesigned.
+
 ### R0.3 Values are what you type
 - **Cause found:** parameters are `float` (`NodeInstance::parameters`). 0.5 is exact in
   binary, 0.3 is not — it becomes 0.300000011920929 when written to JSON as a double.

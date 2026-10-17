@@ -30,7 +30,7 @@ namespace bazalt::engine
         Sample,
         ImpulseResponse,
         EqCurve,
-        Wavesets // a live sample cut at its zero crossings (waveset.capture, wiki/plans/Wavesets.md)
+        CycleCuts // a live sample cut at its zero crossings (cycle.cuts, wiki/plans/Wavesets.md)
     };
 
     /** An immutable block of values (SIGNAL_TYPES.md §2). Built once,

@@ -86,12 +86,12 @@ namespace bazalt::engine::nodes
     };
 
     //==============================================================================
-    /** Stable type id: "shape.crush". Bit depth and sample-rate reduction —
+    /** Stable type id: "shape.bitcrush". Bit depth and sample-rate reduction —
         deliberately not antialiased, the grit is the point. `bits` is
         continuous (fractional bits give in-between step sizes, so it sweeps
         smoothly); `rate` is the held sample rate in Hz, counted by a phase
         accumulator from prepare() — independent of host block size. */
-    class ShapeCrushNode : public Node
+    class ShapeBitcrushNode : public Node
     {
     public:
         void prepare (const NodePrepareInfo& info) override
@@ -107,16 +107,16 @@ namespace bazalt::engine::nodes
 
         int getNumInputPorts() const noexcept override { return 3; }
         int getNumOutputPorts() const noexcept override { return 1; }
-        juce::String getTitle() const override { return "Crush"; }
+        juce::String getTitle() const override { return "Bitcrush"; }
         juce::String getCategory() const override { return "Shape"; }
 
         std::vector<PortDescriptor> getInputPorts() const override
         {
             return {
                 perChannel ({ .id = "in", .type = SignalType::Signal, .quantity = Quantity::Audio }),
-                PortDescriptor { .id = "shape.crush.bits", .type = SignalType::Signal, .label = "Bits",
+                PortDescriptor { .id = "shape.bitcrush.bits", .type = SignalType::Signal, .label = "Bits",
                                   .minValue = 1.0f, .maxValue = 24.0f, .defaultValue = 8.0f, .hasFallbackWhenUnconnected = true },
-                PortDescriptor { .id = "shape.crush.rate", .type = SignalType::Signal, .label = "Rate", .unit = "Hz",
+                PortDescriptor { .id = "shape.bitcrush.rate", .type = SignalType::Signal, .label = "Rate", .unit = "Hz",
                                   .minValue = 50.0f, .maxValue = 48000.0f, .defaultValue = 48000.0f, .isLogScale = true,
                                   .hasFallbackWhenUnconnected = true, .quantity = Quantity::Frequency, .curve = Curve::Logarithmic },
             };
@@ -127,9 +127,9 @@ namespace bazalt::engine::nodes
         }
         void setParameter (const juce::String& parameterId, float value) override
         {
-            if (parameterId == "shape.crush.bits")
+            if (parameterId == "shape.bitcrush.bits")
                 storedBits = juce::jlimit (1.0f, 24.0f, value);
-            else if (parameterId == "shape.crush.rate")
+            else if (parameterId == "shape.bitcrush.rate")
                 storedRate = juce::jlimit (50.0f, 192000.0f, value);
         }
 

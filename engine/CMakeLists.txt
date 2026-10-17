@@ -56,7 +56,7 @@ target_sources(engine
             include/bazalt/engine/nodes/OnePoleFilterNode.h
             include/bazalt/engine/nodes/ConstantNode.h
             include/bazalt/engine/nodes/RerouteNode.h
-            include/bazalt/engine/nodes/MapNode.h
+            include/bazalt/engine/nodes/RemapNode.h
             include/bazalt/engine/nodes/AddNode.h
             include/bazalt/engine/nodes/MultiplyNode.h
             include/bazalt/engine/nodes/ListenNode.h

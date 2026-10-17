@@ -58,7 +58,7 @@ namespace bazalt::engine::nodes
                                       .minValue = 0.0f, .maxValue = 1.0f, .defaultValue = 0.0f,
                                       .hasFallbackWhenUnconnected = true, .quantity = Quantity::Unipolar },
                      PortDescriptor { .id = "source", .type = SignalType::Data, .label = "Source",
-                                      .dataTags = { DataTag::Sample, DataTag::Wavesets } },
+                                      .dataTags = { DataTag::Sample, DataTag::CycleCuts } },
                      PortDescriptor { .id = "capture", .type = SignalType::Event, .label = "Capture" } };
         }
 

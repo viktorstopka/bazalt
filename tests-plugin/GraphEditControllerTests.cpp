@@ -1054,7 +1054,7 @@ TEST_CASE ("connectWithAutoAdapt resolves a polymorphic source before choosing a
     REQUIRE (result.success);
 
     const auto& nodes = controller.getGraph().getNodes();
-    CHECK (std::any_of (nodes.begin(), nodes.end(), [] (const auto& n) { return n.type == "math.map"; }));
+    CHECK (std::any_of (nodes.begin(), nodes.end(), [] (const auto& n) { return n.type == "math.remap"; }));
 }
 
 // One voice allocator feeding two Voice Sums: a main chain and a separate

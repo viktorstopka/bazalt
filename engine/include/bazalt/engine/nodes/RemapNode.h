@@ -6,7 +6,7 @@
 
 namespace bazalt::engine::nodes
 {
-    /** Stable type id: "math.map" — Map (design/Map.png). Formerly
+    /** Stable type id: "math.remap" — Map (design/Map.png). Formerly
         `adapt.remap` ("Remap"); renamed 2026-10-04 on direct instruction
         ("The new name of remap is Map and it completely replaces Map node
         which should cease to exist"). The old two-parameter Map (a fixed
@@ -39,7 +39,7 @@ namespace bazalt::engine::nodes
         modulatable" rule — a live-modulated remap range is a real,
         useful thing (e.g. an envelope driving how wide the output swings).
     */
-    class MapNode : public Node
+    class RemapNode : public Node
     {
     public:
         static constexpr int numInputs = 5; // in, inMin, inMax, outMin, outMax
@@ -48,7 +48,7 @@ namespace bazalt::engine::nodes
         int getNumInputPorts() const noexcept override { return numInputs; }
         int getNumOutputPorts() const noexcept override { return numOutputs; }
 
-        juce::String getTitle() const override { return "Map"; }
+        juce::String getTitle() const override { return "Remap"; }
         juce::String getCategory() const override { return "Math"; }
 
         std::vector<PortDescriptor> getInputPorts() const override
@@ -64,16 +64,16 @@ namespace bazalt::engine::nodes
             // fallback slider background happened to show.
             return {
                 PortDescriptor { .id = "in", .type = SignalType::Signal, .label = "In" }, // design/Map.png: the merged pass-through row reads "In"
-                PortDescriptor { .id = "math.map.inMin", .type = SignalType::Signal, .label = "In Min",
+                PortDescriptor { .id = "math.remap.inMin", .type = SignalType::Signal, .label = "In Min",
                                   .minValue = -100000.0f, .maxValue = 100000.0f, .defaultValue = 0.0f,
                                   .hasFallbackWhenUnconnected = true, .softMin = 0.0f, .softMax = 1.0f },
-                PortDescriptor { .id = "math.map.inMax", .type = SignalType::Signal, .label = "In Max",
+                PortDescriptor { .id = "math.remap.inMax", .type = SignalType::Signal, .label = "In Max",
                                   .minValue = -100000.0f, .maxValue = 100000.0f, .defaultValue = 1.0f,
                                   .hasFallbackWhenUnconnected = true, .softMin = 0.0f, .softMax = 1.0f },
-                PortDescriptor { .id = "math.map.outMin", .type = SignalType::Signal, .label = "Out Min",
+                PortDescriptor { .id = "math.remap.outMin", .type = SignalType::Signal, .label = "Out Min",
                                   .minValue = -100000.0f, .maxValue = 100000.0f, .defaultValue = 0.0f,
                                   .hasFallbackWhenUnconnected = true, .softMin = 0.0f, .softMax = 1.0f },
-                PortDescriptor { .id = "math.map.outMax", .type = SignalType::Signal, .label = "Out Max",
+                PortDescriptor { .id = "math.remap.outMax", .type = SignalType::Signal, .label = "Out Max",
                                   .minValue = -100000.0f, .maxValue = 100000.0f, .defaultValue = 1.0f,
                                   .hasFallbackWhenUnconnected = true, .softMin = 0.0f, .softMax = 1.0f },
             };
@@ -91,7 +91,7 @@ namespace bazalt::engine::nodes
             as util.macro's quantity. */
         std::vector<ParameterDescriptor> getParameters() const override
         {
-            return { ParameterDescriptor { .id = "math.map.quantity", .minValue = 0.0f, .maxValue = 9.0f, .defaultValue = 0.0f,
+            return { ParameterDescriptor { .id = "math.remap.quantity", .minValue = 0.0f, .maxValue = 9.0f, .defaultValue = 0.0f,
                                            .displayName = "Unit", .isInteger = true, .kind = ValueKind::Enum,
                                            .enumOptions = { { "dimensionless", "Number" }, { "frequency", "Frequency" },
                                                             { "pitch", "Pitch" }, { "time", "Time" }, { "gain", "Gain" },
@@ -102,15 +102,15 @@ namespace bazalt::engine::nodes
 
         void setParameter (const juce::String& parameterId, float value) override
         {
-            if (parameterId == "math.map.inMin")
+            if (parameterId == "math.remap.inMin")
                 inMinValue = value;
-            else if (parameterId == "math.map.inMax")
+            else if (parameterId == "math.remap.inMax")
                 inMaxValue = value;
-            else if (parameterId == "math.map.outMin")
+            else if (parameterId == "math.remap.outMin")
                 outMinValue = value;
-            else if (parameterId == "math.map.outMax")
+            else if (parameterId == "math.remap.outMax")
                 outMaxValue = value;
-            else if (parameterId == "math.map.quantity")
+            else if (parameterId == "math.remap.quantity")
                 outputQuantity = (Quantity) juce::jlimit (0, 9, (int) std::lround (value));
         }
 

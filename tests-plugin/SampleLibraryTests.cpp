@@ -324,11 +324,11 @@ TEST_CASE ("Granular keys: each key plays 10 grains from random places in a samp
     step (c.addNode ("source.sampler", "sampler", 0, 0));
     step (c.connectWithAutoAdapt ("sample", "sample", "sampler", "sample"));
     step (c.connectWithAutoAdapt ("voice", "pitch", "sampler", "pitch"));
-    step (c.addNode ("math.map", "spread", 0, 0));
-    step (c.setParameterValue ("spread", "math.map.inMin", -1.0f));
-    step (c.setParameterValue ("spread", "math.map.inMax", 1.0f));
-    step (c.setParameterValue ("spread", "math.map.outMin", 0.0f));
-    step (c.setParameterValue ("spread", "math.map.outMax", 0.8f));
+    step (c.addNode ("math.remap", "spread", 0, 0));
+    step (c.setParameterValue ("spread", "math.remap.inMin", -1.0f));
+    step (c.setParameterValue ("spread", "math.remap.inMax", 1.0f));
+    step (c.setParameterValue ("spread", "math.remap.outMin", 0.0f));
+    step (c.setParameterValue ("spread", "math.remap.outMax", 0.8f));
     step (c.connectWithAutoAdapt ("grains", "random1", "spread", "in"));
     step (c.connectWithAutoAdapt ("spread", "out", "sampler", "source.sampler.position"));
     step (c.addNode ("life.merge", "sumGrains", 0, 0));

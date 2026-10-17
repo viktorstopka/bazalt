@@ -3,7 +3,7 @@
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/catch_approx.hpp>
 #include "bazalt/engine/RtAllocationTrap.h"
-#include "bazalt/engine/nodes/WavesetNodes.h"
+#include "bazalt/engine/nodes/CycleNodes.h"
 #include <cmath>
 #include <limits>
 
@@ -26,8 +26,8 @@ namespace
         as the compiler orders them. */
     Rendered interleave (int samples, int block, float count = unwired)
     {
-        nodes::WavesetCaptureNode a, b;
-        nodes::WavesetPlayNode play;
+        nodes::CycleCutsNode a, b;
+        nodes::WeaveNode play;
         play.setGroupPortCount (2);
         for (auto* capture : { &a, &b })
             capture->prepare ({ rate, block });
@@ -72,7 +72,7 @@ namespace
 
 TEST_CASE ("Wavesets finds each cycle at its upward zero crossing", "[engine][wavesets][3a]")
 {
-    nodes::WavesetCaptureNode capture;
+    nodes::CycleCutsNode capture;
     capture.prepare ({ rate, 256 });
     std::vector<float> in (256), boundary (256), length (256), peak (256), count (256);
     float* outs[] = { boundary.data(), boundary.data(), length.data(), peak.data(), count.data() };
@@ -92,7 +92,7 @@ TEST_CASE ("Wavesets finds each cycle at its upward zero crossing", "[engine][wa
     CHECK (count[255] == 200.0f);
 
     // Group 2: two cycles count as one.
-    capture.setParameter ("waveset.capture.group", 2.0f);
+    capture.setParameter ("cycle.cuts.group", 2.0f);
     capture.reset();
     boundaries = 0;
     for (int done = 0; done < 48000; done += 256)

@@ -19,14 +19,14 @@ TEST_CASE ("The Interleave patch compiles, plays both sources, and survives an e
     bazalt::engine::NodeInstance saw { "saw", "source.saw", {}, {}, {} };
     saw.parameters["source.saw.frequency"] = 320.0f;
     g.addNode (saw);
-    g.addNode ({ "a", "waveset.capture", {}, {}, {} });
-    g.addNode ({ "b", "waveset.capture", {}, {}, {} });
-    g.addNode ({ "play", "waveset.play", {}, {}, {} });
+    g.addNode ({ "a", "cycle.cuts", {}, {}, {} });
+    g.addNode ({ "b", "cycle.cuts", {}, {}, {} });
+    g.addNode ({ "play", "cycle.weave", {}, {}, {} });
     g.addNode ({ "masterOut", "io.output", {}, {}, {} });
     g.addConnection ({ "sine", "out", "a", "in" });
     g.addConnection ({ "saw", "out", "b", "in" });
-    g.addConnection ({ "a", "wavesets", "play", "in.0" });
-    g.addConnection ({ "b", "wavesets", "play", "in.1" });
+    g.addConnection ({ "a", "cuts", "play", "in.0" });
+    g.addConnection ({ "b", "cuts", "play", "in.1" });
     g.addConnection ({ "play", "out", "masterOut", "in" });
     g.setOutput ("masterOut", "out");
     const auto loaded = c.setGraph (g);
@@ -49,9 +49,9 @@ TEST_CASE ("The Interleave patch compiles, plays both sources, and survives an e
     CHECK (render (20) > 0.1f);
 
     // A third source: the group grows, the patch recompiles, and it still plays.
-    REQUIRE (c.addNode ("waveset.capture", "c", 0, 0).success);
+    REQUIRE (c.addNode ("cycle.cuts", "c", 0, 0).success);
     REQUIRE (c.connect ("sine", "out", "c", "in").success);
-    const auto third = c.connect ("c", "wavesets", "play", "in.2");
+    const auto third = c.connect ("c", "cuts", "play", "in.2");
     INFO (third.errorMessage);
     REQUIRE (third.success);
     CHECK (render (20) > 0.1f);

@@ -1928,18 +1928,18 @@ export function canAddFromNode(nodeId: string): boolean {
   return !!endpoint && endpoint.port.type === 'signal'
 }
 
-/** Ctrl+Y: a Map fed from the node's main output, placed at (x, y). One undo step. */
+/** Ctrl+Y: a Remap fed from the node's main output, placed at (x, y). One undo step. */
 export function addMapFromMainOutput(nodeId: string, x: number, y: number): string | undefined {
   const portId = mainOutputPortId(nodeId)
   if (!portId) return undefined
   const mapId = makeId('node')
   void withHistory(
     async () => {
-      if (!(await fireCommand(() => graphAddNode('math.map', mapId, x, y)))) return
+      if (!(await fireCommand(() => graphAddNode('math.remap', mapId, x, y)))) return
       await fireCommand(() => graphConnectWithAutoAdapt(nodeId, portId, mapId, 'in'))
     },
     () => {
-      nodes.set(mapId, { id: mapId, typeId: 'math.map', x, y, bypassed: false })
+      nodes.set(mapId, { id: mapId, typeId: 'math.remap', x, y, bypassed: false })
       selection = new Set([mapId])
     },
   )

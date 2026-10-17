@@ -628,7 +628,7 @@ namespace bazalt
                 // two-step one (mix.downmix -> adapt.map: ±1). Every
                 // other step still seeds itself independently from the
                 // ORIGINAL endpoints' own ranges (fromPort/toPort).
-                if (step.typeId == "math.map")
+                if (step.typeId == "math.remap")
                 {
                     std::vector<bazalt::engine::PortDescriptor> feederStorage;
                     const bazalt::engine::PortDescriptor* feeder = fromPort;
@@ -640,21 +640,21 @@ namespace bazalt
 
                     if (const auto range = seedRangeForMapInput (*feeder))
                     {
-                        instance.parameters["math.map.inMin"] = range->first;
-                        instance.parameters["math.map.inMax"] = range->second;
+                        instance.parameters["math.remap.inMin"] = range->first;
+                        instance.parameters["math.remap.inMax"] = range->second;
                     }
                     // The same reading for the destination: its bounds, else
                     // its polarity, else ±1 for an audio port.
                     if (const auto range = seedRangeForMapInput (*toPort))
                     {
-                        instance.parameters["math.map.outMin"] = range->first;
-                        instance.parameters["math.map.outMax"] = range->second;
+                        instance.parameters["math.remap.outMin"] = range->first;
+                        instance.parameters["math.remap.outMax"] = range->second;
                     }
                     // …and its meaning, when the destination has a real one, so
                     // the Map's output can go on through Add / Multiply.
                     if (const auto q = (int) toPort->quantity; q > 0 && q <= 9 && toPort->quantity != bazalt::engine::Quantity::Unipolar
                                                                     && toPort->quantity != bazalt::engine::Quantity::Bipolar)
-                        instance.parameters["math.map.quantity"] = (float) q;
+                        instance.parameters["math.remap.quantity"] = (float) q;
                 }
                 else if (step.seedFromDestinationRange && toPort->minValue.has_value() && toPort->maxValue.has_value())
                 {

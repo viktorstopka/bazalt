@@ -971,7 +971,7 @@ export const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, InfiniteCanvasPro
         return
       }
       if (mod && !e.shiftKey && key === 'y') {
-        // A Map from the selected node's main output, placed to its right.
+        // A Remap from the selected node's main output, placed to its right.
         // (Redo stays on Ctrl+Shift+Z.)
         e.preventDefault()
         if (selected.length === 1) {
@@ -986,7 +986,7 @@ export const InfiniteCanvas = forwardRef<InfiniteCanvasHandle, InfiniteCanvasPro
       }
       // Single keys arm a placement, exactly like picking from the Add menu.
       if (!mod && !e.altKey && !e.shiftKey) {
-        const typeId = key === 'r' ? 'math.map' : key === 'a' ? 'math.add' : key === 's' || key === 'm' ? 'math.multiply' : null
+        const typeId = key === 'r' ? 'math.remap' : key === 'a' ? 'math.add' : key === 's' || key === 'm' ? 'math.multiply' : null
         if (typeId) {
           e.preventDefault()
           setAddMenu(null)

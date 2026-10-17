@@ -45,7 +45,7 @@ namespace bazalt
                 case bazalt::engine::DataTag::Sample:         return "sample";
                 case bazalt::engine::DataTag::ImpulseResponse: return "ir";
                 case bazalt::engine::DataTag::EqCurve:        return "eq";
-                case bazalt::engine::DataTag::Wavesets:       return "wavesets";
+                case bazalt::engine::DataTag::CycleCuts:      return "cycle-cuts";
             }
             jassertfalse;
             return "unknown";

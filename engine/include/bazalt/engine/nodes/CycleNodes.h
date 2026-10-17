@@ -7,7 +7,7 @@
 
 namespace bazalt::engine::nodes
 {
-    /** Stable type id: "waveset.capture" — Wavesets (wiki/plans/Wavesets.md W1).
+    /** Stable type id: "cycle.cuts" — Cycle Cuts (was Wavesets) (wiki/plans/Wavesets.md W1).
         Cuts a sound at its zero crossings: a **waveset** is one positive and one
         negative half, from one crossing to the next in the same direction —
         on anything but a pure tone, pseudo-cycles of very uneven lengths.
@@ -21,7 +21,7 @@ namespace bazalt::engine::nodes
         doesn't become fizz), Group (N wavesets count as one), Direction (up /
         down crossings). A waveset longer than a quarter second (silence, a very
         low sound) is cut there — a player never waits forever. */
-    class WavesetCaptureNode : public Node
+    class CycleCutsNode : public Node
     {
     public:
         static constexpr double ringSeconds = 1.0;
@@ -36,7 +36,7 @@ namespace bazalt::engine::nodes
             track.assign ((size_t) juce::jmax (1, info.maxBlockSize), 0.0f);
             publisher.setCompanion (track.data(), (int) track.size());
 
-            auto buffer = std::make_unique<DataBuffer> (DataTag::Wavesets, std::vector<float> ((size_t) capacity, 0.0f), 1, sampleRate);
+            auto buffer = std::make_unique<DataBuffer> (DataTag::CycleCuts, std::vector<float> ((size_t) capacity, 0.0f), 1, sampleRate);
             buffer->sampleMeta.channelQuantities = { (uint8_t) Quantity::Audio };
             buffer->live = std::make_unique<DataBuffer::Live>();
             buffer->live->guard = info.maxBlockSize + 8;
@@ -58,8 +58,8 @@ namespace bazalt::engine::nodes
 
         int getNumInputPorts() const noexcept override { return 1; }
         int getNumOutputPorts() const noexcept override { return 5; }
-        juce::String getTitle() const override { return "Wavesets"; }
-        juce::String getCategory() const override { return "Wavesets"; }
+        juce::String getTitle() const override { return "Cycle Cuts"; }
+        juce::String getCategory() const override { return "Cycles"; }
         bool supportsPerSample() const noexcept override { return false; }
 
         std::vector<PortDescriptor> getInputPorts() const override
@@ -70,8 +70,8 @@ namespace bazalt::engine::nodes
         std::vector<PortDescriptor> getOutputPorts() const override
         {
             return {
-                PortDescriptor { .id = "wavesets", .type = SignalType::Data, .label = "Wavesets", .isPrimaryOutput = true,
-                                  .dataTags = { DataTag::Wavesets } },
+                PortDescriptor { .id = "cuts", .type = SignalType::Data, .label = "Cuts", .isPrimaryOutput = true,
+                                  .dataTags = { DataTag::CycleCuts } },
                 PortDescriptor { .id = "boundary", .type = SignalType::Event, .label = "Boundary" },
                 PortDescriptor { .id = "length", .type = SignalType::Signal, .label = "Length", .unit = "s", .quantity = Quantity::Time },
                 PortDescriptor { .id = "peak", .type = SignalType::Signal, .label = "Peak", .minValue = 0.0f, .maxValue = 1.0f,
@@ -83,11 +83,11 @@ namespace bazalt::engine::nodes
         std::vector<ParameterDescriptor> getParameters() const override
         {
             return {
-                ParameterDescriptor { .id = "waveset.capture.minLength", .minValue = 0.0f, .maxValue = 20.0f, .defaultValue = 0.0f,
+                ParameterDescriptor { .id = "cycle.cuts.minLength", .minValue = 0.0f, .maxValue = 20.0f, .defaultValue = 0.0f,
                                       .unit = "ms", .displayName = "Min length", .quantity = Quantity::Time },
-                ParameterDescriptor { .id = "waveset.capture.group", .minValue = 1.0f, .maxValue = 16.0f, .defaultValue = 1.0f,
+                ParameterDescriptor { .id = "cycle.cuts.group", .minValue = 1.0f, .maxValue = 16.0f, .defaultValue = 1.0f,
                                       .displayName = "Group", .isInteger = true, .kind = ValueKind::Int, .quantity = Quantity::Count },
-                ParameterDescriptor { .id = "waveset.capture.direction", .minValue = 0.0f, .maxValue = 1.0f, .defaultValue = 0.0f,
+                ParameterDescriptor { .id = "cycle.cuts.direction", .minValue = 0.0f, .maxValue = 1.0f, .defaultValue = 0.0f,
                                       .displayName = "Direction", .isInteger = true, .kind = ValueKind::Enum,
                                       .enumOptions = { { "up", "Upward" }, { "down", "Downward" } } },
             };
@@ -95,11 +95,11 @@ namespace bazalt::engine::nodes
 
         void setParameter (const juce::String& id, float value) override
         {
-            if (id == "waveset.capture.minLength")
+            if (id == "cycle.cuts.minLength")
                 minLengthMs = juce::jlimit (0.0f, 20.0f, value);
-            else if (id == "waveset.capture.group")
+            else if (id == "cycle.cuts.group")
                 group = juce::jlimit (1, 16, (int) std::lround (value));
-            else if (id == "waveset.capture.direction")
+            else if (id == "cycle.cuts.direction")
                 downward = value > 0.5f;
         }
 
@@ -187,7 +187,7 @@ namespace bazalt::engine::nodes
         bool resetPending = true;
     };
 
-    /** Stable type id: "waveset.play" — Waveset Play (wiki/plans/Wavesets.md W1,
+    /** Stable type id: "cycle.weave" — Weave (was Waveset Play) (wiki/plans/Wavesets.md W1,
         Live mode). Plays whole wavesets from its inputs in turn — Count of A,
         Count of B, … — copied sample for sample, so every join is at a zero
         crossing and nothing clicks. Live: each source keeps running in real
@@ -195,15 +195,15 @@ namespace bazalt::engine::nodes
         (within a turn the next ones follow in order); each source loses what
         the others play instead of slowing down. Latency: at most one waveset.
         **Polarity match** turns over a waveset that starts on the other side
-        (a cut forced by silence can). Two Wavesets into one Play at Count 1 is
+        (a cut forced by silence can). Two Cycle Cuts into one Weave at Count 1 is
         Composers Desktop Project's Distort: Interleave, live. */
-    class WavesetPlayNode : public GrowableGroupNode
+    class WeaveNode : public GrowableGroupNode
     {
     public:
         static constexpr int minInputs = 2;
         static constexpr int maxInputs = 8;
 
-        WavesetPlayNode() noexcept : GrowableGroupNode (minInputs, maxInputs) {}
+        WeaveNode() noexcept : GrowableGroupNode (minInputs, maxInputs) {}
 
         void reset() override
         {
@@ -217,8 +217,8 @@ namespace bazalt::engine::nodes
 
         int getNumInputPorts() const noexcept override { return groupCount + 1; }
         int getNumOutputPorts() const noexcept override { return 3; }
-        juce::String getTitle() const override { return "Waveset Play"; }
-        juce::String getCategory() const override { return "Wavesets"; }
+        juce::String getTitle() const override { return "Weave"; }
+        juce::String getCategory() const override { return "Cycles"; }
         bool supportsPerSample() const noexcept override { return false; }
 
         std::vector<PortDescriptor> getInputPorts() const override
@@ -228,8 +228,8 @@ namespace bazalt::engine::nodes
             for (int i = 0; i < groupCount; ++i)
                 ports.push_back (PortDescriptor { .id = "in." + juce::String (i), .type = SignalType::Data,
                                                   .label = juce::String::charToString ((juce::juce_wchar) ('A' + i)),
-                                                  .group = group, .dataTags = { DataTag::Wavesets } });
-            ports.push_back (PortDescriptor { .id = "waveset.play.count", .type = SignalType::Signal, .label = "Count", .minValue = 1.0f,
+                                                  .group = group, .dataTags = { DataTag::CycleCuts } });
+            ports.push_back (PortDescriptor { .id = "cycle.weave.count", .type = SignalType::Signal, .label = "Count", .minValue = 1.0f,
                                               .maxValue = 16.0f, .defaultValue = 1.0f, .isInteger = true,
                                               .hasFallbackWhenUnconnected = true, .kind = ValueKind::Int, .quantity = Quantity::Count });
             return ports;
@@ -246,16 +246,16 @@ namespace bazalt::engine::nodes
 
         std::vector<ParameterDescriptor> getParameters() const override
         {
-            return { ParameterDescriptor { .id = "waveset.play.polarity", .minValue = 0.0f, .maxValue = 1.0f, .defaultValue = 1.0f,
+            return { ParameterDescriptor { .id = "cycle.weave.polarity", .minValue = 0.0f, .maxValue = 1.0f, .defaultValue = 1.0f,
                                            .displayName = "Polarity match", .isInteger = true, .kind = ValueKind::Enum,
                                            .enumOptions = { { "off", "Off" }, { "on", "On" } } } };
         }
 
         void setParameter (const juce::String& id, float value) override
         {
-            if (id == "waveset.play.polarity")
+            if (id == "cycle.weave.polarity")
                 matchPolarity = value > 0.5f;
-            else if (id == "waveset.play.count")
+            else if (id == "cycle.weave.count")
                 storedCount = value;
         }
 

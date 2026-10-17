@@ -9,7 +9,7 @@
 #include "bazalt/engine/nodes/ConstantNode.h"
 #include "bazalt/engine/nodes/MacroNode.h"
 #include "bazalt/engine/nodes/RerouteNode.h"
-#include "bazalt/engine/nodes/MapNode.h"
+#include "bazalt/engine/nodes/RemapNode.h"
 #include "bazalt/engine/nodes/AddNode.h"
 #include "bazalt/engine/nodes/MultiplyNode.h"
 #include "bazalt/engine/nodes/RoundNode.h"
@@ -29,7 +29,7 @@
 #include "bazalt/engine/nodes/DataSampleNode.h"
 #include "bazalt/engine/nodes/SamplerNode.h"
 #include "bazalt/engine/nodes/RecordNode.h"
-#include "bazalt/engine/nodes/WavesetNodes.h"
+#include "bazalt/engine/nodes/CycleNodes.h"
 #include "bazalt/engine/nodes/InstanceMixNode.h"
 #include "bazalt/engine/nodes/IoNoteInNode.h"
 #include "bazalt/engine/nodes/SubtractNode.h"
@@ -122,7 +122,7 @@ namespace bazalt::engine
         factory.registerType ("util.constant", [] { return std::make_unique<nodes::ConstantNode>(); });
         factory.registerType ("util.macro", [] { return std::make_unique<nodes::MacroNode>(); });
         factory.registerType ("deco.reroute", [] { return std::make_unique<nodes::RerouteNode>(); });
-        factory.registerType ("math.map", [] { return std::make_unique<nodes::MapNode>(); });
+        factory.registerType ("math.remap", [] { return std::make_unique<nodes::RemapNode>(); });
         factory.registerType ("math.add", [] { return std::make_unique<nodes::AddNode>(); });
         factory.registerType ("math.multiply", [] { return std::make_unique<nodes::MultiplyNode>(); });
         factory.registerType ("math.round", [] { return std::make_unique<nodes::RoundNode>(); });
@@ -211,7 +211,7 @@ namespace bazalt::engine
         factory.registerType ("source.noise", [] { return std::make_unique<nodes::NoiseColoredNode>(); });
         factory.registerType ("source.dust", [] { return std::make_unique<nodes::NoiseDustNode>(); });
         factory.registerType ("shape.rectify", [] { return std::make_unique<nodes::ShapeRectifyNode>(); });
-        factory.registerType ("shape.crush", [] { return std::make_unique<nodes::ShapeCrushNode>(); });
+        factory.registerType ("shape.bitcrush", [] { return std::make_unique<nodes::ShapeBitcrushNode>(); });
         factory.registerType ("shape.waveshaper", [] { return std::make_unique<nodes::ShapeWaveshaperNode>(); });
         factory.registerType ("shape.fold", [] { return std::make_unique<nodes::ShapeFoldNode>(); });
         factory.registerType ("analysis.level", [] { return std::make_unique<nodes::AnalysisLevelNode>(); });
@@ -239,8 +239,8 @@ namespace bazalt::engine
         factory.registerType ("data.curve", [] { return std::make_unique<nodes::DataCurveNode>(); }); // the curve factory (wiki/plans/DataAndWavetable.md 1b)
         factory.registerType ("source.sampler", [] { return std::make_unique<nodes::SamplerNode>(); });
         factory.registerType ("data.record", [] { return std::make_unique<nodes::RecordNode>(); }); // wiki/plans/Sampling.md 3a.3
-        factory.registerType ("waveset.capture", [] { return std::make_unique<nodes::WavesetCaptureNode>(); }); // wiki/plans/Wavesets.md W1
-        factory.registerType ("waveset.play", [] { return std::make_unique<nodes::WavesetPlayNode>(); });
+        factory.registerType ("cycle.cuts", [] { return std::make_unique<nodes::CycleCutsNode>(); }); // wiki/plans/Wavesets.md W1
+        factory.registerType ("cycle.weave", [] { return std::make_unique<nodes::WeaveNode>(); });
         factory.registerType ("data.sample", [] { return std::make_unique<nodes::DataSampleNode>(); }); // wiki/plans/Sampling.md 3a.1
         factory.registerType ("data.wavetable", [] { return std::make_unique<nodes::DataWavetableNode>(); }); // keyframed wavetable (1c)
         factory.registerType ("data.eqCurve", [] { return std::make_unique<nodes::DataEqCurveNode>(); }); // EQ bands (1d)
@@ -361,8 +361,8 @@ namespace bazalt::engine
         graph.addNode (withContent ({ "filterEnv", "source.envelope", { 640.0f, 640.0f }, {}, {} },
                                     CurveDocument::adsr (0.005f, 0.3f, 0.3f, 0.3f, 0.0f)));
         graph.addNode ({ "baseCutoff", "util.constant", { 940.0f, 720.0f }, { { "util.constant.value", 300.0f } }, {} });
-        graph.addNode ({ "cutoffMap", "math.map", { 940.0f, 850.0f },
-                          { { "math.map.min", 0.0f }, { "math.map.max", 5000.0f } }, {} });
+        graph.addNode ({ "cutoffMap", "math.remap", { 940.0f, 850.0f },
+                          { { "math.remap.min", 0.0f }, { "math.remap.max", 5000.0f } }, {} });
         graph.addNode ({ "cutoffSum", "math.add", { 1240.0f, 780.0f }, {}, {} });
 
         graph.addNode ({ "ladder", "filter.ladder", { 1540.0f, 250.0f },

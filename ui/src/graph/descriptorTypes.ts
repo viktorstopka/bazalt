@@ -13,7 +13,7 @@ export type SignalType = 'signal' | 'event' | 'note' | 'spectral' | 'data'
 /** M15, SIGNAL_TYPES.md §2's Data semantic tags — mirrors engine's DataTag
     (Data.h). 'unknown' never satisfies a specific `dataTags`
     requirement; there is no wildcard match. */
-export type DataTag = 'unknown' | 'curve' | 'scale' | 'wavetable' | 'modal-set' | 'sample' | 'ir' | 'eq' | 'wavesets'
+export type DataTag = 'unknown' | 'curve' | 'scale' | 'wavetable' | 'modal-set' | 'sample' | 'ir' | 'eq' | 'cycle-cuts'
 
 export type NodeLayoutVariant = 'standard' | 'horizontal' | 'singleton' | 'decoration' | 'glance'
 

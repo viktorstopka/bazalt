@@ -62,7 +62,7 @@ TEST_CASE ("canConnect: Unipolar/Bipolar into a real quantity needs Map, seeded 
 
     REQUIRE (result.outcome == ConnectionOutcome::NeedsAdapters);
     REQUIRE (result.adapterChain.size() == 1);
-    CHECK (result.adapterChain[0].typeId == "math.map");
+    CHECK (result.adapterChain[0].typeId == "math.remap");
     CHECK (result.adapterChain[0].seedFromDestinationRange);
     CHECK (result.adapterChain[0].seedFromSourceRange); // adapt.map seeds its input range too (design/Map.png)
 
@@ -80,7 +80,7 @@ TEST_CASE ("canConnect: a real quantity into Unipolar/Bipolar needs a Map, seede
 
     REQUIRE (result.outcome == ConnectionOutcome::NeedsAdapters);
     REQUIRE (result.adapterChain.size() == 1);
-    CHECK (result.adapterChain[0].typeId == "math.map");
+    CHECK (result.adapterChain[0].typeId == "math.remap");
     CHECK (result.adapterChain[0].seedFromSourceRange);
     CHECK (result.adapterChain[0].seedFromDestinationRange);
 }
@@ -100,7 +100,7 @@ TEST_CASE ("canConnect: two different real quantities insert adapt.map, seeded f
     REQUIRE (result.outcome == ConnectionOutcome::NeedsAdapters);
     REQUIRE (result.adapterChain.size() == 1);
 
-    CHECK (result.adapterChain[0].typeId == "math.map");
+    CHECK (result.adapterChain[0].typeId == "math.remap");
     CHECK (result.adapterChain[0].seedFromSourceRange);
     CHECK (result.adapterChain[0].seedFromDestinationRange);
     CHECK (result.reason.isNotEmpty());
@@ -175,7 +175,7 @@ TEST_CASE ("canConnect: Audio into a real-quantity port needs a Map, one step",
 
     REQUIRE (result.outcome == ConnectionOutcome::NeedsAdapters);
     REQUIRE (result.adapterChain.size() == 1);
-    CHECK (result.adapterChain[0].typeId == "math.map");
+    CHECK (result.adapterChain[0].typeId == "math.remap");
     CHECK (result.adapterChain[0].seedFromSourceRange); // the audio side reads as ±1
     CHECK (result.adapterChain[0].seedFromDestinationRange);
 }
@@ -193,7 +193,7 @@ TEST_CASE ("canConnect: stereo into a mono value port asks for a Downmix, then M
     REQUIRE (realQuantity.outcome == ConnectionOutcome::NeedsAdapters);
     REQUIRE (realQuantity.adapterChain.size() == 2);
     CHECK (realQuantity.adapterChain[0].typeId == "channels.downmix");
-    CHECK (realQuantity.adapterChain[1].typeId == "math.map");
+    CHECK (realQuantity.adapterChain[1].typeId == "math.remap");
     CHECK_FALSE (realQuantity.choices.empty());
 }
 
@@ -205,7 +205,7 @@ TEST_CASE ("canConnect: a real-quantity value into Audio needs a Map onto +-1",
 
     REQUIRE (result.outcome == ConnectionOutcome::NeedsAdapters);
     REQUIRE (result.adapterChain.size() == 1);
-    CHECK (result.adapterChain[0].typeId == "math.map");
+    CHECK (result.adapterChain[0].typeId == "math.remap");
     CHECK (result.adapterChain[0].seedFromSourceRange);
     CHECK (result.adapterChain[0].seedFromDestinationRange);
 }

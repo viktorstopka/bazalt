@@ -150,7 +150,7 @@ rather than waiting; every `factory.*` node still does want the real thing.
 |---|---|---|---|---|
 | `shape.clip` | Implemented | | | Done, direct feedback (2026-10-03) — pulled forward out of the Shaping batch, same "build early, useful everywhere" reasoning this row already gave it. Real hard/soft/limiter modes, a real quadratic soft-knee. |
 | `shape.rectify` | Implemented |  | Shaping | Done 2026-10-04 (`wiki/plans/SoundPalette.md`) — ADAA. |
-| `shape.crush` | Implemented |  | Shaping | Done 2026-10-04 (`wiki/plans/SoundPalette.md`). |
+| `shape.bitcrush` | Implemented |  | Shaping | Done 2026-10-04 (`wiki/plans/SoundPalette.md`). |
 | `shape.waveshaper` | Implemented |  | Shaping | Done 2026-10-04 (`wiki/plans/SoundPalette.md`) — six curves, ADAA instead of oversampling; custom curve waits for `factory.curve`. |
 | `shape.fold` | Implemented |  | Shaping | Done 2026-10-04 (`wiki/plans/SoundPalette.md`) — triangle/sine, ADAA. |
 
@@ -471,7 +471,7 @@ but sit at the top of the recommended order below because `note.quantize` (A),
 | **PM Voice** | `osc.glottal`, `excite.vocalFolds`, `resonator.junction`, `resonator.tract`, `filter.formant` | Correction 1's vocal-modelling cluster — the hardest batch, targets the "cat purr" reference patch. Build last within Physical Modelling. |
 | **Noise & Grain** | `source.noise`, `source.dust`, `sampler.granular` | Stochastic/granular sources sharing test approach. |
 | **Sampler** | `sampler.player`, `data.load` | `sampler.player` needs what `data.load` produces. |
-| **Shaping** | `shape.rectify`, `shape.crush`, `shape.waveshaper`, `shape.fold` | All single-in/single-out nonlinear audio shapers — one shared distortion-test harness. `shape.clip` (its own former member) already shipped separately, direct feedback. |
+| **Shaping** | `shape.rectify`, `shape.bitcrush`, `shape.waveshaper`, `shape.fold` | All single-in/single-out nonlinear audio shapers — one shared distortion-test harness. `shape.clip` (its own former member) already shipped separately, direct feedback. |
 | **Space** | `space.diffuser`, `space.reverb` | Spatial effects; diffuser reuses `filter.allpass`. |
 | **Env/LFO Shapes** | `env.curve`, `lfo.shape` | Both are "`Data(curve)`-driven modulation source" nodes — same dependency, same shape. |
 | **Analysis** | `analysis.level`, `analysis.onset`, `analysis.centroid`, `analysis.pitch`, `data.analyseModes` | Audio-input analysis nodes tested together; `note.assemble` (its originally-planned capstone) is already built — this batch's job now is just feeding it a real tracked pitch instead of an algorithmic one. |

@@ -255,9 +255,9 @@ TEST_CASE ("shape.fold folds back past +-1", "[engine][palette][shape]")
     CHECK (ShapeFoldNode::triangle (3.0) == Catch::Approx (-1.0));
 }
 
-TEST_CASE ("shape.crush quantises to its bit depth and holds at its rate", "[engine][palette][shape]")
+TEST_CASE ("shape.bitcrush quantises to its bit depth and holds at its rate", "[engine][palette][shape]")
 {
-    auto node = make<ShapeCrushNode> ({ { "shape.crush.bits", 3.0f }, { "shape.crush.rate", 1000.0f } });
+    auto node = make<ShapeBitcrushNode> ({ { "shape.bitcrush.bits", 3.0f }, { "shape.bitcrush.rate", 1000.0f } });
     const auto out = run (*node, { sine (101.0, 0.5, 0.99) }, (int) (0.5 * fs))[0];
     std::set<float> values (out.begin(), out.end());
     CHECK (values.size() <= 9); // 2^3 steps around zero, plus the end
@@ -368,7 +368,7 @@ TEST_CASE ("fx.freqShift moves a tone by Hz, one sideband at a time", "[engine][
 TEST_CASE ("Every Sound Palette node is block-size invariant", "[engine][palette]")
 {
     auto factory = buildDefaultNodeFactory();
-    for (const auto* type : { "source.noise", "source.dust", "shape.rectify", "shape.crush", "shape.waveshaper", "shape.fold",
+    for (const auto* type : { "source.noise", "source.dust", "shape.rectify", "shape.bitcrush", "shape.waveshaper", "shape.fold",
                               "source.oscillator", "source.envelope", "analysis.level", "dynamics.compress", "dynamics.gate",
                               "spectrum.freqShift", "filter.svf", "excite.burst" })
     {

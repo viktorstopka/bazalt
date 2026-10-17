@@ -3,7 +3,7 @@
 #include "bazalt/engine/graph/CanConnect.h"
 #include "bazalt/engine/nodes/ConstantNode.h"
 #include "bazalt/engine/nodes/RerouteNode.h"
-#include "bazalt/engine/nodes/MapNode.h"
+#include "bazalt/engine/nodes/RemapNode.h"
 #include "bazalt/engine/nodes/AddNode.h"
 #include "bazalt/engine/nodes/MultiplyNode.h"
 #include "bazalt/engine/nodes/RoundNode.h"
@@ -214,14 +214,14 @@ TEST_CASE ("RoundNode's output declares isInteger/kind=Int unconditionally, matc
     CHECK (outputs[0].kind == ValueKind::Int);
 }
 
-TEST_CASE ("MapNode rescales in..inMin/inMax onto outMin/outMax, clamped, matching Normalise+Map chained",
+TEST_CASE ("RemapNode rescales in..inMin/inMax onto outMin/outMax, clamped, matching Normalise+Map chained",
            "[engine][nodes][util][M20]")
 {
-    MapNode node;
-    node.setParameter ("math.map.inMin", 0.0f);
-    node.setParameter ("math.map.inMax", 127.0f);
-    node.setParameter ("math.map.outMin", 20.0f);
-    node.setParameter ("math.map.outMax", 20000.0f);
+    RemapNode node;
+    node.setParameter ("math.remap.inMin", 0.0f);
+    node.setParameter ("math.remap.inMax", 127.0f);
+    node.setParameter ("math.remap.outMin", 20.0f);
+    node.setParameter ("math.remap.outMax", 20000.0f);
 
     const auto kNaN = std::numeric_limits<float>::quiet_NaN();
     auto remapOf = [&] (float in)
@@ -239,14 +239,14 @@ TEST_CASE ("MapNode rescales in..inMin/inMax onto outMin/outMax, clamped, matchi
     CHECK (remapOf (200.0f) == 20000.0f); // clamped above inMax
 }
 
-TEST_CASE ("MapNode's range ports live-modulate independently of setParameter's static values",
+TEST_CASE ("RemapNode's range ports live-modulate independently of setParameter's static values",
            "[engine][nodes][util][M20]")
 {
-    MapNode node;
-    node.setParameter ("math.map.inMin", 0.0f);
-    node.setParameter ("math.map.inMax", 1.0f);
-    node.setParameter ("math.map.outMin", 0.0f);
-    node.setParameter ("math.map.outMax", 1.0f);
+    RemapNode node;
+    node.setParameter ("math.remap.inMin", 0.0f);
+    node.setParameter ("math.remap.inMax", 1.0f);
+    node.setParameter ("math.remap.outMin", 0.0f);
+    node.setParameter ("math.remap.outMax", 1.0f);
 
     float out = 0.0f;
     // Live-wired to a completely different range than the static config.
@@ -318,7 +318,7 @@ TEST_CASE ("canConnect prefers the exact converter over the generic linear remap
     timePort.quantity = Quantity::Time;
     const auto pitchToTime = canConnect (pitchPort, timePort);
     REQUIRE (pitchToTime.outcome == ConnectionOutcome::NeedsAdapters);
-    CHECK (pitchToTime.adapterChain[0].typeId == "math.map");
+    CHECK (pitchToTime.adapterChain[0].typeId == "math.remap");
 }
 
 // ---- adapt.gateLength ----

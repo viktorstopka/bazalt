@@ -273,7 +273,7 @@ Past ±1 the signal folds back instead of clipping — more `fold`, more partial
 #### `shape.rectify` — Rectify ✅
 Half- or full-wave rectification, per channel, ADAA-antialiased — octave-up/buzz tones. **In:** `in`. **Out:** `out`. **Parameters:** `mode` (half, full). Adds DC by nature — follow with `util.dcBlock` when it matters.
 
-#### `shape.crush` — Bitcrush / Downsample ✅
+#### `shape.bitcrush` — Bitcrush / Downsample ✅
 Bit depth and sample-rate reduction — deliberately not antialiased. **In:** `in` (per channel); `bits` (1–24, continuous: fractional bits sweep smoothly); `rate` (held sample rate, Hz, phase-accumulator from prepare — block-size independent). **Out:** `out`.
 
 ## delay
@@ -330,7 +330,7 @@ at one extreme to an even blend at the mid-point. **In:** `a`, `b` — `Audio`; 
 
 #### `channels.downmix` — Downmix ✅
 Collapses a stereo signal down to mono by a chosen rule (sum, one side, mid, or
-side) — the explicit stereo-to-mono adapter `canConnect` reaches for automatically. **In:** `in` — `Audio` (`Channels::Stereo`). **Out:** `out` — `Audio` (mono). **Structural:** `mode` (enum: sum, left, right, mid, side). Genuine 1-in-1-out shape now (`NODES.System.md` §9.2) — `connectWithAutoAdapt` auto-inserts it for a stereo source into a mono-only port, the same way `math.map`/`adapt.normalise`/`logic.threshold` already do.
+side) — the explicit stereo-to-mono adapter `canConnect` reaches for automatically. **In:** `in` — `Audio` (`Channels::Stereo`). **Out:** `out` — `Audio` (mono). **Structural:** `mode` (enum: sum, left, right, mid, side). Genuine 1-in-1-out shape now (`NODES.System.md` §9.2) — `connectWithAutoAdapt` auto-inserts it for a stereo source into a mono-only port, the same way `math.remap`/`adapt.normalise`/`logic.threshold` already do.
 
 ## dyn — dynamics ✅ *(new family, wiki/plans/SoundPalette.md Batch 3)*
 
@@ -537,7 +537,7 @@ a timed gate for whoever needs one. **In:** `gate : bool`; `pitch [audio]`; `vel
 **Add-menu category: Math** (top level). Until 2026-10-04 every `math.*` node
 reported `getCategory() == "Utility"`, so they were buried under Utility
 despite their own ids; the same sweep also moved `excite.burst` (was
-Generators) to Excite, `math.map` (was Utility) to Adapters, `view.listen`
+Generators) to Excite, `math.remap` (was Utility) to Adapters, `view.listen`
 (was Utility) to View and `io.output` (was Utility) to IO. Rule: a node's
 Add-menu category follows its id family unless there's a stated reason not to.
 
@@ -579,7 +579,7 @@ These are the nodes `canConnect` inserts automatically where it can (see
 `NODES.System.md` §4's matrix for exactly which pairs really auto-insert today vs.
 still need placing by hand). Ordinary nodes the user can also place directly.
 
-#### `math.map` — Map ✅ *(design/Map.png — redesigned 2026-10-04)*
+#### `math.remap` — Remap ✅ *(design/Map.png — redesigned 2026-10-04)*
 **Unit (2026-10-12):** what the output means (Number by default; Frequency, Pitch, Time …). Named, the result keeps its meaning through Add / Multiply (`QuantityAlgebra.h`: Hz × a number is Hz, a pitch + a wobble is a pitch, Hz × Hz is a plain number), so computed frequencies reach a Hz port without an identity Map. An auto-inserted Map is given its destination's unit.
 The one rescaling adapter: `in` mapped linearly from **In Min…In Max** onto
 **Out Min…Out Max**, clamped. Formerly `adapt.remap` ("Remap"); the old
@@ -622,7 +622,7 @@ steps. **In:** `in`; `trigger : Event`; `glide`. **Out:** `out`.
 Reads a raw waveform's instantaneous per-sample value and hands it out as an
 ordinary Bipolar Control signal, scaled by `depth` — the mechanical Audio →
 Control bridge `canConnect` auto-inserts for exactly that crossing (chained into
-`math.map` when the destination is a real-quantity port). Deliberately NOT
+`math.remap` when the destination is a real-quantity port). Deliberately NOT
 `env.follower`: that node rectifies and smooths on purpose, throwing away the
 very thing this node exists to keep — the waveform's instant-by-instant value,
 which IS the modulator for FM, ring-mod, and audio-rate parameter modulation.
@@ -641,7 +641,7 @@ out as an Audio signal, closing the "open symmetric question for later"
 `AudioControlBridge.md` §6 explicitly deferred. Same mechanical/opinion-free
 spirit as every other `adapt.*` node, never a creative DSP effect. **In:**
 `in` — `Control`, polymorphic on quantity (`Unipolar` by default, `Bipolar`
-once resolved — same mechanism `math.map`'s own `in` already uses). A real
+once resolved — same mechanism `math.remap`'s own `in` already uses). A real
 quantity source (e.g. `Frequency`) is chained through `adapt.normalise`
 first, seeded from the *source's* own range — the mirror image of
 `adapt.audioToControl → math.map`'s own two-step shape, just with the
@@ -662,9 +662,9 @@ workaround outright rather than just easing it. **In:** `in` — `Boolean`. **Ou
 #### `math.pitchToFrequency` — Pitch to Frequency ✅ *(new — a real correctness fix, see below)*
 #### `math.frequencyToPitch` — Frequency to Pitch ✅ *(new, the inverse)*
 The exact exponential MIDI-pitch↔Hz conversion (A4 = pitch 69 = 440Hz) — `canConnect`
-now prefers these over the generic `math.map` specifically for a `Pitch ↔
+now prefers these over the generic `math.remap` specifically for a `Pitch ↔
 Frequency` connection. Direct feedback surfaced a real, previously undiscovered
-correctness gap: `math.map` is a plain *linear* interpolation between two seeded
+correctness gap: `math.remap` is a plain *linear* interpolation between two seeded
 endpoints, but pitch-to-Hz is exponential (each semitone is ×2^(1/12)) — the old
 auto-inserted remap was quietly wrong for every pitch value between its two seed
 points. **In:** `pitch : float·Pitch·0–127·60` / **In:** `frequency : float·Frequency·0.01–20000Hz·440`.
@@ -857,21 +857,21 @@ meaning: a captured pitch is a Pitch sample.
 A Sampler on a Ring plays it as a moving window: Position 1 is the newest moment, 0 the
 oldest; at Rate 1 it is a steady delay, at Rate 0 a frozen distance into the past.
 
-#### `waveset.capture` — Wavesets ✅ *(new, wiki/plans/Wavesets.md W1, 2026-10-16)*
+#### `cycle.cuts` — Cycle Cuts ✅ *(new, wiki/plans/Wavesets.md W1, 2026-10-16)*
 
 Cuts a sound at its zero crossings into wavesets (one positive and one negative half).
-**In:** `in` (audio). **Out:** `wavesets` (a live `Data(wavesets)`: the last second plus
+**In:** `in` (audio). **Out:** `cuts` (a live `Data(cycle-cuts)`: the last second plus
 where each waveset starts — a Sampler can play it too), `boundary` (Event per waveset),
 `length` (s), `peak`, `count`. **Settings:** Min length (ms; shorter ones merge into the
 next), Group (N count as one), Direction (up / down). A waveset is cut at 0.25 s at most.
 
-#### `waveset.play` — Waveset Play ✅ *(new, wiki/plans/Wavesets.md W1, 2026-10-16)*
+#### `cycle.weave` — Weave ✅ *(new, wiki/plans/Wavesets.md W1, 2026-10-16)*
 
 Plays whole wavesets from its inputs (A, B, … up to 8) in turn: Count of A, Count of B, …
 Every join is at a zero crossing. Live: a turn starts on the source's newest complete
 waveset, so each source loses what the others play instead of slowing down (latency at most
 one waveset). **Settings:** Polarity match. **Out:** `out`, `switch` (Event), `source`.
-Add menu → **Interleave** places two Wavesets into a Play: CDP's Distort: Interleave, live.
+Add menu → **Weave** places two Cycle Cuts into a Weave: CDP's Distort: Interleave, live.
 
 #### `source.sampler` — Sampler ✅ *(new, wiki/plans/Sampling.md 3a.2, 2026-10-16)*
 
@@ -1005,10 +1005,10 @@ ranges — `in [0..1] -> out [-1..1]` and the inverse, clamped not extrapolated.
 **In:** `in`. **Out:** `out`. No structural parameters. Added alongside
 removing `random.stepped`/`time.steps`/`data.lookup`'s old per-node Unipolar/
 Bipolar selectors (modulation is always bipolar by default now) — a thin
-wrapper over what `math.map` already does (same shape as `adapt.normalise`/
-`math.map`/`math.pitchToFrequency`), for readability in the Add-menu rather
+wrapper over what `math.remap` already does (same shape as `adapt.normalise`/
+`math.remap`/`math.pitchToFrequency`), for readability in the Add-menu rather
 than filling a capability gap: a Unipolar<->Bipolar quantity mismatch already
-auto-resolves via `math.map`'s own generic fallback. **Deliberately not
+auto-resolves via `math.remap`'s own generic fallback. **Deliberately not
 auto-inserted** by `connectWithAutoAdapt` — manual placement only.
 
 ## deco — decorations ✅ *(wiki/plans/Decorations.md)*
@@ -1129,7 +1129,7 @@ A multi-band parametric EQ with its own editor, that unwraps into ordinary
 
 #### `factory.curve` — Curve Factory
 A drawn-curve editor that publishes a `Data(curve)` and unwraps into
-`data.table` plus whatever reads it. **Content:** points + per-segment tension, loop/polarity, optional morph-target shape. **In:** `morph [audio]`. **Out:** `data` — `Data(curve)`. **Structural:** `resolution`. **Unwrap:** → `data.table` + the implied consumer (`lfo.shape`/`env.curve`/`math.map`/`shape.waveshaper`).
+`data.table` plus whatever reads it. **Content:** points + per-segment tension, loop/polarity, optional morph-target shape. **In:** `morph [audio]`. **Out:** `data` — `Data(curve)`. **Structural:** `resolution`. **Unwrap:** → `data.table` + the implied consumer (`lfo.shape`/`env.curve`/`math.remap`/`shape.waveshaper`).
 
 #### `factory.wave` — Wave Factory
 A single-cycle waveform/harmonic editor for building a wavetable, unwrapping

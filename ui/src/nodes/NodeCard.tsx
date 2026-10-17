@@ -709,7 +709,7 @@ interface InlineDiagram {
 }
 
 const INLINE_DIAGRAMS: Readonly<Record<string, InlineDiagram>> = {
-  'math.map': { afterPortId: 'math.map.inMax', render: (props) => <MapDiagram {...props} /> },
+  'math.remap': { afterPortId: 'math.remap.inMax', render: (props) => <MapDiagram {...props} /> },
 }
 
 function StandardBody({ descriptor, state, instanceId }: { descriptor: NodeDescriptor; state: NodeCardState; instanceId?: string }) {

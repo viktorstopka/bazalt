@@ -5,7 +5,7 @@
 #include "bazalt/engine/graph/CanConnect.h"
 #include "bazalt/engine/graph/QuantityAlgebra.h"
 #include "bazalt/engine/nodes/AddNode.h"
-#include "bazalt/engine/nodes/MapNode.h"
+#include "bazalt/engine/nodes/RemapNode.h"
 #include "bazalt/engine/nodes/MultiplyNode.h"
 
 using namespace bazalt::engine;
@@ -42,8 +42,8 @@ TEST_CASE ("A unit survives arithmetic with plain numbers", "[engine][quantity]"
 
 TEST_CASE ("A Map with a unit, times an LFO, reaches a Hz port directly", "[engine][quantity]")
 {
-    nodes::MapNode map;
-    map.setParameter ("math.map.quantity", (float) Quantity::Frequency);
+    nodes::RemapNode map;
+    map.setParameter ("math.remap.quantity", (float) Quantity::Frequency);
     REQUIRE (map.getOutputPorts()[0].quantity == Quantity::Frequency);
 
     nodes::MultiplyNode product;

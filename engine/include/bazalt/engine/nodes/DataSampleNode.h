@@ -10,7 +10,7 @@ namespace bazalt::engine::nodes
         One sound from the sample library, with a non-destructive region
         (start / end / loop / fades / gain / reverse / normalise) as its content,
         published as `Data(sample)` for players (the Sampler, the Convolver,
-        Wavesets) to read. The file itself never changes.
+        Cycle Cuts) to read. The file itself never changes.
 
         The content names the sample by id; the samples themselves live in the
         process-wide SampleStore, filled by the plugin's library. A sample that
