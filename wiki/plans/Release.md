@@ -17,8 +17,10 @@ into a design gets one in `wiki/plans/` before code.
 - Renames: Wavesets → **Cycle Cuts**, Interleave → **Weave**, Map → **Remap** (a new
   **Map** is the curve-based one), Crush → **Bitcrush**, Population → **Foreach**.
 - **Mac is required** for release.
-- **Not doing:** hosting VST3 plugins inside Bazalt; Match EQ (skipped for now); reading
-  Pro-Q presets (proprietary format, reverse-engineering, legal grey zone).
+- **Not doing:** hosting VST3 plugins inside Bazalt; Match EQ (skipped for now).
+- **"From Pro-Q" EQ import is the user's item, still open** (R4.6): Claude's concern is
+  that Pro-Q's preset format is proprietary (reverse-engineering, a legal grey zone) — the
+  user decides.
 - The effects build is **Bazalt FX** (the name Erosion is dropped).
 
 ---
@@ -90,7 +92,7 @@ Every rename also updates NODES.md, the Add-menu categories and the tests.
 | Visualizer time window not saved / resets to max | the auto-window commit overwrites the user's value, or isn't saved | the user's value always wins; the auto value is never written once the user set one; saved with the patch |
 | Spectrogram time window not settable | fixed at 6 s | a Time setting (R6) |
 | Capture's menu covered by the node menu | right-click on a port opens both menus | the port menu stops the event; one menu at a time |
-| Delete all leaves Master Out without warning; voice nodes can't be deleted after complex voice setups | see R3.1 | R3.1 |
+| Delete all gives a red warning instead of quietly leaving Master Out; voice nodes can't be deleted after complex voice setups | see R3.1 | R3.1 |
 | Importing a sample / making a wavetable freezes the UI | work on the message thread; the file travels as base64 | R9 |
 
 ### R0.5 Tests for the seam between the UI and the plugin
@@ -186,14 +188,16 @@ Not ridiculous — with Classes it is small, and it shows where Bazalt is going 
 any preset. Scope kept deliberately tight:
 
 - The **Particle** class (R1.4) with a Position (Vector 3D) prop.
-- A **Space** view node: a 3D view (WebGL, orbit camera) drawing every entity of the
-  class it is wired to as a dot, coloured and sized by any prop. Read-only.
+- A **Particle system factory** (the user's term): a node whose interface is a 3D view
+  (WebGL, orbit camera) drawing every entity of its class as a dot, coloured and sized by
+  any prop; opened large like the other factories. In the MVP it shows and spawns —
+  positions come from ordinary nodes wired to the Position props.
 - Positions are driven by the nodes that exist: a Wander per entity is Brownian motion, an
   Oscillator per axis is an orbit, a Curve is a path.
 - **Locate** (minimal): position → pan, distance gain and air (a gentle low-pass with
   distance), so you hear where each particle is.
-- **A "Particle system" Snippet** (R3.6): Spawn + Foreach + Wander per axis + Locate +
-  Space, ready to drop.
+- **A "Particle system" Snippet** (R3.6): Spawn + Foreach + Wander per axis + Locate + the
+  particle factory, ready to drop.
 - **Not in the MVP:** forces, collisions, Boids, Sense, Move (they are stage 2d's later
   work), the full spatial scene (stage 4).
 - Done means: 30 particles drifting in 3D, each a sound, heard where it is; the view runs
@@ -207,8 +211,8 @@ any preset. Scope kept deliberately tight:
 Every message the user sees during ordinary patching is a defect to remove, not to reword:
 - **"Needs a Map node"**: never shown — a connection that needs a conversion inserts it
   (as `connectWithAutoAdapt` does on most paths today; find and fix the paths that don't).
-- **Delete all** leaves Master Out unwired: shown as a quiet state on Master Out ("nothing
-  connected"), not an error.
+- **Delete all** simply leaves Master Out — no red warning, no error (today it shows
+  one). An unconnected Master Out is a normal, quiet state.
 - **Voice nodes that can't be deleted** after nested setups: reproduce, fix, and test that
   any selection can always be deleted.
 - An audit: run the R0.5 harness through 100 scripted editing sessions and fail on any
@@ -282,7 +286,10 @@ wired):
 - Beats → Time, Time → Beats (at the host tempo)
 - Gain → dB, dB → Gain
 - Semitones → Ratio, Ratio → Semitones (transposition as a playback rate)
-- Milliseconds and seconds are one quantity (Time) already; the UI shows ms below 1 s.
+- Milliseconds → Seconds and Seconds → Milliseconds (the user's list). Both are already
+  one quantity (Time) inside the engine, so these convert a *plain number* (a typed 250,
+  an index, a count) into a Time and back — useful where a value arrives as a bare
+  number. Every Time display also shows ms below 1 s.
 
 ### R4.3 Quantize and Bitcrush
 - **Bitcrush** (was Crush): the audio effect.
@@ -305,6 +312,13 @@ wired):
 - **Arp**: Entities of Note in → Entities of Note out (up/down/random/as-played, rate,
   octaves, gate length) — a natural fit once notes are entities (R1).
 - Showcase patches (R11) show the other way: sequences from math, curves and oscillators.
+
+### R4.6 "From Pro-Q" EQ (the user's item — decision pending)
+Load a FabFilter Pro-Q preset as a `data.eqCurve`. Risk: the preset format is
+proprietary and undocumented — importing it means reverse-engineering, and FabFilter's
+terms may forbid it. A safer alternative: import from the text a user copies out of
+Pro-Q's band display, or from a common EQ text format. The user decides whether this
+stays before release.
 
 ---
 
@@ -376,6 +390,9 @@ overridden.
 - **Feedback for wavetables and custom waves**: the Wavetable node shows the current
   frame's cycle and a frame strip with the playhead; a Curve node shows its curve with a
   playhead per consumer.
+- **Better oscilloscoping** (the user's words): the cycle view's two modes (live and
+  phase density) also give a proper scope — a trigger on any cable, a held frame, and a
+  cursor that reads value and time.
 - **Wow, not noise**: one consistent visual language (thin traces, dim fills, the colour
   of the signal type), tuned against the nature direction once R5's principles exist.
 - (One item of the user's list was cut off — "making more complex …" — to be added.)
@@ -539,8 +556,7 @@ of the Play view and of a patch being built, and the first patch-sharing channel
 - Bake, the Convolver and captured rooms/materials (Sampling.md 3b).
 - Stage 2d: Sense, Move, Boids, Kuramoto sync — on top of R2's Particle MVP.
 - Stage 4's spatial scene.
-- Match EQ (skipped for now). Hosting VST3 inside Bazalt (not doing). Reading Pro-Q
-  presets (not doing).
+- Match EQ (skipped for now). Hosting VST3 inside Bazalt (not doing).
 
 ## Open questions
 
